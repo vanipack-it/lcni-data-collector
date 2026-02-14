@@ -339,6 +339,10 @@ class LCNI_DB {
             return [];
         }
 
+        if (self::looks_like_security_definition($payload)) {
+            return [$payload];
+        }
+
         if (self::is_list_array($payload)) {
             return $payload;
         }
@@ -414,6 +418,21 @@ class LCNI_DB {
         }
 
         return (int) $value;
+    }
+
+    private static function looks_like_security_definition($row) {
+        if (!is_array($row)) {
+            return false;
+        }
+
+        $keys = ['symbol', 's', 'exchange', 'securityType', 'referencePrice'];
+        foreach ($keys as $key) {
+            if (array_key_exists($key, $row)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public static function log_change($action, $message, $context = null) {
