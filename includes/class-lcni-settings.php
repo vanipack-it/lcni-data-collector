@@ -69,6 +69,12 @@ class LCNI_Settings {
             'default' => '',
         ]);
 
+        register_setting('lcni_settings_group', 'lcni_access_token', [
+            'type' => 'string',
+            'sanitize_callback' => [$this, 'sanitize_api_credential'],
+            'default' => '',
+        ]);
+
         register_setting('lcni_settings_group', 'lcni_secdef_url', [
             'type' => 'string',
             'sanitize_callback' => [$this, 'sanitize_secdef_url'],
@@ -333,6 +339,18 @@ class LCNI_Settings {
 
                 <table class="form-table">
                     <tr>
+                        <th>DNSE Access Token</th>
+                        <td>
+                            <input type="password" name="lcni_access_token"
+                                   value="<?php echo esc_attr(get_option('lcni_access_token', '')); ?>"
+                                   placeholder="Bearer token để gọi /open-api/v2/market/secdef"
+                                   size="50"
+                                   autocomplete="new-password">
+                            <p class="description">Token này sẽ được gửi qua header <code>Authorization: Bearer ...</code> khi đồng bộ Security Definition.</p>
+                        </td>
+                    </tr>
+
+                    <tr>
                         <th>DNSE API Key</th>
                         <td>
                             <input type="text" name="lcni_api_key"
@@ -340,7 +358,7 @@ class LCNI_Settings {
                                    placeholder="Nhập API Key DNSE"
                                    size="50"
                                    autocomplete="off">
-                            <p class="description">Dùng để xác thực khi lấy Security Definition từ DNSE OpenAPI/WebSocket gateway.</p>
+                            <p class="description">Giữ lại để tương thích bản cũ. Nếu chưa nhập Access Token, plugin sẽ tạm dùng giá trị này làm Bearer token.</p>
                         </td>
                     </tr>
 
@@ -361,7 +379,7 @@ class LCNI_Settings {
                         <td>
                             <input type="url" name="lcni_secdef_url"
                                    value="<?php echo esc_attr(get_option('lcni_secdef_url', LCNI_API::SECDEF_URL)); ?>"
-                                   placeholder="https://services.entrade.com.vn/chart-api/v2/securities"
+                                   placeholder="https://services.entrade.com.vn/open-api/v2/market/secdef"
                                    size="80">
                             <p class="description">Cho phép thay đổi endpoint khi DNSE cập nhật hạ tầng dữ liệu.</p>
                         </td>
