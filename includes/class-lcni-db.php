@@ -15,6 +15,7 @@ class LCNI_DB {
         $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
         $security_definition_table = $wpdb->prefix . 'lcni_security_definition';
         $log_table = $wpdb->prefix . 'lcni_change_logs';
+        $seed_task_table = $wpdb->prefix . 'lcni_seed_tasks';
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
@@ -53,6 +54,21 @@ class LCNI_DB {
             KEY idx_exchange (exchange)
         ) {$charset_collate};";
 
+
+        $sql_seed_tasks = "CREATE TABLE {$seed_task_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            symbol VARCHAR(20) NOT NULL,
+            timeframe VARCHAR(10) NOT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            last_to_time BIGINT NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            UNIQUE KEY unique_symbol_timeframe (symbol, timeframe),
+            KEY idx_status (status),
+            KEY idx_updated_at (updated_at)
+        ) {$charset_collate};";
+
         $sql_change_logs = "CREATE TABLE {$log_table} (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             action VARCHAR(100) NOT NULL,
@@ -67,8 +83,9 @@ class LCNI_DB {
         dbDelta($sql_ohlc);
         dbDelta($sql_security_definition);
         dbDelta($sql_change_logs);
+        dbDelta($sql_seed_tasks);
 
-        self::log_change('activation', 'Created/updated OHLC, security definition and change log tables.');
+        self::log_change('activation', 'Created/updated OHLC, security definition, seed task and change log tables.');
     }
 
     public static function collect_all_data($latest_only = false, $offset = 0, $batch_limit = self::SYMBOL_BATCH_LIMIT) {
@@ -289,54 +306,9 @@ class LCNI_DB {
                 );
             }
 
-            foreach ($rows as $row) {
-                $event_time = strtotime($row['candle_time']);
-                if ($event_time === false || $event_time <= 0) {
-                    continue;
-                }
-
-                $record = [
-                    'symbol' => $row['symbol'],
-                    'timeframe' => $row['timeframe'],
-                    'event_time' => $event_time,
-                    'open_price' => (float) $row['open'],
-                    'high_price' => (float) $row['high'],
-                    'low_price' => (float) $row['low'],
-                    'close_price' => (float) $row['close'],
-                    'volume' => (int) $row['volume'],
-                    'value_traded' => (float) (($row['close'] ?? 0) * ($row['volume'] ?? 0)),
-                ];
-
-                $query = $wpdb->prepare(
-                    "INSERT INTO {$table}
-                    (symbol, timeframe, event_time, open_price, high_price, low_price, close_price, volume, value_traded)
-                    VALUES (%s, %s, %d, %f, %f, %f, %f, %d, %f)
-                    ON DUPLICATE KEY UPDATE
-                        open_price = VALUES(open_price),
-                        high_price = VALUES(high_price),
-                        low_price = VALUES(low_price),
-                        close_price = VALUES(close_price),
-                        volume = VALUES(volume),
-                        value_traded = VALUES(value_traded)",
-                    $record['symbol'],
-                    $record['timeframe'],
-                    $record['event_time'],
-                    $record['open_price'],
-                    $record['high_price'],
-                    $record['low_price'],
-                    $record['close_price'],
-                    $record['volume'],
-                    $record['value_traded']
-                );
-
-                $result = $wpdb->query($query);
-
-                if ($result === 1) {
-                    $inserted++;
-                } elseif ($result === 2 || $result === 0) {
-                    $updated++;
-                }
-            }
+            $upsert_summary = self::upsert_ohlc_rows($rows);
+            $inserted += (int) $upsert_summary['inserted'];
+            $updated += (int) $upsert_summary['updated'];
         }
 
         self::log_change('sync_ohlc', sprintf('OHLC sync done. inserted=%d updated=%d latest_only=%s timeframe=%s days=%d.', $inserted, $updated, $latest_only ? 'yes' : 'no', $timeframe, $days));
@@ -367,6 +339,88 @@ class LCNI_DB {
         );
 
         return max(0, $latest_event_time);
+    }
+
+
+    public static function get_all_symbols() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_security_definition';
+
+        return $wpdb->get_col("SELECT symbol FROM {$table} ORDER BY symbol ASC");
+    }
+
+    public static function upsert_ohlc_rows($rows) {
+        global $wpdb;
+
+        if (empty($rows) || !is_array($rows)) {
+            return [
+                'inserted' => 0,
+                'updated' => 0,
+            ];
+        }
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $inserted = 0;
+        $updated = 0;
+
+        foreach ($rows as $row) {
+            $event_time = isset($row['event_time']) ? (int) $row['event_time'] : strtotime((string) ($row['candle_time'] ?? ''));
+            if ($event_time <= 0) {
+                continue;
+            }
+
+            $record = [
+                'symbol' => strtoupper((string) ($row['symbol'] ?? '')),
+                'timeframe' => strtoupper((string) ($row['timeframe'] ?? '1D')),
+                'event_time' => $event_time,
+                'open_price' => (float) ($row['open'] ?? 0),
+                'high_price' => (float) ($row['high'] ?? 0),
+                'low_price' => (float) ($row['low'] ?? 0),
+                'close_price' => (float) ($row['close'] ?? 0),
+                'volume' => (int) ($row['volume'] ?? 0),
+                'value_traded' => (float) (($row['close'] ?? 0) * ($row['volume'] ?? 0)),
+            ];
+
+            if ($record['symbol'] === '') {
+                continue;
+            }
+
+            $query = $wpdb->prepare(
+                "INSERT INTO {$table}
+                (symbol, timeframe, event_time, open_price, high_price, low_price, close_price, volume, value_traded)
+                VALUES (%s, %s, %d, %f, %f, %f, %f, %d, %f)
+                ON DUPLICATE KEY UPDATE
+                    open_price = VALUES(open_price),
+                    high_price = VALUES(high_price),
+                    low_price = VALUES(low_price),
+                    close_price = VALUES(close_price),
+                    volume = VALUES(volume),
+                    value_traded = VALUES(value_traded)",
+                $record['symbol'],
+                $record['timeframe'],
+                $record['event_time'],
+                $record['open_price'],
+                $record['high_price'],
+                $record['low_price'],
+                $record['close_price'],
+                $record['volume'],
+                $record['value_traded']
+            );
+
+            $result = $wpdb->query($query);
+
+            if ($result === 1) {
+                $inserted++;
+            } elseif ($result === 2 || $result === 0) {
+                $updated++;
+            }
+        }
+
+        return [
+            'inserted' => $inserted,
+            'updated' => $updated,
+        ];
     }
 
     private static function extract_items($payload, $preferred_keys = []) {
@@ -474,6 +528,7 @@ class LCNI_DB {
         global $wpdb;
 
         $log_table = $wpdb->prefix . 'lcni_change_logs';
+        $seed_task_table = $wpdb->prefix . 'lcni_seed_tasks';
 
         if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $log_table)) !== $log_table) {
             error_log(sprintf('[LCNI Data Collector] %s: %s', $action, $message));

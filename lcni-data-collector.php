@@ -2,7 +2,7 @@
 /*
 Plugin Name: LCNI Data Collector
 Description: LCNI Market Data Engine: lấy nến, lưu DB, cron auto update
-Version: 1.3
+Version: 1.4
 */
 
 if (!defined('ABSPATH')) {
@@ -11,10 +11,25 @@ if (!defined('ABSPATH')) {
 
 define('LCNI_PATH', plugin_dir_path(__FILE__));
 define('LCNI_CRON_HOOK', 'lcni_collect_data_cron');
+define('LCNI_SEED_CRON_HOOK', 'lcni_seed_batch_cron');
 
 require_once LCNI_PATH . 'includes/class-lcni-db.php';
-require_once LCNI_PATH . 'includes/class-lcni-settings.php';
 require_once LCNI_PATH . 'includes/class-lcni-api.php';
+require_once LCNI_PATH . 'includes/class-lcni-seed-repository.php';
+require_once LCNI_PATH . 'includes/class-lcni-history-fetcher.php';
+require_once LCNI_PATH . 'includes/class-lcni-seed-scheduler.php';
+require_once LCNI_PATH . 'includes/class-lcni-settings.php';
+
+function lcni_register_custom_cron_schedules($schedules) {
+    if (!isset($schedules['lcni_every_minute'])) {
+        $schedules['lcni_every_minute'] = [
+            'interval' => MINUTE_IN_SECONDS,
+            'display' => __('Every Minute (LCNI)', 'lcni-data-collector'),
+        ];
+    }
+
+    return $schedules;
+}
 
 function lcni_activate_plugin() {
     LCNI_DB::create_tables();
@@ -22,26 +37,43 @@ function lcni_activate_plugin() {
 }
 
 function lcni_ensure_cron_scheduled() {
-    if (wp_next_scheduled(LCNI_CRON_HOOK)) {
-        return;
+    if (!wp_next_scheduled(LCNI_CRON_HOOK)) {
+        wp_schedule_event(time() + 300, 'hourly', LCNI_CRON_HOOK);
     }
 
-    wp_schedule_event(time() + 300, 'hourly', LCNI_CRON_HOOK);
+    if (!wp_next_scheduled(LCNI_SEED_CRON_HOOK)) {
+        wp_schedule_event(time() + MINUTE_IN_SECONDS, 'lcni_every_minute', LCNI_SEED_CRON_HOOK);
+    }
 }
 
 function lcni_deactivate_plugin() {
-    $timestamp = wp_next_scheduled(LCNI_CRON_HOOK);
+    $incremental_timestamp = wp_next_scheduled(LCNI_CRON_HOOK);
+    if ($incremental_timestamp) {
+        wp_unschedule_event($incremental_timestamp, LCNI_CRON_HOOK);
+    }
 
-    if ($timestamp) {
-        wp_unschedule_event($timestamp, LCNI_CRON_HOOK);
+    $seed_timestamp = wp_next_scheduled(LCNI_SEED_CRON_HOOK);
+    if ($seed_timestamp) {
+        wp_unschedule_event($seed_timestamp, LCNI_SEED_CRON_HOOK);
     }
 }
 
 function lcni_run_cron_incremental_sync() {
+    $stats = LCNI_SeedRepository::get_dashboard_stats();
+    if ((int) ($stats['total'] ?? 0) > 0 && (int) ($stats['done'] ?? 0) < (int) ($stats['total'] ?? 0)) {
+        return;
+    }
+
     LCNI_DB::collect_all_data(true);
 }
 
+function lcni_run_seed_batch() {
+    LCNI_SeedScheduler::run_batch();
+}
+
+add_filter('cron_schedules', 'lcni_register_custom_cron_schedules');
 add_action(LCNI_CRON_HOOK, 'lcni_run_cron_incremental_sync');
+add_action(LCNI_SEED_CRON_HOOK, 'lcni_run_seed_batch');
 add_action('init', 'lcni_ensure_cron_scheduled');
 
 register_activation_hook(__FILE__, 'lcni_activate_plugin');
