@@ -8,6 +8,26 @@ class LCNI_DB {
 
     const SYMBOL_BATCH_LIMIT = 50;
 
+    public static function ensure_tables_exist() {
+        global $wpdb;
+
+        $required_tables = [
+            $wpdb->prefix . 'lcni_ohlc',
+            $wpdb->prefix . 'lcni_security_definition',
+            $wpdb->prefix . 'lcni_symbols',
+            $wpdb->prefix . 'lcni_change_logs',
+            $wpdb->prefix . 'lcni_seed_tasks',
+        ];
+
+        foreach ($required_tables as $table) {
+            $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+            if ($exists !== $table) {
+                self::create_tables();
+                return;
+            }
+        }
+    }
+
     public static function create_tables() {
         global $wpdb;
 
@@ -116,6 +136,8 @@ class LCNI_DB {
     }
 
     public static function collect_all_data($latest_only = false, $offset = 0, $batch_limit = self::SYMBOL_BATCH_LIMIT) {
+        self::ensure_tables_exist();
+
         $security_summary = self::collect_security_definitions();
         $ohlc_summary = self::collect_ohlc_data($latest_only, $offset, $batch_limit);
 
@@ -126,6 +148,8 @@ class LCNI_DB {
     }
 
     public static function collect_security_definitions() {
+        self::ensure_tables_exist();
+
         $payload = LCNI_API::get_security_definitions();
         $cached_symbols = self::count_cached_security_symbols();
 
@@ -181,6 +205,8 @@ class LCNI_DB {
     }
 
     public static function import_symbols_from_csv($file_path) {
+        self::ensure_tables_exist();
+
         if (!is_readable($file_path)) {
             return new WP_Error('csv_not_readable', 'Không thể đọc file CSV đã upload.');
         }
@@ -266,6 +292,8 @@ class LCNI_DB {
     }
 
     public static function collect_ohlc_data($latest_only = false, $offset = 0, $batch_limit = self::SYMBOL_BATCH_LIMIT) {
+        self::ensure_tables_exist();
+
         global $wpdb;
 
         $timeframe = strtoupper((string) get_option('lcni_timeframe', '1D'));
@@ -590,7 +618,10 @@ class LCNI_DB {
     }
 
     private static function normalize_csv_header($value) {
-        $normalized = strtolower(trim((string) $value));
+        $value = (string) $value;
+        $value = preg_replace('/^\xEF\xBB\xBF/', '', $value);
+
+        $normalized = strtolower(trim($value));
         $normalized = str_replace([' ', '-', '.', '/', '\\'], '_', $normalized);
 
         return preg_replace('/[^a-z0-9_]/', '', $normalized);
