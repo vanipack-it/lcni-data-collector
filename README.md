@@ -210,3 +210,11 @@ Dùng trong phiên định kỳ ATO/ATC để cung cấp giá đóng cửa, giá
   "expectedTradeQuantity": "133780"
 }
 ```
+
+
+## Ghi chú cập nhật
+
+- Dữ liệu mã chứng khoán hiện được lưu tại bảng `wp_lcni_symbols` (tuỳ prefix).
+- Có thể import CSV symbol từ trang admin `LCNI Data` để phục vụ seed queue.
+- Nút `Sync Security Definition` sẽ cập nhật các trường Security Definition (giá trần/sàn/tham chiếu, trạng thái giao dịch...) vào `lcni_symbols`.
+- Cron tự động đồng bộ Security Definition chạy hàng ngày lúc 08:00.

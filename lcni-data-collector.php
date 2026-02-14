@@ -12,6 +12,7 @@ if (!defined('ABSPATH')) {
 define('LCNI_PATH', plugin_dir_path(__FILE__));
 define('LCNI_CRON_HOOK', 'lcni_collect_data_cron');
 define('LCNI_SEED_CRON_HOOK', 'lcni_seed_batch_cron');
+define('LCNI_SECDEF_DAILY_CRON_HOOK', 'lcni_sync_secdef_daily_cron');
 
 require_once LCNI_PATH . 'includes/class-lcni-db.php';
 require_once LCNI_PATH . 'includes/class-lcni-api.php';
@@ -44,6 +45,10 @@ function lcni_ensure_cron_scheduled() {
     if (!wp_next_scheduled(LCNI_SEED_CRON_HOOK)) {
         wp_schedule_event(time() + MINUTE_IN_SECONDS, 'lcni_every_minute', LCNI_SEED_CRON_HOOK);
     }
+
+    if (!wp_next_scheduled(LCNI_SECDEF_DAILY_CRON_HOOK)) {
+        wp_schedule_event(strtotime('tomorrow 08:00:00'), 'daily', LCNI_SECDEF_DAILY_CRON_HOOK);
+    }
 }
 
 function lcni_deactivate_plugin() {
@@ -55,6 +60,11 @@ function lcni_deactivate_plugin() {
     $seed_timestamp = wp_next_scheduled(LCNI_SEED_CRON_HOOK);
     if ($seed_timestamp) {
         wp_unschedule_event($seed_timestamp, LCNI_SEED_CRON_HOOK);
+    }
+
+    $secdef_timestamp = wp_next_scheduled(LCNI_SECDEF_DAILY_CRON_HOOK);
+    if ($secdef_timestamp) {
+        wp_unschedule_event($secdef_timestamp, LCNI_SECDEF_DAILY_CRON_HOOK);
     }
 }
 
@@ -71,9 +81,14 @@ function lcni_run_seed_batch() {
     LCNI_SeedScheduler::run_batch();
 }
 
+function lcni_run_daily_secdef_sync() {
+    LCNI_DB::collect_security_definitions();
+}
+
 add_filter('cron_schedules', 'lcni_register_custom_cron_schedules');
 add_action(LCNI_CRON_HOOK, 'lcni_run_cron_incremental_sync');
 add_action(LCNI_SEED_CRON_HOOK, 'lcni_run_seed_batch');
+add_action(LCNI_SECDEF_DAILY_CRON_HOOK, 'lcni_run_daily_secdef_sync');
 add_action('init', 'lcni_ensure_cron_scheduled');
 
 register_activation_hook(__FILE__, 'lcni_activate_plugin');
