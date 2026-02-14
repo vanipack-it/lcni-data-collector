@@ -35,8 +35,22 @@ class LCNI_Settings {
     }
 
     public function register_settings() {
+        register_setting(
+            'lcni_settings_group',
+            'lcni_api_mode',
+            [
+                'type' => 'string',
+                'sanitize_callback' => [$this, 'sanitize_api_mode'],
+                'default' => 'market_data',
+            ]
+        );
         register_setting('lcni_settings_group', 'lcni_api_key');
         register_setting('lcni_settings_group', 'lcni_api_secret');
+        register_setting('lcni_settings_group', 'lcni_auth_email', ['sanitize_callback' => 'sanitize_email']);
+    }
+
+    public function sanitize_api_mode($value) {
+        return in_array($value, ['market_data', 'trading_api'], true) ? $value : 'market_data';
     }
 
     public function handle_admin_actions() {
@@ -87,9 +101,11 @@ class LCNI_Settings {
     }
 
     private function run_api_connection_test() {
+        $api_mode = get_option('lcni_api_mode', 'market_data');
         $api_key = get_option('lcni_api_key');
         $api_secret = get_option('lcni_api_secret');
-        $test_result = LCNI_API::test_connection($api_key, $api_secret);
+        $auth_email = get_option('lcni_auth_email');
+        $test_result = LCNI_API::test_connection($api_mode, $api_key, $api_secret, $auth_email);
 
         if (is_wp_error($test_result)) {
             LCNI_DB::log_change('api_connection_failed', 'Manual DNSE API connection test failed from admin button.');
@@ -123,7 +139,7 @@ class LCNI_Settings {
             return;
         }
 
-        if (!in_array($option, ['lcni_api_key', 'lcni_api_secret'], true)) {
+        if (!in_array($option, ['lcni_api_mode', 'lcni_api_key', 'lcni_api_secret', 'lcni_auth_email'], true)) {
             return;
         }
 
@@ -137,10 +153,12 @@ class LCNI_Settings {
 
         self::$credentials_checked = true;
 
+        $api_mode = get_option('lcni_api_mode', 'market_data');
         $api_key = get_option('lcni_api_key');
         $api_secret = get_option('lcni_api_secret');
+        $auth_email = get_option('lcni_auth_email');
 
-        $test_result = LCNI_API::test_connection($api_key, $api_secret);
+        $test_result = LCNI_API::test_connection($api_mode, $api_key, $api_secret, $auth_email);
 
         if (is_wp_error($test_result)) {
             set_transient(
@@ -196,10 +214,26 @@ class LCNI_Settings {
             <form method="post" action="options.php">
                 <?php settings_fields('lcni_settings_group'); ?>
 
+                <?php $api_mode = get_option('lcni_api_mode', 'market_data'); ?>
+
                 <table class="form-table">
                     <tr>
-                        <th>API Key</th>
+                        <th>Chế độ kết nối</th>
                         <td>
+                            <label style="display: block; margin-bottom: 8px;">
+                                <input type="radio" name="lcni_api_mode" value="market_data" <?php checked($api_mode, 'market_data'); ?>>
+                                Market Data (không cần key)
+                            </label>
+                            <label style="display: block;">
+                                <input type="radio" name="lcni_api_mode" value="trading_api" <?php checked($api_mode, 'trading_api'); ?>>
+                                Trading API (cần key + email xác thực)
+                            </label>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <th>API Key</th>
+                        <td class="lcni-trading-only">
                             <input type="text" name="lcni_api_key"
                                    value="<?php echo esc_attr(get_option('lcni_api_key')); ?>"
                                    size="50">
@@ -208,10 +242,21 @@ class LCNI_Settings {
 
                     <tr>
                         <th>API Secret</th>
-                        <td>
+                        <td class="lcni-trading-only">
                             <input type="password" name="lcni_api_secret"
                                    value="<?php echo esc_attr(get_option('lcni_api_secret')); ?>"
                                    size="50">
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <th>Email xác thực</th>
+                        <td class="lcni-trading-only">
+                            <input type="email" name="lcni_auth_email"
+                                   value="<?php echo esc_attr(get_option('lcni_auth_email')); ?>"
+                                   placeholder="you@example.com"
+                                   size="50">
+                            <p class="description">Chỉ dùng cho chế độ Trading API.</p>
                         </td>
                     </tr>
                 </table>
@@ -245,6 +290,31 @@ class LCNI_Settings {
                 }
                 ?>
             </p>
+
+            <script>
+                (function() {
+                    var modeRadios = document.querySelectorAll('input[name="lcni_api_mode"]');
+                    var tradingRows = document.querySelectorAll('.lcni-trading-only');
+
+                    function toggleTradingFields() {
+                        var selected = document.querySelector('input[name="lcni_api_mode"]:checked');
+                        var isTradingMode = selected && selected.value === 'trading_api';
+
+                        tradingRows.forEach(function(cell) {
+                            var row = cell.closest('tr');
+                            if (row) {
+                                row.style.display = isTradingMode ? '' : 'none';
+                            }
+                        });
+                    }
+
+                    modeRadios.forEach(function(radio) {
+                        radio.addEventListener('change', toggleTradingFields);
+                    });
+
+                    toggleTradingFields();
+                })();
+            </script>
 
             <h2>Change Logs</h2>
             <?php if (!empty($logs)) : ?>
