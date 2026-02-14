@@ -10,6 +10,7 @@ class LCNI_Settings {
         add_action('admin_menu', [$this, 'menu']);
         add_action('admin_init', [$this, 'register_settings']);
         add_action('admin_init', [$this, 'handle_admin_actions']);
+        add_action('wp_ajax_lcni_seed_dashboard_snapshot', [$this, 'ajax_seed_dashboard_snapshot']);
     }
 
     public function menu() {
@@ -172,6 +173,80 @@ class LCNI_Settings {
         $this->set_notice($success_count === count($symbols) ? 'success' : 'error', sprintf('Test chart-api nhiều symbol: %d/%d thành công.', $success_count, count($symbols)), $debug_logs);
     }
 
+    private function format_task_progress($task) {
+        $status = isset($task['status']) ? (string) $task['status'] : 'pending';
+
+        if ($status === 'done') {
+            return 100;
+        }
+
+        return $status === 'running' ? 65 : 15;
+    }
+
+    private function render_task_rows($tasks) {
+        if (empty($tasks)) {
+            return '<tr><td colspan="4">Chưa có task seed.</td></tr>';
+        }
+
+        $rows = '';
+
+        foreach ($tasks as $task) {
+            $status = isset($task['status']) ? (string) $task['status'] : 'pending';
+            $progress = $this->format_task_progress($task);
+            $status_class = 'status-pending';
+            $bar_class = 'progress-pending';
+
+            if ($status === 'running') {
+                $status_class = 'status-running';
+                $bar_class = 'progress-running';
+            } elseif ($status === 'done') {
+                $status_class = 'status-done';
+                $bar_class = 'progress-done';
+            }
+
+            $rows .= sprintf(
+                '<tr>' .
+                    '<td>%s</td>' .
+                    '<td><span class="lcni-status-pill %s">%s</span></td>' .
+                    '<td>%s</td>' .
+                    '<td><div class="lcni-progress-track"><div class="lcni-progress-fill %s" style="width:%d%%;"></div></div><span class="lcni-progress-text">%d%%</span></td>' .
+                '</tr>',
+                esc_html(($task['symbol'] ?? '') . ' ' . ($task['timeframe'] ?? '')),
+                esc_attr($status_class),
+                esc_html(strtoupper($status)),
+                esc_html((string) ($task['last_to_time'] ?? '')),
+                esc_attr($bar_class),
+                (int) $progress,
+                (int) $progress
+            );
+        }
+
+        return $rows;
+    }
+
+    public function ajax_seed_dashboard_snapshot() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Forbidden'], 403);
+        }
+
+        check_ajax_referer('lcni_seed_dashboard_nonce', 'nonce');
+
+        $stats = LCNI_SeedRepository::get_dashboard_stats();
+        $tasks = LCNI_SeedRepository::get_recent_tasks(30);
+
+        wp_send_json_success([
+            'stats' => [
+                'total' => (int) ($stats['total'] ?? 0),
+                'done' => (int) ($stats['done'] ?? 0),
+                'running' => (int) ($stats['running'] ?? 0),
+                'pending' => (int) ($stats['pending'] ?? 0),
+                'paused' => LCNI_SeedScheduler::is_paused() ? 'YES' : 'NO',
+            ],
+            'rows_html' => $this->render_task_rows($tasks),
+            'updated_at' => current_time('mysql'),
+        ]);
+    }
+
     public function settings_page() {
         global $wpdb;
 
@@ -221,34 +296,89 @@ class LCNI_Settings {
             <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_admin_action" value="resume_seed"><?php submit_button('Resume', 'secondary', 'submit', false); ?></form>
 
             <h3>Seed Dashboard</h3>
-            <ul>
-                <li>Tổng task: <strong><?php echo esc_html((string) $stats['total']); ?></strong></li>
-                <li>Đã xong: <strong><?php echo esc_html((string) $stats['done']); ?></strong></li>
-                <li>Đang chạy: <strong><?php echo esc_html((string) $stats['running']); ?></strong></li>
-                <li>Pending: <strong><?php echo esc_html((string) $stats['pending']); ?></strong></li>
-                <li>Seed paused: <strong><?php echo LCNI_SeedScheduler::is_paused() ? 'YES' : 'NO'; ?></strong></li>
+            <p id="lcni-seed-dashboard-updated" style="margin:0 0 8px;color:#50575e;font-style:italic;">Tự động cập nhật mỗi 5 giây.</p>
+            <ul id="lcni-seed-stats-list">
+                <li>Tổng task: <strong data-stat="total"><?php echo esc_html((string) $stats['total']); ?></strong></li>
+                <li>Đã xong: <strong data-stat="done"><?php echo esc_html((string) $stats['done']); ?></strong></li>
+                <li>Đang chạy: <strong data-stat="running"><?php echo esc_html((string) $stats['running']); ?></strong></li>
+                <li>Pending: <strong data-stat="pending"><?php echo esc_html((string) $stats['pending']); ?></strong></li>
+                <li>Seed paused: <strong data-stat="paused"><?php echo LCNI_SeedScheduler::is_paused() ? 'YES' : 'NO'; ?></strong></li>
             </ul>
+
+            <style>
+                .lcni-status-pill {display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;letter-spacing:0.3px;}
+                .lcni-status-pill.status-running {background:#fff1d6;color:#9a5600;}
+                .lcni-status-pill.status-pending {background:#e8f1ff;color:#165288;}
+                .lcni-status-pill.status-done {background:#dbf7e8;color:#146c2e;}
+                .lcni-progress-track {background:#eceff1;height:16px;width:220px;border-radius:999px;overflow:hidden;display:inline-block;vertical-align:middle;}
+                .lcni-progress-fill {height:100%;transition:width .35s ease;}
+                .lcni-progress-fill.progress-running {background:linear-gradient(90deg,#ff9f43,#ffcf66);background-size:300% 100%;animation:lcni-running-glow 2s linear infinite;}
+                .lcni-progress-fill.progress-pending {background:#5b9bd5;}
+                .lcni-progress-fill.progress-done {background:#32b357;}
+                .lcni-progress-text {display:inline-block;min-width:42px;margin-left:8px;font-weight:600;}
+                @keyframes lcni-running-glow {0%{background-position:100% 0;}100%{background-position:0 0;}}
+            </style>
 
             <table class="widefat striped" style="max-width:1000px;">
                 <thead><tr><th>Task</th><th>Status</th><th>last_to_time</th><th>Progress</th></tr></thead>
-                <tbody>
-                <?php if (!empty($tasks)) : foreach ($tasks as $task) :
-                    $progress = $task['status'] === 'done' ? 100 : ($task['status'] === 'running' ? 60 : 0);
-                    ?>
-                    <tr>
-                        <td><?php echo esc_html($task['symbol'] . ' ' . $task['timeframe']); ?></td>
-                        <td><?php echo esc_html($task['status']); ?></td>
-                        <td><?php echo esc_html((string) $task['last_to_time']); ?></td>
-                        <td>
-                            <div style="background:#eee;height:16px;width:220px;border-radius:3px;overflow:hidden;display:inline-block;vertical-align:middle;"><div style="background:#2271b1;height:100%;width:<?php echo esc_attr((string) $progress); ?>%;"></div></div>
-                            <span><?php echo esc_html((string) $progress); ?>%</span>
-                        </td>
-                    </tr>
-                <?php endforeach; else : ?>
-                    <tr><td colspan="4">Chưa có task seed.</td></tr>
-                <?php endif; ?>
-                </tbody>
+                <tbody id="lcni-seed-task-rows"><?php echo wp_kses_post($this->render_task_rows($tasks)); ?></tbody>
             </table>
+            <script>
+                (function() {
+                    const rowsTarget = document.getElementById('lcni-seed-task-rows');
+                    const statsList = document.getElementById('lcni-seed-stats-list');
+                    const updatedHint = document.getElementById('lcni-seed-dashboard-updated');
+
+                    if (!rowsTarget || !statsList || !updatedHint) {
+                        return;
+                    }
+
+                    const nonce = <?php echo wp_json_encode(wp_create_nonce('lcni_seed_dashboard_nonce')); ?>;
+                    const endpoint = <?php echo wp_json_encode(admin_url('admin-ajax.php')); ?>;
+
+                    const updateStatValue = function(key, value) {
+                        const el = statsList.querySelector('[data-stat="' + key + '"]');
+                        if (el) {
+                            el.textContent = value;
+                        }
+                    };
+
+                    const refreshDashboard = function() {
+                        const body = new URLSearchParams({
+                            action: 'lcni_seed_dashboard_snapshot',
+                            nonce: nonce
+                        });
+
+                        fetch(endpoint, {
+                            method: 'POST',
+                            credentials: 'same-origin',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                            },
+                            body: body.toString()
+                        })
+                        .then(function(response) { return response.json(); })
+                        .then(function(payload) {
+                            if (!payload || !payload.success || !payload.data) {
+                                return;
+                            }
+
+                            rowsTarget.innerHTML = payload.data.rows_html || '';
+                            const stats = payload.data.stats || {};
+                            updateStatValue('total', String(stats.total ?? 0));
+                            updateStatValue('done', String(stats.done ?? 0));
+                            updateStatValue('running', String(stats.running ?? 0));
+                            updateStatValue('pending', String(stats.pending ?? 0));
+                            updateStatValue('paused', stats.paused ? String(stats.paused) : 'NO');
+
+                            updatedHint.textContent = 'Cập nhật realtime mỗi 5 giây. Lần cập nhật gần nhất: ' + (payload.data.updated_at || 'N/A');
+                        });
+                    };
+
+                    setInterval(refreshDashboard, 5000);
+                    refreshDashboard();
+                })();
+            </script>
 
             <h2>Quick Actions</h2>
             <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_admin_action" value="test_api_connection"><?php submit_button('Test chart-api', 'secondary', 'submit', false); ?></form>

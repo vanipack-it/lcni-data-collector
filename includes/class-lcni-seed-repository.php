@@ -134,7 +134,7 @@ class LCNI_SeedRepository {
         $table = self::get_table_name();
 
         return $wpdb->get_results(
-            $wpdb->prepare("SELECT * FROM {$table} ORDER BY updated_at DESC, id DESC LIMIT %d", max(1, (int) $limit)),
+            $wpdb->prepare("SELECT * FROM {$table} ORDER BY FIELD(status, 'running', 'pending', 'done'), updated_at DESC, id DESC LIMIT %d", max(1, (int) $limit)),
             ARRAY_A
         );
     }
