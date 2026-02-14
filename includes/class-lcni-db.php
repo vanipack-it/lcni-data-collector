@@ -6,6 +6,8 @@ if (!defined('ABSPATH')) {
 
 class LCNI_DB {
 
+    const SYMBOL_BATCH_LIMIT = 50;
+
     public static function create_tables() {
         global $wpdb;
 
@@ -69,9 +71,14 @@ class LCNI_DB {
         self::log_change('activation', 'Created/updated OHLC, security definition and change log tables.');
     }
 
-    public static function collect_all_data($latest_only = false) {
-        self::collect_security_definitions();
-        self::collect_ohlc_data($latest_only);
+    public static function collect_all_data($latest_only = false, $offset = 0, $batch_limit = self::SYMBOL_BATCH_LIMIT) {
+        $security_summary = self::collect_security_definitions();
+        $ohlc_summary = self::collect_ohlc_data($latest_only, $offset, $batch_limit);
+
+        return [
+            'security' => $security_summary,
+            'ohlc' => $ohlc_summary,
+        ];
     }
 
     public static function collect_security_definitions() {
@@ -80,7 +87,7 @@ class LCNI_DB {
         if (!is_array($payload)) {
             self::log_change('sync_failed', 'Unable to collect security definitions: invalid payload.');
 
-            return;
+            return new WP_Error('invalid_payload', 'Invalid security definitions payload.');
         }
 
         $rows = self::extract_items($payload, ['data', 'items', 'secDefs', 'secdefs', 'securities', 'symbols']);
@@ -88,7 +95,7 @@ class LCNI_DB {
         if (empty($rows)) {
             self::log_change('sync_skipped', 'No security definitions returned from DNSE API.');
 
-            return;
+            return new WP_Error('empty_payload', 'Security definitions payload is empty.');
         }
 
         global $wpdb;
@@ -103,9 +110,9 @@ class LCNI_DB {
 
             $record = [
                 'symbol' => $symbol,
-                'exchange' => self::nullable_text(self::pick($row, ['exchange', 'ex'])),
-                'security_type' => self::nullable_text(self::pick($row, ['securityType', 'security_type', 'type'])),
-                'market' => self::nullable_text(self::pick($row, ['market', 'mkt'])),
+                'exchange' => self::nullable_text(self::pick($row, ['exchange', 'ex', 'exchangeCode'])),
+                'security_type' => self::nullable_text(self::pick($row, ['securityType', 'security_type', 'type', 'secType'])),
+                'market' => self::nullable_text(self::pick($row, ['market', 'mkt', 'marketType'])),
                 'reference_price' => self::nullable_float(self::pick($row, ['referencePrice', 'reference_price', 'refPrice'])),
                 'ceiling_price' => self::nullable_float(self::pick($row, ['ceilingPrice', 'ceiling_price', 'ceilPrice'])),
                 'floor_price' => self::nullable_float(self::pick($row, ['floorPrice', 'floor_price'])),
@@ -113,42 +120,90 @@ class LCNI_DB {
                 'listed_volume' => self::nullable_int(self::pick($row, ['listedVolume', 'listed_volume'])),
             ];
 
-            $exists_id = $wpdb->get_var($wpdb->prepare("SELECT id FROM {$table} WHERE symbol = %s LIMIT 1", $symbol));
-            if ($exists_id) {
-                $wpdb->update($table, $record, ['id' => (int) $exists_id]);
-            } else {
-                $wpdb->insert($table, $record);
-            }
+            $query = $wpdb->prepare(
+                "INSERT INTO {$table}
+                (symbol, exchange, security_type, market, reference_price, ceiling_price, floor_price, lot_size, listed_volume)
+                VALUES (%s, %s, %s, %s, %f, %f, %f, %d, %d)
+                ON DUPLICATE KEY UPDATE
+                    exchange = VALUES(exchange),
+                    security_type = VALUES(security_type),
+                    market = VALUES(market),
+                    reference_price = VALUES(reference_price),
+                    ceiling_price = VALUES(ceiling_price),
+                    floor_price = VALUES(floor_price),
+                    lot_size = VALUES(lot_size),
+                    listed_volume = VALUES(listed_volume)",
+                $record['symbol'],
+                $record['exchange'],
+                $record['security_type'],
+                $record['market'],
+                (float) $record['reference_price'],
+                (float) $record['ceiling_price'],
+                (float) $record['floor_price'],
+                (int) $record['lot_size'],
+                (int) $record['listed_volume']
+            );
 
-            $updated++;
+            $result = $wpdb->query($query);
+            if ($result !== false) {
+                $updated++;
+            }
         }
 
         self::log_change('sync_security_definition', sprintf('Upserted %d security definitions.', $updated));
+
+        return [
+            'updated' => $updated,
+            'total' => count($rows),
+        ];
     }
 
-    public static function collect_ohlc_data($latest_only = false) {
+    public static function collect_ohlc_data($latest_only = false, $offset = 0, $batch_limit = self::SYMBOL_BATCH_LIMIT) {
         global $wpdb;
 
         $timeframe = strtoupper((string) get_option('lcni_timeframe', '1D'));
         $days = max(1, (int) get_option('lcni_days_to_load', 365));
 
+        $batch_limit = max(1, (int) $batch_limit);
+        $offset = max(0, (int) $offset);
+
+        $total_symbols = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}lcni_security_definition");
+
         $symbols = $wpdb->get_col(
-            "SELECT symbol FROM {$wpdb->prefix}lcni_security_definition WHERE exchange IN ('HOSE', 'HNX') ORDER BY symbol ASC"
+            $wpdb->prepare(
+                "SELECT symbol FROM {$wpdb->prefix}lcni_security_definition WHERE exchange IN ('HOSE', 'HNX') ORDER BY symbol ASC LIMIT %d OFFSET %d",
+                $batch_limit,
+                $offset
+            )
         );
 
         if (empty($symbols)) {
-            $symbols = $wpdb->get_col("SELECT symbol FROM {$wpdb->prefix}lcni_security_definition ORDER BY symbol ASC LIMIT 100");
+            $symbols = $wpdb->get_col(
+                $wpdb->prepare(
+                    "SELECT symbol FROM {$wpdb->prefix}lcni_security_definition ORDER BY symbol ASC LIMIT %d OFFSET %d",
+                    $batch_limit,
+                    $offset
+                )
+            );
         }
 
         if (empty($symbols)) {
             self::log_change('sync_skipped', 'No symbols available in security definition table for OHLC sync.');
 
-            return;
+            return [
+                'inserted' => 0,
+                'updated' => 0,
+                'processed_symbols' => 0,
+                'total_symbols' => $total_symbols,
+                'next_offset' => $offset,
+                'has_more' => false,
+            ];
         }
 
         $table = $wpdb->prefix . 'lcni_ohlc';
         $inserted = 0;
         $updated = 0;
+        $processed_symbols = 0;
 
         foreach ($symbols as $symbol) {
             $symbol = strtoupper((string) $symbol);
@@ -173,6 +228,8 @@ class LCNI_DB {
                 self::log_change('sync_symbol_failed', sprintf('OHLC request failed for symbol=%s timeframe=%s latest_only=%s.', $symbol, $timeframe, $latest_only ? 'yes' : 'no'));
                 continue;
             }
+
+            $processed_symbols++;
 
             $rows = lcni_convert_candles($payload, $symbol, $timeframe);
             if ($latest_only && !empty($rows)) {
@@ -205,26 +262,51 @@ class LCNI_DB {
                     'value_traded' => (float) (($row['close'] ?? 0) * ($row['volume'] ?? 0)),
                 ];
 
-                $exists = $wpdb->get_var(
-                    $wpdb->prepare(
-                        "SELECT id FROM {$table} WHERE symbol = %s AND timeframe = %s AND event_time = %d LIMIT 1",
-                        $record['symbol'],
-                        $record['timeframe'],
-                        $record['event_time']
-                    )
+                $query = $wpdb->prepare(
+                    "INSERT INTO {$table}
+                    (symbol, timeframe, event_time, open_price, high_price, low_price, close_price, volume, value_traded)
+                    VALUES (%s, %s, %d, %f, %f, %f, %f, %d, %f)
+                    ON DUPLICATE KEY UPDATE
+                        open_price = VALUES(open_price),
+                        high_price = VALUES(high_price),
+                        low_price = VALUES(low_price),
+                        close_price = VALUES(close_price),
+                        volume = VALUES(volume),
+                        value_traded = VALUES(value_traded)",
+                    $record['symbol'],
+                    $record['timeframe'],
+                    $record['event_time'],
+                    $record['open_price'],
+                    $record['high_price'],
+                    $record['low_price'],
+                    $record['close_price'],
+                    $record['volume'],
+                    $record['value_traded']
                 );
 
-                if ($exists) {
-                    $wpdb->update($table, $record, ['id' => (int) $exists]);
-                    $updated++;
-                } else {
-                    $wpdb->insert($table, $record);
+                $result = $wpdb->query($query);
+
+                if ($result === 1) {
                     $inserted++;
+                } elseif ($result === 2 || $result === 0) {
+                    $updated++;
                 }
             }
         }
 
         self::log_change('sync_ohlc', sprintf('OHLC sync done. inserted=%d updated=%d latest_only=%s timeframe=%s days=%d.', $inserted, $updated, $latest_only ? 'yes' : 'no', $timeframe, $days));
+
+        $next_offset = $offset + count($symbols);
+
+        return [
+            'inserted' => $inserted,
+            'updated' => $updated,
+            'processed_symbols' => $processed_symbols,
+            'total_symbols' => $total_symbols,
+            'next_offset' => $next_offset,
+            'has_more' => $next_offset < $total_symbols,
+            'batch_limit' => $batch_limit,
+        ];
     }
 
     public static function get_latest_event_time($symbol, $timeframe) {

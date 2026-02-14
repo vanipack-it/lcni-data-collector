@@ -10,6 +10,7 @@ class LCNI_Settings {
         add_action('admin_menu', [$this, 'menu']);
         add_action('admin_init', [$this, 'register_settings']);
         add_action('admin_init', [$this, 'handle_admin_actions']);
+        add_action('wp_ajax_lcni_sync_batch', [$this, 'handle_ajax_sync_batch']);
     }
 
     public function menu() {
@@ -48,6 +49,12 @@ class LCNI_Settings {
             'type' => 'string',
             'sanitize_callback' => [$this, 'sanitize_test_symbols'],
             'default' => 'VNINDEX,VN30',
+        ]);
+
+        register_setting('lcni_settings_group', 'lcni_sync_offset', [
+            'type' => 'integer',
+            'sanitize_callback' => 'absint',
+            'default' => 0,
         ]);
     }
 
@@ -100,14 +107,45 @@ class LCNI_Settings {
         }
 
         if ($action === 'run_sync_now') {
-            LCNI_DB::collect_all_data(true);
-            LCNI_DB::log_change('manual_sync', 'Manual incremental sync triggered from admin page.');
+            $offset = (int) get_option('lcni_sync_offset', 0);
+            $summary = LCNI_DB::collect_all_data(true, $offset, LCNI_DB::SYMBOL_BATCH_LIMIT);
+            LCNI_DB::log_change('manual_sync', 'Manual incremental sync triggered from admin page.', $summary);
+
+            $notice_type = 'success';
+            $notice_message = 'Đã chạy đồng bộ dữ liệu thủ công.';
+
+            if (is_wp_error($summary['security'])) {
+                $notice_type = 'error';
+                $notice_message = 'Đồng bộ security definitions lỗi: ' . $summary['security']->get_error_message();
+            } else {
+                $ohlc = is_array($summary['ohlc']) ? $summary['ohlc'] : [];
+                if (!empty($ohlc['has_more'])) {
+                    update_option('lcni_sync_offset', (int) $ohlc['next_offset']);
+                    $notice_message = sprintf(
+                        'Đồng bộ theo batch thành công: xử lý %d/%d mã. Bấm Sync thêm để chạy batch tiếp theo.',
+                        (int) $ohlc['next_offset'],
+                        (int) $ohlc['total_symbols']
+                    );
+                } else {
+                    update_option('lcni_sync_offset', 0);
+                    $notice_message = sprintf(
+                        'Đã hoàn tất sync: inserted=%d, updated=%d, tổng mã=%d.',
+                        (int) ($ohlc['inserted'] ?? 0),
+                        (int) ($ohlc['updated'] ?? 0),
+                        (int) ($ohlc['total_symbols'] ?? 0)
+                    );
+                }
+            }
 
             set_transient(
                 'lcni_settings_notice',
                 [
-                    'type' => 'success',
-                    'message' => 'Đã chạy đồng bộ dữ liệu thủ công (chỉ lấy dữ liệu mới).',
+                    'type' => $notice_type,
+                    'message' => $notice_message,
+                    'debug' => [
+                        sprintf('Batch limit=%d', LCNI_DB::SYMBOL_BATCH_LIMIT),
+                        sprintf('Offset hiện tại=%d', (int) get_option('lcni_sync_offset', 0)),
+                    ],
                 ],
                 60
             );
@@ -198,6 +236,38 @@ class LCNI_Settings {
             ],
             120
         );
+    }
+
+
+    public function handle_ajax_sync_batch() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Unauthorized'], 403);
+        }
+
+        check_ajax_referer('lcni_sync_batch_nonce', 'nonce');
+
+        $offset = isset($_POST['offset']) ? absint(wp_unslash($_POST['offset'])) : 0;
+        $summary = LCNI_DB::collect_all_data(true, $offset, LCNI_DB::SYMBOL_BATCH_LIMIT);
+
+        if (is_wp_error($summary['security'])) {
+            wp_send_json_error([
+                'message' => $summary['security']->get_error_message(),
+                'offset' => $offset,
+            ], 500);
+        }
+
+        $ohlc = is_array($summary['ohlc']) ? $summary['ohlc'] : [];
+
+        wp_send_json_success([
+            'offset' => $offset,
+            'next_offset' => (int) ($ohlc['next_offset'] ?? $offset),
+            'has_more' => !empty($ohlc['has_more']),
+            'processed_symbols' => (int) ($ohlc['processed_symbols'] ?? 0),
+            'total_symbols' => (int) ($ohlc['total_symbols'] ?? 0),
+            'inserted' => (int) ($ohlc['inserted'] ?? 0),
+            'updated' => (int) ($ohlc['updated'] ?? 0),
+            'batch_limit' => (int) ($ohlc['batch_limit'] ?? LCNI_DB::SYMBOL_BATCH_LIMIT),
+        ]);
     }
 
     public function settings_page() {
