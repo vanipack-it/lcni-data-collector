@@ -83,6 +83,7 @@ class LCNI_DB {
 
     public static function collect_security_definitions() {
         $payload = LCNI_API::get_security_definitions();
+        $cached_symbols = self::count_cached_security_symbols();
 
         if (!is_array($payload)) {
             $error_message = LCNI_API::get_last_request_error();
@@ -90,6 +91,19 @@ class LCNI_DB {
 
             if ($error_message !== '') {
                 $log_message .= ' ' . $error_message;
+            }
+
+            if ($cached_symbols > 0) {
+                self::log_change(
+                    'sync_security_cached',
+                    $log_message . sprintf(' Using %d cached symbols.', $cached_symbols)
+                );
+
+                return [
+                    'updated' => 0,
+                    'cached_symbols' => $cached_symbols,
+                    'used_cache' => true,
+                ];
             }
 
             self::log_change('sync_failed', $log_message);
@@ -103,6 +117,19 @@ class LCNI_DB {
         $rows = self::extract_items($payload, ['data', 'items', 'secDefs', 'secdefs', 'securities', 'symbols']);
 
         if (empty($rows)) {
+            if ($cached_symbols > 0) {
+                self::log_change(
+                    'sync_security_cached',
+                    sprintf('No remote security definitions returned. Using %d cached symbols.', $cached_symbols)
+                );
+
+                return [
+                    'updated' => 0,
+                    'cached_symbols' => $cached_symbols,
+                    'used_cache' => true,
+                ];
+            }
+
             self::log_change('sync_skipped', 'No security definitions returned from DNSE API.');
 
             return new WP_Error('empty_payload', 'Security definitions payload is empty.');
@@ -166,6 +193,14 @@ class LCNI_DB {
             'updated' => $updated,
             'total' => count($rows),
         ];
+    }
+
+    private static function count_cached_security_symbols() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_security_definition';
+
+        return (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table}");
     }
 
     public static function collect_ohlc_data($latest_only = false, $offset = 0, $batch_limit = self::SYMBOL_BATCH_LIMIT) {

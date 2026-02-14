@@ -8,6 +8,10 @@ class LCNI_API {
 
     const BASE_URL = 'https://services.entrade.com.vn';
     const SECDEF_ENDPOINT = '/open-api/v2/market/secdef';
+    const SECDEF_FALLBACK_ENDPOINTS = [
+        '/open-api/v2/market/secdefs',
+        '/open-api/v2/market/securities',
+    ];
     const SECDEF_URL = self::BASE_URL . self::SECDEF_ENDPOINT;
 
     private static $last_request_error = '';
@@ -81,9 +85,23 @@ class LCNI_API {
         ];
 
         $attempt_errors = [];
+        $query_args = [
+            'symbol' => '',
+            'page' => 1,
+            'size' => 500,
+        ];
 
         foreach ($candidates as $url) {
             $payload = self::request_json($url, $headers, 'POST', $request_body);
+            if (is_array($payload)) {
+                return $payload;
+            }
+
+            if (self::$last_request_error !== '') {
+                $attempt_errors[] = self::$last_request_error;
+            }
+
+            $payload = self::request_json(add_query_arg($query_args, $url), $headers, 'GET');
             if (is_array($payload)) {
                 return $payload;
             }
@@ -235,6 +253,10 @@ class LCNI_API {
             self::normalize_secdef_url($configured_url),
             self::normalize_secdef_url(self::SECDEF_URL),
         ];
+
+        foreach (self::SECDEF_FALLBACK_ENDPOINTS as $endpoint) {
+            $candidates[] = self::normalize_secdef_url(self::BASE_URL . $endpoint);
+        }
 
         $candidates = array_values(
             array_filter(
