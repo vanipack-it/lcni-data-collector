@@ -9,8 +9,8 @@ class LCNI_SeedScheduler {
     const BATCH_REQUESTS_PER_RUN = 5;
     const RATE_LIMIT_MICROSECONDS = 300000;
 
-    public static function start_seed() {
-        $seeded = self::create_seed_tasks();
+    public static function start_seed($constraints = []) {
+        $seeded = self::create_seed_tasks($constraints);
 
         if (is_wp_error($seeded)) {
             LCNI_DB::log_change('seed_failed', 'Seed initialization failed: ' . $seeded->get_error_message());
@@ -25,9 +25,10 @@ class LCNI_SeedScheduler {
         return $seeded;
     }
 
-    public static function create_seed_tasks() {
+    public static function create_seed_tasks($constraints = []) {
         $symbols = LCNI_DB::get_all_symbols();
         $timeframes = self::get_seed_timeframes();
+        $seed_constraints = self::resolve_seed_constraints($constraints);
 
         if (empty($symbols)) {
             LCNI_DB::log_change('seed_skipped', 'Seed queue skipped: no symbols in database.');
@@ -41,9 +42,11 @@ class LCNI_SeedScheduler {
             return 0;
         }
 
+        self::persist_seed_constraints($seed_constraints);
+
         LCNI_SeedRepository::reset_tasks();
 
-        return LCNI_SeedRepository::create_seed_tasks($symbols, $timeframes);
+        return LCNI_SeedRepository::create_seed_tasks($symbols, $timeframes, (int) $seed_constraints['to_time']);
     }
 
     public static function run_batch() {
@@ -62,13 +65,26 @@ class LCNI_SeedScheduler {
             ];
         }
 
-        $to = !empty($task['last_to_time']) ? (int) $task['last_to_time'] : time();
+        $seed_constraints = self::get_seed_constraints();
+        $to = !empty($task['last_to_time']) ? (int) $task['last_to_time'] : (int) ($seed_constraints['to_time'] ?? time());
+        $min_from = self::resolve_min_from_for_task($task, $seed_constraints, $to);
         $requests = 0;
 
         while ($requests < self::BATCH_REQUESTS_PER_RUN) {
             $requests++;
 
-            $result = LCNI_HistoryFetcher::fetch($task['symbol'], $task['timeframe'], $to, LCNI_HistoryFetcher::DEFAULT_LIMIT);
+            if ($to <= $min_from) {
+                LCNI_SeedRepository::mark_done((int) $task['id']);
+                LCNI_DB::log_change('seed_task_done', sprintf('Task %d done for %s-%s at from_time boundary.', (int) $task['id'], $task['symbol'], $task['timeframe']));
+
+                return [
+                    'status' => 'done',
+                    'task_id' => (int) $task['id'],
+                    'requests' => max(1, $requests),
+                ];
+            }
+
+            $result = LCNI_HistoryFetcher::fetch($task['symbol'], $task['timeframe'], $to, LCNI_HistoryFetcher::DEFAULT_LIMIT, $min_from);
             if (is_wp_error($result)) {
                 LCNI_DB::log_change('seed_task_failed', sprintf('Task %d fetch failed for %s-%s: %s', (int) $task['id'], $task['symbol'], $task['timeframe'], $result->get_error_message()));
                 LCNI_SeedRepository::update_progress((int) $task['id'], $to);
@@ -94,8 +110,24 @@ class LCNI_SeedScheduler {
                 ];
             }
 
-            LCNI_DB::upsert_ohlc_rows($rows);
+            $rows = self::filter_rows_by_from_time($rows, $min_from);
+            if (!empty($rows)) {
+                LCNI_DB::upsert_ohlc_rows($rows);
+            }
+
             $to = max(1, $oldest_event_time - 1);
+
+            if ($to <= $min_from) {
+                LCNI_SeedRepository::mark_done((int) $task['id']);
+                LCNI_DB::log_change('seed_task_done', sprintf('Task %d done for %s-%s (reached configured from_time).', (int) $task['id'], $task['symbol'], $task['timeframe']));
+
+                return [
+                    'status' => 'done',
+                    'task_id' => (int) $task['id'],
+                    'requests' => $requests,
+                ];
+            }
+
             LCNI_SeedRepository::update_progress((int) $task['id'], $to);
 
             usleep(self::RATE_LIMIT_MICROSECONDS);
@@ -129,5 +161,82 @@ class LCNI_SeedScheduler {
         $parts = array_values(array_unique(array_filter(array_map('trim', (array) $parts))));
 
         return $parts;
+    }
+
+    public static function get_seed_constraints() {
+        return [
+            'mode' => (string) get_option('lcni_seed_range_mode', 'full'),
+            'from_time' => max(1, (int) get_option('lcni_seed_from_time', 1)),
+            'to_time' => max(1, (int) get_option('lcni_seed_to_time', time())),
+            'sessions' => max(1, (int) get_option('lcni_seed_session_count', 300)),
+        ];
+    }
+
+    private static function resolve_seed_constraints($constraints = []) {
+        $mode = isset($constraints['mode']) ? sanitize_key((string) $constraints['mode']) : (string) get_option('lcni_seed_range_mode', 'full');
+        if (!in_array($mode, ['full', 'date_range', 'sessions'], true)) {
+            $mode = 'full';
+        }
+
+        $to_time = isset($constraints['to_time']) ? (int) $constraints['to_time'] : time();
+        $to_time = max(1, $to_time);
+        $from_time = 1;
+        $sessions = isset($constraints['sessions']) ? max(1, (int) $constraints['sessions']) : max(1, (int) get_option('lcni_seed_session_count', 300));
+
+        if ($mode === 'date_range') {
+            $from_time = isset($constraints['from_time']) ? max(1, (int) $constraints['from_time']) : 1;
+            if ($from_time > $to_time) {
+                $swap = $from_time;
+                $from_time = $to_time;
+                $to_time = $swap;
+            }
+        } elseif ($mode === 'sessions') {
+            $seed_timeframes = self::get_seed_timeframes();
+            $reference_tf = !empty($seed_timeframes[0]) ? $seed_timeframes[0] : '1D';
+            $interval = LCNI_HistoryFetcher::timeframe_to_seconds($reference_tf);
+            $from_time = max(1, $to_time - ($interval * $sessions));
+        }
+
+        return [
+            'mode' => $mode,
+            'from_time' => $from_time,
+            'to_time' => $to_time,
+            'sessions' => $sessions,
+        ];
+    }
+
+    private static function persist_seed_constraints($constraints) {
+        update_option('lcni_seed_range_mode', (string) ($constraints['mode'] ?? 'full'));
+        update_option('lcni_seed_from_time', (int) ($constraints['from_time'] ?? 1));
+        update_option('lcni_seed_to_time', (int) ($constraints['to_time'] ?? time()));
+        update_option('lcni_seed_session_count', max(1, (int) ($constraints['sessions'] ?? 300)));
+    }
+
+    private static function resolve_min_from_for_task($task, $seed_constraints, $to_time) {
+        $mode = (string) ($seed_constraints['mode'] ?? 'full');
+        if ($mode === 'sessions') {
+            $sessions = max(1, (int) ($seed_constraints['sessions'] ?? 300));
+            $interval = LCNI_HistoryFetcher::timeframe_to_seconds((string) ($task['timeframe'] ?? '1D'));
+
+            return max(1, (int) $to_time - ($interval * $sessions));
+        }
+
+        return max(1, (int) ($seed_constraints['from_time'] ?? 1));
+    }
+
+    private static function filter_rows_by_from_time($rows, $from_time) {
+        if (empty($rows) || $from_time <= 1) {
+            return $rows;
+        }
+
+        $filtered = [];
+        foreach ($rows as $row) {
+            $event_time = isset($row['event_time']) ? (int) $row['event_time'] : (int) strtotime((string) ($row['candle_time'] ?? ''));
+            if ($event_time >= $from_time) {
+                $filtered[] = $row;
+            }
+        }
+
+        return $filtered;
     }
 }

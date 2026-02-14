@@ -8,11 +8,12 @@ class LCNI_HistoryFetcher {
 
     const DEFAULT_LIMIT = 5000;
 
-    public static function fetch($symbol, $timeframe, $to, $limit = self::DEFAULT_LIMIT) {
+    public static function fetch($symbol, $timeframe, $to, $limit = self::DEFAULT_LIMIT, $min_from = 1) {
         $limit = max(1, (int) $limit);
         $to = max(1, (int) $to);
+        $min_from = max(1, (int) $min_from);
         $interval = self::timeframe_to_seconds($timeframe);
-        $from = max(1, $to - ($interval * $limit));
+        $from = max($min_from, $to - ($interval * $limit));
 
         $payload = LCNI_API::get_candles_by_range($symbol, $timeframe, $from, $to);
         if (!is_array($payload)) {
@@ -48,7 +49,7 @@ class LCNI_HistoryFetcher {
         ];
     }
 
-    private static function timeframe_to_seconds($timeframe) {
+    public static function timeframe_to_seconds($timeframe) {
         $value = strtoupper(trim((string) $timeframe));
 
         if (preg_match('/^(\d+)M$/', $value, $matches)) {

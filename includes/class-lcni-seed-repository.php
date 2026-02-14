@@ -19,7 +19,7 @@ class LCNI_SeedRepository {
         $wpdb->query("TRUNCATE TABLE {$table}");
     }
 
-    public static function create_seed_tasks($symbols, $timeframes) {
+    public static function create_seed_tasks($symbols, $timeframes, $initial_to_time = null) {
         global $wpdb;
 
         $table = self::get_table_name();
@@ -37,7 +37,7 @@ class LCNI_SeedRepository {
                             updated_at = NOW()",
                         strtoupper((string) $symbol),
                         strtoupper((string) $timeframe),
-                        time()
+                        $initial_to_time === null ? time() : max(1, (int) $initial_to_time)
                     )
                 );
 
@@ -134,7 +134,7 @@ class LCNI_SeedRepository {
         $table = self::get_table_name();
 
         return $wpdb->get_results(
-            $wpdb->prepare("SELECT * FROM {$table} ORDER BY FIELD(status, 'running', 'pending', 'done'), updated_at DESC, id DESC LIMIT %d", max(1, (int) $limit)),
+            $wpdb->prepare("SELECT * FROM {$table} ORDER BY FIELD(status, 'running', 'pending', 'done'), CASE WHEN status = 'pending' THEN updated_at END ASC, CASE WHEN status = 'running' THEN updated_at END ASC, CASE WHEN status = 'done' THEN updated_at END DESC, id ASC LIMIT %d", max(1, (int) $limit)),
             ARRAY_A
         );
     }

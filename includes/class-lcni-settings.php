@@ -23,6 +23,10 @@ class LCNI_Settings {
         register_setting('lcni_settings_group', 'lcni_days_to_load', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_days_to_load'], 'default' => 365]);
         register_setting('lcni_settings_group', 'lcni_test_symbols', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_test_symbols'], 'default' => 'VNINDEX,VN30']);
         register_setting('lcni_settings_group', 'lcni_seed_timeframes', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_seed_timeframes'], 'default' => '1D']);
+        register_setting('lcni_settings_group', 'lcni_seed_range_mode', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_seed_range_mode'], 'default' => 'full']);
+        register_setting('lcni_settings_group', 'lcni_seed_from_date', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_seed_date'], 'default' => '']);
+        register_setting('lcni_settings_group', 'lcni_seed_to_date', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_seed_date'], 'default' => '']);
+        register_setting('lcni_settings_group', 'lcni_seed_session_count', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_seed_session_count'], 'default' => 300]);
         register_setting('lcni_settings_group', 'lcni_api_key', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_api_credential'], 'default' => '']);
         register_setting('lcni_settings_group', 'lcni_api_secret', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_api_credential'], 'default' => '']);
         register_setting('lcni_settings_group', 'lcni_access_token', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_api_credential'], 'default' => '']);
@@ -53,6 +57,22 @@ class LCNI_Settings {
         $timeframes = array_filter(array_map('trim', (array) $timeframes));
 
         return implode(',', array_unique($timeframes));
+    }
+
+    public function sanitize_seed_range_mode($value) {
+        $mode = sanitize_key((string) $value);
+
+        return in_array($mode, ['full', 'date_range', 'sessions'], true) ? $mode : 'full';
+    }
+
+    public function sanitize_seed_date($value) {
+        $value = trim((string) $value);
+
+        return preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) ? $value : '';
+    }
+
+    public function sanitize_seed_session_count($value) {
+        return max(1, (int) $value);
     }
 
     public function sanitize_api_credential($value) {
@@ -102,7 +122,24 @@ class LCNI_Settings {
                 }
             }
         } elseif ($action === 'start_seed') {
-            $created = LCNI_SeedScheduler::start_seed();
+            $seed_mode = isset($_POST['lcni_seed_mode']) ? $this->sanitize_seed_range_mode(wp_unslash($_POST['lcni_seed_mode'])) : 'full';
+            $seed_from_date = isset($_POST['lcni_seed_from_date']) ? $this->sanitize_seed_date(wp_unslash($_POST['lcni_seed_from_date'])) : '';
+            $seed_to_date = isset($_POST['lcni_seed_to_date']) ? $this->sanitize_seed_date(wp_unslash($_POST['lcni_seed_to_date'])) : '';
+            $seed_sessions = isset($_POST['lcni_seed_session_count']) ? $this->sanitize_seed_session_count(wp_unslash($_POST['lcni_seed_session_count'])) : (int) get_option('lcni_seed_session_count', 300);
+
+            update_option('lcni_seed_range_mode', $seed_mode);
+            update_option('lcni_seed_from_date', $seed_from_date);
+            update_option('lcni_seed_to_date', $seed_to_date);
+            update_option('lcni_seed_session_count', $seed_sessions);
+
+            $constraints = [
+                'mode' => $seed_mode,
+                'from_time' => $this->seed_date_to_timestamp($seed_from_date, false),
+                'to_time' => $this->seed_date_to_timestamp($seed_to_date, true),
+                'sessions' => $seed_sessions,
+            ];
+
+            $created = LCNI_SeedScheduler::start_seed($constraints);
 
             if (is_wp_error($created)) {
                 $this->set_notice('error', $created->get_error_message());
@@ -173,6 +210,18 @@ class LCNI_Settings {
         $this->set_notice($success_count === count($symbols) ? 'success' : 'error', sprintf('Test chart-api nhiều symbol: %d/%d thành công.', $success_count, count($symbols)), $debug_logs);
     }
 
+    private function seed_date_to_timestamp($date, $end_of_day = false) {
+        $date = trim((string) $date);
+        if ($date === '') {
+            return $end_of_day ? time() : 1;
+        }
+
+        $time_suffix = $end_of_day ? ' 23:59:59' : ' 00:00:00';
+        $timestamp = strtotime($date . $time_suffix);
+
+        return $timestamp === false ? ($end_of_day ? time() : 1) : (int) $timestamp;
+    }
+
     private function format_task_progress($task) {
         $status = isset($task['status']) ? (string) $task['status'] : 'pending';
 
@@ -189,6 +238,7 @@ class LCNI_Settings {
         }
 
         $rows = '';
+        $next_pending_marked = false;
 
         foreach ($tasks as $task) {
             $status = isset($task['status']) ? (string) $task['status'] : 'pending';
@@ -204,6 +254,12 @@ class LCNI_Settings {
                 $bar_class = 'progress-done';
             }
 
+            $task_label = ($task['symbol'] ?? '') . ' ' . ($task['timeframe'] ?? '');
+            if ($status === 'pending' && !$next_pending_marked) {
+                $task_label .= ' (NEXT)';
+                $next_pending_marked = true;
+            }
+
             $rows .= sprintf(
                 '<tr>' .
                     '<td>%s</td>' .
@@ -211,7 +267,7 @@ class LCNI_Settings {
                     '<td>%s</td>' .
                     '<td><div class="lcni-progress-track"><div class="lcni-progress-fill %s" style="width:%d%%;"></div></div><span class="lcni-progress-text">%d%%</span></td>' .
                 '</tr>',
-                esc_html(($task['symbol'] ?? '') . ' ' . ($task['timeframe'] ?? '')),
+                esc_html($task_label),
                 esc_attr($status_class),
                 esc_html(strtoupper($status)),
                 esc_html((string) ($task['last_to_time'] ?? '')),
@@ -290,7 +346,21 @@ class LCNI_Settings {
             </form>
 
             <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_admin_action" value="sync_securities"><?php submit_button('Sync Security Definition', 'secondary', 'submit', false); ?></form>
-            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_admin_action" value="start_seed"><?php submit_button('Khởi tạo SEED', 'secondary', 'submit', false); ?></form>
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;padding:8px 10px;background:#fff;border:1px solid #dcdcde;border-radius:6px;">
+                <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                <input type="hidden" name="lcni_admin_action" value="start_seed">
+                <label style="margin-right:8px;"><strong>Khởi tạo SEED:</strong></label>
+                <select name="lcni_seed_mode" style="margin-right:6px;">
+                    <?php $seed_mode = get_option('lcni_seed_range_mode', 'full'); ?>
+                    <option value="full" <?php selected($seed_mode, 'full'); ?>>Toàn bộ</option>
+                    <option value="date_range" <?php selected($seed_mode, 'date_range'); ?>>Theo ngày</option>
+                    <option value="sessions" <?php selected($seed_mode, 'sessions'); ?>>Theo số phiên</option>
+                </select>
+                <input type="date" name="lcni_seed_from_date" value="<?php echo esc_attr(get_option('lcni_seed_from_date', '')); ?>" style="margin-right:4px;">
+                <input type="date" name="lcni_seed_to_date" value="<?php echo esc_attr(get_option('lcni_seed_to_date', '')); ?>" style="margin-right:4px;">
+                <input type="number" min="1" name="lcni_seed_session_count" value="<?php echo esc_attr((string) get_option('lcni_seed_session_count', 300)); ?>" style="width:92px;margin-right:6px;" placeholder="Số phiên">
+                <?php submit_button('Khởi tạo SEED', 'secondary', 'submit', false); ?>
+            </form>
             <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_admin_action" value="run_seed_batch"><?php submit_button('Chạy batch tiếp theo', 'secondary', 'submit', false); ?></form>
             <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_admin_action" value="pause_seed"><?php submit_button('Tạm dừng', 'secondary', 'submit', false); ?></form>
             <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_admin_action" value="resume_seed"><?php submit_button('Resume', 'secondary', 'submit', false); ?></form>
