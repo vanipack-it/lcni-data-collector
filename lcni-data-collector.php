@@ -18,10 +18,15 @@ require_once LCNI_PATH . 'includes/class-lcni-api.php';
 
 function lcni_activate_plugin() {
     LCNI_DB::create_tables();
+    lcni_ensure_cron_scheduled();
+}
 
-    if (!wp_next_scheduled(LCNI_CRON_HOOK)) {
-        wp_schedule_event(time() + 300, 'hourly', LCNI_CRON_HOOK);
+function lcni_ensure_cron_scheduled() {
+    if (wp_next_scheduled(LCNI_CRON_HOOK)) {
+        return;
     }
+
+    wp_schedule_event(time() + 300, 'hourly', LCNI_CRON_HOOK);
 }
 
 function lcni_deactivate_plugin() {
@@ -33,6 +38,7 @@ function lcni_deactivate_plugin() {
 }
 
 add_action(LCNI_CRON_HOOK, ['LCNI_DB', 'collect_all_data']);
+add_action('init', 'lcni_ensure_cron_scheduled');
 
 register_activation_hook(__FILE__, 'lcni_activate_plugin');
 register_deactivation_hook(__FILE__, 'lcni_deactivate_plugin');
