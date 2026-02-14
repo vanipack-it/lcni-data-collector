@@ -12,6 +12,12 @@ class LCNI_SeedScheduler {
     public static function start_seed() {
         $seeded = self::create_seed_tasks();
 
+        if (is_wp_error($seeded)) {
+            LCNI_DB::log_change('seed_failed', 'Seed initialization failed: ' . $seeded->get_error_message());
+
+            return $seeded;
+        }
+
         update_option('lcni_seed_paused', 'no');
 
         LCNI_DB::log_change('seed_started', sprintf('Seed initialized with %d tasks.', $seeded));
@@ -20,18 +26,16 @@ class LCNI_SeedScheduler {
     }
 
     public static function create_seed_tasks() {
-        $security_summary = LCNI_DB::collect_security_definitions();
-
-        if (is_wp_error($security_summary)) {
-            LCNI_DB::log_change('seed_failed', 'Cannot create seed tasks: security definitions unavailable.');
-
-            return 0;
-        }
-
         $symbols = LCNI_DB::get_all_symbols();
         $timeframes = self::get_seed_timeframes();
 
-        if (empty($symbols) || empty($timeframes)) {
+        if (empty($symbols)) {
+            LCNI_DB::log_change('seed_skipped', 'Seed queue skipped: no symbols in database.');
+
+            return new WP_Error('no_symbols', 'Không có symbol trong database. Vui lòng sync securities trước.');
+        }
+
+        if (empty($timeframes)) {
             LCNI_DB::log_change('seed_skipped', 'No symbols/timeframes available to create seed tasks.');
 
             return 0;

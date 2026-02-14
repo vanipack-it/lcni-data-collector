@@ -82,9 +82,31 @@ class LCNI_Settings {
             $this->run_api_connection_test();
         } elseif ($action === 'test_api_multi_symbol') {
             $this->run_multi_symbol_test();
+        } elseif ($action === 'sync_securities') {
+            $security_summary = LCNI_DB::collect_security_definitions();
+
+            if (is_wp_error($security_summary)) {
+                $this->set_notice('error', 'Sync securities thất bại: ' . $security_summary->get_error_message());
+            } else {
+                $updated = isset($security_summary['updated']) ? (int) $security_summary['updated'] : 0;
+                $total = isset($security_summary['total']) ? (int) $security_summary['total'] : 0;
+                $cached_symbols = isset($security_summary['cached_symbols']) ? (int) $security_summary['cached_symbols'] : 0;
+                $message = sprintf('Đã sync securities: updated %d / total %d.', $updated, $total);
+
+                if (!empty($security_summary['used_cache'])) {
+                    $message = sprintf('Không nhận được dữ liệu mới, đang dùng %d symbol đã có trong database.', $cached_symbols);
+                }
+
+                $this->set_notice('success', $message);
+            }
         } elseif ($action === 'start_seed') {
             $created = LCNI_SeedScheduler::start_seed();
-            $this->set_notice('success', sprintf('Đã khởi tạo queue seed với %d task.', (int) $created));
+
+            if (is_wp_error($created)) {
+                $this->set_notice('error', $created->get_error_message());
+            } else {
+                $this->set_notice('success', sprintf('Đã khởi tạo queue seed với %d task.', (int) $created));
+            }
         } elseif ($action === 'run_seed_batch') {
             $summary = LCNI_SeedScheduler::run_batch();
             $this->set_notice('success', 'Đã chạy batch tiếp theo: ' . wp_json_encode($summary));
@@ -185,6 +207,7 @@ class LCNI_Settings {
             </form>
 
             <h2>Seed Manager</h2>
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_admin_action" value="sync_securities"><?php submit_button('Sync danh sách mã', 'secondary', 'submit', false); ?></form>
             <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_admin_action" value="start_seed"><?php submit_button('Khởi tạo SEED', 'secondary', 'submit', false); ?></form>
             <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_admin_action" value="run_seed_batch"><?php submit_button('Chạy batch tiếp theo', 'secondary', 'submit', false); ?></form>
             <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_admin_action" value="pause_seed"><?php submit_button('Tạm dừng', 'secondary', 'submit', false); ?></form>
