@@ -14,7 +14,6 @@ class LCNI_Settings {
 
     public function menu() {
         add_menu_page('LCNI Settings', 'LCNI Data', 'manage_options', 'lcni-settings', [$this, 'settings_page']);
-
         add_submenu_page('lcni-settings', 'Saved Data', 'Saved Data', 'manage_options', 'lcni-data-viewer', [$this, 'data_viewer_page']);
     }
 
@@ -88,16 +87,18 @@ class LCNI_Settings {
             if (is_wp_error($security_summary)) {
                 $this->set_notice('error', 'Sync securities thất bại: ' . $security_summary->get_error_message());
             } else {
-                $updated = isset($security_summary['updated']) ? (int) $security_summary['updated'] : 0;
-                $total = isset($security_summary['total']) ? (int) $security_summary['total'] : 0;
-                $cached_symbols = isset($security_summary['cached_symbols']) ? (int) $security_summary['cached_symbols'] : 0;
-                $message = sprintf('Đã sync securities: updated %d / total %d.', $updated, $total);
-
-                if (!empty($security_summary['used_cache'])) {
-                    $message = sprintf('Không nhận được dữ liệu mới, đang dùng %d symbol đã có trong database.', $cached_symbols);
+                $this->set_notice('success', sprintf('Đã sync Security Definition vào lcni_symbols: updated %d / total %d.', (int) ($security_summary['updated'] ?? 0), (int) ($security_summary['total'] ?? 0)));
+            }
+        } elseif ($action === 'import_symbols_csv') {
+            if (empty($_FILES['lcni_symbols_csv']['tmp_name'])) {
+                $this->set_notice('error', 'Vui lòng chọn file CSV để import symbol.');
+            } else {
+                $import_summary = LCNI_DB::import_symbols_from_csv((string) $_FILES['lcni_symbols_csv']['tmp_name']);
+                if (is_wp_error($import_summary)) {
+                    $this->set_notice('error', 'Import CSV thất bại: ' . $import_summary->get_error_message());
+                } else {
+                    $this->set_notice('success', sprintf('Đã import CSV vào lcni_symbols: updated %d / total %d.', (int) ($import_summary['updated'] ?? 0), (int) ($import_summary['total'] ?? 0)));
                 }
-
-                $this->set_notice('success', $message);
             }
         } elseif ($action === 'start_seed') {
             $created = LCNI_SeedScheduler::start_seed();
@@ -168,46 +169,52 @@ class LCNI_Settings {
         }
 
         LCNI_DB::log_change('multi_symbol_test', sprintf('Tested %d symbols, success=%d.', count($symbols), $success_count), $debug_logs);
-        $this->set_notice($success_count === count($symbols) ? 'success' : 'error', sprintf('Test chart-api nhiều symbol: thành công %d/%d.', $success_count, count($symbols)), $debug_logs);
+        $this->set_notice($success_count === count($symbols) ? 'success' : 'error', sprintf('Test chart-api nhiều symbol: %d/%d thành công.', $success_count, count($symbols)), $debug_logs);
     }
 
     public function settings_page() {
         global $wpdb;
 
-        $logs = $wpdb->get_results("SELECT action, message, created_at FROM {$wpdb->prefix}lcni_change_logs ORDER BY created_at DESC LIMIT 10", ARRAY_A);
+        $stats = LCNI_SeedRepository::get_dashboard_stats();
+        $tasks = LCNI_SeedRepository::get_recent_tasks(30);
+        $logs = $wpdb->get_results("SELECT action, message, created_at FROM {$wpdb->prefix}lcni_change_logs ORDER BY id DESC LIMIT 50", ARRAY_A);
         $notice = get_transient('lcni_settings_notice');
+
         if ($notice) {
             delete_transient('lcni_settings_notice');
         }
-
-        $stats = LCNI_SeedRepository::get_dashboard_stats();
-        $tasks = LCNI_SeedRepository::get_recent_tasks(20);
         ?>
         <div class="wrap">
-            <h1>LCNI Market Data Settings</h1>
-            <?php if ($notice) : ?>
-                <div class="notice notice-<?php echo esc_attr($notice['type'] === 'error' ? 'error' : 'success'); ?> is-dismissible">
-                    <p><?php echo esc_html($notice['message']); ?></p>
+            <h1>LCNI Data Collector</h1>
+
+            <?php if (!empty($notice)) : ?>
+                <div class="notice notice-<?php echo esc_attr($notice['type'] === 'success' ? 'success' : 'error'); ?> is-dismissible"><p><?php echo esc_html($notice['message']); ?></p>
+                    <?php if (!empty($notice['debug']) && is_array($notice['debug'])) : ?><pre style="max-height:260px;overflow:auto;background:#fff;padding:10px;border:1px solid #ccd0d4;"><?php echo esc_html(implode("\n", $notice['debug'])); ?></pre><?php endif; ?>
                 </div>
             <?php endif; ?>
 
             <form method="post" action="options.php">
                 <?php settings_fields('lcni_settings_group'); ?>
-                <table class="form-table">
-                    <tr><th>DNSE Access Token</th><td><input type="password" name="lcni_access_token" value="<?php echo esc_attr(get_option('lcni_access_token', '')); ?>" size="50"></td></tr>
-                    <tr><th>DNSE API Key</th><td><input type="text" name="lcni_api_key" value="<?php echo esc_attr(get_option('lcni_api_key', '')); ?>" size="50"></td></tr>
-                    <tr><th>DNSE API Secret</th><td><input type="password" name="lcni_api_secret" value="<?php echo esc_attr(get_option('lcni_api_secret', '')); ?>" size="50"></td></tr>
-                    <tr><th>Security Definition URL</th><td><input type="url" name="lcni_secdef_url" value="<?php echo esc_attr(get_option('lcni_secdef_url', LCNI_API::SECDEF_URL)); ?>" size="80"></td></tr>
-                    <tr><th>Timeframe test</th><td><input type="text" name="lcni_timeframe" value="<?php echo esc_attr(get_option('lcni_timeframe', '1D')); ?>" size="20"></td></tr>
-                    <tr><th>Số ngày load test</th><td><input type="number" min="1" max="5000" name="lcni_days_to_load" value="<?php echo esc_attr((int) get_option('lcni_days_to_load', 365)); ?>" size="10"></td></tr>
-                    <tr><th>Test symbols</th><td><input type="text" name="lcni_test_symbols" value="<?php echo esc_attr(get_option('lcni_test_symbols', 'VNINDEX,VN30')); ?>" size="40"></td></tr>
+                <table class="form-table" role="presentation">
+                    <tr><th>Timeframe</th><td><input type="text" name="lcni_timeframe" value="<?php echo esc_attr(get_option('lcni_timeframe', '1D')); ?>" size="20"></td></tr>
+                    <tr><th>Days to load</th><td><input type="number" name="lcni_days_to_load" value="<?php echo esc_attr((string) get_option('lcni_days_to_load', 365)); ?>" min="1"></td></tr>
+                    <tr><th>Test symbols</th><td><input type="text" name="lcni_test_symbols" value="<?php echo esc_attr(get_option('lcni_test_symbols', 'VNINDEX,VN30')); ?>" size="60"></td></tr>
                     <tr><th>Seed timeframes</th><td><input type="text" name="lcni_seed_timeframes" value="<?php echo esc_attr(get_option('lcni_seed_timeframes', '1D')); ?>" size="40"><p class="description">Ví dụ: 1D,1H,15M</p></td></tr>
                 </table>
                 <?php submit_button(); ?>
             </form>
 
             <h2>Seed Manager</h2>
-            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_admin_action" value="sync_securities"><?php submit_button('Sync danh sách mã', 'secondary', 'submit', false); ?></form>
+            <form method="post" enctype="multipart/form-data" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="margin-bottom:12px;">
+                <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                <input type="hidden" name="lcni_admin_action" value="import_symbols_csv">
+                <label for="lcni_symbols_csv"><strong>Import CSV symbol:</strong></label>
+                <input type="file" id="lcni_symbols_csv" name="lcni_symbols_csv" accept=".csv" required>
+                <?php submit_button('Import CSV Symbol', 'secondary', 'submit', false); ?>
+                <p class="description">Hỗ trợ cột <code>symbol</code> hoặc chỉ 1 cột mã chứng khoán; có thể kèm thêm cột Security Definition.</p>
+            </form>
+
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_admin_action" value="sync_securities"><?php submit_button('Sync Security Definition', 'secondary', 'submit', false); ?></form>
             <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_admin_action" value="start_seed"><?php submit_button('Khởi tạo SEED', 'secondary', 'submit', false); ?></form>
             <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_admin_action" value="run_seed_batch"><?php submit_button('Chạy batch tiếp theo', 'secondary', 'submit', false); ?></form>
             <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_admin_action" value="pause_seed"><?php submit_button('Tạm dừng', 'secondary', 'submit', false); ?></form>
@@ -233,9 +240,7 @@ class LCNI_Settings {
                         <td><?php echo esc_html($task['status']); ?></td>
                         <td><?php echo esc_html((string) $task['last_to_time']); ?></td>
                         <td>
-                            <div style="background:#eee;height:16px;width:220px;border-radius:3px;overflow:hidden;display:inline-block;vertical-align:middle;">
-                                <div style="background:#2271b1;height:100%;width:<?php echo esc_attr((string) $progress); ?>%;"></div>
-                            </div>
+                            <div style="background:#eee;height:16px;width:220px;border-radius:3px;overflow:hidden;display:inline-block;vertical-align:middle;"><div style="background:#2271b1;height:100%;width:<?php echo esc_attr((string) $progress); ?>%;"></div></div>
                             <span><?php echo esc_html((string) $progress); ?>%</span>
                         </td>
                     </tr>
@@ -265,18 +270,18 @@ class LCNI_Settings {
         global $wpdb;
 
         $ohlc_rows = $wpdb->get_results("SELECT symbol, timeframe, event_time, open_price, high_price, low_price, close_price, volume, value_traded, created_at FROM {$wpdb->prefix}lcni_ohlc ORDER BY event_time DESC LIMIT 50", ARRAY_A);
-        $security_rows = $wpdb->get_results("SELECT symbol, exchange, security_type, market, reference_price, ceiling_price, floor_price, lot_size, listed_volume, updated_at FROM {$wpdb->prefix}lcni_security_definition ORDER BY updated_at DESC LIMIT 50", ARRAY_A);
+        $symbol_rows = $wpdb->get_results("SELECT symbol, market_id, board_id, isin, basic_price, ceiling_price, floor_price, security_status, source, updated_at FROM {$wpdb->prefix}lcni_symbols ORDER BY updated_at DESC LIMIT 50", ARRAY_A);
         ?>
         <div class="wrap">
             <h1>Saved Data</h1>
-            <p>Trang này hiển thị dữ liệu đã lưu từ API (50 bản ghi gần nhất mỗi bảng).</p>
+            <p>Trang này hiển thị dữ liệu đã lưu từ API/CSV (50 bản ghi gần nhất mỗi bảng).</p>
 
-            <h2>Security Definitions</h2>
-            <?php if (!empty($security_rows)) : ?>
-                <table class="widefat striped" style="max-width: 1400px;"><thead><tr><th>Symbol</th><th>Exchange</th><th>Security Type</th><th>Market</th><th>Reference</th><th>Ceiling</th><th>Floor</th><th>Lot Size</th><th>Listed Volume</th><th>Updated At</th></tr></thead><tbody>
-                    <?php foreach ($security_rows as $row) : ?><tr><td><?php echo esc_html($row['symbol']); ?></td><td><?php echo esc_html($row['exchange']); ?></td><td><?php echo esc_html($row['security_type']); ?></td><td><?php echo esc_html($row['market']); ?></td><td><?php echo esc_html($row['reference_price']); ?></td><td><?php echo esc_html($row['ceiling_price']); ?></td><td><?php echo esc_html($row['floor_price']); ?></td><td><?php echo esc_html($row['lot_size']); ?></td><td><?php echo esc_html($row['listed_volume']); ?></td><td><?php echo esc_html($row['updated_at']); ?></td></tr><?php endforeach; ?>
+            <h2>LCNI Symbols</h2>
+            <?php if (!empty($symbol_rows)) : ?>
+                <table class="widefat striped" style="max-width: 1400px;"><thead><tr><th>Symbol</th><th>Market</th><th>Board</th><th>ISIN</th><th>Basic</th><th>Ceiling</th><th>Floor</th><th>Status</th><th>Source</th><th>Updated At</th></tr></thead><tbody>
+                    <?php foreach ($symbol_rows as $row) : ?><tr><td><?php echo esc_html($row['symbol']); ?></td><td><?php echo esc_html($row['market_id']); ?></td><td><?php echo esc_html($row['board_id']); ?></td><td><?php echo esc_html($row['isin']); ?></td><td><?php echo esc_html($row['basic_price']); ?></td><td><?php echo esc_html($row['ceiling_price']); ?></td><td><?php echo esc_html($row['floor_price']); ?></td><td><?php echo esc_html($row['security_status']); ?></td><td><?php echo esc_html($row['source']); ?></td><td><?php echo esc_html($row['updated_at']); ?></td></tr><?php endforeach; ?>
                 </tbody></table>
-            <?php else : ?><p>Chưa có dữ liệu security definition.</p><?php endif; ?>
+            <?php else : ?><p>Chưa có dữ liệu lcni_symbols.</p><?php endif; ?>
 
             <h2 style="margin-top: 30px;">OHLC Data</h2>
             <?php if (!empty($ohlc_rows)) : ?>
