@@ -69,6 +69,177 @@ class LCNI_DB {
         self::log_change('activation', 'Created/updated OHLC, security definition and change log tables.');
     }
 
+    public static function collect_all_data() {
+        self::collect_security_definitions();
+        self::collect_ohlc_data();
+    }
+
+    public static function collect_security_definitions() {
+        $payload = LCNI_API::get_security_definitions();
+
+        if (!is_array($payload)) {
+            self::log_change('sync_failed', 'Unable to collect security definitions: invalid payload.');
+
+            return;
+        }
+
+        $rows = self::extract_items($payload);
+
+        if (empty($rows)) {
+            self::log_change('sync_skipped', 'No security definitions returned from DNSE API.');
+
+            return;
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'lcni_security_definition';
+
+        $updated = 0;
+        foreach ($rows as $row) {
+            $symbol = strtoupper((string) self::pick($row, ['symbol', 's']));
+            if ($symbol === '') {
+                continue;
+            }
+
+            $record = [
+                'symbol' => $symbol,
+                'exchange' => self::nullable_text(self::pick($row, ['exchange', 'ex'])),
+                'security_type' => self::nullable_text(self::pick($row, ['securityType', 'security_type', 'type'])),
+                'market' => self::nullable_text(self::pick($row, ['market', 'mkt'])),
+                'reference_price' => self::nullable_float(self::pick($row, ['referencePrice', 'reference_price', 'refPrice'])),
+                'ceiling_price' => self::nullable_float(self::pick($row, ['ceilingPrice', 'ceiling_price', 'ceilPrice'])),
+                'floor_price' => self::nullable_float(self::pick($row, ['floorPrice', 'floor_price'])),
+                'lot_size' => self::nullable_int(self::pick($row, ['lotSize', 'lot_size'])),
+                'listed_volume' => self::nullable_int(self::pick($row, ['listedVolume', 'listed_volume'])),
+            ];
+
+            $exists_id = $wpdb->get_var($wpdb->prepare("SELECT id FROM {$table} WHERE symbol = %s LIMIT 1", $symbol));
+            if ($exists_id) {
+                $wpdb->update($table, $record, ['id' => (int) $exists_id]);
+            } else {
+                $wpdb->insert($table, $record);
+            }
+
+            $updated++;
+        }
+
+        self::log_change('sync_security_definition', sprintf('Upserted %d security definitions.', $updated));
+    }
+
+    public static function collect_ohlc_data() {
+        global $wpdb;
+
+        $symbols = $wpdb->get_col("SELECT symbol FROM {$wpdb->prefix}lcni_security_definition ORDER BY symbol ASC LIMIT 30");
+        if (empty($symbols)) {
+            self::log_change('sync_skipped', 'No symbols available in security definition table for OHLC sync.');
+
+            return;
+        }
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $inserted = 0;
+
+        foreach ($symbols as $symbol) {
+            $payload = LCNI_API::get_candles($symbol, '1D');
+            if (!is_array($payload)) {
+                continue;
+            }
+
+            $candles = self::extract_items($payload);
+            foreach ($candles as $candle) {
+                $event_time = (int) self::pick($candle, ['t', 'eventTime', 'event_time']);
+                if ($event_time <= 0) {
+                    continue;
+                }
+
+                $record = [
+                    'symbol' => strtoupper($symbol),
+                    'timeframe' => '1D',
+                    'event_time' => $event_time,
+                    'open_price' => (float) self::pick($candle, ['o', 'open', 'openPrice']),
+                    'high_price' => (float) self::pick($candle, ['h', 'high', 'highPrice']),
+                    'low_price' => (float) self::pick($candle, ['l', 'low', 'lowPrice']),
+                    'close_price' => (float) self::pick($candle, ['c', 'close', 'closePrice']),
+                    'volume' => (int) self::pick($candle, ['v', 'volume']),
+                    'value_traded' => (float) self::pick($candle, ['value', 'valueTraded', 'turnover']),
+                ];
+
+                $exists = $wpdb->get_var(
+                    $wpdb->prepare(
+                        "SELECT id FROM {$table} WHERE symbol = %s AND timeframe = %s AND event_time = %d LIMIT 1",
+                        $record['symbol'],
+                        $record['timeframe'],
+                        $record['event_time']
+                    )
+                );
+
+                if ($exists) {
+                    $wpdb->update($table, $record, ['id' => (int) $exists]);
+                } else {
+                    $wpdb->insert($table, $record);
+                    $inserted++;
+                }
+            }
+        }
+
+        self::log_change('sync_ohlc', sprintf('Inserted %d OHLC records.', $inserted));
+    }
+
+    private static function extract_items($payload) {
+        if (isset($payload['data']) && is_array($payload['data'])) {
+            return $payload['data'];
+        }
+
+        if (self::is_list_array($payload)) {
+            return $payload;
+        }
+
+        return [];
+    }
+
+
+    private static function is_list_array($array) {
+        if (!is_array($array)) {
+            return false;
+        }
+
+        return array_keys($array) === range(0, count($array) - 1);
+    }
+
+    private static function pick($row, $keys, $default = null) {
+        foreach ($keys as $key) {
+            if (isset($row[$key])) {
+                return $row[$key];
+            }
+        }
+
+        return $default;
+    }
+
+    private static function nullable_text($value) {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return sanitize_text_field((string) $value);
+    }
+
+    private static function nullable_float($value) {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return (float) $value;
+    }
+
+    private static function nullable_int($value) {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return (int) $value;
+    }
+
     public static function log_change($action, $message, $context = null) {
         global $wpdb;
 
