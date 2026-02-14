@@ -154,11 +154,17 @@ class LCNI_DB {
             $symbol = strtoupper((string) $symbol);
 
             if ($latest_only) {
-                $from_timestamp = self::get_latest_event_time($symbol, $timeframe) - DAY_IN_SECONDS;
-                $from_timestamp = max(0, $from_timestamp);
-                $to_timestamp = time();
+                $latest_event_time = self::get_latest_event_time($symbol, $timeframe);
 
-                $payload = LCNI_API::get_candles_by_range($symbol, $timeframe, $from_timestamp, $to_timestamp);
+                if ($latest_event_time > 0) {
+                    $from_timestamp = max(1, $latest_event_time - DAY_IN_SECONDS);
+                    $to_timestamp = time();
+                    $payload = LCNI_API::get_candles_by_range($symbol, $timeframe, $from_timestamp, $to_timestamp);
+                } else {
+                    // Lần đầu chưa có dữ liệu trong DB thì fallback về cách lấy theo số ngày,
+                    // tránh gọi by_range với from=0 khiến API trả lỗi.
+                    $payload = LCNI_API::get_candles($symbol, $timeframe, $days);
+                }
             } else {
                 $payload = LCNI_API::get_candles($symbol, $timeframe, $days);
             }
