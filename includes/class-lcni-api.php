@@ -6,6 +6,8 @@ if (!defined('ABSPATH')) {
 
 class LCNI_API {
 
+    const SECDEF_URL = 'https://services.entrade.com.vn/chart-api/v2/securities';
+
     private static $last_request_error = '';
 
     public static function get_candles($symbol, $resolution = '1D', $days = 365) {
@@ -54,7 +56,7 @@ class LCNI_API {
     }
 
     public static function get_security_definitions() {
-        return self::request_json('https://api.dnse.com.vn/secdef');
+        return self::request_json(self::SECDEF_URL);
     }
 
     public static function test_connection() {
@@ -93,25 +95,40 @@ class LCNI_API {
 
         $status_code = (int) wp_remote_retrieve_response_code($response);
         $body = wp_remote_retrieve_body($response);
-        $decoded = json_decode($body, true);
 
-        if ($status_code < 200 || $status_code >= 300) {
+        if ($status_code !== 200) {
             self::$last_request_error = sprintf('HTTP %d from %s', $status_code, $url);
             LCNI_DB::log_change(
                 'api_error',
                 sprintf('API returned HTTP %d for %s', $status_code, $url),
                 [
                     'status' => $status_code,
-                    'body' => $decoded ?: $body,
+                    'body' => $body,
                 ]
             );
 
             return false;
         }
 
+        if ($body === '') {
+            self::$last_request_error = 'Empty response body from ' . $url;
+            LCNI_DB::log_change('api_error', 'API returned empty body.', ['url' => $url]);
+
+            return false;
+        }
+
+        $decoded = json_decode($body, true);
+
         if (json_last_error() !== JSON_ERROR_NONE) {
             self::$last_request_error = 'Invalid JSON response from ' . $url;
             LCNI_DB::log_change('api_error', 'API returned invalid JSON.', ['body' => $body]);
+
+            return false;
+        }
+
+        if (empty($decoded)) {
+            self::$last_request_error = 'Empty decoded payload from ' . $url;
+            LCNI_DB::log_change('api_error', 'API returned empty payload.', ['url' => $url]);
 
             return false;
         }
