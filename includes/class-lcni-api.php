@@ -7,6 +7,7 @@ if (!defined('ABSPATH')) {
 class LCNI_API {
 
     const SECDEF_URL = 'https://openapi.dnse.com.vn/price/secdef';
+    const SECDEF_FALLBACK_URL = 'https://openapi.dnse.com.vn/price/secdefs';
 
     private static $last_request_error = '';
 
@@ -59,10 +60,8 @@ class LCNI_API {
         $api_key = trim((string) get_option('lcni_api_key', ''));
         $api_secret = trim((string) get_option('lcni_api_secret', ''));
 
-        $url = self::normalize_secdef_url(trim((string) get_option('lcni_secdef_url', self::SECDEF_URL)));
-        if ($url === '') {
-            $url = self::SECDEF_URL;
-        }
+        $configured_url = trim((string) get_option('lcni_secdef_url', self::SECDEF_URL));
+        $candidates = self::build_secdef_candidates($configured_url);
 
         $headers = [];
         if ($api_key !== '') {
@@ -73,10 +72,24 @@ class LCNI_API {
             $headers['X-API-SECRET'] = $api_secret;
         }
 
-        return self::request_json(
-            $url,
-            $headers
-        );
+        $attempt_errors = [];
+
+        foreach ($candidates as $url) {
+            $payload = self::request_json($url, $headers);
+            if (is_array($payload)) {
+                return $payload;
+            }
+
+            if (self::$last_request_error !== '') {
+                $attempt_errors[] = self::$last_request_error;
+            }
+        }
+
+        if (!empty($attempt_errors)) {
+            self::$last_request_error = implode(' | ', array_unique($attempt_errors));
+        }
+
+        return false;
     }
 
     public static function get_last_request_error() {
@@ -201,5 +214,26 @@ class LCNI_API {
         }
 
         return str_ireplace('/:symbol', '', $url);
+    }
+
+    private static function build_secdef_candidates($configured_url) {
+        $configured_url = trim((string) $configured_url);
+
+        $candidates = [
+            self::normalize_secdef_url($configured_url),
+            self::normalize_secdef_url(self::SECDEF_URL),
+            self::normalize_secdef_url(self::SECDEF_FALLBACK_URL),
+        ];
+
+        $candidates = array_values(
+            array_filter(
+                array_unique($candidates),
+                static function ($url) {
+                    return is_string($url) && trim($url) !== '';
+                }
+            )
+        );
+
+        return !empty($candidates) ? $candidates : [self::SECDEF_URL, self::SECDEF_FALLBACK_URL];
     }
 }
