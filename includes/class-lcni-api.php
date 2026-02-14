@@ -7,6 +7,7 @@ if (!defined('ABSPATH')) {
 class LCNI_API {
 
     const SECDEF_URL = 'https://openapi.dnse.com.vn/price/secdef';
+    const SECDEF_FALLBACK_URL = 'https://services.entrade.com.vn/chart-api/v2/securities';
 
     private static $last_request_error = '';
 
@@ -73,10 +74,42 @@ class LCNI_API {
             $headers['X-API-SECRET'] = $api_secret;
         }
 
-        return self::request_json(
-            $url,
-            $headers
+        $result = self::request_json($url, $headers);
+        if ($result !== false) {
+            return $result;
+        }
+
+        $fallback_urls = array_values(
+            array_unique(
+                array_filter(
+                    [
+                        self::SECDEF_URL,
+                        self::SECDEF_FALLBACK_URL,
+                    ]
+                )
+            )
         );
+
+        foreach ($fallback_urls as $fallback_url) {
+            if (self::normalize_secdef_url($fallback_url) === $url) {
+                continue;
+            }
+
+            $result = self::request_json($fallback_url, $headers);
+            if ($result !== false) {
+                LCNI_DB::log_change(
+                    'api_fallback_success',
+                    sprintf('Security definition endpoint fallback succeeded: %s', $fallback_url),
+                    [
+                        'configured_url' => $url,
+                    ]
+                );
+
+                return $result;
+            }
+        }
+
+        return false;
     }
 
     public static function get_last_request_error() {
@@ -200,6 +233,20 @@ class LCNI_API {
             return '';
         }
 
-        return str_ireplace('/:symbol', '', $url);
+        $url = str_ireplace('/:symbol', '', $url);
+        $parts = wp_parse_url($url);
+
+        if (!is_array($parts) || empty($parts['host'])) {
+            return $url;
+        }
+
+        $host = strtolower((string) $parts['host']);
+        $path = isset($parts['path']) ? strtolower(rtrim((string) $parts['path'], '/')) : '';
+
+        if ($host === 'services.entrade.com.vn' && $path === '/open-api/market/v2/securities') {
+            return self::SECDEF_FALLBACK_URL;
+        }
+
+        return preg_replace('/\?.*$/', '', $url);
     }
 }
