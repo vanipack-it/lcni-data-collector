@@ -1,3 +1,9 @@
+<?php
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
 class LCNI_Settings {
 
     public function __construct() {
@@ -21,6 +27,14 @@ class LCNI_Settings {
     }
 
     public function settings_page() {
+        global $wpdb;
+
+        $log_table = $wpdb->prefix . 'lcni_change_logs';
+        $logs = [];
+
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $log_table)) === $log_table) {
+            $logs = $wpdb->get_results("SELECT action, message, created_at FROM {$log_table} ORDER BY created_at DESC LIMIT 10", ARRAY_A);
+        }
         ?>
         <div class="wrap">
             <h1>LCNI API Settings</h1>
@@ -49,6 +63,30 @@ class LCNI_Settings {
 
                 <?php submit_button(); ?>
             </form>
+
+            <h2>Change Logs</h2>
+            <?php if (!empty($logs)) : ?>
+                <table class="widefat striped" style="max-width: 1100px;">
+                    <thead>
+                        <tr>
+                            <th style="width: 180px;">Time</th>
+                            <th style="width: 180px;">Action</th>
+                            <th>Message</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($logs as $log) : ?>
+                            <tr>
+                                <td><?php echo esc_html($log['created_at']); ?></td>
+                                <td><?php echo esc_html($log['action']); ?></td>
+                                <td><?php echo esc_html($log['message']); ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php else : ?>
+                <p>No change logs available yet.</p>
+            <?php endif; ?>
         </div>
         <?php
     }

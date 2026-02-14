@@ -1,11 +1,13 @@
 <?php
 /*
 Plugin Name: LCNI Data Collector
-Description: Lưu dữ liệu giá từ DNSE API
-Version: 1.0
+Description: Lưu dữ liệu OHLC và Security Definition từ DNSE API
+Version: 1.1
 */
 
-if (!defined('ABSPATH')) exit;
+if (!defined('ABSPATH')) {
+    exit;
+}
 
 define('LCNI_PATH', plugin_dir_path(__FILE__));
 
