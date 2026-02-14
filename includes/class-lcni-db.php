@@ -83,7 +83,7 @@ class LCNI_DB {
             return;
         }
 
-        $rows = self::extract_items($payload);
+        $rows = self::extract_items($payload, ['data', 'items', 'secDefs', 'secdefs', 'securities', 'symbols']);
 
         if (empty($rows)) {
             self::log_change('sync_skipped', 'No security definitions returned from DNSE API.');
@@ -145,23 +145,27 @@ class LCNI_DB {
                 continue;
             }
 
-            $candles = self::extract_items($payload);
+            $candles = self::extract_items($payload, ['data', 'candles', 'items', 'rows']);
             foreach ($candles as $candle) {
-                $event_time = (int) self::pick($candle, ['t', 'eventTime', 'event_time']);
+                $event_time = (int) self::pick($candle, ['t', 'eventTime', 'event_time', 0]);
                 if ($event_time <= 0) {
                     continue;
+                }
+
+                if ($event_time > 1000000000000) {
+                    $event_time = (int) floor($event_time / 1000);
                 }
 
                 $record = [
                     'symbol' => strtoupper($symbol),
                     'timeframe' => '1D',
                     'event_time' => $event_time,
-                    'open_price' => (float) self::pick($candle, ['o', 'open', 'openPrice']),
-                    'high_price' => (float) self::pick($candle, ['h', 'high', 'highPrice']),
-                    'low_price' => (float) self::pick($candle, ['l', 'low', 'lowPrice']),
-                    'close_price' => (float) self::pick($candle, ['c', 'close', 'closePrice']),
-                    'volume' => (int) self::pick($candle, ['v', 'volume']),
-                    'value_traded' => (float) self::pick($candle, ['value', 'valueTraded', 'turnover']),
+                    'open_price' => (float) self::pick($candle, ['o', 'open', 'openPrice', 1]),
+                    'high_price' => (float) self::pick($candle, ['h', 'high', 'highPrice', 2]),
+                    'low_price' => (float) self::pick($candle, ['l', 'low', 'lowPrice', 3]),
+                    'close_price' => (float) self::pick($candle, ['c', 'close', 'closePrice', 4]),
+                    'volume' => (int) self::pick($candle, ['v', 'volume', 5]),
+                    'value_traded' => (float) self::pick($candle, ['value', 'valueTraded', 'turnover', 6]),
                 ];
 
                 $exists = $wpdb->get_var(
@@ -185,13 +189,40 @@ class LCNI_DB {
         self::log_change('sync_ohlc', sprintf('Inserted %d OHLC records.', $inserted));
     }
 
-    private static function extract_items($payload) {
-        if (isset($payload['data']) && is_array($payload['data'])) {
-            return $payload['data'];
+    private static function extract_items($payload, $preferred_keys = []) {
+        if (!is_array($payload)) {
+            return [];
         }
 
         if (self::is_list_array($payload)) {
             return $payload;
+        }
+
+        $keys = array_merge(
+            $preferred_keys,
+            ['data', 'items', 'rows', 'result', 'results', 'content', 'candles', 'secDefs', 'secdefs']
+        );
+
+        foreach (array_unique($keys) as $key) {
+            if (!array_key_exists($key, $payload) || !is_array($payload[$key])) {
+                continue;
+            }
+
+            $items = self::extract_items($payload[$key]);
+            if (!empty($items)) {
+                return $items;
+            }
+        }
+
+        foreach ($payload as $value) {
+            if (!is_array($value)) {
+                continue;
+            }
+
+            $items = self::extract_items($value);
+            if (!empty($items)) {
+                return $items;
+            }
         }
 
         return [];
