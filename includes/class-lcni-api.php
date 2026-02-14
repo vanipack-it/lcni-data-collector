@@ -56,7 +56,35 @@ class LCNI_API {
     }
 
     public static function get_security_definitions() {
-        return self::request_json(self::SECDEF_URL);
+        $api_key = trim((string) get_option('lcni_api_key', ''));
+        $api_secret = trim((string) get_option('lcni_api_secret', ''));
+
+        if ($api_key === '' || $api_secret === '') {
+            self::$last_request_error = 'Missing DNSE API credentials (api_key/api_secret).';
+            LCNI_DB::log_change(
+                'api_credentials_missing',
+                'Security definition sync skipped because DNSE API credentials are missing.'
+            );
+
+            return false;
+        }
+
+        $url = trim((string) get_option('lcni_secdef_url', self::SECDEF_URL));
+        if ($url === '') {
+            $url = self::SECDEF_URL;
+        }
+
+        return self::request_json(
+            $url,
+            [
+                'X-API-KEY' => $api_key,
+                'X-API-SECRET' => $api_secret,
+            ]
+        );
+    }
+
+    public static function get_last_request_error() {
+        return self::$last_request_error;
     }
 
     public static function test_connection() {
@@ -73,15 +101,20 @@ class LCNI_API {
         return true;
     }
 
-    private static function request_json($url) {
+    private static function request_json($url, $headers = []) {
         self::$last_request_error = '';
+
+        $request_headers = array_merge(
+            [
+                'Accept' => 'application/json',
+            ],
+            is_array($headers) ? $headers : []
+        );
 
         $response = wp_remote_get(
             $url,
             [
-                'headers' => [
-                    'Accept' => 'application/json',
-                ],
+                'headers' => $request_headers,
                 'timeout' => 20,
             ]
         );

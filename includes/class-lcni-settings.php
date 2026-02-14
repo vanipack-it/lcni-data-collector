@@ -56,6 +56,24 @@ class LCNI_Settings {
             'sanitize_callback' => 'absint',
             'default' => 0,
         ]);
+
+        register_setting('lcni_settings_group', 'lcni_api_key', [
+            'type' => 'string',
+            'sanitize_callback' => [$this, 'sanitize_api_credential'],
+            'default' => '',
+        ]);
+
+        register_setting('lcni_settings_group', 'lcni_api_secret', [
+            'type' => 'string',
+            'sanitize_callback' => [$this, 'sanitize_api_credential'],
+            'default' => '',
+        ]);
+
+        register_setting('lcni_settings_group', 'lcni_secdef_url', [
+            'type' => 'string',
+            'sanitize_callback' => [$this, 'sanitize_secdef_url'],
+            'default' => LCNI_API::SECDEF_URL,
+        ]);
     }
 
     public function sanitize_timeframe($value) {
@@ -75,6 +93,16 @@ class LCNI_Settings {
         $symbols = array_filter(array_map('trim', (array) $symbols));
 
         return implode(',', array_unique($symbols));
+    }
+
+    public function sanitize_api_credential($value) {
+        return trim((string) $value);
+    }
+
+    public function sanitize_secdef_url($value) {
+        $url = esc_url_raw(trim((string) $value));
+
+        return $url !== '' ? $url : LCNI_API::SECDEF_URL;
     }
 
     public function handle_admin_actions() {
@@ -304,6 +332,41 @@ class LCNI_Settings {
                 <?php settings_fields('lcni_settings_group'); ?>
 
                 <table class="form-table">
+                    <tr>
+                        <th>DNSE API Key</th>
+                        <td>
+                            <input type="text" name="lcni_api_key"
+                                   value="<?php echo esc_attr(get_option('lcni_api_key', '')); ?>"
+                                   placeholder="Nhập API Key DNSE"
+                                   size="50"
+                                   autocomplete="off">
+                            <p class="description">Dùng để xác thực khi lấy Security Definition từ DNSE OpenAPI/WebSocket gateway.</p>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <th>DNSE API Secret</th>
+                        <td>
+                            <input type="password" name="lcni_api_secret"
+                                   value="<?php echo esc_attr(get_option('lcni_api_secret', '')); ?>"
+                                   placeholder="Nhập API Secret DNSE"
+                                   size="50"
+                                   autocomplete="new-password">
+                            <p class="description">API Secret sẽ được gửi trong header <code>X-API-SECRET</code> khi đồng bộ Security Definition.</p>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <th>Security Definition URL</th>
+                        <td>
+                            <input type="url" name="lcni_secdef_url"
+                                   value="<?php echo esc_attr(get_option('lcni_secdef_url', LCNI_API::SECDEF_URL)); ?>"
+                                   placeholder="https://services.entrade.com.vn/chart-api/v2/securities"
+                                   size="80">
+                            <p class="description">Cho phép thay đổi endpoint khi DNSE cập nhật hạ tầng dữ liệu.</p>
+                        </td>
+                    </tr>
+
                     <tr>
                         <th>Timeframe</th>
                         <td>
