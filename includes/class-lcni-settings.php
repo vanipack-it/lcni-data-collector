@@ -43,6 +43,12 @@ class LCNI_Settings {
             'sanitize_callback' => [$this, 'sanitize_days_to_load'],
             'default' => 365,
         ]);
+
+        register_setting('lcni_settings_group', 'lcni_test_symbols', [
+            'type' => 'string',
+            'sanitize_callback' => [$this, 'sanitize_test_symbols'],
+            'default' => 'VNINDEX,VN30',
+        ]);
     }
 
     public function sanitize_timeframe($value) {
@@ -55,6 +61,13 @@ class LCNI_Settings {
         $days = (int) $value;
 
         return $days > 0 ? $days : 365;
+    }
+
+    public function sanitize_test_symbols($value) {
+        $symbols = preg_split('/[,\s]+/', strtoupper((string) $value));
+        $symbols = array_filter(array_map('trim', (array) $symbols));
+
+        return implode(',', array_unique($symbols));
     }
 
     public function handle_admin_actions() {
@@ -100,6 +113,10 @@ class LCNI_Settings {
             );
         }
 
+        if ($action === 'test_api_multi_symbol') {
+            $this->run_multi_symbol_test();
+        }
+
         wp_safe_redirect(admin_url('admin.php?page=lcni-settings'));
         exit;
     }
@@ -134,6 +151,55 @@ class LCNI_Settings {
         );
     }
 
+    private function run_multi_symbol_test() {
+        $raw_symbols = (string) get_option('lcni_test_symbols', 'VNINDEX,VN30');
+        $symbols = preg_split('/[,\s]+/', strtoupper($raw_symbols));
+        $symbols = array_values(array_unique(array_filter(array_map('trim', (array) $symbols))));
+
+        if (empty($symbols)) {
+            set_transient(
+                'lcni_settings_notice',
+                [
+                    'type' => 'error',
+                    'message' => 'Chưa có symbol để test. Vui lòng nhập danh sách symbol.',
+                ],
+                60
+            );
+
+            return;
+        }
+
+        $timeframe = strtoupper((string) get_option('lcni_timeframe', '1D'));
+        $debug_logs = [];
+        $success_count = 0;
+
+        foreach ($symbols as $symbol) {
+            $payload = LCNI_API::get_candles($symbol, $timeframe, 10);
+            if (!is_array($payload) || empty($payload['t']) || !is_array($payload['t'])) {
+                $debug_logs[] = sprintf('[FAIL] %s: Không lấy được dữ liệu nến.', $symbol);
+                continue;
+            }
+
+            $candles = lcni_convert_candles($payload, $symbol, $timeframe);
+            $latest = end($candles);
+            $latest_time = isset($latest['candle_time']) ? $latest['candle_time'] : 'N/A';
+            $debug_logs[] = sprintf('[OK] %s: %d nến, nến mới nhất=%s', $symbol, count($candles), $latest_time);
+            $success_count++;
+        }
+
+        LCNI_DB::log_change('multi_symbol_test', sprintf('Tested %d symbols, success=%d.', count($symbols), $success_count), $debug_logs);
+
+        set_transient(
+            'lcni_settings_notice',
+            [
+                'type' => $success_count === count($symbols) ? 'success' : 'error',
+                'message' => sprintf('Test chart-api nhiều symbol: thành công %d/%d.', $success_count, count($symbols)),
+                'debug' => $debug_logs,
+            ],
+            120
+        );
+    }
+
     public function settings_page() {
         global $wpdb;
 
@@ -154,6 +220,13 @@ class LCNI_Settings {
             <?php if ($notice) : ?>
                 <div class="notice notice-<?php echo esc_attr($notice['type'] === 'error' ? 'error' : 'success'); ?> is-dismissible">
                     <p><?php echo esc_html($notice['message']); ?></p>
+                    <?php if (!empty($notice['debug']) && is_array($notice['debug'])) : ?>
+                        <ul style="margin-left: 20px; list-style: disc;">
+                            <?php foreach ($notice['debug'] as $debug_line) : ?>
+                                <li><code><?php echo esc_html($debug_line); ?></code></li>
+                            <?php endforeach; ?>
+                        </ul>
+                    <?php endif; ?>
                 </div>
             <?php endif; ?>
 
@@ -177,7 +250,18 @@ class LCNI_Settings {
                             <input type="number" min="1" max="5000" name="lcni_days_to_load"
                                    value="<?php echo esc_attr((int) get_option('lcni_days_to_load', 365)); ?>"
                                    size="10">
-                            <p class="description">Dùng cho đồng bộ thủ công. Cron sẽ chỉ lấy nến mới nhất để giảm tải DB.</p>
+                            <p class="description">Dùng cho đồng bộ thủ công. Cron sẽ chỉ lấy nến mới nhất trong DB để giảm tải.</p>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <th>Test symbols</th>
+                        <td>
+                            <input type="text" name="lcni_test_symbols"
+                                   value="<?php echo esc_attr(get_option('lcni_test_symbols', 'VNINDEX,VN30')); ?>"
+                                   placeholder="Ví dụ: VNINDEX, VN30, HPG"
+                                   size="40">
+                            <p class="description">Dùng cho nút test nhiều symbol cùng lúc.</p>
                         </td>
                     </tr>
                 </table>
@@ -192,10 +276,15 @@ class LCNI_Settings {
                 <input type="hidden" name="lcni_admin_action" value="test_api_connection">
                 <?php submit_button('Test chart-api', 'secondary', 'submit', false); ?>
             </form>
-            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display: inline-block;">
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display: inline-block; margin-right: 8px;">
                 <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
                 <input type="hidden" name="lcni_admin_action" value="run_sync_now">
                 <?php submit_button('Chạy đồng bộ ngay', 'secondary', 'submit', false); ?>
+            </form>
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display: inline-block;">
+                <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                <input type="hidden" name="lcni_admin_action" value="test_api_multi_symbol">
+                <?php submit_button('Test nhiều symbol', 'secondary', 'submit', false); ?>
             </form>
 
             <p>
