@@ -85,9 +85,19 @@ class LCNI_DB {
         $payload = LCNI_API::get_security_definitions();
 
         if (!is_array($payload)) {
-            self::log_change('sync_failed', 'Unable to collect security definitions: invalid payload.');
+            $error_message = LCNI_API::get_last_request_error();
+            $log_message = 'Unable to collect security definitions: invalid payload.';
 
-            return new WP_Error('invalid_payload', 'Invalid security definitions payload.');
+            if ($error_message !== '') {
+                $log_message .= ' ' . $error_message;
+            }
+
+            self::log_change('sync_failed', $log_message);
+
+            return new WP_Error(
+                'invalid_payload',
+                $error_message !== '' ? $error_message : 'Invalid security definitions payload.'
+            );
         }
 
         $rows = self::extract_items($payload, ['data', 'items', 'secDefs', 'secdefs', 'securities', 'symbols']);
