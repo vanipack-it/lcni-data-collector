@@ -7,11 +7,7 @@ if (!defined('ABSPATH')) {
 class LCNI_API {
 
     const BASE_URL = 'https://services.entrade.com.vn';
-    const SECDEF_ENDPOINT = '/open-api/v2/market/secdef';
-    const SECDEF_FALLBACK_ENDPOINTS = [
-        '/open-api/v2/market/secdefs',
-        '/open-api/v2/market/securities',
-    ];
+    const SECDEF_ENDPOINT = '/open-api/market/v2/securities';
     const SECDEF_URL = self::BASE_URL . self::SECDEF_ENDPOINT;
 
     private static $last_request_error = '';
@@ -62,60 +58,30 @@ class LCNI_API {
     }
 
     public static function get_security_definitions() {
-        $access_token = trim((string) get_option('lcni_access_token', ''));
-        if ($access_token === '') {
-            // Backward compatibility: previous versions reused API Key as token input.
-            $access_token = trim((string) get_option('lcni_api_key', ''));
-        }
+        $url = self::BASE_URL . self::SECDEF_ENDPOINT;
 
-        $configured_url = trim((string) get_option('lcni_secdef_url', self::SECDEF_URL));
-        $candidates = self::build_secdef_candidates($configured_url);
-
-        $headers = [
-            'Content-Type' => 'application/json',
-        ];
-        if ($access_token !== '') {
-            $headers['Authorization'] = 'Bearer ' . $access_token;
-        }
-
-        $request_body = [
-            'symbol' => '',
-            'page' => 1,
-            'size' => 500,
-        ];
-
-        $attempt_errors = [];
         $query_args = [
             'symbol' => '',
             'page' => 1,
             'size' => 500,
         ];
 
-        foreach ($candidates as $url) {
-            $payload = self::request_json($url, $headers, 'POST', $request_body);
-            if (is_array($payload)) {
-                return $payload;
-            }
-
-            if (self::$last_request_error !== '') {
-                $attempt_errors[] = self::$last_request_error;
-            }
-
-            $payload = self::request_json(add_query_arg($query_args, $url), $headers, 'GET');
-            if (is_array($payload)) {
-                return $payload;
-            }
-
-            if (self::$last_request_error !== '') {
-                $attempt_errors[] = self::$last_request_error;
-            }
+        $access_token = trim((string) get_option('lcni_access_token', ''));
+        if ($access_token === '') {
+            // Backward compatibility: previous versions reused API Key as token input.
+            $access_token = trim((string) get_option('lcni_api_key', ''));
         }
 
-        if (!empty($attempt_errors)) {
-            self::$last_request_error = implode(' | ', array_unique($attempt_errors));
+        $headers = [];
+        if ($access_token !== '') {
+            $headers['Authorization'] = 'Bearer ' . $access_token;
         }
 
-        return false;
+        return self::request_json(
+            add_query_arg($query_args, $url),
+            $headers,
+            'GET'
+        );
     }
 
     public static function get_last_request_error() {
@@ -236,37 +202,4 @@ class LCNI_API {
         return '1D';
     }
 
-    private static function normalize_secdef_url($url) {
-        $url = trim((string) $url);
-
-        if ($url === '') {
-            return '';
-        }
-
-        return str_ireplace('/:symbol', '', $url);
-    }
-
-    private static function build_secdef_candidates($configured_url) {
-        $configured_url = trim((string) $configured_url);
-
-        $candidates = [
-            self::normalize_secdef_url($configured_url),
-            self::normalize_secdef_url(self::SECDEF_URL),
-        ];
-
-        foreach (self::SECDEF_FALLBACK_ENDPOINTS as $endpoint) {
-            $candidates[] = self::normalize_secdef_url(self::BASE_URL . $endpoint);
-        }
-
-        $candidates = array_values(
-            array_filter(
-                array_unique($candidates),
-                static function ($url) {
-                    return is_string($url) && trim($url) !== '';
-                }
-            )
-        );
-
-        return !empty($candidates) ? $candidates : [self::SECDEF_URL];
-    }
 }
