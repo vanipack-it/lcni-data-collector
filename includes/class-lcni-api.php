@@ -61,25 +61,13 @@ class LCNI_API {
         $url = self::BASE_URL . self::SECDEF_ENDPOINT;
 
         $query_args = [
-            'symbol' => '',
             'page' => 1,
-            'size' => 500,
+            'size' => 200,
         ];
-
-        $access_token = trim((string) get_option('lcni_access_token', ''));
-        if ($access_token === '') {
-            // Backward compatibility: previous versions reused API Key as token input.
-            $access_token = trim((string) get_option('lcni_api_key', ''));
-        }
-
-        $headers = [];
-        if ($access_token !== '') {
-            $headers['Authorization'] = 'Bearer ' . $access_token;
-        }
 
         return self::request_json(
             add_query_arg($query_args, $url),
-            $headers,
+            [],
             'GET'
         );
     }
