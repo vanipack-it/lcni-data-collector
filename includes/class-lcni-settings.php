@@ -100,14 +100,14 @@ class LCNI_Settings {
         }
 
         if ($action === 'run_sync_now') {
-            LCNI_DB::collect_all_data(false);
-            LCNI_DB::log_change('manual_sync', 'Manual sync triggered from admin page.');
+            LCNI_DB::collect_all_data(true);
+            LCNI_DB::log_change('manual_sync', 'Manual incremental sync triggered from admin page.');
 
             set_transient(
                 'lcni_settings_notice',
                 [
                     'type' => 'success',
-                    'message' => 'Đã chạy đồng bộ dữ liệu thủ công.',
+                    'message' => 'Đã chạy đồng bộ dữ liệu thủ công (chỉ lấy dữ liệu mới).',
                 ],
                 60
             );
