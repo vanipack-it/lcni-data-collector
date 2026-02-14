@@ -151,14 +151,34 @@ class LCNI_DB {
         $updated = 0;
 
         foreach ($symbols as $symbol) {
-            $payload = LCNI_API::get_candles($symbol, $timeframe, $days);
+            $symbol = strtoupper((string) $symbol);
+
+            if ($latest_only) {
+                $from_timestamp = self::get_latest_event_time($symbol, $timeframe) - DAY_IN_SECONDS;
+                $from_timestamp = max(0, $from_timestamp);
+                $to_timestamp = time();
+
+                $payload = LCNI_API::get_candles_by_range($symbol, $timeframe, $from_timestamp, $to_timestamp);
+            } else {
+                $payload = LCNI_API::get_candles($symbol, $timeframe, $days);
+            }
+
             if (!is_array($payload)) {
+                self::log_change('sync_symbol_failed', sprintf('OHLC request failed for symbol=%s timeframe=%s latest_only=%s.', $symbol, $timeframe, $latest_only ? 'yes' : 'no'));
                 continue;
             }
 
             $rows = lcni_convert_candles($payload, $symbol, $timeframe);
             if ($latest_only && !empty($rows)) {
-                $rows = [end($rows)];
+                $latest_db_event_time = self::get_latest_event_time($symbol, $timeframe);
+                $rows = array_filter(
+                    $rows,
+                    static function ($row) use ($latest_db_event_time) {
+                        $event_time = strtotime($row['candle_time']);
+
+                        return $event_time !== false && $event_time > $latest_db_event_time;
+                    }
+                );
             }
 
             foreach ($rows as $row) {
@@ -199,6 +219,21 @@ class LCNI_DB {
         }
 
         self::log_change('sync_ohlc', sprintf('OHLC sync done. inserted=%d updated=%d latest_only=%s timeframe=%s days=%d.', $inserted, $updated, $latest_only ? 'yes' : 'no', $timeframe, $days));
+    }
+
+    public static function get_latest_event_time($symbol, $timeframe) {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $latest_event_time = (int) $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT MAX(event_time) FROM {$table} WHERE symbol = %s AND timeframe = %s",
+                strtoupper((string) $symbol),
+                strtoupper((string) $timeframe)
+            )
+        );
+
+        return max(0, $latest_event_time);
     }
 
     private static function extract_items($payload, $preferred_keys = []) {

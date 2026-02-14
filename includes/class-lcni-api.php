@@ -16,13 +16,34 @@ class LCNI_API {
         }
 
         $days = max(1, (int) $days);
-        $from = strtotime(sprintf('-%d days', $days));
         $to = time();
+        $from = max(0, $to - ($days * DAY_IN_SECONDS));
+
+        return self::get_candles_by_range($symbol, $resolution, $from, $to);
+    }
+
+    public static function get_candles_by_range($symbol, $resolution, $from, $to) {
+        if (empty($symbol)) {
+            self::$last_request_error = 'Symbol is required.';
+
+            return false;
+        }
+
+        $normalized_resolution = self::normalize_resolution($resolution);
+
+        $from = (int) $from;
+        $to = (int) $to;
+
+        if ($from <= 0 || $to <= 0 || $from >= $to) {
+            self::$last_request_error = sprintf('Invalid range from=%d to=%d', $from, $to);
+
+            return false;
+        }
 
         $url = add_query_arg(
             [
                 'symbol' => strtoupper($symbol),
-                'resolution' => strtoupper($resolution),
+                'resolution' => $normalized_resolution,
                 'from' => $from,
                 'to' => $to,
             ],
@@ -96,5 +117,33 @@ class LCNI_API {
         }
 
         return $decoded;
+    }
+
+    private static function normalize_resolution($resolution) {
+        $raw = strtoupper(trim((string) $resolution));
+        $map = [
+            'D' => '1D',
+            '1D' => '1D',
+            'W' => '1W',
+            '1W' => '1W',
+            'M' => '1M',
+            '1M' => '1M',
+            '1H' => '60',
+            'H1' => '60',
+        ];
+
+        if (isset($map[$raw])) {
+            return $map[$raw];
+        }
+
+        if (preg_match('/^\d+$/', $raw)) {
+            return $raw;
+        }
+
+        if (preg_match('/^(\d+)MIN$/', $raw, $matches)) {
+            return $matches[1];
+        }
+
+        return '1D';
     }
 }
