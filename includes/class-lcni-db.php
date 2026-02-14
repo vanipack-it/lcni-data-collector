@@ -69,9 +69,9 @@ class LCNI_DB {
         self::log_change('activation', 'Created/updated OHLC, security definition and change log tables.');
     }
 
-    public static function collect_all_data() {
+    public static function collect_all_data($latest_only = false) {
         self::collect_security_definitions();
-        self::collect_ohlc_data();
+        self::collect_ohlc_data($latest_only);
     }
 
     public static function collect_security_definitions() {
@@ -126,10 +126,20 @@ class LCNI_DB {
         self::log_change('sync_security_definition', sprintf('Upserted %d security definitions.', $updated));
     }
 
-    public static function collect_ohlc_data() {
+    public static function collect_ohlc_data($latest_only = false) {
         global $wpdb;
 
-        $symbols = $wpdb->get_col("SELECT symbol FROM {$wpdb->prefix}lcni_security_definition ORDER BY symbol ASC LIMIT 30");
+        $timeframe = strtoupper((string) get_option('lcni_timeframe', '1D'));
+        $days = max(1, (int) get_option('lcni_days_to_load', 365));
+
+        $symbols = $wpdb->get_col(
+            "SELECT symbol FROM {$wpdb->prefix}lcni_security_definition WHERE exchange IN ('HOSE', 'HNX') ORDER BY symbol ASC"
+        );
+
+        if (empty($symbols)) {
+            $symbols = $wpdb->get_col("SELECT symbol FROM {$wpdb->prefix}lcni_security_definition ORDER BY symbol ASC LIMIT 100");
+        }
+
         if (empty($symbols)) {
             self::log_change('sync_skipped', 'No symbols available in security definition table for OHLC sync.');
 
@@ -138,34 +148,35 @@ class LCNI_DB {
 
         $table = $wpdb->prefix . 'lcni_ohlc';
         $inserted = 0;
+        $updated = 0;
 
         foreach ($symbols as $symbol) {
-            $payload = LCNI_API::get_candles($symbol, '1D');
+            $payload = LCNI_API::get_candles($symbol, $timeframe, $days);
             if (!is_array($payload)) {
                 continue;
             }
 
-            $candles = self::extract_items($payload, ['data', 'candles', 'items', 'rows']);
-            foreach ($candles as $candle) {
-                $event_time = (int) self::pick($candle, ['t', 'eventTime', 'event_time', 0]);
-                if ($event_time <= 0) {
+            $rows = lcni_convert_candles($payload, $symbol, $timeframe);
+            if ($latest_only && !empty($rows)) {
+                $rows = [end($rows)];
+            }
+
+            foreach ($rows as $row) {
+                $event_time = strtotime($row['candle_time']);
+                if ($event_time === false || $event_time <= 0) {
                     continue;
                 }
 
-                if ($event_time > 1000000000000) {
-                    $event_time = (int) floor($event_time / 1000);
-                }
-
                 $record = [
-                    'symbol' => strtoupper($symbol),
-                    'timeframe' => '1D',
+                    'symbol' => $row['symbol'],
+                    'timeframe' => $row['timeframe'],
                     'event_time' => $event_time,
-                    'open_price' => (float) self::pick($candle, ['o', 'open', 'openPrice', 1]),
-                    'high_price' => (float) self::pick($candle, ['h', 'high', 'highPrice', 2]),
-                    'low_price' => (float) self::pick($candle, ['l', 'low', 'lowPrice', 3]),
-                    'close_price' => (float) self::pick($candle, ['c', 'close', 'closePrice', 4]),
-                    'volume' => (int) self::pick($candle, ['v', 'volume', 5]),
-                    'value_traded' => (float) self::pick($candle, ['value', 'valueTraded', 'turnover', 6]),
+                    'open_price' => (float) $row['open'],
+                    'high_price' => (float) $row['high'],
+                    'low_price' => (float) $row['low'],
+                    'close_price' => (float) $row['close'],
+                    'volume' => (int) $row['volume'],
+                    'value_traded' => (float) (($row['close'] ?? 0) * ($row['volume'] ?? 0)),
                 ];
 
                 $exists = $wpdb->get_var(
@@ -179,6 +190,7 @@ class LCNI_DB {
 
                 if ($exists) {
                     $wpdb->update($table, $record, ['id' => (int) $exists]);
+                    $updated++;
                 } else {
                     $wpdb->insert($table, $record);
                     $inserted++;
@@ -186,7 +198,7 @@ class LCNI_DB {
             }
         }
 
-        self::log_change('sync_ohlc', sprintf('Inserted %d OHLC records.', $inserted));
+        self::log_change('sync_ohlc', sprintf('OHLC sync done. inserted=%d updated=%d latest_only=%s timeframe=%s days=%d.', $inserted, $updated, $latest_only ? 'yes' : 'no', $timeframe, $days));
     }
 
     private static function extract_items($payload, $preferred_keys = []) {
@@ -291,5 +303,35 @@ class LCNI_DB {
             ],
             ['%s', '%s', '%s']
         );
+    }
+}
+
+if (!function_exists('lcni_convert_candles')) {
+    function lcni_convert_candles($data, $symbol, $tf) {
+        $rows = [];
+
+        if (!is_array($data) || empty($data['t']) || !is_array($data['t'])) {
+            return $rows;
+        }
+
+        foreach ($data['t'] as $i => $time) {
+            $timestamp = (int) $time;
+            if ($timestamp > 1000000000000) {
+                $timestamp = (int) floor($timestamp / 1000);
+            }
+
+            $rows[] = [
+                'symbol' => strtoupper((string) $symbol),
+                'timeframe' => strtoupper((string) $tf),
+                'candle_time' => gmdate('Y-m-d H:i:s', $timestamp),
+                'open' => isset($data['o'][$i]) ? (float) $data['o'][$i] : 0,
+                'high' => isset($data['h'][$i]) ? (float) $data['h'][$i] : 0,
+                'low' => isset($data['l'][$i]) ? (float) $data['l'][$i] : 0,
+                'close' => isset($data['c'][$i]) ? (float) $data['c'][$i] : 0,
+                'volume' => isset($data['v'][$i]) ? (int) $data['v'][$i] : 0,
+            ];
+        }
+
+        return $rows;
     }
 }

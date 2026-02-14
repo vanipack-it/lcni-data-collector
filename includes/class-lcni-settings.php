@@ -6,13 +6,10 @@ if (!defined('ABSPATH')) {
 
 class LCNI_Settings {
 
-    private static $credentials_checked = false;
-
     public function __construct() {
         add_action('admin_menu', [$this, 'menu']);
         add_action('admin_init', [$this, 'register_settings']);
         add_action('admin_init', [$this, 'handle_admin_actions']);
-        add_action('updated_option', [$this, 'maybe_validate_credentials'], 10, 3);
     }
 
     public function menu() {
@@ -35,22 +32,29 @@ class LCNI_Settings {
     }
 
     public function register_settings() {
-        register_setting(
-            'lcni_settings_group',
-            'lcni_api_mode',
-            [
-                'type' => 'string',
-                'sanitize_callback' => [$this, 'sanitize_api_mode'],
-                'default' => 'market_data',
-            ]
-        );
-        register_setting('lcni_settings_group', 'lcni_api_key');
-        register_setting('lcni_settings_group', 'lcni_api_secret');
-        register_setting('lcni_settings_group', 'lcni_auth_email', ['sanitize_callback' => 'sanitize_email']);
+        register_setting('lcni_settings_group', 'lcni_timeframe', [
+            'type' => 'string',
+            'sanitize_callback' => [$this, 'sanitize_timeframe'],
+            'default' => '1D',
+        ]);
+
+        register_setting('lcni_settings_group', 'lcni_days_to_load', [
+            'type' => 'integer',
+            'sanitize_callback' => [$this, 'sanitize_days_to_load'],
+            'default' => 365,
+        ]);
     }
 
-    public function sanitize_api_mode($value) {
-        return in_array($value, ['market_data', 'trading_api'], true) ? $value : 'market_data';
+    public function sanitize_timeframe($value) {
+        $value = strtoupper(trim((string) $value));
+
+        return $value === '' ? '1D' : $value;
+    }
+
+    public function sanitize_days_to_load($value) {
+        $days = (int) $value;
+
+        return $days > 0 ? $days : 365;
     }
 
     public function handle_admin_actions() {
@@ -83,7 +87,7 @@ class LCNI_Settings {
         }
 
         if ($action === 'run_sync_now') {
-            LCNI_DB::collect_all_data();
+            LCNI_DB::collect_all_data(false);
             LCNI_DB::log_change('manual_sync', 'Manual sync triggered from admin page.');
 
             set_transient(
@@ -101,20 +105,16 @@ class LCNI_Settings {
     }
 
     private function run_api_connection_test() {
-        $api_mode = get_option('lcni_api_mode', 'market_data');
-        $api_key = get_option('lcni_api_key');
-        $api_secret = get_option('lcni_api_secret');
-        $auth_email = get_option('lcni_auth_email');
-        $test_result = LCNI_API::test_connection($api_mode, $api_key, $api_secret, $auth_email);
+        $test_result = LCNI_API::test_connection();
 
         if (is_wp_error($test_result)) {
-            LCNI_DB::log_change('api_connection_failed', 'Manual DNSE API connection test failed from admin button.');
+            LCNI_DB::log_change('api_connection_failed', 'Manual chart-api connection test failed from admin button.');
 
             set_transient(
                 'lcni_settings_notice',
                 [
                     'type' => 'error',
-                    'message' => 'Kết nối DNSE API thất bại: ' . $test_result->get_error_message(),
+                    'message' => 'Kết nối chart-api thất bại: ' . $test_result->get_error_message(),
                 ],
                 60
             );
@@ -122,67 +122,13 @@ class LCNI_Settings {
             return;
         }
 
-        LCNI_DB::log_change('api_connection_success', 'Manual DNSE API connection test passed from admin button.');
+        LCNI_DB::log_change('api_connection_success', 'Manual chart-api connection test passed from admin button.');
 
         set_transient(
             'lcni_settings_notice',
             [
                 'type' => 'success',
-                'message' => 'Kết nối DNSE API thành công.',
-            ],
-            60
-        );
-    }
-
-    public function maybe_validate_credentials($option, $old_value, $value) {
-        if (self::$credentials_checked) {
-            return;
-        }
-
-        if (!in_array($option, ['lcni_api_mode', 'lcni_api_key', 'lcni_api_secret', 'lcni_auth_email'], true)) {
-            return;
-        }
-
-        if (!is_admin() || !current_user_can('manage_options')) {
-            return;
-        }
-
-        if (!isset($_POST['option_page']) || $_POST['option_page'] !== 'lcni_settings_group') {
-            return;
-        }
-
-        self::$credentials_checked = true;
-
-        $api_mode = get_option('lcni_api_mode', 'market_data');
-        $api_key = get_option('lcni_api_key');
-        $api_secret = get_option('lcni_api_secret');
-        $auth_email = get_option('lcni_auth_email');
-
-        $test_result = LCNI_API::test_connection($api_mode, $api_key, $api_secret, $auth_email);
-
-        if (is_wp_error($test_result)) {
-            set_transient(
-                'lcni_settings_notice',
-                [
-                    'type' => 'error',
-                    'message' => 'Kết nối DNSE API thất bại: ' . $test_result->get_error_message(),
-                ],
-                60
-            );
-
-            LCNI_DB::log_change('api_connection_failed', 'DNSE API connection test failed after saving credentials.');
-
-            return;
-        }
-
-        LCNI_DB::log_change('api_connection_success', 'DNSE API connection test passed. Start collecting data.');
-        LCNI_DB::collect_all_data();
-
-        set_transient(
-            'lcni_settings_notice',
-            [
-                'type' => 'success',
-                'message' => 'Kết nối DNSE API thành công. Dữ liệu đã được đồng bộ ban đầu.',
+                'message' => 'Kết nối chart-api thành công.',
             ],
             60
         );
@@ -204,7 +150,7 @@ class LCNI_Settings {
         }
         ?>
         <div class="wrap">
-            <h1>LCNI API Settings</h1>
+            <h1>LCNI Market Data Settings</h1>
             <?php if ($notice) : ?>
                 <div class="notice notice-<?php echo esc_attr($notice['type'] === 'error' ? 'error' : 'success'); ?> is-dismissible">
                     <p><?php echo esc_html($notice['message']); ?></p>
@@ -214,49 +160,24 @@ class LCNI_Settings {
             <form method="post" action="options.php">
                 <?php settings_fields('lcni_settings_group'); ?>
 
-                <?php $api_mode = get_option('lcni_api_mode', 'market_data'); ?>
-
                 <table class="form-table">
                     <tr>
-                        <th>Chế độ kết nối</th>
+                        <th>Timeframe</th>
                         <td>
-                            <label style="display: block; margin-bottom: 8px;">
-                                <input type="radio" name="lcni_api_mode" value="market_data" <?php checked($api_mode, 'market_data'); ?>>
-                                Market Data (không cần key)
-                            </label>
-                            <label style="display: block;">
-                                <input type="radio" name="lcni_api_mode" value="trading_api" <?php checked($api_mode, 'trading_api'); ?>>
-                                Trading API (cần key + email xác thực)
-                            </label>
+                            <input type="text" name="lcni_timeframe"
+                                   value="<?php echo esc_attr(get_option('lcni_timeframe', '1D')); ?>"
+                                   placeholder="Ví dụ: 1D, 1W, 1H"
+                                   size="20">
                         </td>
                     </tr>
 
                     <tr>
-                        <th>API Key</th>
-                        <td class="lcni-trading-only">
-                            <input type="text" name="lcni_api_key"
-                                   value="<?php echo esc_attr(get_option('lcni_api_key')); ?>"
-                                   size="50">
-                        </td>
-                    </tr>
-
-                    <tr>
-                        <th>API Secret</th>
-                        <td class="lcni-trading-only">
-                            <input type="password" name="lcni_api_secret"
-                                   value="<?php echo esc_attr(get_option('lcni_api_secret')); ?>"
-                                   size="50">
-                        </td>
-                    </tr>
-
-                    <tr>
-                        <th>Email xác thực</th>
-                        <td class="lcni-trading-only">
-                            <input type="email" name="lcni_auth_email"
-                                   value="<?php echo esc_attr(get_option('lcni_auth_email')); ?>"
-                                   placeholder="you@example.com"
-                                   size="50">
-                            <p class="description">Chỉ dùng cho chế độ Trading API.</p>
+                        <th>Số ngày load</th>
+                        <td>
+                            <input type="number" min="1" max="5000" name="lcni_days_to_load"
+                                   value="<?php echo esc_attr((int) get_option('lcni_days_to_load', 365)); ?>"
+                                   size="10">
+                            <p class="description">Dùng cho đồng bộ thủ công. Cron sẽ chỉ lấy nến mới nhất để giảm tải DB.</p>
                         </td>
                     </tr>
                 </table>
@@ -265,11 +186,11 @@ class LCNI_Settings {
             </form>
 
             <h2>Quick Actions</h2>
-            <p>Dùng các nút bên dưới để test API và chạy đồng bộ dữ liệu ngay trong trang admin.</p>
+            <p>Dùng các nút bên dưới để test chart-api và chạy đồng bộ dữ liệu ngay trong trang admin.</p>
             <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display: inline-block; margin-right: 8px;">
                 <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
                 <input type="hidden" name="lcni_admin_action" value="test_api_connection">
-                <?php submit_button('Test API ngay', 'secondary', 'submit', false); ?>
+                <?php submit_button('Test chart-api', 'secondary', 'submit', false); ?>
             </form>
             <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display: inline-block;">
                 <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
@@ -290,31 +211,6 @@ class LCNI_Settings {
                 }
                 ?>
             </p>
-
-            <script>
-                (function() {
-                    var modeRadios = document.querySelectorAll('input[name="lcni_api_mode"]');
-                    var tradingRows = document.querySelectorAll('.lcni-trading-only');
-
-                    function toggleTradingFields() {
-                        var selected = document.querySelector('input[name="lcni_api_mode"]:checked');
-                        var isTradingMode = selected && selected.value === 'trading_api';
-
-                        tradingRows.forEach(function(cell) {
-                            var row = cell.closest('tr');
-                            if (row) {
-                                row.style.display = isTradingMode ? '' : 'none';
-                            }
-                        });
-                    }
-
-                    modeRadios.forEach(function(radio) {
-                        radio.addEventListener('change', toggleTradingFields);
-                    });
-
-                    toggleTradingFields();
-                })();
-            </script>
 
             <h2>Change Logs</h2>
             <?php if (!empty($logs)) : ?>
@@ -361,7 +257,7 @@ class LCNI_Settings {
         ?>
         <div class="wrap">
             <h1>Saved Data</h1>
-            <p>Trang này hiển thị dữ liệu đã lưu từ DNSE API (50 bản ghi gần nhất mỗi bảng).</p>
+            <p>Trang này hiển thị dữ liệu đã lưu từ API (50 bản ghi gần nhất mỗi bảng).</p>
 
             <h2>Security Definitions</h2>
             <?php if (!empty($security_rows)) : ?>

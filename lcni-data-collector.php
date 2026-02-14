@@ -1,8 +1,8 @@
 <?php
 /*
 Plugin Name: LCNI Data Collector
-Description: Lưu dữ liệu OHLC và Security Definition từ DNSE API
-Version: 1.2
+Description: LCNI Market Data Engine: lấy nến, lưu DB, cron auto update
+Version: 1.3
 */
 
 if (!defined('ABSPATH')) {
@@ -37,7 +37,11 @@ function lcni_deactivate_plugin() {
     }
 }
 
-add_action(LCNI_CRON_HOOK, ['LCNI_DB', 'collect_all_data']);
+function lcni_run_cron_incremental_sync() {
+    LCNI_DB::collect_all_data(true);
+}
+
+add_action(LCNI_CRON_HOOK, 'lcni_run_cron_incremental_sync');
 add_action('init', 'lcni_ensure_cron_scheduled');
 
 register_activation_hook(__FILE__, 'lcni_activate_plugin');
