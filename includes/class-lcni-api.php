@@ -6,7 +6,7 @@ if (!defined('ABSPATH')) {
 
 class LCNI_API {
 
-    const SECDEF_URL = 'https://services.entrade.com.vn/chart-api/v2/securities';
+    const SECDEF_URL = 'https://openapi.dnse.com.vn/price/secdef';
 
     private static $last_request_error = '';
 
@@ -59,27 +59,23 @@ class LCNI_API {
         $api_key = trim((string) get_option('lcni_api_key', ''));
         $api_secret = trim((string) get_option('lcni_api_secret', ''));
 
-        if ($api_key === '' || $api_secret === '') {
-            self::$last_request_error = 'Missing DNSE API credentials (api_key/api_secret).';
-            LCNI_DB::log_change(
-                'api_credentials_missing',
-                'Security definition sync skipped because DNSE API credentials are missing.'
-            );
-
-            return false;
-        }
-
-        $url = trim((string) get_option('lcni_secdef_url', self::SECDEF_URL));
+        $url = self::normalize_secdef_url(trim((string) get_option('lcni_secdef_url', self::SECDEF_URL)));
         if ($url === '') {
             $url = self::SECDEF_URL;
         }
 
+        $headers = [];
+        if ($api_key !== '') {
+            $headers['X-API-KEY'] = $api_key;
+        }
+
+        if ($api_secret !== '') {
+            $headers['X-API-SECRET'] = $api_secret;
+        }
+
         return self::request_json(
             $url,
-            [
-                'X-API-KEY' => $api_key,
-                'X-API-SECRET' => $api_secret,
-            ]
+            $headers
         );
     }
 
@@ -195,5 +191,15 @@ class LCNI_API {
         }
 
         return '1D';
+    }
+
+    private static function normalize_secdef_url($url) {
+        $url = trim((string) $url);
+
+        if ($url === '') {
+            return '';
+        }
+
+        return str_ireplace('/:symbol', '', $url);
     }
 }
