@@ -6,8 +6,9 @@ if (!defined('ABSPATH')) {
 
 class LCNI_API {
 
-    const SECDEF_URL = 'https://openapi.dnse.com.vn/price/secdef';
-    const SECDEF_FALLBACK_URL = 'https://openapi.dnse.com.vn/price/secdefs';
+    const BASE_URL = 'https://services.entrade.com.vn';
+    const SECDEF_ENDPOINT = '/open-api/v2/market/secdef';
+    const SECDEF_URL = self::BASE_URL . self::SECDEF_ENDPOINT;
 
     private static $last_request_error = '';
 
@@ -57,25 +58,32 @@ class LCNI_API {
     }
 
     public static function get_security_definitions() {
-        $api_key = trim((string) get_option('lcni_api_key', ''));
-        $api_secret = trim((string) get_option('lcni_api_secret', ''));
+        $access_token = trim((string) get_option('lcni_access_token', ''));
+        if ($access_token === '') {
+            // Backward compatibility: previous versions reused API Key as token input.
+            $access_token = trim((string) get_option('lcni_api_key', ''));
+        }
 
         $configured_url = trim((string) get_option('lcni_secdef_url', self::SECDEF_URL));
         $candidates = self::build_secdef_candidates($configured_url);
 
-        $headers = [];
-        if ($api_key !== '') {
-            $headers['X-API-KEY'] = $api_key;
+        $headers = [
+            'Content-Type' => 'application/json',
+        ];
+        if ($access_token !== '') {
+            $headers['Authorization'] = 'Bearer ' . $access_token;
         }
 
-        if ($api_secret !== '') {
-            $headers['X-API-SECRET'] = $api_secret;
-        }
+        $request_body = [
+            'symbol' => '',
+            'page' => 1,
+            'size' => 500,
+        ];
 
         $attempt_errors = [];
 
         foreach ($candidates as $url) {
-            $payload = self::request_json($url, $headers);
+            $payload = self::request_json($url, $headers, 'POST', $request_body);
             if (is_array($payload)) {
                 return $payload;
             }
@@ -110,7 +118,7 @@ class LCNI_API {
         return true;
     }
 
-    private static function request_json($url, $headers = []) {
+    private static function request_json($url, $headers = [], $method = 'GET', $body = null) {
         self::$last_request_error = '';
 
         $request_headers = array_merge(
@@ -120,13 +128,17 @@ class LCNI_API {
             is_array($headers) ? $headers : []
         );
 
-        $response = wp_remote_get(
-            $url,
-            [
-                'headers' => $request_headers,
-                'timeout' => 20,
-            ]
-        );
+        $request_args = [
+            'headers' => $request_headers,
+            'timeout' => 20,
+            'method' => strtoupper((string) $method),
+        ];
+
+        if ($request_args['method'] !== 'GET' && $body !== null) {
+            $request_args['body'] = wp_json_encode($body);
+        }
+
+        $response = wp_remote_request($url, $request_args);
 
         if (is_wp_error($response)) {
             self::$last_request_error = 'HTTP request error: ' . implode('; ', $response->get_error_messages());
@@ -222,7 +234,6 @@ class LCNI_API {
         $candidates = [
             self::normalize_secdef_url($configured_url),
             self::normalize_secdef_url(self::SECDEF_URL),
-            self::normalize_secdef_url(self::SECDEF_FALLBACK_URL),
         ];
 
         $candidates = array_values(
@@ -234,6 +245,6 @@ class LCNI_API {
             )
         );
 
-        return !empty($candidates) ? $candidates : [self::SECDEF_URL, self::SECDEF_FALLBACK_URL];
+        return !empty($candidates) ? $candidates : [self::SECDEF_URL];
     }
 }
