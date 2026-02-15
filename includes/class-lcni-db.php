@@ -58,6 +58,7 @@ class LCNI_DB {
         }
 
         self::ensure_ohlc_indicator_columns();
+        self::normalize_ohlc_numeric_columns();
     }
 
     public static function create_tables() {
@@ -80,12 +81,12 @@ class LCNI_DB {
             symbol VARCHAR(20) NOT NULL,
             timeframe VARCHAR(10) NOT NULL,
             event_time BIGINT UNSIGNED NOT NULL,
-            open_price DECIMAL(20,6) NOT NULL,
-            high_price DECIMAL(20,6) NOT NULL,
-            low_price DECIMAL(20,6) NOT NULL,
-            close_price DECIMAL(20,6) NOT NULL,
+            open_price DECIMAL(20,2) NOT NULL,
+            high_price DECIMAL(20,2) NOT NULL,
+            low_price DECIMAL(20,2) NOT NULL,
+            close_price DECIMAL(20,2) NOT NULL,
             volume BIGINT UNSIGNED NOT NULL DEFAULT 0,
-            value_traded DECIMAL(24,4) NOT NULL DEFAULT 0,
+            value_traded DECIMAL(24,2) NOT NULL DEFAULT 0,
             pct_t_1 DECIMAL(12,6) DEFAULT NULL,
             pct_t_3 DECIMAL(12,6) DEFAULT NULL,
             pct_1w DECIMAL(12,6) DEFAULT NULL,
@@ -93,19 +94,19 @@ class LCNI_DB {
             pct_3m DECIMAL(12,6) DEFAULT NULL,
             pct_6m DECIMAL(12,6) DEFAULT NULL,
             pct_1y DECIMAL(12,6) DEFAULT NULL,
-            ma10 DECIMAL(20,6) DEFAULT NULL,
-            ma20 DECIMAL(20,6) DEFAULT NULL,
-            ma50 DECIMAL(20,6) DEFAULT NULL,
-            ma100 DECIMAL(20,6) DEFAULT NULL,
-            ma200 DECIMAL(20,6) DEFAULT NULL,
-            h1m DECIMAL(20,6) DEFAULT NULL,
-            h3m DECIMAL(20,6) DEFAULT NULL,
-            h6m DECIMAL(20,6) DEFAULT NULL,
-            h1y DECIMAL(20,6) DEFAULT NULL,
-            l1m DECIMAL(20,6) DEFAULT NULL,
-            l3m DECIMAL(20,6) DEFAULT NULL,
-            l6m DECIMAL(20,6) DEFAULT NULL,
-            l1y DECIMAL(20,6) DEFAULT NULL,
+            ma10 DECIMAL(20,2) DEFAULT NULL,
+            ma20 DECIMAL(20,2) DEFAULT NULL,
+            ma50 DECIMAL(20,2) DEFAULT NULL,
+            ma100 DECIMAL(20,2) DEFAULT NULL,
+            ma200 DECIMAL(20,2) DEFAULT NULL,
+            h1m DECIMAL(20,2) DEFAULT NULL,
+            h3m DECIMAL(20,2) DEFAULT NULL,
+            h6m DECIMAL(20,2) DEFAULT NULL,
+            h1y DECIMAL(20,2) DEFAULT NULL,
+            l1m DECIMAL(20,2) DEFAULT NULL,
+            l3m DECIMAL(20,2) DEFAULT NULL,
+            l6m DECIMAL(20,2) DEFAULT NULL,
+            l1y DECIMAL(20,2) DEFAULT NULL,
             vol_ma10 DECIMAL(24,4) DEFAULT NULL,
             vol_ma20 DECIMAL(24,4) DEFAULT NULL,
             gia_sv_ma10 DECIMAL(12,6) DEFAULT NULL,
@@ -239,6 +240,7 @@ class LCNI_DB {
         self::seed_icb2_reference_data($icb2_table);
         self::sync_symbol_market_icb_mapping();
         self::ensure_ohlc_indicator_columns();
+        self::normalize_ohlc_numeric_columns();
 
         self::log_change('activation', 'Created/updated OHLC, lcni_symbols, seed task, market, icb2, sym_icb_market and change log tables.');
     }
@@ -265,19 +267,19 @@ class LCNI_DB {
             'pct_3m' => 'DECIMAL(12,6) DEFAULT NULL',
             'pct_6m' => 'DECIMAL(12,6) DEFAULT NULL',
             'pct_1y' => 'DECIMAL(12,6) DEFAULT NULL',
-            'ma10' => 'DECIMAL(20,6) DEFAULT NULL',
-            'ma20' => 'DECIMAL(20,6) DEFAULT NULL',
-            'ma50' => 'DECIMAL(20,6) DEFAULT NULL',
-            'ma100' => 'DECIMAL(20,6) DEFAULT NULL',
-            'ma200' => 'DECIMAL(20,6) DEFAULT NULL',
-            'h1m' => 'DECIMAL(20,6) DEFAULT NULL',
-            'h3m' => 'DECIMAL(20,6) DEFAULT NULL',
-            'h6m' => 'DECIMAL(20,6) DEFAULT NULL',
-            'h1y' => 'DECIMAL(20,6) DEFAULT NULL',
-            'l1m' => 'DECIMAL(20,6) DEFAULT NULL',
-            'l3m' => 'DECIMAL(20,6) DEFAULT NULL',
-            'l6m' => 'DECIMAL(20,6) DEFAULT NULL',
-            'l1y' => 'DECIMAL(20,6) DEFAULT NULL',
+            'ma10' => 'DECIMAL(20,2) DEFAULT NULL',
+            'ma20' => 'DECIMAL(20,2) DEFAULT NULL',
+            'ma50' => 'DECIMAL(20,2) DEFAULT NULL',
+            'ma100' => 'DECIMAL(20,2) DEFAULT NULL',
+            'ma200' => 'DECIMAL(20,2) DEFAULT NULL',
+            'h1m' => 'DECIMAL(20,2) DEFAULT NULL',
+            'h3m' => 'DECIMAL(20,2) DEFAULT NULL',
+            'h6m' => 'DECIMAL(20,2) DEFAULT NULL',
+            'h1y' => 'DECIMAL(20,2) DEFAULT NULL',
+            'l1m' => 'DECIMAL(20,2) DEFAULT NULL',
+            'l3m' => 'DECIMAL(20,2) DEFAULT NULL',
+            'l6m' => 'DECIMAL(20,2) DEFAULT NULL',
+            'l1y' => 'DECIMAL(20,2) DEFAULT NULL',
             'vol_ma10' => 'DECIMAL(24,4) DEFAULT NULL',
             'vol_ma20' => 'DECIMAL(24,4) DEFAULT NULL',
             'gia_sv_ma10' => 'DECIMAL(12,6) DEFAULT NULL',
@@ -298,6 +300,46 @@ class LCNI_DB {
             }
 
             $wpdb->query("ALTER TABLE {$table} ADD COLUMN {$column_name} {$column_definition}");
+        }
+    }
+
+    private static function normalize_ohlc_numeric_columns() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $columns = [
+            'open_price' => 'DECIMAL(20,2) NOT NULL',
+            'high_price' => 'DECIMAL(20,2) NOT NULL',
+            'low_price' => 'DECIMAL(20,2) NOT NULL',
+            'close_price' => 'DECIMAL(20,2) NOT NULL',
+            'value_traded' => 'DECIMAL(24,2) NOT NULL DEFAULT 0',
+            'ma10' => 'DECIMAL(20,2) NULL',
+            'ma20' => 'DECIMAL(20,2) NULL',
+            'ma50' => 'DECIMAL(20,2) NULL',
+            'ma100' => 'DECIMAL(20,2) NULL',
+            'ma200' => 'DECIMAL(20,2) NULL',
+            'h1m' => 'DECIMAL(20,2) NULL',
+            'h3m' => 'DECIMAL(20,2) NULL',
+            'h6m' => 'DECIMAL(20,2) NULL',
+            'h1y' => 'DECIMAL(20,2) NULL',
+            'l1m' => 'DECIMAL(20,2) NULL',
+            'l3m' => 'DECIMAL(20,2) NULL',
+            'l6m' => 'DECIMAL(20,2) NULL',
+            'l1y' => 'DECIMAL(20,2) NULL',
+        ];
+
+        foreach ($columns as $column_name => $column_definition) {
+            $column = $wpdb->get_row($wpdb->prepare("SHOW COLUMNS FROM {$table} LIKE %s", $column_name), ARRAY_A);
+            if (!is_array($column)) {
+                continue;
+            }
+
+            $is_matching_type = isset($column['Type']) && strtolower((string) $column['Type']) === strtolower(str_replace([' NOT NULL', ' NULL', ' DEFAULT 0'], '', $column_definition));
+            if ($is_matching_type) {
+                continue;
+            }
+
+            $wpdb->query("ALTER TABLE {$table} MODIFY COLUMN {$column_name} {$column_definition}");
         }
     }
 
@@ -636,12 +678,12 @@ class LCNI_DB {
                 'symbol' => strtoupper((string) ($row['symbol'] ?? '')),
                 'timeframe' => strtoupper((string) ($row['timeframe'] ?? '1D')),
                 'event_time' => $event_time,
-                'open_price' => (float) ($row['open'] ?? 0),
-                'high_price' => (float) ($row['high'] ?? 0),
-                'low_price' => (float) ($row['low'] ?? 0),
-                'close_price' => (float) ($row['close'] ?? 0),
+                'open_price' => self::normalize_price($row['open'] ?? 0),
+                'high_price' => self::normalize_price($row['high'] ?? 0),
+                'low_price' => self::normalize_price($row['low'] ?? 0),
+                'close_price' => self::normalize_price($row['close'] ?? 0),
                 'volume' => (int) ($row['volume'] ?? 0),
-                'value_traded' => (float) (($row['close'] ?? 0) * ($row['volume'] ?? 0)),
+                'value_traded' => self::normalize_price((($row['close'] ?? 0) * ($row['volume'] ?? 0))),
             ];
 
             if ($record['symbol'] === '') {
@@ -845,19 +887,19 @@ class LCNI_DB {
                     'pct_3m' => self::change_pct($closes, $i, 63),
                     'pct_6m' => self::change_pct($closes, $i, 126),
                     'pct_1y' => self::change_pct($closes, $i, 252),
-                    'ma10' => $ma10,
-                    'ma20' => $ma20,
-                    'ma50' => $ma50,
-                    'ma100' => $ma100,
-                    'ma200' => $ma200,
-                    'h1m' => self::window_max($highs, $i, 21),
-                    'h3m' => self::window_max($highs, $i, 63),
-                    'h6m' => self::window_max($highs, $i, 126),
-                    'h1y' => self::window_max($highs, $i, 252),
-                    'l1m' => self::window_min($lows, $i, 21),
-                    'l3m' => self::window_min($lows, $i, 63),
-                    'l6m' => self::window_min($lows, $i, 126),
-                    'l1y' => self::window_min($lows, $i, 252),
+                    'ma10' => self::normalize_nullable_price($ma10),
+                    'ma20' => self::normalize_nullable_price($ma20),
+                    'ma50' => self::normalize_nullable_price($ma50),
+                    'ma100' => self::normalize_nullable_price($ma100),
+                    'ma200' => self::normalize_nullable_price($ma200),
+                    'h1m' => self::normalize_nullable_price(self::window_max($highs, $i, 21)),
+                    'h3m' => self::normalize_nullable_price(self::window_max($highs, $i, 63)),
+                    'h6m' => self::normalize_nullable_price(self::window_max($highs, $i, 126)),
+                    'h1y' => self::normalize_nullable_price(self::window_max($highs, $i, 252)),
+                    'l1m' => self::normalize_nullable_price(self::window_min($lows, $i, 21)),
+                    'l3m' => self::normalize_nullable_price(self::window_min($lows, $i, 63)),
+                    'l6m' => self::normalize_nullable_price(self::window_min($lows, $i, 126)),
+                    'l1y' => self::normalize_nullable_price(self::window_min($lows, $i, 252)),
                     'vol_ma10' => $vol_ma10,
                     'vol_ma20' => $vol_ma20,
                     'gia_sv_ma10' => self::safe_ratio_pct($close, $ma10),
@@ -888,7 +930,19 @@ class LCNI_DB {
             return null;
         }
 
-        return (((float) $series[$index] / $base) - 1) * 100;
+        return ((float) $series[$index] / $base) - 1;
+    }
+
+    private static function normalize_price($value) {
+        return round((float) $value, 2);
+    }
+
+    private static function normalize_nullable_price($value) {
+        if ($value === null) {
+            return null;
+        }
+
+        return self::normalize_price($value);
     }
 
     private static function window_average($series, $index, $window) {
@@ -922,7 +976,7 @@ class LCNI_DB {
             return null;
         }
 
-        return (((float) $value / (float) $base) - 1) * 100;
+        return ((float) $value / (float) $base) - 1;
     }
 
     private static function upsert_symbol_rows($rows, $source = 'manual') {
