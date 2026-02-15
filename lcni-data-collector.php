@@ -37,6 +37,10 @@ function lcni_activate_plugin() {
     lcni_ensure_cron_scheduled();
 }
 
+function lcni_ensure_plugin_tables() {
+    LCNI_DB::ensure_tables_exist();
+}
+
 function lcni_ensure_cron_scheduled() {
     if (!wp_next_scheduled(LCNI_CRON_HOOK)) {
         wp_schedule_event(time() + 300, 'hourly', LCNI_CRON_HOOK);
@@ -89,6 +93,7 @@ add_filter('cron_schedules', 'lcni_register_custom_cron_schedules');
 add_action(LCNI_CRON_HOOK, 'lcni_run_cron_incremental_sync');
 add_action(LCNI_SEED_CRON_HOOK, 'lcni_run_seed_batch');
 add_action(LCNI_SECDEF_DAILY_CRON_HOOK, 'lcni_run_daily_secdef_sync');
+add_action('plugins_loaded', 'lcni_ensure_plugin_tables');
 add_action('init', 'lcni_ensure_cron_scheduled');
 
 register_activation_hook(__FILE__, 'lcni_activate_plugin');
