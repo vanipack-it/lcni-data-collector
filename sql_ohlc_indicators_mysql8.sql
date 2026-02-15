@@ -151,6 +151,16 @@ final_calc AS (
         ms.macd_signal,
         100 - 100 / (1 + g.avg_gain_14 / NULLIF(g.avg_loss_14, 0)) AS rsi,
         CASE
+            WHEN (100 - 100 / (1 + g.avg_gain_14 / NULLIF(g.avg_loss_14, 0))) IS NULL
+              OR g.ma10 IS NULL
+              OR g.ma20 IS NULL
+              OR g.ma50 IS NULL
+              OR g.vol_ma20 IS NULL
+              OR g.pct_t_1 IS NULL
+              OR g.pct_1w IS NULL
+              OR g.pct_1m IS NULL
+              OR g.pct_3m IS NULL
+            THEN 'chưa đủ dữ liệu'
             WHEN (100 - 100 / (1 + g.avg_gain_14 / NULLIF(g.avg_loss_14, 0))) BETWEEN 38.5 AND 75.8
              AND ABS(g.close_price / NULLIF(g.ma10, 0) - 1) <= 0.05
              AND ABS(g.close_price / NULLIF(g.ma20, 0) - 1) <= 0.07
@@ -159,10 +169,10 @@ final_calc AS (
              AND g.volume >= 100000
              AND g.pct_t_1 BETWEEN -0.03 AND 0.03
              AND g.pct_1w BETWEEN -0.05 AND 0.05
-             AND g.pct_1m BETWEEN -0.1 AND 0.1
-             AND g.pct_3m BETWEEN -0.15 AND 0.15
+            AND g.pct_1m BETWEEN -0.1 AND 0.1
+            AND g.pct_3m BETWEEN -0.15 AND 0.15
             THEN 'xây nền'
-            ELSE NULL
+            ELSE 'không xây nền'
         END AS xay_nen,
         g.trading_index
     FROM gainloss g

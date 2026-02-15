@@ -64,6 +64,7 @@ class LCNI_DB {
     public static function run_pending_migrations() {
         self::normalize_legacy_ratio_columns();
         self::repair_ohlc_ratio_columns_over_normalized();
+        self::backfill_ohlc_trading_index_and_xay_nen();
     }
 
     public static function create_tables() {
@@ -422,6 +423,41 @@ class LCNI_DB {
         self::log_change(
             'repair_ohlc_ratio_columns',
             sprintf('Rebuilt indicators for %d symbol/timeframe series to repair over-normalized ratio columns.', count($all_series))
+        );
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function backfill_ohlc_trading_index_and_xay_nen() {
+        global $wpdb;
+
+        $migration_flag = 'lcni_ohlc_trading_index_xay_nen_backfilled_v1';
+        if (get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $series_with_missing_values = $wpdb->get_results(
+            "SELECT DISTINCT symbol, timeframe
+            FROM {$table}
+            WHERE trading_index IS NULL
+                OR xay_nen IS NULL",
+            ARRAY_A
+        );
+
+        if (empty($series_with_missing_values)) {
+            update_option($migration_flag, 'yes');
+
+            return;
+        }
+
+        foreach ($series_with_missing_values as $series) {
+            self::rebuild_ohlc_indicators($series['symbol'], $series['timeframe']);
+            self::rebuild_ohlc_trading_index($series['symbol']);
+        }
+
+        self::log_change(
+            'backfill_ohlc_trading_index_xay_nen',
+            sprintf('Backfilled trading_index/xay_nen for %d symbol/timeframe series with missing values.', count($series_with_missing_values))
         );
         update_option($migration_flag, 'yes');
     }
@@ -1048,7 +1084,7 @@ class LCNI_DB {
 
     private static function is_xay_nen($rsi, $gia_sv_ma10, $gia_sv_ma20, $gia_sv_ma50, $vol_sv_vol_ma20, $volume, $pct_t_1, $pct_1w, $pct_1m, $pct_3m) {
         if ($rsi === null || $gia_sv_ma10 === null || $gia_sv_ma20 === null || $gia_sv_ma50 === null || $vol_sv_vol_ma20 === null || $pct_t_1 === null || $pct_1w === null || $pct_1m === null || $pct_3m === null) {
-            return null;
+            return 'chưa đủ dữ liệu';
         }
 
         if (
@@ -1066,7 +1102,7 @@ class LCNI_DB {
             return 'xây nền';
         }
 
-        return null;
+        return 'không xây nền';
     }
 
     private static function change_pct($series, $index, $lookback) {
