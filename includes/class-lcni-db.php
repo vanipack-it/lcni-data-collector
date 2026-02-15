@@ -508,10 +508,9 @@ class LCNI_DB {
             $inserted += (int) $upsert_summary['inserted'];
             $updated += (int) $upsert_summary['updated'];
 
-            if (((int) $upsert_summary['inserted'] + (int) $upsert_summary['updated']) > 0) {
-                self::rebuild_ohlc_indicators($symbol, $timeframe);
-            }
         }
+
+        self::rebuild_missing_ohlc_indicators();
 
         self::log_change('sync_ohlc', sprintf('OHLC sync done. inserted=%d updated=%d latest_only=%s timeframe=%s days=%d.', $inserted, $updated, $latest_only ? 'yes' : 'no', $timeframe, $days));
 
@@ -564,6 +563,7 @@ class LCNI_DB {
         $table = $wpdb->prefix . 'lcni_ohlc';
         $inserted = 0;
         $updated = 0;
+        $touched_series = [];
 
         foreach ($rows as $row) {
             $event_time = isset($row['event_time']) ? (int) $row['event_time'] : strtotime((string) ($row['candle_time'] ?? ''));
@@ -586,6 +586,12 @@ class LCNI_DB {
             if ($record['symbol'] === '') {
                 continue;
             }
+
+            $series_key = $record['symbol'] . '|' . $record['timeframe'];
+            $touched_series[$series_key] = [
+                'symbol' => $record['symbol'],
+                'timeframe' => $record['timeframe'],
+            ];
 
             $query = $wpdb->prepare(
                 "INSERT INTO {$table}
@@ -618,10 +624,58 @@ class LCNI_DB {
             }
         }
 
+        foreach ($touched_series as $series) {
+            self::rebuild_ohlc_indicators($series['symbol'], $series['timeframe']);
+        }
+
+        if (!empty($touched_series)) {
+            self::rebuild_missing_ohlc_indicators(5);
+        }
+
         return [
             'inserted' => $inserted,
             'updated' => $updated,
         ];
+    }
+
+    public static function rebuild_missing_ohlc_indicators($limit = 20) {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $limit = max(1, (int) $limit);
+
+        $missing_series = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT latest.symbol, latest.timeframe
+                FROM (
+                    SELECT symbol, timeframe, MAX(event_time) AS max_event_time
+                    FROM {$table}
+                    GROUP BY symbol, timeframe
+                ) grouped
+                INNER JOIN {$table} latest
+                    ON latest.symbol = grouped.symbol
+                    AND latest.timeframe = grouped.timeframe
+                    AND latest.event_time = grouped.max_event_time
+                WHERE latest.ma10 IS NULL
+                    OR latest.ma20 IS NULL
+                    OR latest.ma50 IS NULL
+                    OR latest.macd IS NULL
+                    OR latest.rsi IS NULL
+                LIMIT %d",
+                $limit
+            ),
+            ARRAY_A
+        );
+
+        if (empty($missing_series)) {
+            return 0;
+        }
+
+        foreach ($missing_series as $series) {
+            self::rebuild_ohlc_indicators($series['symbol'], $series['timeframe']);
+        }
+
+        return count($missing_series);
     }
 
 
