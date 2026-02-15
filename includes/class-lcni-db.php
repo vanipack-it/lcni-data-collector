@@ -59,6 +59,7 @@ class LCNI_DB {
 
         self::ensure_ohlc_indicator_columns();
         self::normalize_ohlc_numeric_columns();
+        self::normalize_legacy_ratio_columns();
     }
 
     public static function create_tables() {
@@ -241,6 +242,7 @@ class LCNI_DB {
         self::sync_symbol_market_icb_mapping();
         self::ensure_ohlc_indicator_columns();
         self::normalize_ohlc_numeric_columns();
+        self::normalize_legacy_ratio_columns();
 
         self::log_change('activation', 'Created/updated OHLC, lcni_symbols, seed task, market, icb2, sym_icb_market and change log tables.');
     }
@@ -341,6 +343,43 @@ class LCNI_DB {
 
             $wpdb->query("ALTER TABLE {$table} MODIFY COLUMN {$column_name} {$column_definition}");
         }
+    }
+
+    private static function normalize_legacy_ratio_columns() {
+        global $wpdb;
+
+        $migration_flag = 'lcni_ohlc_ratio_columns_normalized_v1';
+        if (get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $ratio_columns = [
+            'pct_t_1', 'pct_t_3', 'pct_1w', 'pct_1m', 'pct_3m', 'pct_6m', 'pct_1y',
+            'gia_sv_ma10', 'gia_sv_ma20', 'gia_sv_ma50', 'gia_sv_ma100', 'gia_sv_ma200',
+            'vol_sv_vol_ma10', 'vol_sv_vol_ma20',
+        ];
+
+        $has_percent_scale_values = false;
+        foreach ($ratio_columns as $column_name) {
+            $max_abs_value = (float) $wpdb->get_var("SELECT MAX(ABS({$column_name})) FROM {$table}");
+            if ($max_abs_value >= 10) {
+                $has_percent_scale_values = true;
+                break;
+            }
+        }
+
+        if ($has_percent_scale_values) {
+            $set_clauses = [];
+            foreach ($ratio_columns as $column_name) {
+                $set_clauses[] = "{$column_name} = CASE WHEN {$column_name} IS NULL THEN NULL ELSE {$column_name} / 100 END";
+            }
+
+            $wpdb->query("UPDATE {$table} SET " . implode(', ', $set_clauses));
+            self::log_change('normalize_ohlc_ratio_columns', 'Normalized ratio indicator columns from percent scale to decimal scale (divide by 100).');
+        }
+
+        update_option($migration_flag, 'yes');
     }
 
     private static function seed_market_reference_data($market_table) {
