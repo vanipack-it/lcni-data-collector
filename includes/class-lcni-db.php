@@ -121,6 +121,8 @@ class LCNI_DB {
             macd DECIMAL(16,8) DEFAULT NULL,
             macd_signal DECIMAL(16,8) DEFAULT NULL,
             rsi DECIMAL(12,6) DEFAULT NULL,
+            trading_index BIGINT UNSIGNED DEFAULT NULL,
+            xay_nen VARCHAR(30) DEFAULT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY  (id),
             UNIQUE KEY unique_ohlc (symbol, timeframe, event_time),
@@ -295,6 +297,8 @@ class LCNI_DB {
             'macd' => 'DECIMAL(16,8) DEFAULT NULL',
             'macd_signal' => 'DECIMAL(16,8) DEFAULT NULL',
             'rsi' => 'DECIMAL(12,6) DEFAULT NULL',
+            'trading_index' => 'BIGINT UNSIGNED DEFAULT NULL',
+            'xay_nen' => 'VARCHAR(30) DEFAULT NULL',
         ];
 
         foreach ($required_columns as $column_name => $column_definition) {
@@ -952,14 +956,36 @@ class LCNI_DB {
             $vol_ma10 = self::window_average($volumes, $i, 10);
             $vol_ma20 = self::window_average($volumes, $i, 20);
 
+            $pct_t_1 = self::change_pct($closes, $i, 1);
+            $pct_1w = self::change_pct($closes, $i, 5);
+            $pct_1m = self::change_pct($closes, $i, 21);
+            $pct_3m = self::change_pct($closes, $i, 63);
+            $gia_sv_ma10 = self::safe_ratio_pct($close, $ma10);
+            $gia_sv_ma20 = self::safe_ratio_pct($close, $ma20);
+            $gia_sv_ma50 = self::safe_ratio_pct($close, $ma50);
+            $vol_sv_vol_ma20 = self::safe_ratio_pct($volume, $vol_ma20);
+
+            $is_xay_nen = $rsi !== null
+                && $rsi >= 38.5
+                && $rsi <= 75.8
+                && $gia_sv_ma10 !== null && abs($gia_sv_ma10) <= 0.05
+                && $gia_sv_ma20 !== null && abs($gia_sv_ma20) <= 0.07
+                && $gia_sv_ma50 !== null && abs($gia_sv_ma50) <= 0.1
+                && $vol_sv_vol_ma20 !== null && $vol_sv_vol_ma20 <= 0.1
+                && $volume >= 100000
+                && $pct_t_1 !== null && $pct_t_1 >= -0.03 && $pct_t_1 <= 0.03
+                && $pct_1w !== null && $pct_1w >= -0.05 && $pct_1w <= 0.05
+                && $pct_1m !== null && $pct_1m >= -0.1 && $pct_1m <= 0.1
+                && $pct_3m !== null && $pct_3m >= -0.15 && $pct_3m <= 0.15;
+
             $wpdb->update(
                 $table,
                 [
-                    'pct_t_1' => self::change_pct($closes, $i, 1),
+                    'pct_t_1' => $pct_t_1,
                     'pct_t_3' => self::change_pct($closes, $i, 3),
-                    'pct_1w' => self::change_pct($closes, $i, 5),
-                    'pct_1m' => self::change_pct($closes, $i, 21),
-                    'pct_3m' => self::change_pct($closes, $i, 63),
+                    'pct_1w' => $pct_1w,
+                    'pct_1m' => $pct_1m,
+                    'pct_3m' => $pct_3m,
                     'pct_6m' => self::change_pct($closes, $i, 126),
                     'pct_1y' => self::change_pct($closes, $i, 252),
                     'ma10' => self::normalize_nullable_price($ma10),
@@ -977,19 +1003,21 @@ class LCNI_DB {
                     'l1y' => self::normalize_nullable_price(self::window_min($lows, $i, 252)),
                     'vol_ma10' => $vol_ma10,
                     'vol_ma20' => $vol_ma20,
-                    'gia_sv_ma10' => self::safe_ratio_pct($close, $ma10),
-                    'gia_sv_ma20' => self::safe_ratio_pct($close, $ma20),
-                    'gia_sv_ma50' => self::safe_ratio_pct($close, $ma50),
+                    'gia_sv_ma10' => $gia_sv_ma10,
+                    'gia_sv_ma20' => $gia_sv_ma20,
+                    'gia_sv_ma50' => $gia_sv_ma50,
                     'gia_sv_ma100' => self::safe_ratio_pct($close, $ma100),
                     'gia_sv_ma200' => self::safe_ratio_pct($close, $ma200),
                     'vol_sv_vol_ma10' => self::safe_ratio_pct($volume, $vol_ma10),
-                    'vol_sv_vol_ma20' => self::safe_ratio_pct($volume, $vol_ma20),
+                    'vol_sv_vol_ma20' => $vol_sv_vol_ma20,
                     'macd' => $macd,
                     'macd_signal' => $signal,
                     'rsi' => $rsi,
+                    'trading_index' => $i + 1,
+                    'xay_nen' => $is_xay_nen ? 'xây nền' : null,
                 ],
                 ['id' => (int) $rows[$i]['id']],
-                ['%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f'],
+                ['%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%d','%s'],
                 ['%d']
             );
         }
