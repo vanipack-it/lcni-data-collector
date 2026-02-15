@@ -60,6 +60,7 @@ class LCNI_DB {
         self::ensure_ohlc_indicator_columns();
         self::normalize_ohlc_numeric_columns();
         self::normalize_legacy_ratio_columns();
+        self::repair_ohlc_ratio_columns_over_normalized();
     }
 
     public static function create_tables() {
@@ -372,13 +373,48 @@ class LCNI_DB {
         if ($has_percent_scale_values) {
             $set_clauses = [];
             foreach ($ratio_columns as $column_name) {
-                $set_clauses[] = "{$column_name} = CASE WHEN {$column_name} IS NULL THEN NULL ELSE {$column_name} / 100 END";
+                $set_clauses[] = "{$column_name} = CASE
+                    WHEN {$column_name} IS NULL THEN NULL
+                    WHEN ABS({$column_name}) >= 10 THEN {$column_name} / 100
+                    ELSE {$column_name}
+                END";
             }
 
             $wpdb->query("UPDATE {$table} SET " . implode(', ', $set_clauses));
             self::log_change('normalize_ohlc_ratio_columns', 'Normalized ratio indicator columns from percent scale to decimal scale (divide by 100).');
         }
 
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function repair_ohlc_ratio_columns_over_normalized() {
+        global $wpdb;
+
+        $migration_flag = 'lcni_ohlc_ratio_columns_repaired_v1';
+        if (get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $all_series = $wpdb->get_results(
+            "SELECT DISTINCT symbol, timeframe FROM {$table}",
+            ARRAY_A
+        );
+
+        if (empty($all_series)) {
+            update_option($migration_flag, 'yes');
+
+            return;
+        }
+
+        foreach ($all_series as $series) {
+            self::rebuild_ohlc_indicators($series['symbol'], $series['timeframe']);
+        }
+
+        self::log_change(
+            'repair_ohlc_ratio_columns',
+            sprintf('Rebuilt indicators for %d symbol/timeframe series to repair over-normalized ratio columns.', count($all_series))
+        );
         update_option($migration_flag, 'yes');
     }
 
