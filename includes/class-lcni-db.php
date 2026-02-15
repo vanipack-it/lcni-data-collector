@@ -46,6 +46,7 @@ class LCNI_DB {
             $wpdb->prefix . 'lcni_seed_tasks',
             $wpdb->prefix . 'lcni_marketid',
             $wpdb->prefix . 'lcni_icb2',
+            $wpdb->prefix . 'lcni_sym_icb_market',
         ];
 
         foreach ($required_tables as $table) {
@@ -68,6 +69,7 @@ class LCNI_DB {
         $seed_task_table = $wpdb->prefix . 'lcni_seed_tasks';
         $market_table = $wpdb->prefix . 'lcni_marketid';
         $icb2_table = $wpdb->prefix . 'lcni_icb2';
+        $symbol_market_icb_table = $wpdb->prefix . 'lcni_sym_icb_market';
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
@@ -82,6 +84,38 @@ class LCNI_DB {
             close_price DECIMAL(20,6) NOT NULL,
             volume BIGINT UNSIGNED NOT NULL DEFAULT 0,
             value_traded DECIMAL(24,4) NOT NULL DEFAULT 0,
+            pct_t_1 DECIMAL(12,6) DEFAULT NULL,
+            pct_t_3 DECIMAL(12,6) DEFAULT NULL,
+            pct_1w DECIMAL(12,6) DEFAULT NULL,
+            pct_1m DECIMAL(12,6) DEFAULT NULL,
+            pct_3m DECIMAL(12,6) DEFAULT NULL,
+            pct_6m DECIMAL(12,6) DEFAULT NULL,
+            pct_1y DECIMAL(12,6) DEFAULT NULL,
+            ma10 DECIMAL(20,6) DEFAULT NULL,
+            ma20 DECIMAL(20,6) DEFAULT NULL,
+            ma50 DECIMAL(20,6) DEFAULT NULL,
+            ma100 DECIMAL(20,6) DEFAULT NULL,
+            ma200 DECIMAL(20,6) DEFAULT NULL,
+            h1m DECIMAL(20,6) DEFAULT NULL,
+            h3m DECIMAL(20,6) DEFAULT NULL,
+            h6m DECIMAL(20,6) DEFAULT NULL,
+            h1y DECIMAL(20,6) DEFAULT NULL,
+            l1m DECIMAL(20,6) DEFAULT NULL,
+            l3m DECIMAL(20,6) DEFAULT NULL,
+            l6m DECIMAL(20,6) DEFAULT NULL,
+            l1y DECIMAL(20,6) DEFAULT NULL,
+            vol_ma10 DECIMAL(24,4) DEFAULT NULL,
+            vol_ma20 DECIMAL(24,4) DEFAULT NULL,
+            gia_sv_ma10 DECIMAL(12,6) DEFAULT NULL,
+            gia_sv_ma20 DECIMAL(12,6) DEFAULT NULL,
+            gia_sv_ma50 DECIMAL(12,6) DEFAULT NULL,
+            gia_sv_ma100 DECIMAL(12,6) DEFAULT NULL,
+            gia_sv_ma200 DECIMAL(12,6) DEFAULT NULL,
+            vol_sv_vol_ma10 DECIMAL(12,6) DEFAULT NULL,
+            vol_sv_vol_ma20 DECIMAL(12,6) DEFAULT NULL,
+            macd DECIMAL(16,8) DEFAULT NULL,
+            macd_signal DECIMAL(16,8) DEFAULT NULL,
+            rsi DECIMAL(12,6) DEFAULT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY  (id),
             UNIQUE KEY unique_ohlc (symbol, timeframe, event_time),
@@ -115,6 +149,7 @@ class LCNI_DB {
             isin VARCHAR(30) DEFAULT NULL,
             product_grp_id VARCHAR(20) DEFAULT NULL,
             security_group_id VARCHAR(20) DEFAULT NULL,
+            id_icb2 SMALLINT UNSIGNED DEFAULT NULL,
             basic_price DECIMAL(20,6) DEFAULT NULL,
             ceiling_price DECIMAL(20,6) DEFAULT NULL,
             floor_price DECIMAL(20,6) DEFAULT NULL,
@@ -129,7 +164,19 @@ class LCNI_DB {
             PRIMARY KEY  (id),
             UNIQUE KEY unique_symbol (symbol),
             KEY idx_market_board (market_id, board_id),
+            KEY idx_id_icb2 (id_icb2),
             KEY idx_source (source)
+        ) {$charset_collate};";
+
+        $sql_symbol_market_icb = "CREATE TABLE {$symbol_market_icb_table} (
+            symbol VARCHAR(20) NOT NULL,
+            market_id VARCHAR(20) DEFAULT NULL,
+            id_icb2 SMALLINT UNSIGNED DEFAULT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (symbol),
+            KEY idx_market_id (market_id),
+            KEY idx_id_icb2 (id_icb2)
         ) {$charset_collate};";
 
         $sql_seed_tasks = "CREATE TABLE {$seed_task_table} (
@@ -184,11 +231,13 @@ class LCNI_DB {
         dbDelta($sql_seed_tasks);
         dbDelta($sql_market);
         dbDelta($sql_icb2);
+        dbDelta($sql_symbol_market_icb);
 
         self::seed_market_reference_data($market_table);
         self::seed_icb2_reference_data($icb2_table);
+        self::sync_symbol_market_icb_mapping();
 
-        self::log_change('activation', 'Created/updated OHLC, lcni_symbols, seed task, market, icb2 and change log tables.');
+        self::log_change('activation', 'Created/updated OHLC, lcni_symbols, seed task, market, icb2, sym_icb_market and change log tables.');
     }
 
     private static function seed_market_reference_data($market_table) {
@@ -458,6 +507,10 @@ class LCNI_DB {
             $upsert_summary = self::upsert_ohlc_rows($rows);
             $inserted += (int) $upsert_summary['inserted'];
             $updated += (int) $upsert_summary['updated'];
+
+            if (((int) $upsert_summary['inserted'] + (int) $upsert_summary['updated']) > 0) {
+                self::rebuild_ohlc_indicators($symbol, $timeframe);
+            }
         }
 
         self::log_change('sync_ohlc', sprintf('OHLC sync done. inserted=%d updated=%d latest_only=%s timeframe=%s days=%d.', $inserted, $updated, $latest_only ? 'yes' : 'no', $timeframe, $days));
@@ -571,6 +624,192 @@ class LCNI_DB {
         ];
     }
 
+
+    private static function rebuild_ohlc_indicators($symbol, $timeframe) {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT id, close_price, high_price, low_price, volume FROM {$table} WHERE symbol = %s AND timeframe = %s ORDER BY event_time ASC",
+                strtoupper((string) $symbol),
+                strtoupper((string) $timeframe)
+            ),
+            ARRAY_A
+        );
+
+        if (empty($rows)) {
+            return;
+        }
+
+        $closes = [];
+        $highs = [];
+        $lows = [];
+        $volumes = [];
+
+        $ema12 = null;
+        $ema26 = null;
+        $signal = null;
+        $avg_gain = null;
+        $avg_loss = null;
+
+        $ema12_multiplier = 2 / (12 + 1);
+        $ema26_multiplier = 2 / (26 + 1);
+        $signal_multiplier = 2 / (9 + 1);
+
+        for ($i = 0; $i < count($rows); $i++) {
+            $close = (float) $rows[$i]['close_price'];
+            $high = (float) $rows[$i]['high_price'];
+            $low = (float) $rows[$i]['low_price'];
+            $volume = (float) $rows[$i]['volume'];
+
+            $closes[] = $close;
+            $highs[] = $high;
+            $lows[] = $low;
+            $volumes[] = $volume;
+
+            if ($ema12 === null) {
+                $ema12 = $close;
+                $ema26 = $close;
+            } else {
+                $ema12 = ($close - $ema12) * $ema12_multiplier + $ema12;
+                $ema26 = ($close - $ema26) * $ema26_multiplier + $ema26;
+            }
+
+            $macd = $ema12 - $ema26;
+            if ($signal === null) {
+                $signal = $macd;
+            } else {
+                $signal = ($macd - $signal) * $signal_multiplier + $signal;
+            }
+
+            $rsi = null;
+            if ($i > 0) {
+                $change = $close - (float) $closes[$i - 1];
+                $gain = max($change, 0);
+                $loss = max(-$change, 0);
+
+                if ($i <= 14) {
+                    $avg_gain = ($avg_gain ?? 0) + $gain;
+                    $avg_loss = ($avg_loss ?? 0) + $loss;
+
+                    if ($i === 14) {
+                        $avg_gain /= 14;
+                        $avg_loss /= 14;
+                    }
+                } else {
+                    $avg_gain = (($avg_gain * 13) + $gain) / 14;
+                    $avg_loss = (($avg_loss * 13) + $loss) / 14;
+                }
+
+                if ($i >= 14) {
+                    if ($avg_loss == 0.0) {
+                        $rsi = 100.0;
+                    } else {
+                        $rs = $avg_gain / $avg_loss;
+                        $rsi = 100 - (100 / (1 + $rs));
+                    }
+                }
+            }
+
+            $ma10 = self::window_average($closes, $i, 10);
+            $ma20 = self::window_average($closes, $i, 20);
+            $ma50 = self::window_average($closes, $i, 50);
+            $ma100 = self::window_average($closes, $i, 100);
+            $ma200 = self::window_average($closes, $i, 200);
+            $vol_ma10 = self::window_average($volumes, $i, 10);
+            $vol_ma20 = self::window_average($volumes, $i, 20);
+
+            $wpdb->update(
+                $table,
+                [
+                    'pct_t_1' => self::change_pct($closes, $i, 1),
+                    'pct_t_3' => self::change_pct($closes, $i, 3),
+                    'pct_1w' => self::change_pct($closes, $i, 5),
+                    'pct_1m' => self::change_pct($closes, $i, 21),
+                    'pct_3m' => self::change_pct($closes, $i, 63),
+                    'pct_6m' => self::change_pct($closes, $i, 126),
+                    'pct_1y' => self::change_pct($closes, $i, 252),
+                    'ma10' => $ma10,
+                    'ma20' => $ma20,
+                    'ma50' => $ma50,
+                    'ma100' => $ma100,
+                    'ma200' => $ma200,
+                    'h1m' => self::window_max($highs, $i, 21),
+                    'h3m' => self::window_max($highs, $i, 63),
+                    'h6m' => self::window_max($highs, $i, 126),
+                    'h1y' => self::window_max($highs, $i, 252),
+                    'l1m' => self::window_min($lows, $i, 21),
+                    'l3m' => self::window_min($lows, $i, 63),
+                    'l6m' => self::window_min($lows, $i, 126),
+                    'l1y' => self::window_min($lows, $i, 252),
+                    'vol_ma10' => $vol_ma10,
+                    'vol_ma20' => $vol_ma20,
+                    'gia_sv_ma10' => self::safe_ratio_pct($close, $ma10),
+                    'gia_sv_ma20' => self::safe_ratio_pct($close, $ma20),
+                    'gia_sv_ma50' => self::safe_ratio_pct($close, $ma50),
+                    'gia_sv_ma100' => self::safe_ratio_pct($close, $ma100),
+                    'gia_sv_ma200' => self::safe_ratio_pct($close, $ma200),
+                    'vol_sv_vol_ma10' => self::safe_ratio_pct($volume, $vol_ma10),
+                    'vol_sv_vol_ma20' => self::safe_ratio_pct($volume, $vol_ma20),
+                    'macd' => $macd,
+                    'macd_signal' => $signal,
+                    'rsi' => $rsi,
+                ],
+                ['id' => (int) $rows[$i]['id']],
+                ['%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f'],
+                ['%d']
+            );
+        }
+    }
+
+    private static function change_pct($series, $index, $lookback) {
+        if ($index - $lookback < 0) {
+            return null;
+        }
+
+        $base = (float) $series[$index - $lookback];
+        if ($base == 0.0) {
+            return null;
+        }
+
+        return (((float) $series[$index] / $base) - 1) * 100;
+    }
+
+    private static function window_average($series, $index, $window) {
+        if ($index + 1 < $window) {
+            return null;
+        }
+
+        $slice = array_slice($series, $index - $window + 1, $window);
+
+        return array_sum($slice) / $window;
+    }
+
+    private static function window_max($series, $index, $window) {
+        if ($index + 1 < $window) {
+            return null;
+        }
+
+        return max(array_slice($series, $index - $window + 1, $window));
+    }
+
+    private static function window_min($series, $index, $window) {
+        if ($index + 1 < $window) {
+            return null;
+        }
+
+        return min(array_slice($series, $index - $window + 1, $window));
+    }
+
+    private static function safe_ratio_pct($value, $base) {
+        if ($base === null || (float) $base == 0.0) {
+            return null;
+        }
+
+        return (((float) $value / (float) $base) - 1) * 100;
+    }
+
     private static function upsert_symbol_rows($rows, $source = 'manual') {
         global $wpdb;
 
@@ -590,6 +829,7 @@ class LCNI_DB {
                 'isin' => self::nullable_text(self::pick($row, ['isin', 'ISIN'])),
                 'product_grp_id' => self::nullable_text(self::pick($row, ['productGrpId', 'product_grp_id'])),
                 'security_group_id' => self::nullable_text(self::pick($row, ['securityGroupId', 'security_group_id'])),
+                'id_icb2' => self::nullable_int(self::pick($row, ['idIcb2', 'id_icb2', 'icb2', 'industryId'])),
                 'basic_price' => self::nullable_float(self::pick($row, ['basicPrice', 'basic_price', 'referencePrice', 'reference_price'])),
                 'ceiling_price' => self::nullable_float(self::pick($row, ['ceilingPrice', 'ceiling_price'])),
                 'floor_price' => self::nullable_float(self::pick($row, ['floorPrice', 'floor_price'])),
@@ -604,7 +844,7 @@ class LCNI_DB {
             $result = $wpdb->replace(
                 $table,
                 $record,
-                ['%s', '%s', '%s', '%s', '%s', '%s', '%f', '%f', '%f', '%d', '%s', '%s', '%s', '%s', '%s']
+                ['%s', '%s', '%s', '%s', '%s', '%s', '%d', '%f', '%f', '%f', '%d', '%s', '%s', '%s', '%s', '%s']
             );
 
             if ($result !== false) {
@@ -612,7 +852,29 @@ class LCNI_DB {
             }
         }
 
+        self::sync_symbol_market_icb_mapping();
+
         return ['updated' => $updated];
+    }
+
+    private static function sync_symbol_market_icb_mapping() {
+        global $wpdb;
+
+        $symbols_table = $wpdb->prefix . 'lcni_symbols';
+        $mapping_table = $wpdb->prefix . 'lcni_sym_icb_market';
+
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $mapping_table)) !== $mapping_table) {
+            return;
+        }
+
+        $wpdb->query(
+            "INSERT INTO {$mapping_table} (symbol, market_id, id_icb2)
+            SELECT symbol, market_id, id_icb2 FROM {$symbols_table}
+            ON DUPLICATE KEY UPDATE
+                market_id = VALUES(market_id),
+                id_icb2 = VALUES(id_icb2),
+                updated_at = CURRENT_TIMESTAMP"
+        );
     }
 
     private static function count_cached_security_symbols() {
