@@ -59,6 +59,9 @@ class LCNI_DB {
 
         self::ensure_ohlc_indicator_columns();
         self::normalize_ohlc_numeric_columns();
+    }
+
+    public static function run_pending_migrations() {
         self::normalize_legacy_ratio_columns();
         self::repair_ohlc_ratio_columns_over_normalized();
     }
