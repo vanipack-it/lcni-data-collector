@@ -15,3 +15,6 @@
 - Bổ sung luồng tính toán lại indicator theo từng symbol/timeframe ngay sau khi đồng bộ dữ liệu OHLC; chỉ tính trên các phiên có dữ liệu thực tế nên tự động bỏ qua ngày nghỉ/lễ.
 - Sửa lỗi các cột indicator mở rộng bị `NULL` sau khi seed/update: chuyển việc tính toán indicator sang ngay trong `upsert_ohlc_rows()` để mọi luồng ghi OHLC (sync thường + seed queue) đều tự động tính lại theo công thức.
 - Bổ sung `rebuild_missing_ohlc_indicators()` để tự dò các mã/timeframe mà bản ghi mới nhất còn thiếu chỉ báo và tự tính bù.
+- Bổ sung hai cột mới cho `lcni_ohlc`: `trading_index` (đánh số phiên liên tục theo từng mã theo `event_time`) và `xay_nen` (gắn nhãn “xây nền” theo điều kiện RSI/MA/volume/%change đã thống nhất).
+- Cập nhật luồng rebuild indicator trong plugin để tự động tính và lưu `trading_index`, `xay_nen` cho từng bản ghi OHLC mỗi lần đồng bộ.
+- Cập nhật script MySQL 8 (`sql_ohlc_indicators_mysql8.sql`) để thêm/ghi dữ liệu cho `trading_index` và `xay_nen` khi chạy rebuild bằng SQL thuần.

@@ -1,6 +1,10 @@
 -- Rebuild indicator columns for wp_lcni_ohlc (MySQL 8+).
 -- Core requirement: all window functions ORDER BY event_time per symbol.
 
+ALTER TABLE wp_lcni_ohlc
+    ADD COLUMN IF NOT EXISTS trading_index BIGINT UNSIGNED NULL,
+    ADD COLUMN IF NOT EXISTS xay_nen VARCHAR(30) NULL;
+
 WITH RECURSIVE
 base AS (
     SELECT
@@ -117,6 +121,7 @@ macd_signal AS (
 final_calc AS (
     SELECT
         g.id,
+        g.rn AS trading_index,
         g.pct_t_1,
         g.pct_t_3,
         g.pct_1w,
@@ -148,7 +153,21 @@ final_calc AS (
         g.volume / NULLIF(g.vol_ma20, 0) - 1 AS vol_sv_vol_ma20,
         ms.macd,
         ms.macd_signal,
-        100 - 100 / (1 + g.avg_gain_14 / NULLIF(g.avg_loss_14, 0)) AS rsi
+        100 - 100 / (1 + g.avg_gain_14 / NULLIF(g.avg_loss_14, 0)) AS rsi,
+        CASE
+            WHEN (100 - 100 / (1 + g.avg_gain_14 / NULLIF(g.avg_loss_14, 0))) BETWEEN 38.5 AND 75.8
+             AND ABS(g.close_price / NULLIF(g.ma10, 0) - 1) <= 0.05
+             AND ABS(g.close_price / NULLIF(g.ma20, 0) - 1) <= 0.07
+             AND ABS(g.close_price / NULLIF(g.ma50, 0) - 1) <= 0.1
+             AND (g.volume / NULLIF(g.vol_ma20, 0) - 1) <= 0.1
+             AND g.volume >= 100000
+             AND g.pct_t_1 BETWEEN -0.03 AND 0.03
+             AND g.pct_1w BETWEEN -0.05 AND 0.05
+             AND g.pct_1m BETWEEN -0.1 AND 0.1
+             AND g.pct_3m BETWEEN -0.15 AND 0.15
+            THEN 'xây nền'
+            ELSE NULL
+        END AS xay_nen
     FROM gainloss g
     JOIN macd_signal ms ON ms.id = g.id
 )
@@ -186,4 +205,6 @@ SET
     t.vol_sv_vol_ma20 = f.vol_sv_vol_ma20,
     t.macd = f.macd,
     t.macd_signal = f.macd_signal,
-    t.rsi = f.rsi;
+    t.rsi = f.rsi,
+    t.trading_index = f.trading_index,
+    t.xay_nen = f.xay_nen;
