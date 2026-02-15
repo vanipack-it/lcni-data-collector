@@ -7,6 +7,33 @@ if (!defined('ABSPATH')) {
 class LCNI_DB {
 
     const SYMBOL_BATCH_LIMIT = 50;
+    const DEFAULT_MARKETS = [
+        ['market_id' => '1', 'exchange' => 'UPCOM'],
+        ['market_id' => '2', 'exchange' => 'HOSE'],
+        ['market_id' => '3', 'exchange' => 'HNX'],
+    ];
+
+    const DEFAULT_ICB2 = [
+        ['id_icb2' => 1, 'name_icb2' => 'Bán lẻ'],
+        ['id_icb2' => 2, 'name_icb2' => 'Bảo hiểm'],
+        ['id_icb2' => 3, 'name_icb2' => 'Bất động sản'],
+        ['id_icb2' => 4, 'name_icb2' => 'Công nghệ Thông tin'],
+        ['id_icb2' => 5, 'name_icb2' => 'Dầu khí'],
+        ['id_icb2' => 6, 'name_icb2' => 'Dịch vụ tài chính'],
+        ['id_icb2' => 7, 'name_icb2' => 'Du lịch và Giải trí'],
+        ['id_icb2' => 8, 'name_icb2' => 'Điện, nước & xăng dầu khí đốt'],
+        ['id_icb2' => 9, 'name_icb2' => 'Hàng & Dịch vụ Công nghiệp'],
+        ['id_icb2' => 10, 'name_icb2' => 'Hàng cá nhân & Gia dụng'],
+        ['id_icb2' => 11, 'name_icb2' => 'Hóa chất'],
+        ['id_icb2' => 12, 'name_icb2' => 'Ngân hàng'],
+        ['id_icb2' => 13, 'name_icb2' => 'Ô tô và phụ tùng'],
+        ['id_icb2' => 14, 'name_icb2' => 'Tài nguyên Cơ bản'],
+        ['id_icb2' => 15, 'name_icb2' => 'Thực phẩm và đồ uống'],
+        ['id_icb2' => 16, 'name_icb2' => 'Truyền thông'],
+        ['id_icb2' => 17, 'name_icb2' => 'Viễn thông'],
+        ['id_icb2' => 18, 'name_icb2' => 'Xây dựng và Vật liệu'],
+        ['id_icb2' => 19, 'name_icb2' => 'Y tế'],
+    ];
 
     public static function ensure_tables_exist() {
         global $wpdb;
@@ -17,6 +44,8 @@ class LCNI_DB {
             $wpdb->prefix . 'lcni_symbols',
             $wpdb->prefix . 'lcni_change_logs',
             $wpdb->prefix . 'lcni_seed_tasks',
+            $wpdb->prefix . 'lcni_marketid',
+            $wpdb->prefix . 'lcni_icb2',
         ];
 
         foreach ($required_tables as $table) {
@@ -37,6 +66,8 @@ class LCNI_DB {
         $symbol_table = $wpdb->prefix . 'lcni_symbols';
         $log_table = $wpdb->prefix . 'lcni_change_logs';
         $seed_task_table = $wpdb->prefix . 'lcni_seed_tasks';
+        $market_table = $wpdb->prefix . 'lcni_marketid';
+        $icb2_table = $wpdb->prefix . 'lcni_icb2';
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
@@ -106,13 +137,33 @@ class LCNI_DB {
             symbol VARCHAR(20) NOT NULL,
             timeframe VARCHAR(10) NOT NULL,
             status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            failed_attempts INT UNSIGNED NOT NULL DEFAULT 0,
+            last_error TEXT NULL,
             last_to_time BIGINT NOT NULL DEFAULT 0,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY  (id),
             UNIQUE KEY unique_symbol_timeframe (symbol, timeframe),
             KEY idx_status (status),
+            KEY idx_failed_attempts (failed_attempts),
             KEY idx_updated_at (updated_at)
+        ) {$charset_collate};";
+
+        $sql_market = "CREATE TABLE {$market_table} (
+            market_id VARCHAR(20) NOT NULL,
+            exchange VARCHAR(100) NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (market_id)
+        ) {$charset_collate};";
+
+        $sql_icb2 = "CREATE TABLE {$icb2_table} (
+            id_icb2 SMALLINT UNSIGNED NOT NULL,
+            name_icb2 VARCHAR(255) NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id_icb2),
+            KEY idx_name_icb2 (name_icb2)
         ) {$charset_collate};";
 
         $sql_change_logs = "CREATE TABLE {$log_table} (
@@ -131,8 +182,45 @@ class LCNI_DB {
         dbDelta($sql_symbols);
         dbDelta($sql_change_logs);
         dbDelta($sql_seed_tasks);
+        dbDelta($sql_market);
+        dbDelta($sql_icb2);
 
-        self::log_change('activation', 'Created/updated OHLC, lcni_symbols, seed task and change log tables.');
+        self::seed_market_reference_data($market_table);
+        self::seed_icb2_reference_data($icb2_table);
+
+        self::log_change('activation', 'Created/updated OHLC, lcni_symbols, seed task, market, icb2 and change log tables.');
+    }
+
+    private static function seed_market_reference_data($market_table) {
+        global $wpdb;
+
+        foreach (self::DEFAULT_MARKETS as $market) {
+            $wpdb->query(
+                $wpdb->prepare(
+                    "INSERT INTO {$market_table} (market_id, exchange)
+                    VALUES (%s, %s)
+                    ON DUPLICATE KEY UPDATE exchange = VALUES(exchange), updated_at = CURRENT_TIMESTAMP",
+                    (string) $market['market_id'],
+                    (string) $market['exchange']
+                )
+            );
+        }
+    }
+
+    private static function seed_icb2_reference_data($icb2_table) {
+        global $wpdb;
+
+        foreach (self::DEFAULT_ICB2 as $icb2_row) {
+            $wpdb->query(
+                $wpdb->prepare(
+                    "INSERT INTO {$icb2_table} (id_icb2, name_icb2)
+                    VALUES (%d, %s)
+                    ON DUPLICATE KEY UPDATE name_icb2 = VALUES(name_icb2), updated_at = CURRENT_TIMESTAMP",
+                    (int) $icb2_row['id_icb2'],
+                    (string) $icb2_row['name_icb2']
+                )
+            );
+        }
     }
 
     public static function collect_all_data($latest_only = false, $offset = 0, $batch_limit = self::SYMBOL_BATCH_LIMIT) {

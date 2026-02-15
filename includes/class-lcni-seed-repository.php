@@ -33,6 +33,8 @@ class LCNI_SeedRepository {
                         VALUES (%s, %s, 'pending', %d, NOW(), NOW())
                         ON DUPLICATE KEY UPDATE
                             status = VALUES(status),
+                            failed_attempts = 0,
+                            last_error = NULL,
                             last_to_time = VALUES(last_to_time),
                             updated_at = NOW()",
                         strtoupper((string) $symbol),
@@ -90,11 +92,34 @@ class LCNI_SeedRepository {
             [
                 'status' => 'pending',
                 'last_to_time' => max(1, (int) $last_to_time),
+                'last_error' => null,
                 'updated_at' => current_time('mysql', 1),
             ],
             ['id' => (int) $task_id],
-            ['%s', '%d', '%s'],
+            ['%s', '%d', '%s', '%s'],
             ['%d']
+        );
+    }
+
+    public static function mark_failed($task_id, $last_to_time, $error_message) {
+        global $wpdb;
+
+        $table = self::get_table_name();
+
+        return $wpdb->query(
+            $wpdb->prepare(
+                "UPDATE {$table}
+                SET status = 'pending',
+                    failed_attempts = failed_attempts + 1,
+                    last_error = %s,
+                    last_to_time = %d,
+                    updated_at = %s
+                WHERE id = %d",
+                sanitize_textarea_field((string) $error_message),
+                max(1, (int) $last_to_time),
+                current_time('mysql', 1),
+                (int) $task_id
+            )
         );
     }
 
@@ -125,6 +150,8 @@ class LCNI_SeedRepository {
             'done' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table} WHERE status = 'done'"),
             'running' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table} WHERE status = 'running'"),
             'pending' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table} WHERE status = 'pending'"),
+            'error_tasks' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table} WHERE failed_attempts > 0"),
+            'failed_attempts' => (int) $wpdb->get_var("SELECT COALESCE(SUM(failed_attempts), 0) FROM {$table}"),
         ];
     }
 
@@ -134,7 +161,7 @@ class LCNI_SeedRepository {
         $table = self::get_table_name();
 
         return $wpdb->get_results(
-            $wpdb->prepare("SELECT * FROM {$table} ORDER BY FIELD(status, 'running', 'pending', 'done'), CASE WHEN status = 'pending' THEN updated_at END ASC, CASE WHEN status = 'running' THEN updated_at END ASC, CASE WHEN status = 'done' THEN updated_at END DESC, id ASC LIMIT %d", max(1, (int) $limit)),
+            $wpdb->prepare("SELECT * FROM {$table} ORDER BY FIELD(status, 'running', 'pending', 'done'), failed_attempts DESC, CASE WHEN status = 'pending' THEN updated_at END ASC, CASE WHEN status = 'running' THEN updated_at END ASC, CASE WHEN status = 'done' THEN updated_at END DESC, id ASC LIMIT %d", max(1, (int) $limit)),
             ARRAY_A
         );
     }

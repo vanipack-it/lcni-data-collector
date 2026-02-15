@@ -100,7 +100,7 @@ class LCNI_SeedScheduler {
                 }
 
                 LCNI_DB::log_change('seed_task_failed', sprintf('Task %d fetch failed for %s-%s: %s', (int) $task['id'], $task['symbol'], $task['timeframe'], $error_message));
-                LCNI_SeedRepository::update_progress((int) $task['id'], $to);
+                LCNI_SeedRepository::mark_failed((int) $task['id'], $to, $error_message);
 
                 return [
                     'status' => 'error',
