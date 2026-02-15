@@ -229,7 +229,23 @@ class LCNI_Settings {
             return 100;
         }
 
-        return $status === 'running' ? 65 : 15;
+        $seed_constraints = LCNI_SeedScheduler::get_seed_constraints();
+        $seed_to_time = max(1, (int) ($seed_constraints['to_time'] ?? time()));
+        $task_to_time = isset($task['last_to_time']) ? max(1, (int) $task['last_to_time']) : $seed_to_time;
+
+        $min_from = max(1, (int) ($seed_constraints['from_time'] ?? 1));
+        if ((string) ($seed_constraints['mode'] ?? 'full') === 'sessions') {
+            $sessions = max(1, (int) ($seed_constraints['sessions'] ?? 300));
+            $interval = LCNI_HistoryFetcher::timeframe_to_seconds((string) ($task['timeframe'] ?? '1D'));
+            $min_from = max(1, $seed_to_time - ($interval * $sessions));
+        }
+
+        $total_span = max(1, $seed_to_time - $min_from);
+        $processed_span = max(0, $seed_to_time - $task_to_time);
+        $progress = (int) floor(($processed_span / $total_span) * 100);
+        $progress = max(0, min(99, $progress));
+
+        return $progress;
     }
 
     private function render_task_rows($tasks) {
