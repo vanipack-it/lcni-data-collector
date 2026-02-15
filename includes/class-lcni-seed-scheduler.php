@@ -86,12 +86,25 @@ class LCNI_SeedScheduler {
 
             $result = LCNI_HistoryFetcher::fetch($task['symbol'], $task['timeframe'], $to, LCNI_HistoryFetcher::DEFAULT_LIMIT, $min_from);
             if (is_wp_error($result)) {
-                LCNI_DB::log_change('seed_task_failed', sprintf('Task %d fetch failed for %s-%s: %s', (int) $task['id'], $task['symbol'], $task['timeframe'], $result->get_error_message()));
+                $error_message = (string) $result->get_error_message();
+
+                if (self::is_non_retryable_task_error($error_message)) {
+                    LCNI_SeedRepository::mark_done((int) $task['id']);
+                    LCNI_DB::log_change('seed_task_skipped', sprintf('Task %d skipped for %s-%s due to non-retryable error: %s', (int) $task['id'], $task['symbol'], $task['timeframe'], $error_message));
+
+                    return [
+                        'status' => 'skipped',
+                        'message' => $error_message,
+                        'task_id' => (int) $task['id'],
+                    ];
+                }
+
+                LCNI_DB::log_change('seed_task_failed', sprintf('Task %d fetch failed for %s-%s: %s', (int) $task['id'], $task['symbol'], $task['timeframe'], $error_message));
                 LCNI_SeedRepository::update_progress((int) $task['id'], $to);
 
                 return [
                     'status' => 'error',
-                    'message' => $result->get_error_message(),
+                    'message' => $error_message,
                     'task_id' => (int) $task['id'],
                 ];
             }
@@ -238,5 +251,15 @@ class LCNI_SeedScheduler {
         }
 
         return $filtered;
+    }
+
+    private static function is_non_retryable_task_error($message) {
+        $message = strtoupper(trim((string) $message));
+
+        if ($message === '') {
+            return false;
+        }
+
+        return strpos($message, 'HTTP 400') !== false;
     }
 }
