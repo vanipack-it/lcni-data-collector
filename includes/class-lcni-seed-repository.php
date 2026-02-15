@@ -9,6 +9,8 @@ class LCNI_SeedRepository {
     public static function get_table_name() {
         global $wpdb;
 
+        LCNI_DB::ensure_tables_exist();
+
         return $wpdb->prefix . 'lcni_seed_tasks';
     }
 
