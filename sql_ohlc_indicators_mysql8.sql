@@ -7,6 +7,7 @@ base AS (
         t.id,
         t.symbol,
         t.event_time,
+        ROW_NUMBER() OVER (PARTITION BY t.symbol ORDER BY t.event_time, t.id) AS trading_index,
         t.close_price,
         t.volume,
         ROW_NUMBER() OVER (PARTITION BY t.symbol ORDER BY t.event_time) AS rn,
@@ -148,7 +149,22 @@ final_calc AS (
         g.volume / NULLIF(g.vol_ma20, 0) - 1 AS vol_sv_vol_ma20,
         ms.macd,
         ms.macd_signal,
-        100 - 100 / (1 + g.avg_gain_14 / NULLIF(g.avg_loss_14, 0)) AS rsi
+        100 - 100 / (1 + g.avg_gain_14 / NULLIF(g.avg_loss_14, 0)) AS rsi,
+        CASE
+            WHEN (100 - 100 / (1 + g.avg_gain_14 / NULLIF(g.avg_loss_14, 0))) BETWEEN 38.5 AND 75.8
+             AND ABS(g.close_price / NULLIF(g.ma10, 0) - 1) <= 0.05
+             AND ABS(g.close_price / NULLIF(g.ma20, 0) - 1) <= 0.07
+             AND ABS(g.close_price / NULLIF(g.ma50, 0) - 1) <= 0.1
+             AND (g.volume / NULLIF(g.vol_ma20, 0) - 1) <= 0.1
+             AND g.volume >= 100000
+             AND g.pct_t_1 BETWEEN -0.03 AND 0.03
+             AND g.pct_1w BETWEEN -0.05 AND 0.05
+             AND g.pct_1m BETWEEN -0.1 AND 0.1
+             AND g.pct_3m BETWEEN -0.15 AND 0.15
+            THEN 'xây nền'
+            ELSE NULL
+        END AS xay_nen,
+        g.trading_index
     FROM gainloss g
     JOIN macd_signal ms ON ms.id = g.id
 )
@@ -186,4 +202,6 @@ SET
     t.vol_sv_vol_ma20 = f.vol_sv_vol_ma20,
     t.macd = f.macd,
     t.macd_signal = f.macd_signal,
-    t.rsi = f.rsi;
+    t.rsi = f.rsi,
+    t.trading_index = f.trading_index,
+    t.xay_nen = f.xay_nen;

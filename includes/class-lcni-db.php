@@ -124,6 +124,8 @@ class LCNI_DB {
             macd DECIMAL(16,8) DEFAULT NULL,
             macd_signal DECIMAL(16,8) DEFAULT NULL,
             rsi DECIMAL(12,6) DEFAULT NULL,
+            trading_index BIGINT UNSIGNED DEFAULT NULL,
+            xay_nen VARCHAR(50) DEFAULT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY  (id),
             UNIQUE KEY unique_ohlc (symbol, timeframe, event_time),
@@ -298,6 +300,8 @@ class LCNI_DB {
             'macd' => 'DECIMAL(16,8) DEFAULT NULL',
             'macd_signal' => 'DECIMAL(16,8) DEFAULT NULL',
             'rsi' => 'DECIMAL(12,6) DEFAULT NULL',
+            'trading_index' => 'BIGINT UNSIGNED DEFAULT NULL',
+            'xay_nen' => 'VARCHAR(50) DEFAULT NULL',
         ];
 
         foreach ($required_columns as $column_name => $column_definition) {
@@ -412,6 +416,7 @@ class LCNI_DB {
 
         foreach ($all_series as $series) {
             self::rebuild_ohlc_indicators($series['symbol'], $series['timeframe']);
+            self::rebuild_ohlc_trading_index($series['symbol']);
         }
 
         self::log_change(
@@ -807,6 +812,7 @@ class LCNI_DB {
 
         foreach ($touched_series as $series) {
             self::rebuild_ohlc_indicators($series['symbol'], $series['timeframe']);
+            self::rebuild_ohlc_trading_index($series['symbol']);
         }
 
         if (!empty($touched_series)) {
@@ -854,6 +860,7 @@ class LCNI_DB {
 
         foreach ($missing_series as $series) {
             self::rebuild_ohlc_indicators($series['symbol'], $series['timeframe']);
+            self::rebuild_ohlc_trading_index($series['symbol']);
         }
 
         return count($missing_series);
@@ -958,6 +965,7 @@ class LCNI_DB {
             $wpdb->update(
                 $table,
                 [
+                    'trading_index' => $i + 1,
                     'pct_t_1' => self::change_pct($closes, $i, 1),
                     'pct_t_3' => self::change_pct($closes, $i, 3),
                     'pct_1w' => self::change_pct($closes, $i, 5),
@@ -990,12 +998,75 @@ class LCNI_DB {
                     'macd' => $macd,
                     'macd_signal' => $signal,
                     'rsi' => $rsi,
+                    'xay_nen' => self::is_xay_nen(
+                        $rsi,
+                        self::safe_ratio_pct($close, $ma10),
+                        self::safe_ratio_pct($close, $ma20),
+                        self::safe_ratio_pct($close, $ma50),
+                        self::safe_ratio_pct($volume, $vol_ma20),
+                        $volume,
+                        self::change_pct($closes, $i, 1),
+                        self::change_pct($closes, $i, 5),
+                        self::change_pct($closes, $i, 21),
+                        self::change_pct($closes, $i, 63)
+                    ),
                 ],
                 ['id' => (int) $rows[$i]['id']],
-                ['%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f'],
+                ['%d','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%s'],
                 ['%d']
             );
         }
+    }
+
+    private static function rebuild_ohlc_trading_index($symbol) {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $symbol = strtoupper((string) $symbol);
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT id FROM {$table} WHERE symbol = %s ORDER BY event_time ASC, id ASC",
+                $symbol
+            ),
+            ARRAY_A
+        );
+
+        if (empty($rows)) {
+            return;
+        }
+
+        foreach ($rows as $index => $row) {
+            $wpdb->update(
+                $table,
+                ['trading_index' => $index + 1],
+                ['id' => (int) $row['id']],
+                ['%d'],
+                ['%d']
+            );
+        }
+    }
+
+    private static function is_xay_nen($rsi, $gia_sv_ma10, $gia_sv_ma20, $gia_sv_ma50, $vol_sv_vol_ma20, $volume, $pct_t_1, $pct_1w, $pct_1m, $pct_3m) {
+        if ($rsi === null || $gia_sv_ma10 === null || $gia_sv_ma20 === null || $gia_sv_ma50 === null || $vol_sv_vol_ma20 === null || $pct_t_1 === null || $pct_1w === null || $pct_1m === null || $pct_3m === null) {
+            return null;
+        }
+
+        if (
+            $rsi >= 38.5 && $rsi <= 75.8
+            && abs((float) $gia_sv_ma10) <= 0.05
+            && abs((float) $gia_sv_ma20) <= 0.07
+            && abs((float) $gia_sv_ma50) <= 0.1
+            && (float) $vol_sv_vol_ma20 <= 0.1
+            && (float) $volume >= 100000
+            && (float) $pct_t_1 >= -0.03 && (float) $pct_t_1 <= 0.03
+            && (float) $pct_1w >= -0.05 && (float) $pct_1w <= 0.05
+            && (float) $pct_1m >= -0.1 && (float) $pct_1m <= 0.1
+            && (float) $pct_3m >= -0.15 && (float) $pct_3m <= 0.15
+        ) {
+            return 'xây nền';
+        }
+
+        return null;
     }
 
     private static function change_pct($series, $index, $lookback) {
