@@ -56,6 +56,8 @@ class LCNI_DB {
                 return;
             }
         }
+
+        self::ensure_ohlc_indicator_columns();
     }
 
     public static function create_tables() {
@@ -236,8 +238,67 @@ class LCNI_DB {
         self::seed_market_reference_data($market_table);
         self::seed_icb2_reference_data($icb2_table);
         self::sync_symbol_market_icb_mapping();
+        self::ensure_ohlc_indicator_columns();
 
         self::log_change('activation', 'Created/updated OHLC, lcni_symbols, seed task, market, icb2, sym_icb_market and change log tables.');
+    }
+
+    private static function ensure_ohlc_indicator_columns() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+        if ($exists !== $table) {
+            return;
+        }
+
+        $columns = $wpdb->get_col("SHOW COLUMNS FROM {$table}", 0);
+        if (!is_array($columns) || empty($columns)) {
+            return;
+        }
+
+        $required_columns = [
+            'pct_t_1' => 'DECIMAL(12,6) DEFAULT NULL',
+            'pct_t_3' => 'DECIMAL(12,6) DEFAULT NULL',
+            'pct_1w' => 'DECIMAL(12,6) DEFAULT NULL',
+            'pct_1m' => 'DECIMAL(12,6) DEFAULT NULL',
+            'pct_3m' => 'DECIMAL(12,6) DEFAULT NULL',
+            'pct_6m' => 'DECIMAL(12,6) DEFAULT NULL',
+            'pct_1y' => 'DECIMAL(12,6) DEFAULT NULL',
+            'ma10' => 'DECIMAL(20,6) DEFAULT NULL',
+            'ma20' => 'DECIMAL(20,6) DEFAULT NULL',
+            'ma50' => 'DECIMAL(20,6) DEFAULT NULL',
+            'ma100' => 'DECIMAL(20,6) DEFAULT NULL',
+            'ma200' => 'DECIMAL(20,6) DEFAULT NULL',
+            'h1m' => 'DECIMAL(20,6) DEFAULT NULL',
+            'h3m' => 'DECIMAL(20,6) DEFAULT NULL',
+            'h6m' => 'DECIMAL(20,6) DEFAULT NULL',
+            'h1y' => 'DECIMAL(20,6) DEFAULT NULL',
+            'l1m' => 'DECIMAL(20,6) DEFAULT NULL',
+            'l3m' => 'DECIMAL(20,6) DEFAULT NULL',
+            'l6m' => 'DECIMAL(20,6) DEFAULT NULL',
+            'l1y' => 'DECIMAL(20,6) DEFAULT NULL',
+            'vol_ma10' => 'DECIMAL(24,4) DEFAULT NULL',
+            'vol_ma20' => 'DECIMAL(24,4) DEFAULT NULL',
+            'gia_sv_ma10' => 'DECIMAL(12,6) DEFAULT NULL',
+            'gia_sv_ma20' => 'DECIMAL(12,6) DEFAULT NULL',
+            'gia_sv_ma50' => 'DECIMAL(12,6) DEFAULT NULL',
+            'gia_sv_ma100' => 'DECIMAL(12,6) DEFAULT NULL',
+            'gia_sv_ma200' => 'DECIMAL(12,6) DEFAULT NULL',
+            'vol_sv_vol_ma10' => 'DECIMAL(12,6) DEFAULT NULL',
+            'vol_sv_vol_ma20' => 'DECIMAL(12,6) DEFAULT NULL',
+            'macd' => 'DECIMAL(16,8) DEFAULT NULL',
+            'macd_signal' => 'DECIMAL(16,8) DEFAULT NULL',
+            'rsi' => 'DECIMAL(12,6) DEFAULT NULL',
+        ];
+
+        foreach ($required_columns as $column_name => $column_definition) {
+            if (in_array($column_name, $columns, true)) {
+                continue;
+            }
+
+            $wpdb->query("ALTER TABLE {$table} ADD COLUMN {$column_name} {$column_definition}");
+        }
     }
 
     private static function seed_market_reference_data($market_table) {
