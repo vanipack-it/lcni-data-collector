@@ -18,3 +18,6 @@
 - Bổ sung cột `trading_index` cho `lcni_ohlc` và tự động đánh số giao dịch liên tục theo từng `symbol` (tăng dần theo `event_time`).
 - Bổ sung cột `xay_nen` và cập nhật logic gán nhãn `'xây nền'` theo bộ điều kiện RSI, độ lệch MA, thanh khoản và biên độ biến động giá.
 - Cập nhật script SQL MySQL 8 để tính đồng thời `trading_index` và `xay_nen` khi rebuild indicator.
+- Bổ sung migration `backfill_ohlc_trading_index_and_xay_nen` để tự quét các series còn thiếu `trading_index`/`xay_nen` và tính bù toàn bộ indicator.
+- Điều chỉnh nhãn `xay_nen` để phân biệt rõ trạng thái: `chưa đủ dữ liệu` (chưa đủ phiên tính công thức), `không xây nền` (đã tính nhưng không thỏa điều kiện), `xây nền` (thỏa điều kiện).
+- Cập nhật script SQL MySQL 8 cùng chuẩn phân loại `xay_nen` mới để khi rebuild bằng SQL không còn hiển thị `NULL` mơ hồ.
