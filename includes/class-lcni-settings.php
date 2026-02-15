@@ -157,7 +157,14 @@ class LCNI_Settings {
             $this->set_notice('success', 'Đã resume seed queue.');
         }
 
-        wp_safe_redirect(admin_url('admin.php?page=lcni-settings'));
+        $redirect_tab = isset($_POST['lcni_redirect_tab']) ? sanitize_key(wp_unslash($_POST['lcni_redirect_tab'])) : '';
+        $redirect_url = admin_url('admin.php?page=lcni-settings');
+
+        if (in_array($redirect_tab, ['general', 'seed_dashboard', 'change_logs'], true)) {
+            $redirect_url = add_query_arg('tab', $redirect_tab, $redirect_url);
+        }
+
+        wp_safe_redirect($redirect_url);
         exit;
     }
 
@@ -312,6 +319,8 @@ class LCNI_Settings {
                 'done' => (int) ($stats['done'] ?? 0),
                 'running' => (int) ($stats['running'] ?? 0),
                 'pending' => (int) ($stats['pending'] ?? 0),
+                'error_tasks' => (int) ($stats['error_tasks'] ?? 0),
+                'failed_attempts' => (int) ($stats['failed_attempts'] ?? 0),
                 'paused' => LCNI_SeedScheduler::is_paused() ? 'YES' : 'NO',
             ],
             'rows_html' => $this->render_task_rows($tasks),
@@ -321,6 +330,11 @@ class LCNI_Settings {
 
     public function settings_page() {
         global $wpdb;
+
+        $active_tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'general';
+        if (!in_array($active_tab, ['general', 'seed_dashboard', 'change_logs'], true)) {
+            $active_tab = 'general';
+        }
 
         $stats = LCNI_SeedRepository::get_dashboard_stats();
         $tasks = LCNI_SeedRepository::get_recent_tasks(30);
@@ -340,144 +354,142 @@ class LCNI_Settings {
                 </div>
             <?php endif; ?>
 
-            <form method="post" action="options.php">
-                <?php settings_fields('lcni_settings_group'); ?>
-                <table class="form-table" role="presentation">
-                    <tr><th>Timeframe</th><td><input type="text" name="lcni_timeframe" value="<?php echo esc_attr(get_option('lcni_timeframe', '1D')); ?>" size="20"></td></tr>
-                    <tr><th>Days to load</th><td><input type="number" name="lcni_days_to_load" value="<?php echo esc_attr((string) get_option('lcni_days_to_load', 365)); ?>" min="1"></td></tr>
-                    <tr><th>Test symbols</th><td><input type="text" name="lcni_test_symbols" value="<?php echo esc_attr(get_option('lcni_test_symbols', 'VNINDEX,VN30')); ?>" size="60"></td></tr>
-                    <tr><th>Seed timeframes</th><td><input type="text" name="lcni_seed_timeframes" value="<?php echo esc_attr(get_option('lcni_seed_timeframes', '1D')); ?>" size="40"><p class="description">Ví dụ: 1D,1H,15M</p></td></tr>
+            <h2 class="nav-tab-wrapper">
+                <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=general')); ?>" class="nav-tab <?php echo $active_tab === 'general' ? 'nav-tab-active' : ''; ?>">General</a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=seed_dashboard')); ?>" class="nav-tab <?php echo $active_tab === 'seed_dashboard' ? 'nav-tab-active' : ''; ?>">Seed Dashboard</a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=change_logs')); ?>" class="nav-tab <?php echo $active_tab === 'change_logs' ? 'nav-tab-active' : ''; ?>">Change Logs</a>
+            </h2>
+
+            <?php if ($active_tab === 'general') : ?>
+                <form method="post" action="options.php">
+                    <?php settings_fields('lcni_settings_group'); ?>
+                    <table class="form-table" role="presentation">
+                        <tr><th>Timeframe</th><td><input type="text" name="lcni_timeframe" value="<?php echo esc_attr(get_option('lcni_timeframe', '1D')); ?>" size="20"></td></tr>
+                        <tr><th>Days to load</th><td><input type="number" name="lcni_days_to_load" value="<?php echo esc_attr((string) get_option('lcni_days_to_load', 365)); ?>" min="1"></td></tr>
+                        <tr><th>Test symbols</th><td><input type="text" name="lcni_test_symbols" value="<?php echo esc_attr(get_option('lcni_test_symbols', 'VNINDEX,VN30')); ?>" size="60"></td></tr>
+                        <tr><th>Seed timeframes</th><td><input type="text" name="lcni_seed_timeframes" value="<?php echo esc_attr(get_option('lcni_seed_timeframes', '1D')); ?>" size="40"><p class="description">Ví dụ: 1D,1H,15M</p></td></tr>
+                    </table>
+                    <?php submit_button(); ?>
+                </form>
+
+                <h2>Quick Actions</h2>
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_redirect_tab" value="general"><input type="hidden" name="lcni_admin_action" value="test_api_connection"><?php submit_button('Test chart-api', 'secondary', 'submit', false); ?></form>
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_redirect_tab" value="general"><input type="hidden" name="lcni_admin_action" value="test_api_multi_symbol"><?php submit_button('Test nhiều symbol', 'secondary', 'submit', false); ?></form>
+            <?php elseif ($active_tab === 'seed_dashboard') : ?>
+                <h2>Seed Manager</h2>
+                <form method="post" enctype="multipart/form-data" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="margin-bottom:12px;">
+                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                    <input type="hidden" name="lcni_redirect_tab" value="seed_dashboard">
+                    <input type="hidden" name="lcni_admin_action" value="import_symbols_csv">
+                    <label for="lcni_symbols_csv"><strong>Import CSV symbol:</strong></label>
+                    <input type="file" id="lcni_symbols_csv" name="lcni_symbols_csv" accept=".csv" required>
+                    <?php submit_button('Import CSV Symbol', 'secondary', 'submit', false); ?>
+                    <p class="description">Hỗ trợ cột <code>symbol</code> hoặc chỉ 1 cột mã chứng khoán; có thể kèm thêm cột Security Definition.</p>
+                </form>
+
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_redirect_tab" value="seed_dashboard"><input type="hidden" name="lcni_admin_action" value="sync_securities"><?php submit_button('Sync Security Definition', 'secondary', 'submit', false); ?></form>
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;padding:8px 10px;background:#fff;border:1px solid #dcdcde;border-radius:6px;">
+                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                    <input type="hidden" name="lcni_redirect_tab" value="seed_dashboard">
+                    <input type="hidden" name="lcni_admin_action" value="start_seed">
+                    <label style="margin-right:8px;"><strong>Khởi tạo SEED:</strong></label>
+                    <select name="lcni_seed_mode" style="margin-right:6px;">
+                        <?php $seed_mode = get_option('lcni_seed_range_mode', 'full'); ?>
+                        <option value="full" <?php selected($seed_mode, 'full'); ?>>Toàn bộ</option>
+                        <option value="date_range" <?php selected($seed_mode, 'date_range'); ?>>Theo ngày</option>
+                        <option value="sessions" <?php selected($seed_mode, 'sessions'); ?>>Theo số phiên</option>
+                    </select>
+                    <input type="date" name="lcni_seed_from_date" value="<?php echo esc_attr(get_option('lcni_seed_from_date', '')); ?>" style="margin-right:6px;">
+                    <input type="date" name="lcni_seed_to_date" value="<?php echo esc_attr(get_option('lcni_seed_to_date', '')); ?>" style="margin-right:6px;">
+                    <input type="number" name="lcni_seed_session_count" value="<?php echo esc_attr((string) get_option('lcni_seed_session_count', 300)); ?>" min="1" style="width:90px;margin-right:6px;" title="Số phiên khi chọn mode sessions">
+                    <?php submit_button('Start Seed', 'primary', 'submit', false); ?>
+                </form>
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_redirect_tab" value="seed_dashboard"><input type="hidden" name="lcni_admin_action" value="run_seed_batch"><?php submit_button('Run 1 Batch', 'secondary', 'submit', false); ?></form>
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_redirect_tab" value="seed_dashboard"><input type="hidden" name="lcni_admin_action" value="pause_seed"><?php submit_button('Pause Seed', 'secondary', 'submit', false); ?></form>
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_redirect_tab" value="seed_dashboard"><input type="hidden" name="lcni_admin_action" value="resume_seed"><?php submit_button('Resume Seed', 'secondary', 'submit', false); ?></form>
+
+                <h2 style="margin-top:20px;">Seed Dashboard</h2>
+                <p id="lcni-dashboard-updated-at" style="margin-top:0;color:#50575e;">Cập nhật realtime mỗi 5 giây.</p>
+                <div id="lcni-seed-stats" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+                    <div style="background:#f6f7f7;border:1px solid #dcdcde;padding:8px 12px;border-radius:6px;min-width:120px;"><strong>Total</strong><br><span data-stat="total"><?php echo esc_html((string) ($stats['total'] ?? 0)); ?></span></div>
+                    <div style="background:#ecf9f1;border:1px solid #b8e6cc;padding:8px 12px;border-radius:6px;min-width:120px;"><strong>Done</strong><br><span data-stat="done"><?php echo esc_html((string) ($stats['done'] ?? 0)); ?></span></div>
+                    <div style="background:#fff8e5;border:1px solid #f0d898;padding:8px 12px;border-radius:6px;min-width:120px;"><strong>Running</strong><br><span data-stat="running"><?php echo esc_html((string) ($stats['running'] ?? 0)); ?></span></div>
+                    <div style="background:#eef3ff;border:1px solid #c9d7ff;padding:8px 12px;border-radius:6px;min-width:120px;"><strong>Pending</strong><br><span data-stat="pending"><?php echo esc_html((string) ($stats['pending'] ?? 0)); ?></span></div>
+                    <div style="background:#fff1f0;border:1px solid #f4b7b2;padding:8px 12px;border-radius:6px;min-width:120px;"><strong>Error tasks</strong><br><span data-stat="error_tasks"><?php echo esc_html((string) ($stats['error_tasks'] ?? 0)); ?></span></div>
+                    <div style="background:#fff1f0;border:1px solid #f4b7b2;padding:8px 12px;border-radius:6px;min-width:120px;"><strong>Failed attempts</strong><br><span data-stat="failed_attempts"><?php echo esc_html((string) ($stats['failed_attempts'] ?? 0)); ?></span></div>
+                    <div style="background:#f6f7f7;border:1px solid #dcdcde;padding:8px 12px;border-radius:6px;min-width:120px;"><strong>Paused</strong><br><span data-stat="paused"><?php echo LCNI_SeedScheduler::is_paused() ? 'YES' : 'NO'; ?></span></div>
+                </div>
+
+                <table class="widefat striped" style="max-width:1000px;">
+                    <thead><tr><th>Task</th><th>Status</th><th>Last To Time</th><th>Progress</th></tr></thead>
+                    <tbody id="lcni-seed-task-rows"><?php echo wp_kses_post($this->render_task_rows($tasks)); ?></tbody>
                 </table>
-                <?php submit_button(); ?>
-            </form>
 
-            <h2>Seed Manager</h2>
-            <form method="post" enctype="multipart/form-data" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="margin-bottom:12px;">
-                <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
-                <input type="hidden" name="lcni_admin_action" value="import_symbols_csv">
-                <label for="lcni_symbols_csv"><strong>Import CSV symbol:</strong></label>
-                <input type="file" id="lcni_symbols_csv" name="lcni_symbols_csv" accept=".csv" required>
-                <?php submit_button('Import CSV Symbol', 'secondary', 'submit', false); ?>
-                <p class="description">Hỗ trợ cột <code>symbol</code> hoặc chỉ 1 cột mã chứng khoán; có thể kèm thêm cột Security Definition.</p>
-            </form>
+                <script>
+                    (function() {
+                        const endpoint = '<?php echo esc_js(admin_url('admin-ajax.php')); ?>';
+                        const nonce = '<?php echo esc_js(wp_create_nonce('lcni_seed_dashboard_nonce')); ?>';
+                        const rowsTarget = document.getElementById('lcni-seed-task-rows');
+                        const updatedHint = document.getElementById('lcni-dashboard-updated-at');
 
-            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_admin_action" value="sync_securities"><?php submit_button('Sync Security Definition', 'secondary', 'submit', false); ?></form>
-            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;padding:8px 10px;background:#fff;border:1px solid #dcdcde;border-radius:6px;">
-                <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
-                <input type="hidden" name="lcni_admin_action" value="start_seed">
-                <label style="margin-right:8px;"><strong>Khởi tạo SEED:</strong></label>
-                <select name="lcni_seed_mode" style="margin-right:6px;">
-                    <?php $seed_mode = get_option('lcni_seed_range_mode', 'full'); ?>
-                    <option value="full" <?php selected($seed_mode, 'full'); ?>>Toàn bộ</option>
-                    <option value="date_range" <?php selected($seed_mode, 'date_range'); ?>>Theo ngày</option>
-                    <option value="sessions" <?php selected($seed_mode, 'sessions'); ?>>Theo số phiên</option>
-                </select>
-                <input type="date" name="lcni_seed_from_date" value="<?php echo esc_attr(get_option('lcni_seed_from_date', '')); ?>" style="margin-right:4px;">
-                <input type="date" name="lcni_seed_to_date" value="<?php echo esc_attr(get_option('lcni_seed_to_date', '')); ?>" style="margin-right:4px;">
-                <input type="number" min="1" name="lcni_seed_session_count" value="<?php echo esc_attr((string) get_option('lcni_seed_session_count', 300)); ?>" style="width:92px;margin-right:6px;" placeholder="Số phiên">
-                <?php submit_button('Khởi tạo SEED', 'secondary', 'submit', false); ?>
-            </form>
-            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_admin_action" value="run_seed_batch"><?php submit_button('Chạy batch tiếp theo', 'secondary', 'submit', false); ?></form>
-            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_admin_action" value="pause_seed"><?php submit_button('Tạm dừng', 'secondary', 'submit', false); ?></form>
-            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_admin_action" value="resume_seed"><?php submit_button('Resume', 'secondary', 'submit', false); ?></form>
-
-            <h3>Seed Dashboard</h3>
-            <p id="lcni-seed-dashboard-updated" style="margin:0 0 8px;color:#50575e;font-style:italic;">Tự động cập nhật mỗi 5 giây.</p>
-            <ul id="lcni-seed-stats-list">
-                <li>Tổng task: <strong data-stat="total"><?php echo esc_html((string) $stats['total']); ?></strong></li>
-                <li>Đã xong: <strong data-stat="done"><?php echo esc_html((string) $stats['done']); ?></strong></li>
-                <li>Đang chạy: <strong data-stat="running"><?php echo esc_html((string) $stats['running']); ?></strong></li>
-                <li>Pending: <strong data-stat="pending"><?php echo esc_html((string) $stats['pending']); ?></strong></li>
-                <li>Seed paused: <strong data-stat="paused"><?php echo LCNI_SeedScheduler::is_paused() ? 'YES' : 'NO'; ?></strong></li>
-            </ul>
-
-            <style>
-                .lcni-status-pill {display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;letter-spacing:0.3px;}
-                .lcni-status-pill.status-running {background:#fff1d6;color:#9a5600;}
-                .lcni-status-pill.status-pending {background:#e8f1ff;color:#165288;}
-                .lcni-status-pill.status-done {background:#dbf7e8;color:#146c2e;}
-                .lcni-progress-track {background:#eceff1;height:16px;width:220px;border-radius:999px;overflow:hidden;display:inline-block;vertical-align:middle;}
-                .lcni-progress-fill {height:100%;transition:width .35s ease;}
-                .lcni-progress-fill.progress-running {background:linear-gradient(90deg,#ff9f43,#ffcf66);background-size:300% 100%;animation:lcni-running-glow 2s linear infinite;}
-                .lcni-progress-fill.progress-pending {background:#5b9bd5;}
-                .lcni-progress-fill.progress-done {background:#32b357;}
-                .lcni-progress-text {display:inline-block;min-width:42px;margin-left:8px;font-weight:600;}
-                @keyframes lcni-running-glow {0%{background-position:100% 0;}100%{background-position:0 0;}}
-            </style>
-
-            <table class="widefat striped" style="max-width:1000px;">
-                <thead><tr><th>Task</th><th>Status</th><th>last_to_time</th><th>Progress</th></tr></thead>
-                <tbody id="lcni-seed-task-rows"><?php echo wp_kses_post($this->render_task_rows($tasks)); ?></tbody>
-            </table>
-            <script>
-                (function() {
-                    const rowsTarget = document.getElementById('lcni-seed-task-rows');
-                    const statsList = document.getElementById('lcni-seed-stats-list');
-                    const updatedHint = document.getElementById('lcni-seed-dashboard-updated');
-
-                    if (!rowsTarget || !statsList || !updatedHint) {
-                        return;
-                    }
-
-                    const nonce = <?php echo wp_json_encode(wp_create_nonce('lcni_seed_dashboard_nonce')); ?>;
-                    const endpoint = <?php echo wp_json_encode(admin_url('admin-ajax.php')); ?>;
-
-                    const updateStatValue = function(key, value) {
-                        const el = statsList.querySelector('[data-stat="' + key + '"]');
-                        if (el) {
-                            el.textContent = value;
+                        if (!rowsTarget || !updatedHint) {
+                            return;
                         }
-                    };
 
-                    const refreshDashboard = function() {
-                        const body = new URLSearchParams({
-                            action: 'lcni_seed_dashboard_snapshot',
-                            nonce: nonce
-                        });
-
-                        fetch(endpoint, {
-                            method: 'POST',
-                            credentials: 'same-origin',
-                            headers: {
-                                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
-                            },
-                            body: body.toString()
-                        })
-                        .then(function(response) { return response.json(); })
-                        .then(function(payload) {
-                            if (!payload || !payload.success || !payload.data) {
-                                return;
+                        const updateStatValue = function(name, value) {
+                            const target = document.querySelector('[data-stat="' + name + '"]');
+                            if (target) {
+                                target.textContent = value;
                             }
+                        };
 
-                            rowsTarget.innerHTML = payload.data.rows_html || '';
-                            const stats = payload.data.stats || {};
-                            updateStatValue('total', String(stats.total ?? 0));
-                            updateStatValue('done', String(stats.done ?? 0));
-                            updateStatValue('running', String(stats.running ?? 0));
-                            updateStatValue('pending', String(stats.pending ?? 0));
-                            updateStatValue('paused', stats.paused ? String(stats.paused) : 'NO');
+                        const refreshDashboard = function() {
+                            const body = new URLSearchParams();
+                            body.append('action', 'lcni_seed_dashboard_snapshot');
+                            body.append('nonce', nonce);
 
-                            updatedHint.textContent = 'Cập nhật realtime mỗi 5 giây. Lần cập nhật gần nhất: ' + (payload.data.updated_at || 'N/A');
-                        });
-                    };
+                            fetch(endpoint, {
+                                method: 'POST',
+                                credentials: 'same-origin',
+                                headers: {
+                                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                                },
+                                body: body.toString()
+                            })
+                            .then(function(response) { return response.json(); })
+                            .then(function(payload) {
+                                if (!payload || !payload.success || !payload.data) {
+                                    return;
+                                }
 
-                    setInterval(refreshDashboard, 5000);
-                    refreshDashboard();
-                })();
-            </script>
+                                rowsTarget.innerHTML = payload.data.rows_html || '';
+                                const stats = payload.data.stats || {};
+                                updateStatValue('total', String(stats.total ?? 0));
+                                updateStatValue('done', String(stats.done ?? 0));
+                                updateStatValue('running', String(stats.running ?? 0));
+                                updateStatValue('pending', String(stats.pending ?? 0));
+                                updateStatValue('error_tasks', String(stats.error_tasks ?? 0));
+                                updateStatValue('failed_attempts', String(stats.failed_attempts ?? 0));
+                                updateStatValue('paused', stats.paused ? String(stats.paused) : 'NO');
 
-            <h2>Quick Actions</h2>
-            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_admin_action" value="test_api_connection"><?php submit_button('Test chart-api', 'secondary', 'submit', false); ?></form>
-            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_admin_action" value="test_api_multi_symbol"><?php submit_button('Test nhiều symbol', 'secondary', 'submit', false); ?></form>
+                                updatedHint.textContent = 'Cập nhật realtime mỗi 5 giây. Lần cập nhật gần nhất: ' + (payload.data.updated_at || 'N/A');
+                            });
+                        };
 
-            <h2>Change Logs</h2>
-            <?php if (!empty($logs)) : ?>
-                <table class="widefat striped" style="max-width:1100px;"><thead><tr><th style="width:180px;">Time</th><th style="width:180px;">Action</th><th>Message</th></tr></thead><tbody>
-                <?php foreach ($logs as $log) : ?>
-                    <tr><td><?php echo esc_html($log['created_at']); ?></td><td><?php echo esc_html($log['action']); ?></td><td><?php echo esc_html($log['message']); ?></td></tr>
-                <?php endforeach; ?>
-                </tbody></table>
-            <?php else : ?><p>No change logs available yet.</p><?php endif; ?>
+                        setInterval(refreshDashboard, 5000);
+                        refreshDashboard();
+                    })();
+                </script>
+            <?php else : ?>
+                <h2>Change Logs</h2>
+                <?php if (!empty($logs)) : ?>
+                    <table class="widefat striped" style="max-width:1100px;"><thead><tr><th style="width:180px;">Time</th><th style="width:180px;">Action</th><th>Message</th></tr></thead><tbody>
+                    <?php foreach ($logs as $log) : ?>
+                        <tr><td><?php echo esc_html($log['created_at']); ?></td><td><?php echo esc_html($log['action']); ?></td><td><?php echo esc_html($log['message']); ?></td></tr>
+                    <?php endforeach; ?>
+                    </tbody></table>
+                <?php else : ?><p>No change logs available yet.</p><?php endif; ?>
+            <?php endif; ?>
         </div>
         <?php
     }
@@ -486,7 +498,9 @@ class LCNI_Settings {
         global $wpdb;
 
         $ohlc_rows = $wpdb->get_results("SELECT symbol, timeframe, event_time, open_price, high_price, low_price, close_price, volume, value_traded, created_at FROM {$wpdb->prefix}lcni_ohlc ORDER BY event_time DESC LIMIT 50", ARRAY_A);
-        $symbol_rows = $wpdb->get_results("SELECT symbol, market_id, board_id, isin, basic_price, ceiling_price, floor_price, security_status, source, updated_at FROM {$wpdb->prefix}lcni_symbols ORDER BY updated_at DESC LIMIT 50", ARRAY_A);
+        $symbol_rows = $wpdb->get_results("SELECT s.symbol, s.market_id, m.exchange, s.board_id, s.isin, s.basic_price, s.ceiling_price, s.floor_price, s.security_status, s.source, s.updated_at FROM {$wpdb->prefix}lcni_symbols s LEFT JOIN {$wpdb->prefix}lcni_marketid m ON m.market_id = s.market_id ORDER BY s.updated_at DESC LIMIT 50", ARRAY_A);
+        $market_rows = $wpdb->get_results("SELECT market_id, exchange, updated_at FROM {$wpdb->prefix}lcni_marketid ORDER BY CAST(market_id AS UNSIGNED), market_id", ARRAY_A);
+        $icb2_rows = $wpdb->get_results("SELECT id_icb2, name_icb2, updated_at FROM {$wpdb->prefix}lcni_icb2 ORDER BY id_icb2 ASC", ARRAY_A);
         ?>
         <div class="wrap">
             <h1>Saved Data</h1>
@@ -494,10 +508,24 @@ class LCNI_Settings {
 
             <h2>LCNI Symbols</h2>
             <?php if (!empty($symbol_rows)) : ?>
-                <table class="widefat striped" style="max-width: 1400px;"><thead><tr><th>Symbol</th><th>Market</th><th>Board</th><th>ISIN</th><th>Basic</th><th>Ceiling</th><th>Floor</th><th>Status</th><th>Source</th><th>Updated At</th></tr></thead><tbody>
-                    <?php foreach ($symbol_rows as $row) : ?><tr><td><?php echo esc_html($row['symbol']); ?></td><td><?php echo esc_html($row['market_id']); ?></td><td><?php echo esc_html($row['board_id']); ?></td><td><?php echo esc_html($row['isin']); ?></td><td><?php echo esc_html($row['basic_price']); ?></td><td><?php echo esc_html($row['ceiling_price']); ?></td><td><?php echo esc_html($row['floor_price']); ?></td><td><?php echo esc_html($row['security_status']); ?></td><td><?php echo esc_html($row['source']); ?></td><td><?php echo esc_html($row['updated_at']); ?></td></tr><?php endforeach; ?>
+                <table class="widefat striped" style="max-width: 1400px;"><thead><tr><th>Symbol</th><th>Market ID</th><th>Exchange</th><th>Board</th><th>ISIN</th><th>Basic</th><th>Ceiling</th><th>Floor</th><th>Status</th><th>Source</th><th>Updated At</th></tr></thead><tbody>
+                    <?php foreach ($symbol_rows as $row) : ?><tr><td><?php echo esc_html($row['symbol']); ?></td><td><?php echo esc_html($row['market_id']); ?></td><td><?php echo esc_html($row['exchange'] ?: 'N/A'); ?></td><td><?php echo esc_html($row['board_id']); ?></td><td><?php echo esc_html($row['isin']); ?></td><td><?php echo esc_html($row['basic_price']); ?></td><td><?php echo esc_html($row['ceiling_price']); ?></td><td><?php echo esc_html($row['floor_price']); ?></td><td><?php echo esc_html($row['security_status']); ?></td><td><?php echo esc_html($row['source']); ?></td><td><?php echo esc_html($row['updated_at']); ?></td></tr><?php endforeach; ?>
                 </tbody></table>
             <?php else : ?><p>Chưa có dữ liệu lcni_symbols.</p><?php endif; ?>
+
+            <h2 style="margin-top: 30px;">LCNI Market Mapping</h2>
+            <?php if (!empty($market_rows)) : ?>
+                <table class="widefat striped" style="max-width: 700px;"><thead><tr><th>Market ID</th><th>Exchange</th><th>Updated At</th></tr></thead><tbody>
+                    <?php foreach ($market_rows as $row) : ?><tr><td><?php echo esc_html($row['market_id']); ?></td><td><?php echo esc_html($row['exchange']); ?></td><td><?php echo esc_html($row['updated_at']); ?></td></tr><?php endforeach; ?>
+                </tbody></table>
+            <?php else : ?><p>Chưa có dữ liệu lcni_marketid.</p><?php endif; ?>
+
+            <h2 style="margin-top: 30px;">LCNI ICB2</h2>
+            <?php if (!empty($icb2_rows)) : ?>
+                <table class="widefat striped" style="max-width: 900px;"><thead><tr><th>ID ICB2</th><th>Tên ngành</th><th>Updated At</th></tr></thead><tbody>
+                    <?php foreach ($icb2_rows as $row) : ?><tr><td><?php echo esc_html($row['id_icb2']); ?></td><td><?php echo esc_html($row['name_icb2']); ?></td><td><?php echo esc_html($row['updated_at']); ?></td></tr><?php endforeach; ?>
+                </tbody></table>
+            <?php else : ?><p>Chưa có dữ liệu lcni_icb2.</p><?php endif; ?>
 
             <h2 style="margin-top: 30px;">OHLC Data</h2>
             <?php if (!empty($ohlc_rows)) : ?>
