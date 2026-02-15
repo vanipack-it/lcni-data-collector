@@ -497,43 +497,102 @@ class LCNI_Settings {
     public function data_viewer_page() {
         global $wpdb;
 
-        $ohlc_rows = $wpdb->get_results("SELECT symbol, timeframe, event_time, open_price, high_price, low_price, close_price, volume, value_traded, created_at FROM {$wpdb->prefix}lcni_ohlc ORDER BY event_time DESC LIMIT 50", ARRAY_A);
-        $symbol_rows = $wpdb->get_results("SELECT s.symbol, s.market_id, m.exchange, s.board_id, s.isin, s.basic_price, s.ceiling_price, s.floor_price, s.security_status, s.source, s.updated_at FROM {$wpdb->prefix}lcni_symbols s LEFT JOIN {$wpdb->prefix}lcni_marketid m ON m.market_id = s.market_id ORDER BY s.updated_at DESC LIMIT 50", ARRAY_A);
+        $ohlc_rows = $wpdb->get_results("SELECT symbol, timeframe, event_time, open_price, high_price, low_price, close_price, volume, value_traded, pct_t_1, pct_t_3, pct_1w, pct_1m, pct_3m, pct_6m, pct_1y, ma10, ma20, ma50, ma100, ma200, h1m, h3m, h6m, h1y, l1m, l3m, l6m, l1y, vol_ma10, vol_ma20, gia_sv_ma10, gia_sv_ma20, gia_sv_ma50, gia_sv_ma100, gia_sv_ma200, vol_sv_vol_ma10, vol_sv_vol_ma20, macd, macd_signal, rsi, created_at FROM {$wpdb->prefix}lcni_ohlc ORDER BY event_time DESC LIMIT 50", ARRAY_A);
+        $symbol_rows = $wpdb->get_results("SELECT s.symbol, s.market_id, m.exchange, s.id_icb2, i.name_icb2, s.board_id, s.isin, s.basic_price, s.ceiling_price, s.floor_price, s.security_status, s.source, s.updated_at FROM {$wpdb->prefix}lcni_symbols s LEFT JOIN {$wpdb->prefix}lcni_marketid m ON m.market_id = s.market_id LEFT JOIN {$wpdb->prefix}lcni_icb2 i ON i.id_icb2 = s.id_icb2 ORDER BY s.updated_at DESC LIMIT 50", ARRAY_A);
         $market_rows = $wpdb->get_results("SELECT market_id, exchange, updated_at FROM {$wpdb->prefix}lcni_marketid ORDER BY CAST(market_id AS UNSIGNED), market_id", ARRAY_A);
         $icb2_rows = $wpdb->get_results("SELECT id_icb2, name_icb2, updated_at FROM {$wpdb->prefix}lcni_icb2 ORDER BY id_icb2 ASC", ARRAY_A);
+        $mapping_rows = $wpdb->get_results("SELECT map.symbol, map.market_id, m.exchange, map.id_icb2, i.name_icb2, map.updated_at FROM {$wpdb->prefix}lcni_sym_icb_market map LEFT JOIN {$wpdb->prefix}lcni_marketid m ON m.market_id = map.market_id LEFT JOIN {$wpdb->prefix}lcni_icb2 i ON i.id_icb2 = map.id_icb2 ORDER BY map.updated_at DESC LIMIT 50", ARRAY_A);
         ?>
         <div class="wrap">
             <h1>Saved Data</h1>
             <p>Trang này hiển thị dữ liệu đã lưu từ API/CSV (50 bản ghi gần nhất mỗi bảng).</p>
 
-            <h2>LCNI Symbols</h2>
-            <?php if (!empty($symbol_rows)) : ?>
-                <table class="widefat striped" style="max-width: 1400px;"><thead><tr><th>Symbol</th><th>Market ID</th><th>Exchange</th><th>Board</th><th>ISIN</th><th>Basic</th><th>Ceiling</th><th>Floor</th><th>Status</th><th>Source</th><th>Updated At</th></tr></thead><tbody>
-                    <?php foreach ($symbol_rows as $row) : ?><tr><td><?php echo esc_html($row['symbol']); ?></td><td><?php echo esc_html($row['market_id']); ?></td><td><?php echo esc_html($row['exchange'] ?: 'N/A'); ?></td><td><?php echo esc_html($row['board_id']); ?></td><td><?php echo esc_html($row['isin']); ?></td><td><?php echo esc_html($row['basic_price']); ?></td><td><?php echo esc_html($row['ceiling_price']); ?></td><td><?php echo esc_html($row['floor_price']); ?></td><td><?php echo esc_html($row['security_status']); ?></td><td><?php echo esc_html($row['source']); ?></td><td><?php echo esc_html($row['updated_at']); ?></td></tr><?php endforeach; ?>
-                </tbody></table>
-            <?php else : ?><p>Chưa có dữ liệu lcni_symbols.</p><?php endif; ?>
+            <style>
+                .lcni-tab-nav { display: flex; gap: 8px; border-bottom: 1px solid #dcdcde; margin-top: 20px; }
+                .lcni-tab-nav button { border: 1px solid #dcdcde; border-bottom: 0; background: #f6f7f7; padding: 8px 12px; cursor: pointer; }
+                .lcni-tab-nav button.active { background: #fff; font-weight: 600; }
+                .lcni-tab-content { display: none; margin-top: 16px; }
+                .lcni-tab-content.active { display: block; }
+            </style>
 
-            <h2 style="margin-top: 30px;">LCNI Market Mapping</h2>
-            <?php if (!empty($market_rows)) : ?>
-                <table class="widefat striped" style="max-width: 700px;"><thead><tr><th>Market ID</th><th>Exchange</th><th>Updated At</th></tr></thead><tbody>
-                    <?php foreach ($market_rows as $row) : ?><tr><td><?php echo esc_html($row['market_id']); ?></td><td><?php echo esc_html($row['exchange']); ?></td><td><?php echo esc_html($row['updated_at']); ?></td></tr><?php endforeach; ?>
-                </tbody></table>
-            <?php else : ?><p>Chưa có dữ liệu lcni_marketid.</p><?php endif; ?>
+            <div class="lcni-tab-nav" id="lcni-saved-data-tabs">
+                <button class="active" data-tab="lcni-tab-symbols">LCNI Symbols</button>
+                <button data-tab="lcni-tab-market">LCNI Market Mapping</button>
+                <button data-tab="lcni-tab-icb2">LCNI ICB2</button>
+                <button data-tab="lcni-tab-sym-icb-market">LCNI Symbol-Market-ICB</button>
+                <button data-tab="lcni-tab-ohlc">OHLC Data + Indicators</button>
+            </div>
 
-            <h2 style="margin-top: 30px;">LCNI ICB2</h2>
-            <?php if (!empty($icb2_rows)) : ?>
-                <table class="widefat striped" style="max-width: 900px;"><thead><tr><th>ID ICB2</th><th>Tên ngành</th><th>Updated At</th></tr></thead><tbody>
-                    <?php foreach ($icb2_rows as $row) : ?><tr><td><?php echo esc_html($row['id_icb2']); ?></td><td><?php echo esc_html($row['name_icb2']); ?></td><td><?php echo esc_html($row['updated_at']); ?></td></tr><?php endforeach; ?>
-                </tbody></table>
-            <?php else : ?><p>Chưa có dữ liệu lcni_icb2.</p><?php endif; ?>
+            <div id="lcni-tab-symbols" class="lcni-tab-content active">
+                <?php if (!empty($symbol_rows)) : ?>
+                    <table class="widefat striped" style="max-width: 1500px;"><thead><tr><th>Symbol</th><th>Market ID</th><th>Exchange</th><th>ID ICB2</th><th>Tên ngành</th><th>Board</th><th>ISIN</th><th>Basic</th><th>Ceiling</th><th>Floor</th><th>Status</th><th>Source</th><th>Updated At</th></tr></thead><tbody>
+                        <?php foreach ($symbol_rows as $row) : ?><tr><td><?php echo esc_html($row['symbol']); ?></td><td><?php echo esc_html($row['market_id']); ?></td><td><?php echo esc_html($row['exchange'] ?: 'N/A'); ?></td><td><?php echo esc_html($row['id_icb2']); ?></td><td><?php echo esc_html($row['name_icb2'] ?: 'N/A'); ?></td><td><?php echo esc_html($row['board_id']); ?></td><td><?php echo esc_html($row['isin']); ?></td><td><?php echo esc_html($row['basic_price']); ?></td><td><?php echo esc_html($row['ceiling_price']); ?></td><td><?php echo esc_html($row['floor_price']); ?></td><td><?php echo esc_html($row['security_status']); ?></td><td><?php echo esc_html($row['source']); ?></td><td><?php echo esc_html($row['updated_at']); ?></td></tr><?php endforeach; ?>
+                    </tbody></table>
+                <?php else : ?><p>Chưa có dữ liệu lcni_symbols.</p><?php endif; ?>
+            </div>
 
-            <h2 style="margin-top: 30px;">OHLC Data</h2>
-            <?php if (!empty($ohlc_rows)) : ?>
-                <table class="widefat striped" style="max-width: 1400px;"><thead><tr><th>Symbol</th><th>Timeframe</th><th>Event Time</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>Volume</th><th>Value Traded</th><th>Created At</th></tr></thead><tbody>
-                    <?php foreach ($ohlc_rows as $row) : ?><tr><td><?php echo esc_html($row['symbol']); ?></td><td><?php echo esc_html($row['timeframe']); ?></td><td><?php echo esc_html(gmdate('Y-m-d H:i:s', (int) $row['event_time'])); ?></td><td><?php echo esc_html($row['open_price']); ?></td><td><?php echo esc_html($row['high_price']); ?></td><td><?php echo esc_html($row['low_price']); ?></td><td><?php echo esc_html($row['close_price']); ?></td><td><?php echo esc_html($row['volume']); ?></td><td><?php echo esc_html($row['value_traded']); ?></td><td><?php echo esc_html($row['created_at']); ?></td></tr><?php endforeach; ?>
-                </tbody></table>
-            <?php else : ?><p>Chưa có dữ liệu OHLC.</p><?php endif; ?>
+            <div id="lcni-tab-market" class="lcni-tab-content">
+                <?php if (!empty($market_rows)) : ?>
+                    <table class="widefat striped" style="max-width: 700px;"><thead><tr><th>Market ID</th><th>Exchange</th><th>Updated At</th></tr></thead><tbody>
+                        <?php foreach ($market_rows as $row) : ?><tr><td><?php echo esc_html($row['market_id']); ?></td><td><?php echo esc_html($row['exchange']); ?></td><td><?php echo esc_html($row['updated_at']); ?></td></tr><?php endforeach; ?>
+                    </tbody></table>
+                <?php else : ?><p>Chưa có dữ liệu lcni_marketid.</p><?php endif; ?>
+            </div>
+
+            <div id="lcni-tab-icb2" class="lcni-tab-content">
+                <?php if (!empty($icb2_rows)) : ?>
+                    <table class="widefat striped" style="max-width: 900px;"><thead><tr><th>ID ICB2</th><th>Tên ngành</th><th>Updated At</th></tr></thead><tbody>
+                        <?php foreach ($icb2_rows as $row) : ?><tr><td><?php echo esc_html($row['id_icb2']); ?></td><td><?php echo esc_html($row['name_icb2']); ?></td><td><?php echo esc_html($row['updated_at']); ?></td></tr><?php endforeach; ?>
+                    </tbody></table>
+                <?php else : ?><p>Chưa có dữ liệu lcni_icb2.</p><?php endif; ?>
+            </div>
+
+            <div id="lcni-tab-sym-icb-market" class="lcni-tab-content">
+                <?php if (!empty($mapping_rows)) : ?>
+                    <table class="widefat striped" style="max-width: 1000px;"><thead><tr><th>Symbol</th><th>Market ID</th><th>Exchange</th><th>ID ICB2</th><th>Tên ngành</th><th>Updated At</th></tr></thead><tbody>
+                        <?php foreach ($mapping_rows as $row) : ?><tr><td><?php echo esc_html($row['symbol']); ?></td><td><?php echo esc_html($row['market_id']); ?></td><td><?php echo esc_html($row['exchange'] ?: 'N/A'); ?></td><td><?php echo esc_html($row['id_icb2']); ?></td><td><?php echo esc_html($row['name_icb2'] ?: 'N/A'); ?></td><td><?php echo esc_html($row['updated_at']); ?></td></tr><?php endforeach; ?>
+                    </tbody></table>
+                <?php else : ?><p>Chưa có dữ liệu lcni_sym_icb_market.</p><?php endif; ?>
+            </div>
+
+            <div id="lcni-tab-ohlc" class="lcni-tab-content">
+                <?php if (!empty($ohlc_rows)) : ?>
+                    <div style="overflow-x:auto; max-width: 100%;">
+                        <table class="widefat striped" style="min-width: 2600px;"><thead><tr><th>Symbol</th><th>Timeframe</th><th>Event Time</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>Volume</th><th>Value Traded</th><th>%T-1</th><th>%T-3</th><th>%1W</th><th>%1M</th><th>%3M</th><th>%6M</th><th>%1Y</th><th>MA10</th><th>MA20</th><th>MA50</th><th>MA100</th><th>MA200</th><th>H1M</th><th>H3M</th><th>H6M</th><th>H1Y</th><th>L1M</th><th>L3M</th><th>L6M</th><th>L1Y</th><th>VolMA10</th><th>VolMA20</th><th>GiasvMA10</th><th>GiasvMA20</th><th>GiasvMA50</th><th>GiasvMA100</th><th>GiasvMA200</th><th>VolsvVolMA10</th><th>VolsvVolMA20</th><th>MACD</th><th>MACD Signal</th><th>RSI</th><th>Created At</th></tr></thead><tbody>
+                            <?php foreach ($ohlc_rows as $row) : ?><tr><td><?php echo esc_html($row['symbol']); ?></td><td><?php echo esc_html($row['timeframe']); ?></td><td><?php echo esc_html(gmdate('Y-m-d H:i:s', (int) $row['event_time'])); ?></td><td><?php echo esc_html($row['open_price']); ?></td><td><?php echo esc_html($row['high_price']); ?></td><td><?php echo esc_html($row['low_price']); ?></td><td><?php echo esc_html($row['close_price']); ?></td><td><?php echo esc_html($row['volume']); ?></td><td><?php echo esc_html($row['value_traded']); ?></td><td><?php echo esc_html($row['pct_t_1']); ?></td><td><?php echo esc_html($row['pct_t_3']); ?></td><td><?php echo esc_html($row['pct_1w']); ?></td><td><?php echo esc_html($row['pct_1m']); ?></td><td><?php echo esc_html($row['pct_3m']); ?></td><td><?php echo esc_html($row['pct_6m']); ?></td><td><?php echo esc_html($row['pct_1y']); ?></td><td><?php echo esc_html($row['ma10']); ?></td><td><?php echo esc_html($row['ma20']); ?></td><td><?php echo esc_html($row['ma50']); ?></td><td><?php echo esc_html($row['ma100']); ?></td><td><?php echo esc_html($row['ma200']); ?></td><td><?php echo esc_html($row['h1m']); ?></td><td><?php echo esc_html($row['h3m']); ?></td><td><?php echo esc_html($row['h6m']); ?></td><td><?php echo esc_html($row['h1y']); ?></td><td><?php echo esc_html($row['l1m']); ?></td><td><?php echo esc_html($row['l3m']); ?></td><td><?php echo esc_html($row['l6m']); ?></td><td><?php echo esc_html($row['l1y']); ?></td><td><?php echo esc_html($row['vol_ma10']); ?></td><td><?php echo esc_html($row['vol_ma20']); ?></td><td><?php echo esc_html($row['gia_sv_ma10']); ?></td><td><?php echo esc_html($row['gia_sv_ma20']); ?></td><td><?php echo esc_html($row['gia_sv_ma50']); ?></td><td><?php echo esc_html($row['gia_sv_ma100']); ?></td><td><?php echo esc_html($row['gia_sv_ma200']); ?></td><td><?php echo esc_html($row['vol_sv_vol_ma10']); ?></td><td><?php echo esc_html($row['vol_sv_vol_ma20']); ?></td><td><?php echo esc_html($row['macd']); ?></td><td><?php echo esc_html($row['macd_signal']); ?></td><td><?php echo esc_html($row['rsi']); ?></td><td><?php echo esc_html($row['created_at']); ?></td></tr><?php endforeach; ?>
+                        </tbody></table>
+                    </div>
+                <?php else : ?><p>Chưa có dữ liệu OHLC.</p><?php endif; ?>
+            </div>
+
+            <script>
+                (function() {
+                    const nav = document.getElementById('lcni-saved-data-tabs');
+                    if (!nav) {
+                        return;
+                    }
+
+                    const buttons = nav.querySelectorAll('button[data-tab]');
+                    const panes = document.querySelectorAll('.lcni-tab-content');
+
+                    buttons.forEach((button) => {
+                        button.addEventListener('click', () => {
+                            const target = button.getAttribute('data-tab');
+
+                            buttons.forEach((btn) => btn.classList.remove('active'));
+                            panes.forEach((pane) => pane.classList.remove('active'));
+
+                            button.classList.add('active');
+                            const pane = document.getElementById(target);
+                            if (pane) {
+                                pane.classList.add('active');
+                            }
+                        });
+                    });
+                })();
+            </script>
         </div>
         <?php
     }
+
 }
