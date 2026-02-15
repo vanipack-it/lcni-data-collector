@@ -34,6 +34,7 @@ function lcni_register_custom_cron_schedules($schedules) {
 
 function lcni_activate_plugin() {
     LCNI_DB::create_tables();
+    LCNI_DB::run_pending_migrations();
     lcni_ensure_cron_scheduled();
 }
 
@@ -73,6 +74,8 @@ function lcni_deactivate_plugin() {
 }
 
 function lcni_run_cron_incremental_sync() {
+    LCNI_DB::run_pending_migrations();
+
     $stats = LCNI_SeedRepository::get_dashboard_stats();
     if ((int) ($stats['total'] ?? 0) > 0 && (int) ($stats['done'] ?? 0) < (int) ($stats['total'] ?? 0)) {
         return;
