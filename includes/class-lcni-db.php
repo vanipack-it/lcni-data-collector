@@ -45,6 +45,7 @@ class LCNI_DB {
             $wpdb->prefix . 'lcni_ohlc',
             $wpdb->prefix . 'lcni_security_definition',
             $wpdb->prefix . 'lcni_symbols',
+            $wpdb->prefix . 'lcni_symbol_tongquan',
             $wpdb->prefix . 'lcni_change_logs',
             $wpdb->prefix . 'lcni_seed_tasks',
             $wpdb->prefix . 'lcni_marketid',
@@ -62,9 +63,11 @@ class LCNI_DB {
 
         self::ensure_ohlc_indicator_columns();
         self::ensure_symbol_market_icb_columns();
+        self::ensure_symbol_tongquan_columns();
         self::ensure_ohlc_indexes();
         self::normalize_ohlc_numeric_columns();
         self::sync_symbol_market_icb_mapping();
+        self::sync_symbol_tongquan_with_symbols();
     }
 
     public static function run_pending_migrations() {
@@ -84,6 +87,7 @@ class LCNI_DB {
         $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
         $security_definition_table = $wpdb->prefix . 'lcni_security_definition';
         $symbol_table = $wpdb->prefix . 'lcni_symbols';
+        $symbol_tongquan_table = $wpdb->prefix . 'lcni_symbol_tongquan';
         $log_table = $wpdb->prefix . 'lcni_change_logs';
         $seed_task_table = $wpdb->prefix . 'lcni_seed_tasks';
         $market_table = $wpdb->prefix . 'lcni_marketid';
@@ -240,6 +244,34 @@ class LCNI_DB {
             KEY idx_name_icb2 (name_icb2)
         ) {$charset_collate};";
 
+        $sql_symbol_tongquan = "CREATE TABLE {$symbol_tongquan_table} (
+            symbol VARCHAR(20) NOT NULL,
+            eps DECIMAL(20,4) DEFAULT NULL,
+            eps_1y_pct DECIMAL(12,6) DEFAULT NULL,
+            dt_1y_pct DECIMAL(12,6) DEFAULT NULL,
+            bien_ln_gop DECIMAL(12,6) DEFAULT NULL,
+            bien_ln_rong DECIMAL(12,6) DEFAULT NULL,
+            roe DECIMAL(12,6) DEFAULT NULL,
+            de_ratio DECIMAL(12,6) DEFAULT NULL,
+            pe_ratio DECIMAL(12,6) DEFAULT NULL,
+            pb_ratio DECIMAL(12,6) DEFAULT NULL,
+            ev_ebitda DECIMAL(12,6) DEFAULT NULL,
+            tcbs_khuyen_nghi VARCHAR(255) DEFAULT NULL,
+            co_tuc_pct DECIMAL(12,6) DEFAULT NULL,
+            tc_rating DECIMAL(12,6) DEFAULT NULL,
+            so_huu_nn_pct DECIMAL(12,6) DEFAULT NULL,
+            tien_mat_rong_von_hoa DECIMAL(12,6) DEFAULT NULL,
+            tien_mat_rong_tong_tai_san DECIMAL(12,6) DEFAULT NULL,
+            loi_nhuan_4_quy_gan_nhat DECIMAL(20,4) DEFAULT NULL,
+            tang_truong_dt_quy_gan_nhat DECIMAL(12,6) DEFAULT NULL,
+            tang_truong_dt_quy_gan_nhi DECIMAL(12,6) DEFAULT NULL,
+            tang_truong_ln_quy_gan_nhat DECIMAL(12,6) DEFAULT NULL,
+            tang_truong_ln_quy_gan_nhi DECIMAL(12,6) DEFAULT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (symbol)
+        ) {$charset_collate};";
+
         $sql_change_logs = "CREATE TABLE {$log_table} (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             action VARCHAR(100) NOT NULL,
@@ -259,17 +291,20 @@ class LCNI_DB {
         dbDelta($sql_market);
         dbDelta($sql_icb2);
         dbDelta($sql_symbol_market_icb);
+        dbDelta($sql_symbol_tongquan);
 
         self::seed_market_reference_data($market_table);
         self::seed_icb2_reference_data($icb2_table);
         self::sync_symbol_market_icb_mapping();
         self::ensure_ohlc_indicator_columns();
         self::ensure_symbol_market_icb_columns();
+        self::ensure_symbol_tongquan_columns();
         self::ensure_ohlc_indexes();
         self::normalize_ohlc_numeric_columns();
         self::normalize_legacy_ratio_columns();
+        self::sync_symbol_tongquan_with_symbols();
 
-        self::log_change('activation', 'Created/updated OHLC, lcni_symbols, seed task, market, icb2, sym_icb_market and change log tables.');
+        self::log_change('activation', 'Created/updated OHLC, lcni_symbols, lcni_symbol_tongquan, seed task, market, icb2, sym_icb_market and change log tables.');
     }
 
     private static function ensure_ohlc_indicator_columns() {
@@ -352,6 +387,53 @@ class LCNI_DB {
 
         if (!in_array('exchange', $columns, true)) {
             $wpdb->query("ALTER TABLE {$table} ADD COLUMN exchange VARCHAR(20) DEFAULT NULL AFTER id_icb2");
+        }
+    }
+
+    private static function ensure_symbol_tongquan_columns() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_symbol_tongquan';
+        $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+        if ($exists !== $table) {
+            return;
+        }
+
+        $columns = $wpdb->get_col("SHOW COLUMNS FROM {$table}", 0);
+        if (!is_array($columns) || empty($columns)) {
+            return;
+        }
+
+        $required_columns = [
+            'eps' => 'DECIMAL(20,4) DEFAULT NULL',
+            'eps_1y_pct' => 'DECIMAL(12,6) DEFAULT NULL',
+            'dt_1y_pct' => 'DECIMAL(12,6) DEFAULT NULL',
+            'bien_ln_gop' => 'DECIMAL(12,6) DEFAULT NULL',
+            'bien_ln_rong' => 'DECIMAL(12,6) DEFAULT NULL',
+            'roe' => 'DECIMAL(12,6) DEFAULT NULL',
+            'de_ratio' => 'DECIMAL(12,6) DEFAULT NULL',
+            'pe_ratio' => 'DECIMAL(12,6) DEFAULT NULL',
+            'pb_ratio' => 'DECIMAL(12,6) DEFAULT NULL',
+            'ev_ebitda' => 'DECIMAL(12,6) DEFAULT NULL',
+            'tcbs_khuyen_nghi' => 'VARCHAR(255) DEFAULT NULL',
+            'co_tuc_pct' => 'DECIMAL(12,6) DEFAULT NULL',
+            'tc_rating' => 'DECIMAL(12,6) DEFAULT NULL',
+            'so_huu_nn_pct' => 'DECIMAL(12,6) DEFAULT NULL',
+            'tien_mat_rong_von_hoa' => 'DECIMAL(12,6) DEFAULT NULL',
+            'tien_mat_rong_tong_tai_san' => 'DECIMAL(12,6) DEFAULT NULL',
+            'loi_nhuan_4_quy_gan_nhat' => 'DECIMAL(20,4) DEFAULT NULL',
+            'tang_truong_dt_quy_gan_nhat' => 'DECIMAL(12,6) DEFAULT NULL',
+            'tang_truong_dt_quy_gan_nhi' => 'DECIMAL(12,6) DEFAULT NULL',
+            'tang_truong_ln_quy_gan_nhat' => 'DECIMAL(12,6) DEFAULT NULL',
+            'tang_truong_ln_quy_gan_nhi' => 'DECIMAL(12,6) DEFAULT NULL',
+        ];
+
+        foreach ($required_columns as $column_name => $column_definition) {
+            if (in_array($column_name, $columns, true)) {
+                continue;
+            }
+
+            $wpdb->query("ALTER TABLE {$table} ADD COLUMN {$column_name} {$column_definition}");
         }
     }
 
@@ -768,9 +850,88 @@ class LCNI_DB {
         ];
     }
 
-    public static function import_symbols_from_csv($file_path) {
-        self::ensure_tables_exist();
+    public static function get_csv_import_targets() {
+        return [
+            'lcni_symbols' => [
+                'label' => 'LCNI Symbols',
+                'primary_key' => 'symbol',
+                'columns' => [
+                    'symbol' => 'text',
+                    'market_id' => 'text',
+                    'board_id' => 'text',
+                    'isin' => 'text',
+                    'product_grp_id' => 'text',
+                    'security_group_id' => 'text',
+                    'id_icb2' => 'int',
+                    'basic_price' => 'float',
+                    'ceiling_price' => 'float',
+                    'floor_price' => 'float',
+                    'open_interest_quantity' => 'int',
+                    'security_status' => 'text',
+                    'symbol_admin_status_code' => 'text',
+                    'symbol_trading_method_status_code' => 'text',
+                    'symbol_trading_sanction_status_code' => 'text',
+                    'source' => 'text',
+                ],
+            ],
+            'lcni_marketid' => [
+                'label' => 'LCNI Market',
+                'primary_key' => 'market_id',
+                'columns' => [
+                    'market_id' => 'text',
+                    'exchange' => 'text',
+                ],
+            ],
+            'lcni_icb2' => [
+                'label' => 'LCNI ICB2',
+                'primary_key' => 'id_icb2',
+                'columns' => [
+                    'id_icb2' => 'int',
+                    'name_icb2' => 'text',
+                ],
+            ],
+            'lcni_sym_icb_market' => [
+                'label' => 'LCNI Symbol-Market-ICB Mapping',
+                'primary_key' => 'symbol',
+                'columns' => [
+                    'symbol' => 'text',
+                    'market_id' => 'text',
+                    'id_icb2' => 'int',
+                    'exchange' => 'text',
+                ],
+            ],
+            'lcni_symbol_tongquan' => [
+                'label' => 'LCNI Symbol Tổng quan',
+                'primary_key' => 'symbol',
+                'columns' => [
+                    'symbol' => 'text',
+                    'eps' => 'float',
+                    'eps_1y_pct' => 'float',
+                    'dt_1y_pct' => 'float',
+                    'bien_ln_gop' => 'float',
+                    'bien_ln_rong' => 'float',
+                    'roe' => 'float',
+                    'de_ratio' => 'float',
+                    'pe_ratio' => 'float',
+                    'pb_ratio' => 'float',
+                    'ev_ebitda' => 'float',
+                    'tcbs_khuyen_nghi' => 'text',
+                    'co_tuc_pct' => 'float',
+                    'tc_rating' => 'float',
+                    'so_huu_nn_pct' => 'float',
+                    'tien_mat_rong_von_hoa' => 'float',
+                    'tien_mat_rong_tong_tai_san' => 'float',
+                    'loi_nhuan_4_quy_gan_nhat' => 'float',
+                    'tang_truong_dt_quy_gan_nhat' => 'float',
+                    'tang_truong_dt_quy_gan_nhi' => 'float',
+                    'tang_truong_ln_quy_gan_nhat' => 'float',
+                    'tang_truong_ln_quy_gan_nhi' => 'float',
+                ],
+            ],
+        ];
+    }
 
+    public static function detect_csv_columns($file_path) {
         if (!is_readable($file_path)) {
             return new WP_Error('csv_not_readable', 'Không thể đọc file CSV đã upload.');
         }
@@ -781,78 +942,239 @@ class LCNI_DB {
         }
 
         $header = fgetcsv($handle);
-        $has_header = false;
-        $header_map = [];
+        fclose($handle);
 
-        if (is_array($header)) {
-            foreach ($header as $idx => $value) {
-                $normalized = self::normalize_csv_header($value);
-                if ($normalized !== '') {
-                    $header_map[$normalized] = $idx;
+        if (!is_array($header) || empty($header)) {
+            return new WP_Error('csv_empty', 'CSV không có dòng tiêu đề hợp lệ.');
+        }
+
+        $headers = [];
+        foreach ($header as $index => $name) {
+            $headers[] = [
+                'index' => $index,
+                'raw' => trim((string) $name),
+                'normalized' => self::normalize_csv_header($name),
+            ];
+        }
+
+        return $headers;
+    }
+
+    public static function suggest_csv_mapping($table_key, $headers) {
+        $targets = self::get_csv_import_targets();
+        if (!isset($targets[$table_key])) {
+            return [];
+        }
+
+        $target_columns = array_keys($targets[$table_key]['columns']);
+        $mapping = [];
+
+        foreach ($headers as $header) {
+            $source = (string) ($header['normalized'] ?? '');
+            if ($source === '') {
+                continue;
+            }
+
+            if (in_array($source, $target_columns, true)) {
+                $mapping[$source] = $source;
+                continue;
+            }
+
+            if ($table_key === 'lcni_symbol_tongquan') {
+                $aliases = [
+                    'mck' => 'symbol',
+                    'ma_ck' => 'symbol',
+                    'pe' => 'pe_ratio',
+                    'p_e' => 'pe_ratio',
+                    'pb' => 'pb_ratio',
+                    'p_b' => 'pb_ratio',
+                    'de' => 'de_ratio',
+                    'd_e' => 'de_ratio',
+                    'evebitda' => 'ev_ebitda',
+                    'ev_ebitda' => 'ev_ebitda',
+                    'tcbs_khuyen_nghi' => 'tcbs_khuyen_nghi',
+                    'tcbskhuyennghi' => 'tcbs_khuyen_nghi',
+                    'tc_rating' => 'tc_rating',
+                    'eps_1_nam' => 'eps_1y_pct',
+                    'eps_1y' => 'eps_1y_pct',
+                    'dt_1_nam' => 'dt_1y_pct',
+                    'doanh_thu_1_nam' => 'dt_1y_pct',
+                    'bien_ln_gop' => 'bien_ln_gop',
+                    'bien_ln_rong' => 'bien_ln_rong',
+                    'co_tuc' => 'co_tuc_pct',
+                    'co_tuc_pct' => 'co_tuc_pct',
+                    'so_huu_nn' => 'so_huu_nn_pct',
+                    'so_huu_nn_pct' => 'so_huu_nn_pct',
+                    'tien_mat_rong_von_hoa' => 'tien_mat_rong_von_hoa',
+                    'tien_mat_rong_tong_tai_san' => 'tien_mat_rong_tong_tai_san',
+                    'loi_nhuan_4_quy_gan_nhat' => 'loi_nhuan_4_quy_gan_nhat',
+                    'tang_truong_doanh_thu_quy_gan_nhat' => 'tang_truong_dt_quy_gan_nhat',
+                    'tang_truong_doanh_thu_quy_gan_nhi' => 'tang_truong_dt_quy_gan_nhi',
+                    'tang_truong_loi_nhuan_quy_gan_nhat' => 'tang_truong_ln_quy_gan_nhat',
+                    'tang_truong_loi_nhuan_quy_gan_nhi' => 'tang_truong_ln_quy_gan_nhi',
+                ];
+
+                if (isset($aliases[$source])) {
+                    $mapping[$source] = $aliases[$source];
                 }
             }
-
-            $has_header = isset($header_map['symbol']) || isset($header_map['mck']);
         }
 
-        $rows = [];
+        return $mapping;
+    }
 
-        if (!$has_header && is_array($header)) {
-            $symbol = strtoupper(trim((string) ($header[0] ?? '')));
-            if ($symbol !== '') {
-                $rows[] = ['symbol' => $symbol];
+    public static function import_csv_with_mapping($file_path, $table_key, $mapping) {
+        self::ensure_tables_exist();
+
+        $targets = self::get_csv_import_targets();
+        if (!isset($targets[$table_key])) {
+            return new WP_Error('invalid_table', 'Bảng import không hợp lệ.');
+        }
+
+        if (!is_readable($file_path)) {
+            return new WP_Error('csv_not_readable', 'Không thể đọc file CSV đã upload.');
+        }
+
+        $target = $targets[$table_key];
+        $columns = $target['columns'];
+        $primary_key = $target['primary_key'];
+
+        $handle = fopen($file_path, 'r');
+        if ($handle === false) {
+            return new WP_Error('csv_open_failed', 'Không thể mở file CSV.');
+        }
+
+        $header = fgetcsv($handle);
+        if (!is_array($header) || empty($header)) {
+            fclose($handle);
+            return new WP_Error('csv_empty', 'CSV không có dòng tiêu đề hợp lệ.');
+        }
+
+        $header_lookup = [];
+        foreach ($header as $index => $name) {
+            $normalized = self::normalize_csv_header($name);
+            if ($normalized !== '') {
+                $header_lookup[$normalized] = $index;
             }
         }
+
+        global $wpdb;
+        $table = $wpdb->prefix . $table_key;
+        $updated = 0;
+        $total = 0;
 
         while (($line = fgetcsv($handle)) !== false) {
             if (!is_array($line) || empty($line)) {
                 continue;
             }
 
-            if ($has_header) {
-                $symbol_index = $header_map['symbol'] ?? $header_map['mck'] ?? null;
-                $symbol = $symbol_index !== null ? strtoupper(trim((string) ($line[$symbol_index] ?? ''))) : '';
-                if ($symbol === '') {
+            $record = [];
+            $formats = [];
+
+            foreach ((array) $mapping as $csv_column => $db_column) {
+                $csv_column = self::normalize_csv_header($csv_column);
+                $db_column = sanitize_key((string) $db_column);
+
+                if ($csv_column === '' || $db_column === '' || !isset($columns[$db_column]) || !isset($header_lookup[$csv_column])) {
                     continue;
                 }
 
-                $rows[] = [
-                    'symbol' => $symbol,
-                    'marketId' => self::csv_col($line, $header_map, ['marketid', 'market_id']),
-                    'boardId' => self::csv_col($line, $header_map, ['boardid', 'board_id']),
-                    'isin' => self::csv_col($line, $header_map, ['isin']),
-                    'productGrpId' => self::csv_col($line, $header_map, ['productgrpid', 'product_grp_id']),
-                    'securityGroupId' => self::csv_col($line, $header_map, ['securitygroupid', 'security_group_id']),
-                    'basicPrice' => self::csv_col($line, $header_map, ['basicprice', 'basic_price']),
-                    'ceilingPrice' => self::csv_col($line, $header_map, ['ceilingprice', 'ceiling_price']),
-                    'floorPrice' => self::csv_col($line, $header_map, ['floorprice', 'floor_price']),
-                    'openInterestQuantity' => self::csv_col($line, $header_map, ['openinterestquantity', 'open_interest_quantity']),
-                    'securityStatus' => self::csv_col($line, $header_map, ['securitystatus', 'security_status']),
-                    'symbolAdminStatusCode' => self::csv_col($line, $header_map, ['symboladminstatuscode', 'symbol_admin_status_code']),
-                    'symbolTradingMethodStatusCode' => self::csv_col($line, $header_map, ['symboltradingmethodstatuscode', 'symbol_trading_method_status_code']),
-                    'symbolTradingSanctionStatusCode' => self::csv_col($line, $header_map, ['symboltradingsanctionstatuscode', 'symbol_trading_sanction_status_code']),
-                ];
-            } else {
-                $symbol = strtoupper(trim((string) ($line[0] ?? '')));
-                if ($symbol !== '') {
-                    $rows[] = ['symbol' => $symbol];
+                $value = trim((string) ($line[$header_lookup[$csv_column]] ?? ''));
+                $parsed = self::cast_import_value($value, $columns[$db_column]);
+                if ($db_column === 'symbol' && $parsed['value'] !== null) {
+                    $parsed['value'] = strtoupper((string) $parsed['value']);
                 }
+                $record[$db_column] = $parsed['value'];
+                $formats[$db_column] = $parsed['format'];
             }
+
+            if (!isset($record[$primary_key]) || $record[$primary_key] === '' || $record[$primary_key] === null) {
+                continue;
+            }
+
+            $result = $wpdb->replace($table, $record, array_values($formats));
+            if ($result !== false) {
+                $updated++;
+            }
+            $total++;
         }
 
         fclose($handle);
 
-        if (empty($rows)) {
-            return new WP_Error('empty_csv', 'File CSV không có symbol hợp lệ.');
+        if ($table_key === 'lcni_symbols') {
+            self::sync_symbol_market_icb_mapping();
         }
 
-        $upsert_summary = self::upsert_symbol_rows($rows, 'csv');
-        self::log_change('import_symbol_csv', sprintf('Imported %d symbols from CSV.', (int) $upsert_summary['updated']));
+        if ($table_key === 'lcni_symbols' || $table_key === 'lcni_symbol_tongquan') {
+            self::sync_symbol_tongquan_with_symbols();
+        }
+
+        self::log_change('import_csv_generic', sprintf('Imported %d/%d rows into %s.', $updated, $total, $table_key), [
+            'table' => $table_key,
+            'mapping' => $mapping,
+        ]);
 
         return [
-            'updated' => (int) $upsert_summary['updated'],
-            'total' => count($rows),
+            'updated' => $updated,
+            'total' => $total,
+            'table' => $table_key,
         ];
+    }
+
+    public static function import_symbols_from_csv($file_path) {
+        $headers = self::detect_csv_columns($file_path);
+        if (is_wp_error($headers)) {
+            return $headers;
+        }
+
+        $mapping = self::suggest_csv_mapping('lcni_symbols', $headers);
+
+        return self::import_csv_with_mapping($file_path, 'lcni_symbols', $mapping);
+    }
+
+
+    private static function cast_import_value($value, $type) {
+        $value = trim((string) $value);
+        if ($value === '') {
+            return ['value' => null, 'format' => '%s'];
+        }
+
+        if ($type === 'text') {
+            return ['value' => sanitize_text_field($value), 'format' => '%s'];
+        }
+
+        if ($type === 'int') {
+            $normalized = preg_replace('/[^0-9\-]/', '', $value);
+            return ['value' => $normalized === '' ? null : (int) $normalized, 'format' => '%d'];
+        }
+
+        $normalized = str_replace([' ', '%'], '', $value);
+        if (strpos($normalized, ',') !== false && strpos($normalized, '.') !== false) {
+            $normalized = str_replace(',', '', $normalized);
+        } elseif (strpos($normalized, ',') !== false) {
+            $normalized = str_replace(',', '.', $normalized);
+        }
+
+        return ['value' => is_numeric($normalized) ? (float) $normalized : null, 'format' => '%f'];
+    }
+
+    private static function sync_symbol_tongquan_with_symbols() {
+        global $wpdb;
+
+        $symbols_table = $wpdb->prefix . 'lcni_symbols';
+        $tongquan_table = $wpdb->prefix . 'lcni_symbol_tongquan';
+
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $tongquan_table)) !== $tongquan_table) {
+            return;
+        }
+
+        $wpdb->query(
+            "INSERT INTO {$tongquan_table} (symbol)
+            SELECT s.symbol
+            FROM {$symbols_table} s
+            WHERE s.symbol <> ''
+            ON DUPLICATE KEY UPDATE updated_at = updated_at"
+        );
     }
 
     public static function collect_ohlc_data($latest_only = false, $offset = 0, $batch_limit = self::SYMBOL_BATCH_LIMIT) {
@@ -1536,6 +1858,7 @@ class LCNI_DB {
         }
 
         self::sync_symbol_market_icb_mapping();
+        self::sync_symbol_tongquan_with_symbols();
 
         return ['updated' => $updated];
     }
@@ -1662,10 +1985,16 @@ class LCNI_DB {
         $value = (string) $value;
         $value = preg_replace('/^\xEF\xBB\xBF/', '', $value);
 
+        if (function_exists('remove_accents')) {
+            $value = remove_accents($value);
+        }
+
         $normalized = strtolower(trim($value));
         $normalized = str_replace([' ', '-', '.', '/', '\\'], '_', $normalized);
+        $normalized = preg_replace('/[^a-z0-9_]/', '', $normalized);
+        $normalized = preg_replace('/_+/', '_', (string) $normalized);
 
-        return preg_replace('/[^a-z0-9_]/', '', $normalized);
+        return trim((string) $normalized, '_');
     }
 
     private static function csv_col($line, $header_map, $keys) {

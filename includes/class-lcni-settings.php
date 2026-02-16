@@ -110,15 +110,39 @@ class LCNI_Settings {
             } else {
                 $this->set_notice('success', sprintf('Đã sync Security Definition vào lcni_symbols: updated %d / total %d.', (int) ($security_summary['updated'] ?? 0), (int) ($security_summary['total'] ?? 0)));
             }
-        } elseif ($action === 'import_symbols_csv') {
-            if (empty($_FILES['lcni_symbols_csv']['tmp_name'])) {
-                $this->set_notice('error', 'Vui lòng chọn file CSV để import symbol.');
+        } elseif ($action === 'prepare_csv_import') {
+            $table_key = isset($_POST['lcni_import_table']) ? sanitize_key(wp_unslash($_POST['lcni_import_table'])) : 'lcni_symbols';
+            if (empty($_FILES['lcni_import_csv']['tmp_name'])) {
+                $this->set_notice('error', 'Vui lòng chọn file CSV để import dữ liệu.');
             } else {
-                $import_summary = LCNI_DB::import_symbols_from_csv((string) $_FILES['lcni_symbols_csv']['tmp_name']);
+                $existing_draft = get_transient($this->get_csv_import_draft_key());
+                if (is_array($existing_draft) && !empty($existing_draft['file_path']) && is_string($existing_draft['file_path']) && file_exists($existing_draft['file_path'])) {
+                    @unlink($existing_draft['file_path']);
+                }
+
+                $draft = $this->prepare_csv_import_draft((string) $_FILES['lcni_import_csv']['tmp_name'], $table_key);
+                if (is_wp_error($draft)) {
+                    $this->set_notice('error', 'Không thể đọc CSV: ' . $draft->get_error_message());
+                } else {
+                    set_transient($this->get_csv_import_draft_key(), $draft, 15 * MINUTE_IN_SECONDS);
+                    $this->set_notice('success', 'Đã nhận diện cột CSV. Vui lòng map cột và bấm chạy import.');
+                }
+            }
+        } elseif ($action === 'run_csv_import') {
+            $draft = get_transient($this->get_csv_import_draft_key());
+            if (!is_array($draft) || empty($draft['file_path']) || empty($draft['table_key'])) {
+                $this->set_notice('error', 'Phiên import đã hết hạn. Vui lòng upload CSV lại.');
+            } else {
+                $mapping = isset($_POST['lcni_import_mapping']) ? (array) wp_unslash($_POST['lcni_import_mapping']) : [];
+                $import_summary = LCNI_DB::import_csv_with_mapping((string) $draft['file_path'], (string) $draft['table_key'], $mapping);
                 if (is_wp_error($import_summary)) {
                     $this->set_notice('error', 'Import CSV thất bại: ' . $import_summary->get_error_message());
                 } else {
-                    $this->set_notice('success', sprintf('Đã import CSV vào lcni_symbols: updated %d / total %d.', (int) ($import_summary['updated'] ?? 0), (int) ($import_summary['total'] ?? 0)));
+                    $this->set_notice('success', sprintf('Đã import CSV vào %s: updated %d / total %d.', esc_html((string) ($import_summary['table'] ?? 'N/A')), (int) ($import_summary['updated'] ?? 0), (int) ($import_summary['total'] ?? 0)));
+                    delete_transient($this->get_csv_import_draft_key());
+                    if (!empty($draft['file_path']) && is_string($draft['file_path']) && file_exists($draft['file_path'])) {
+                        @unlink($draft['file_path']);
+                    }
                 }
             }
         } elseif ($action === 'start_seed') {
@@ -188,6 +212,47 @@ class LCNI_Settings {
 
     private function set_notice($type, $message, $debug = []) {
         set_transient('lcni_settings_notice', ['type' => $type, 'message' => $message, 'debug' => $debug], 60);
+    }
+
+    private function get_csv_import_draft_key() {
+        return 'lcni_csv_import_draft_' . get_current_user_id();
+    }
+
+    private function prepare_csv_import_draft($tmp_file_path, $table_key) {
+        $targets = LCNI_DB::get_csv_import_targets();
+        if (!isset($targets[$table_key])) {
+            return new WP_Error('invalid_table', 'Bảng import không hợp lệ.');
+        }
+
+        $headers = LCNI_DB::detect_csv_columns($tmp_file_path);
+        if (is_wp_error($headers)) {
+            return $headers;
+        }
+
+        $upload_dir = wp_upload_dir();
+        if (!empty($upload_dir['error'])) {
+            return new WP_Error('upload_dir_error', (string) $upload_dir['error']);
+        }
+
+        $target_dir = trailingslashit($upload_dir['basedir']) . 'lcni-imports';
+        if (!wp_mkdir_p($target_dir)) {
+            return new WP_Error('mkdir_failed', 'Không thể tạo thư mục tạm cho import CSV.');
+        }
+
+        $saved_file = trailingslashit($target_dir) . 'import-' . get_current_user_id() . '-' . time() . '-' . wp_generate_password(8, false, false) . '.csv';
+        if (!@copy($tmp_file_path, $saved_file)) {
+            return new WP_Error('copy_failed', 'Không thể lưu file CSV tạm thời để map cột.');
+        }
+
+        $suggested_mapping = LCNI_DB::suggest_csv_mapping($table_key, $headers);
+
+        return [
+            'table_key' => $table_key,
+            'file_path' => $saved_file,
+            'headers' => $headers,
+            'suggested_mapping' => $suggested_mapping,
+            'created_at' => time(),
+        ];
     }
 
     private function run_api_connection_test() {
@@ -364,6 +429,8 @@ class LCNI_Settings {
         $tasks = LCNI_SeedRepository::get_recent_tasks(30);
         $logs = $wpdb->get_results("SELECT action, message, created_at FROM {$wpdb->prefix}lcni_change_logs ORDER BY id DESC LIMIT 50", ARRAY_A);
         $notice = get_transient('lcni_settings_notice');
+        $csv_import_targets = LCNI_DB::get_csv_import_targets();
+        $csv_import_draft = get_transient($this->get_csv_import_draft_key());
 
         if ($notice) {
             delete_transient('lcni_settings_notice');
@@ -402,15 +469,50 @@ class LCNI_Settings {
                 <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_redirect_tab" value="general"><input type="hidden" name="lcni_admin_action" value="test_api_multi_symbol"><?php submit_button('Test nhiều symbol', 'secondary', 'submit', false); ?></form>
             <?php elseif ($active_tab === 'seed_dashboard') : ?>
                 <h2>Seed Manager</h2>
-                <form method="post" enctype="multipart/form-data" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="margin-bottom:12px;">
+                <form method="post" enctype="multipart/form-data" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="margin-bottom:12px;padding:10px;background:#fff;border:1px solid #dcdcde;border-radius:6px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
                     <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
                     <input type="hidden" name="lcni_redirect_tab" value="seed_dashboard">
-                    <input type="hidden" name="lcni_admin_action" value="import_symbols_csv">
-                    <label for="lcni_symbols_csv"><strong>Import CSV symbol:</strong></label>
-                    <input type="file" id="lcni_symbols_csv" name="lcni_symbols_csv" accept=".csv" required>
-                    <?php submit_button('Import CSV Symbol', 'secondary', 'submit', false); ?>
-                    <p class="description">Hỗ trợ cột <code>symbol</code> hoặc chỉ 1 cột mã chứng khoán; có thể kèm thêm cột Security Definition.</p>
+                    <input type="hidden" name="lcni_admin_action" value="prepare_csv_import">
+                    <label for="lcni_import_table"><strong>Import CSV (chung):</strong></label>
+                    <select id="lcni_import_table" name="lcni_import_table">
+                        <?php foreach ($csv_import_targets as $table_key => $target) : ?>
+                            <option value="<?php echo esc_attr($table_key); ?>" <?php selected(($csv_import_draft['table_key'] ?? 'lcni_symbols'), $table_key); ?>><?php echo esc_html($target['label']); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <input type="file" id="lcni_import_csv" name="lcni_import_csv" accept=".csv" required>
+                    <?php submit_button('Nhận diện cột CSV', 'secondary', 'submit', false); ?>
+                    <p class="description" style="flex:1 1 100%;margin:0;">Workflow: nhận diện cột → chọn bảng → map cột CSV với cột DB → chạy import (upsert, giữ nguyên cấu trúc bảng và Primary Key).</p>
                 </form>
+
+                <?php if (!empty($csv_import_draft) && is_array($csv_import_draft) && !empty($csv_import_draft['headers']) && !empty($csv_import_draft['table_key']) && isset($csv_import_targets[$csv_import_draft['table_key']])) : ?>
+                    <?php $target_meta = $csv_import_targets[$csv_import_draft['table_key']]; ?>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="margin-bottom:12px;padding:10px;background:#fff;border:1px solid #dcdcde;border-radius:6px;">
+                        <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                        <input type="hidden" name="lcni_redirect_tab" value="seed_dashboard">
+                        <input type="hidden" name="lcni_admin_action" value="run_csv_import">
+                        <p style="margin-top:0;"><strong>Map cột cho bảng:</strong> <?php echo esc_html($target_meta['label']); ?> (Primary Key: <code><?php echo esc_html((string) $target_meta['primary_key']); ?></code>)</p>
+                        <table class="widefat striped" style="max-width:980px;">
+                            <thead><tr><th>Cột CSV</th><th>Cột DB</th></tr></thead>
+                            <tbody>
+                                <?php foreach ((array) $csv_import_draft['headers'] as $header) : ?>
+                                    <?php $normalized = (string) ($header['normalized'] ?? ''); ?>
+                                    <tr>
+                                        <td><code><?php echo esc_html((string) ($header['raw'] ?? '')); ?></code><br><small><?php echo esc_html($normalized); ?></small></td>
+                                        <td>
+                                            <select name="lcni_import_mapping[<?php echo esc_attr($normalized); ?>]">
+                                                <option value="">-- Bỏ qua --</option>
+                                                <?php foreach ((array) $target_meta['columns'] as $db_column => $db_type) : ?>
+                                                    <option value="<?php echo esc_attr($db_column); ?>" <?php selected(($csv_import_draft['suggested_mapping'][$normalized] ?? ''), $db_column); ?>><?php echo esc_html($db_column . ' (' . $db_type . ')'); ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                        <?php submit_button('Chạy Import CSV', 'primary', 'submit', false); ?>
+                    </form>
+                <?php endif; ?>
 
                 <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_redirect_tab" value="seed_dashboard"><input type="hidden" name="lcni_admin_action" value="sync_securities"><?php submit_button('Sync Security Definition', 'secondary', 'submit', false); ?></form>
                 <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;padding:8px 10px;background:#fff;border:1px solid #dcdcde;border-radius:6px;">
