@@ -182,14 +182,23 @@ class LCNI_Settings {
         } elseif ($action === 'save_rule_settings') {
             $raw_rules = isset($_POST['lcni_rule_settings']) ? (array) wp_unslash($_POST['lcni_rule_settings']) : [];
             $force_recalculate = !empty($_POST['lcni_rule_execute']);
-            $result = LCNI_DB::update_rule_settings($raw_rules, $force_recalculate);
+            $validated_rules = LCNI_DB::validate_rule_settings_input($raw_rules);
 
-            if (!empty($result['updated'])) {
-                $this->set_notice('success', sprintf('Đã lưu Rule Setting và tính lại %d symbol/timeframe.', (int) ($result['recalculated_series'] ?? 0)));
-            } elseif ($force_recalculate) {
-                $this->set_notice('success', sprintf('Đã thực thi Rule Setting và tính lại %d symbol/timeframe.', (int) ($result['recalculated_series'] ?? 0)));
+            if (is_wp_error($validated_rules)) {
+                $this->set_notice('error', $validated_rules->get_error_message());
             } else {
-                $this->set_notice('success', 'Rule Setting không thay đổi, giữ nguyên dữ liệu hiện tại.');
+                @set_time_limit(0);
+                wp_raise_memory_limit('admin');
+
+                $result = LCNI_DB::update_rule_settings($validated_rules, $force_recalculate);
+
+                if (!empty($result['updated'])) {
+                    $this->set_notice('success', sprintf('Đã lưu Rule Setting và tính lại %d symbol/timeframe.', (int) ($result['recalculated_series'] ?? 0)));
+                } elseif ($force_recalculate) {
+                    $this->set_notice('success', sprintf('Đã thực thi Rule Setting và tính lại %d symbol/timeframe.', (int) ($result['recalculated_series'] ?? 0)));
+                } else {
+                    $this->set_notice('success', 'Rule Setting không thay đổi, giữ nguyên dữ liệu hiện tại.');
+                }
             }
         }
 

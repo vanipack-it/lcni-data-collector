@@ -259,6 +259,7 @@ class LCNI_DB {
             tcbs_khuyen_nghi VARCHAR(255) DEFAULT NULL,
             co_tuc_pct DECIMAL(12,6) DEFAULT NULL,
             tc_rating DECIMAL(12,6) DEFAULT NULL,
+            xep_hang VARCHAR(30) DEFAULT 'Chưa xếp hạng',
             so_huu_nn_pct DECIMAL(12,6) DEFAULT NULL,
             tien_mat_rong_von_hoa DECIMAL(12,6) DEFAULT NULL,
             tien_mat_rong_tong_tai_san DECIMAL(12,6) DEFAULT NULL,
@@ -418,6 +419,7 @@ class LCNI_DB {
             'tcbs_khuyen_nghi' => 'VARCHAR(255) DEFAULT NULL',
             'co_tuc_pct' => 'DECIMAL(12,6) DEFAULT NULL',
             'tc_rating' => 'DECIMAL(12,6) DEFAULT NULL',
+            'xep_hang' => "VARCHAR(30) DEFAULT 'Chưa xếp hạng'",
             'so_huu_nn_pct' => 'DECIMAL(12,6) DEFAULT NULL',
             'tien_mat_rong_von_hoa' => 'DECIMAL(12,6) DEFAULT NULL',
             'tien_mat_rong_tong_tai_san' => 'DECIMAL(12,6) DEFAULT NULL',
@@ -435,6 +437,8 @@ class LCNI_DB {
 
             $wpdb->query("ALTER TABLE {$table} ADD COLUMN {$column_name} {$column_definition}");
         }
+
+        self::refresh_symbol_tongquan_rankings();
     }
 
 
@@ -533,10 +537,16 @@ class LCNI_DB {
 
         foreach ($defaults as $key => $default_value) {
             $candidate = array_key_exists($key, $raw) ? $raw[$key] : $default_value;
+            $normalized_value = self::normalize_rule_setting_numeric_value($candidate);
+
+            if ($normalized_value === null || !is_numeric($normalized_value)) {
+                $normalized_value = $default_value;
+            }
+
             if (is_int($default_value)) {
-                $settings[$key] = max(0, (int) $candidate);
+                $settings[$key] = max(0, (int) $normalized_value);
             } else {
-                $settings[$key] = (float) $candidate;
+                $settings[$key] = (float) $normalized_value;
             }
         }
 
@@ -545,6 +555,56 @@ class LCNI_DB {
         }
 
         return $settings;
+    }
+
+    public static function validate_rule_settings_input($raw_settings) {
+        $defaults = self::get_default_rule_settings();
+        $raw = is_array($raw_settings) ? $raw_settings : [];
+        $normalized = [];
+        $errors = [];
+
+        foreach ($raw as $key => $value) {
+            if (!array_key_exists($key, $defaults)) {
+                continue;
+            }
+
+            $normalized_value = self::normalize_rule_setting_numeric_value($value);
+            if ($normalized_value === null || !is_numeric($normalized_value)) {
+                $errors[] = $key;
+                continue;
+            }
+
+            if (is_int($defaults[$key])) {
+                $normalized[$key] = max(0, (int) $normalized_value);
+            } else {
+                $normalized[$key] = (float) $normalized_value;
+            }
+        }
+
+        if (!empty($errors)) {
+            return new WP_Error(
+                'invalid_rule_settings',
+                sprintf('Giá trị Rule Setting không hợp lệ ở các trường: %s. Vui lòng nhập số theo định dạng 0.05 hoặc 0,05.', implode(', ', $errors))
+            );
+        }
+
+        return $normalized;
+    }
+
+    private static function normalize_rule_setting_numeric_value($value) {
+        if (is_int($value) || is_float($value)) {
+            return $value;
+        }
+
+        $normalized = trim((string) $value);
+        if ($normalized === '') {
+            return null;
+        }
+
+        $normalized = str_replace([' ', '%'], '', $normalized);
+        $normalized = str_replace(',', '.', $normalized);
+
+        return is_numeric($normalized) ? $normalized : null;
     }
 
     public static function update_rule_settings($raw_settings, $force_recalculate = false) {
@@ -918,6 +978,7 @@ class LCNI_DB {
                     'tcbs_khuyen_nghi' => 'text',
                     'co_tuc_pct' => 'float',
                     'tc_rating' => 'float',
+                    'xep_hang' => 'text',
                     'so_huu_nn_pct' => 'float',
                     'tien_mat_rong_von_hoa' => 'float',
                     'tien_mat_rong_tong_tai_san' => 'float',
@@ -995,6 +1056,7 @@ class LCNI_DB {
                     'tcbs_khuyen_nghi' => 'tcbs_khuyen_nghi',
                     'tcbskhuyennghi' => 'tcbs_khuyen_nghi',
                     'tc_rating' => 'tc_rating',
+                    'xep_hang' => 'xep_hang',
                     'eps_1_nam' => 'eps_1y_pct',
                     'eps_1y' => 'eps_1y_pct',
                     'dt_1_nam' => 'dt_1y_pct',
@@ -1137,6 +1199,10 @@ class LCNI_DB {
             self::sync_symbol_tongquan_with_symbols();
         }
 
+        if ($table_key === 'lcni_symbol_tongquan') {
+            self::refresh_symbol_tongquan_rankings();
+        }
+
         self::log_change('import_csv_generic', sprintf('Imported %d/%d rows into %s.', $updated, $total, $table_key), [
             'table' => $table_key,
             'mapping' => $mapping,
@@ -1214,6 +1280,34 @@ class LCNI_DB {
             FROM {$symbols_table} s
             WHERE s.symbol <> ''
             ON DUPLICATE KEY UPDATE updated_at = updated_at"
+        );
+
+        self::refresh_symbol_tongquan_rankings();
+    }
+
+    private static function refresh_symbol_tongquan_rankings() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_symbol_tongquan';
+        $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+        if ($exists !== $table) {
+            return;
+        }
+
+        $wpdb->query(
+            "UPDATE {$table}
+            SET xep_hang =
+                CASE
+                    WHEN tc_rating >= 4 THEN 'A++'
+                    WHEN tc_rating >= 3.5 THEN 'A+'
+                    WHEN tc_rating >= 3 THEN 'A'
+                    WHEN tc_rating >= 2.5 THEN 'B+'
+                    WHEN tc_rating >= 2 THEN 'B'
+                    WHEN tc_rating >= 1.5 THEN 'C+'
+                    WHEN tc_rating >= 1 THEN 'C'
+                    WHEN tc_rating >= 0.3 THEN 'D'
+                    ELSE 'Chưa xếp hạng'
+                END"
         );
     }
 
