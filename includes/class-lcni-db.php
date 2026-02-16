@@ -1038,6 +1038,7 @@ class LCNI_DB {
         $target = $targets[$table_key];
         $columns = $target['columns'];
         $primary_key = $target['primary_key'];
+        $primary_key_format = self::get_wpdb_format_for_type((string) ($columns[$primary_key] ?? 'text'));
 
         $handle = fopen($file_path, 'r');
         if ($handle === false) {
@@ -1092,7 +1093,34 @@ class LCNI_DB {
                 continue;
             }
 
-            $result = $wpdb->replace($table, $record, array_values($formats));
+            $existing_key = $wpdb->get_var(
+                $wpdb->prepare(
+                    "SELECT {$primary_key} FROM {$table} WHERE {$primary_key} = {$primary_key_format} LIMIT 1",
+                    $record[$primary_key]
+                )
+            );
+
+            if ($existing_key !== null) {
+                $record_to_update = $record;
+                $formats_to_update = $formats;
+                unset($record_to_update[$primary_key], $formats_to_update[$primary_key]);
+
+                if (empty($record_to_update)) {
+                    $updated++;
+                    continue;
+                }
+
+                $result = $wpdb->update(
+                    $table,
+                    $record_to_update,
+                    [$primary_key => $record[$primary_key]],
+                    array_values($formats_to_update),
+                    [$primary_key_format]
+                );
+            } else {
+                $result = $wpdb->insert($table, $record, array_values($formats));
+            }
+
             if ($result !== false) {
                 $updated++;
             }
@@ -1156,6 +1184,18 @@ class LCNI_DB {
         }
 
         return ['value' => is_numeric($normalized) ? (float) $normalized : null, 'format' => '%f'];
+    }
+
+    private static function get_wpdb_format_for_type($type) {
+        if ($type === 'int') {
+            return '%d';
+        }
+
+        if ($type === 'float') {
+            return '%f';
+        }
+
+        return '%s';
     }
 
     private static function sync_symbol_tongquan_with_symbols() {
@@ -1936,9 +1976,15 @@ class LCNI_DB {
             FROM {$symbols_table} s
             LEFT JOIN {$market_table} m ON m.market_id = s.market_id
             ON DUPLICATE KEY UPDATE
-                market_id = VALUES(market_id),
-                id_icb2 = VALUES(id_icb2),
-                exchange = VALUES(exchange),
+                market_id = CASE
+                    WHEN VALUES(market_id) IS NULL OR VALUES(market_id) = '' THEN market_id
+                    ELSE VALUES(market_id)
+                END,
+                id_icb2 = COALESCE(VALUES(id_icb2), id_icb2),
+                exchange = CASE
+                    WHEN VALUES(exchange) IS NULL OR VALUES(exchange) = '' THEN exchange
+                    ELSE VALUES(exchange)
+                END,
                 updated_at = CURRENT_TIMESTAMP"
         );
 
