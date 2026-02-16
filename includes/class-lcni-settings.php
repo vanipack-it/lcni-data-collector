@@ -155,12 +155,27 @@ class LCNI_Settings {
         } elseif ($action === 'resume_seed') {
             LCNI_SeedScheduler::resume();
             $this->set_notice('success', 'Đã resume seed queue.');
+        } elseif ($action === 'save_rule_settings') {
+            $raw_rules = isset($_POST['lcni_rule_settings']) ? (array) wp_unslash($_POST['lcni_rule_settings']) : [];
+            $result = LCNI_DB::update_rule_settings($raw_rules);
+
+            if (!empty($result['updated'])) {
+                $this->set_notice('success', sprintf('Đã lưu Rule Setting và tính lại %d symbol/timeframe.', (int) ($result['recalculated_series'] ?? 0)));
+            } else {
+                $this->set_notice('success', 'Rule Setting không thay đổi, giữ nguyên dữ liệu hiện tại.');
+            }
         }
 
         $redirect_tab = isset($_POST['lcni_redirect_tab']) ? sanitize_key(wp_unslash($_POST['lcni_redirect_tab'])) : '';
-        $redirect_url = admin_url('admin.php?page=lcni-settings');
+        $redirect_page = isset($_POST['lcni_redirect_page']) ? sanitize_key(wp_unslash($_POST['lcni_redirect_page'])) : 'lcni-settings';
+        $redirect_page = in_array($redirect_page, ['lcni-settings', 'lcni-data-viewer'], true) ? $redirect_page : 'lcni-settings';
+        $redirect_url = admin_url('admin.php?page=' . $redirect_page);
 
-        if (in_array($redirect_tab, ['general', 'seed_dashboard', 'change_logs'], true)) {
+        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'change_logs'], true)) {
+            $redirect_url = add_query_arg('tab', $redirect_tab, $redirect_url);
+        }
+
+        if ($redirect_page === 'lcni-data-viewer' && in_array($redirect_tab, ['lcni-tab-symbols', 'lcni-tab-market', 'lcni-tab-icb2', 'lcni-tab-sym-icb-market', 'lcni-tab-ohlc', 'lcni-tab-rule-settings'], true)) {
             $redirect_url = add_query_arg('tab', $redirect_tab, $redirect_url);
         }
 
@@ -497,33 +512,89 @@ class LCNI_Settings {
     public function data_viewer_page() {
         global $wpdb;
 
-        $ohlc_rows = $wpdb->get_results("SELECT symbol, timeframe, event_time, open_price, high_price, low_price, close_price, volume, value_traded, pct_t_1, pct_t_3, pct_1w, pct_1m, pct_3m, pct_6m, pct_1y, ma10, ma20, ma50, ma100, ma200, h1m, h3m, h6m, h1y, l1m, l3m, l6m, l1y, vol_ma10, vol_ma20, gia_sv_ma10, gia_sv_ma20, gia_sv_ma50, gia_sv_ma100, gia_sv_ma200, vol_sv_vol_ma10, vol_sv_vol_ma20, macd, macd_signal, rsi, created_at FROM {$wpdb->prefix}lcni_ohlc ORDER BY event_time DESC LIMIT 50", ARRAY_A);
+        $rule_settings = LCNI_DB::get_rule_settings();
+        $ohlc_columns = [
+            'symbol' => 'Symbol',
+            'timeframe' => 'Timeframe',
+            'event_time' => 'Event Time',
+            'trading_index' => 'Trading Index',
+            'open_price' => 'Open',
+            'high_price' => 'High',
+            'low_price' => 'Low',
+            'close_price' => 'Close',
+            'volume' => 'Volume',
+            'value_traded' => 'Value Traded',
+            'pct_t_1' => '%T-1',
+            'pct_t_3' => '%T-3',
+            'pct_1w' => '%1W',
+            'pct_1m' => '%1M',
+            'pct_3m' => '%3M',
+            'pct_6m' => '%6M',
+            'pct_1y' => '%1Y',
+            'ma10' => 'MA10',
+            'ma20' => 'MA20',
+            'ma50' => 'MA50',
+            'ma100' => 'MA100',
+            'ma200' => 'MA200',
+            'h1m' => 'H1M',
+            'h3m' => 'H3M',
+            'h6m' => 'H6M',
+            'h1y' => 'H1Y',
+            'l1m' => 'L1M',
+            'l3m' => 'L3M',
+            'l6m' => 'L6M',
+            'l1y' => 'L1Y',
+            'vol_ma10' => 'VolMA10',
+            'vol_ma20' => 'VolMA20',
+            'gia_sv_ma10' => 'Gia sv MA10',
+            'gia_sv_ma20' => 'Gia sv MA20',
+            'gia_sv_ma50' => 'Gia sv MA50',
+            'gia_sv_ma100' => 'Gia sv MA100',
+            'gia_sv_ma200' => 'Gia sv MA200',
+            'vol_sv_vol_ma10' => 'Vol sv Vol MA10',
+            'vol_sv_vol_ma20' => 'Vol sv Vol MA20',
+            'macd' => 'MACD',
+            'macd_signal' => 'MACD Signal',
+            'rsi' => 'RSI',
+            'xay_nen' => 'Xây nền',
+            'xay_nen_count_30' => 'Xây nền count 30',
+            'nen_type' => 'Nền type',
+            'pha_nen' => 'Phá nền',
+            'created_at' => 'Created At',
+        ];
+
+        $ohlc_rows = $wpdb->get_results("SELECT symbol, timeframe, event_time, trading_index, open_price, high_price, low_price, close_price, volume, value_traded, pct_t_1, pct_t_3, pct_1w, pct_1m, pct_3m, pct_6m, pct_1y, ma10, ma20, ma50, ma100, ma200, h1m, h3m, h6m, h1y, l1m, l3m, l6m, l1y, vol_ma10, vol_ma20, gia_sv_ma10, gia_sv_ma20, gia_sv_ma50, gia_sv_ma100, gia_sv_ma200, vol_sv_vol_ma10, vol_sv_vol_ma20, macd, macd_signal, rsi, xay_nen, xay_nen_count_30, nen_type, pha_nen, created_at FROM {$wpdb->prefix}lcni_ohlc ORDER BY event_time DESC LIMIT 50", ARRAY_A);
         $symbol_rows = $wpdb->get_results("SELECT s.symbol, s.market_id, m.exchange, s.id_icb2, i.name_icb2, s.board_id, s.isin, s.basic_price, s.ceiling_price, s.floor_price, s.security_status, s.source, s.updated_at FROM {$wpdb->prefix}lcni_symbols s LEFT JOIN {$wpdb->prefix}lcni_marketid m ON m.market_id = s.market_id LEFT JOIN {$wpdb->prefix}lcni_icb2 i ON i.id_icb2 = s.id_icb2 ORDER BY s.updated_at DESC LIMIT 50", ARRAY_A);
         $market_rows = $wpdb->get_results("SELECT market_id, exchange, updated_at FROM {$wpdb->prefix}lcni_marketid ORDER BY CAST(market_id AS UNSIGNED), market_id", ARRAY_A);
         $icb2_rows = $wpdb->get_results("SELECT id_icb2, name_icb2, updated_at FROM {$wpdb->prefix}lcni_icb2 ORDER BY id_icb2 ASC", ARRAY_A);
         $mapping_rows = $wpdb->get_results("SELECT map.symbol, map.market_id, m.exchange, map.id_icb2, i.name_icb2, map.updated_at FROM {$wpdb->prefix}lcni_sym_icb_market map LEFT JOIN {$wpdb->prefix}lcni_marketid m ON m.market_id = map.market_id LEFT JOIN {$wpdb->prefix}lcni_icb2 i ON i.id_icb2 = map.id_icb2 ORDER BY map.updated_at DESC LIMIT 50", ARRAY_A);
+        $active_tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'lcni-tab-symbols';
         ?>
         <div class="wrap">
             <h1>Saved Data</h1>
             <p>Trang này hiển thị dữ liệu đã lưu từ API/CSV (50 bản ghi gần nhất mỗi bảng).</p>
 
             <style>
-                .lcni-tab-nav { display: flex; gap: 8px; border-bottom: 1px solid #dcdcde; margin-top: 20px; }
+                .lcni-tab-nav { display: flex; gap: 8px; border-bottom: 1px solid #dcdcde; margin-top: 20px; flex-wrap: wrap; }
                 .lcni-tab-nav button { border: 1px solid #dcdcde; border-bottom: 0; background: #f6f7f7; padding: 8px 12px; cursor: pointer; }
                 .lcni-tab-nav button.active { background: #fff; font-weight: 600; }
                 .lcni-tab-content { display: none; margin-top: 16px; }
                 .lcni-tab-content.active { display: block; }
+                .lcni-column-picker { border: 1px solid #dcdcde; padding: 10px; margin-bottom: 10px; max-width: 700px; background: #fff; }
+                .lcni-column-picker-list { display: grid; gap: 6px; grid-template-columns: repeat(3, minmax(0, 1fr)); max-height: 240px; overflow: auto; }
+                .lcni-column-picker-item { font-size: 12px; }
             </style>
 
-            <div class="lcni-tab-nav" id="lcni-saved-data-tabs">
-                <button class="active" data-tab="lcni-tab-symbols">LCNI Symbols</button>
+            <div class="lcni-tab-nav" id="lcni-saved-data-tabs" data-active-tab="<?php echo esc_attr($active_tab); ?>">
+                <button data-tab="lcni-tab-symbols">LCNI Symbols</button>
                 <button data-tab="lcni-tab-market">LCNI Market Mapping</button>
                 <button data-tab="lcni-tab-icb2">LCNI ICB2</button>
                 <button data-tab="lcni-tab-sym-icb-market">LCNI Symbol-Market-ICB</button>
                 <button data-tab="lcni-tab-ohlc">OHLC Data + Indicators</button>
+                <button data-tab="lcni-tab-rule-settings">Rule Setting</button>
             </div>
 
-            <div id="lcni-tab-symbols" class="lcni-tab-content active">
+            <div id="lcni-tab-symbols" class="lcni-tab-content">
                 <?php if (!empty($symbol_rows)) : ?>
                     <table class="widefat striped" style="max-width: 1500px;"><thead><tr><th>Symbol</th><th>Market ID</th><th>Exchange</th><th>ID ICB2</th><th>Tên ngành</th><th>Board</th><th>ISIN</th><th>Basic</th><th>Ceiling</th><th>Floor</th><th>Status</th><th>Source</th><th>Updated At</th></tr></thead><tbody>
                         <?php foreach ($symbol_rows as $row) : ?><tr><td><?php echo esc_html($row['symbol']); ?></td><td><?php echo esc_html($row['market_id']); ?></td><td><?php echo esc_html($row['exchange'] ?: 'N/A'); ?></td><td><?php echo esc_html($row['id_icb2']); ?></td><td><?php echo esc_html($row['name_icb2'] ?: 'N/A'); ?></td><td><?php echo esc_html($row['board_id']); ?></td><td><?php echo esc_html($row['isin']); ?></td><td><?php echo esc_html($row['basic_price']); ?></td><td><?php echo esc_html($row['ceiling_price']); ?></td><td><?php echo esc_html($row['floor_price']); ?></td><td><?php echo esc_html($row['security_status']); ?></td><td><?php echo esc_html($row['source']); ?></td><td><?php echo esc_html($row['updated_at']); ?></td></tr><?php endforeach; ?>
@@ -557,12 +628,62 @@ class LCNI_Settings {
 
             <div id="lcni-tab-ohlc" class="lcni-tab-content">
                 <?php if (!empty($ohlc_rows)) : ?>
+                    <div class="lcni-column-picker">
+                        <label for="lcni-ohlc-column-filter"><strong>Lọc cột hiển thị:</strong></label>
+                        <input type="text" id="lcni-ohlc-column-filter" class="regular-text" placeholder="Nhập tên cột rồi Enter để lọc danh sách cột" style="margin:6px 0;display:block;">
+                        <div id="lcni-ohlc-column-picker" class="lcni-column-picker-list">
+                            <?php foreach ($ohlc_columns as $column_key => $column_label) : ?>
+                                <label class="lcni-column-picker-item" data-column-key="<?php echo esc_attr($column_key); ?>" data-column-label="<?php echo esc_attr(strtolower($column_label)); ?>">
+                                    <input type="checkbox" data-column-toggle="<?php echo esc_attr($column_key); ?>" checked>
+                                    <?php echo esc_html($column_label); ?>
+                                </label>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+
                     <div style="overflow-x:auto; max-width: 100%;">
-                        <table class="widefat striped" style="min-width: 2600px;"><thead><tr><th>Symbol</th><th>Timeframe</th><th>Event Time</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>Volume</th><th>Value Traded</th><th>%T-1</th><th>%T-3</th><th>%1W</th><th>%1M</th><th>%3M</th><th>%6M</th><th>%1Y</th><th>MA10</th><th>MA20</th><th>MA50</th><th>MA100</th><th>MA200</th><th>H1M</th><th>H3M</th><th>H6M</th><th>H1Y</th><th>L1M</th><th>L3M</th><th>L6M</th><th>L1Y</th><th>VolMA10</th><th>VolMA20</th><th>GiasvMA10</th><th>GiasvMA20</th><th>GiasvMA50</th><th>GiasvMA100</th><th>GiasvMA200</th><th>VolsvVolMA10</th><th>VolsvVolMA20</th><th>MACD</th><th>MACD Signal</th><th>RSI</th><th>Created At</th></tr></thead><tbody>
-                            <?php foreach ($ohlc_rows as $row) : ?><tr><td><?php echo esc_html($row['symbol']); ?></td><td><?php echo esc_html($row['timeframe']); ?></td><td><?php echo esc_html(gmdate('Y-m-d H:i:s', (int) $row['event_time'])); ?></td><td><?php echo esc_html($row['open_price']); ?></td><td><?php echo esc_html($row['high_price']); ?></td><td><?php echo esc_html($row['low_price']); ?></td><td><?php echo esc_html($row['close_price']); ?></td><td><?php echo esc_html($row['volume']); ?></td><td><?php echo esc_html($row['value_traded']); ?></td><td><?php echo esc_html($row['pct_t_1']); ?></td><td><?php echo esc_html($row['pct_t_3']); ?></td><td><?php echo esc_html($row['pct_1w']); ?></td><td><?php echo esc_html($row['pct_1m']); ?></td><td><?php echo esc_html($row['pct_3m']); ?></td><td><?php echo esc_html($row['pct_6m']); ?></td><td><?php echo esc_html($row['pct_1y']); ?></td><td><?php echo esc_html($row['ma10']); ?></td><td><?php echo esc_html($row['ma20']); ?></td><td><?php echo esc_html($row['ma50']); ?></td><td><?php echo esc_html($row['ma100']); ?></td><td><?php echo esc_html($row['ma200']); ?></td><td><?php echo esc_html($row['h1m']); ?></td><td><?php echo esc_html($row['h3m']); ?></td><td><?php echo esc_html($row['h6m']); ?></td><td><?php echo esc_html($row['h1y']); ?></td><td><?php echo esc_html($row['l1m']); ?></td><td><?php echo esc_html($row['l3m']); ?></td><td><?php echo esc_html($row['l6m']); ?></td><td><?php echo esc_html($row['l1y']); ?></td><td><?php echo esc_html($row['vol_ma10']); ?></td><td><?php echo esc_html($row['vol_ma20']); ?></td><td><?php echo esc_html($row['gia_sv_ma10']); ?></td><td><?php echo esc_html($row['gia_sv_ma20']); ?></td><td><?php echo esc_html($row['gia_sv_ma50']); ?></td><td><?php echo esc_html($row['gia_sv_ma100']); ?></td><td><?php echo esc_html($row['gia_sv_ma200']); ?></td><td><?php echo esc_html($row['vol_sv_vol_ma10']); ?></td><td><?php echo esc_html($row['vol_sv_vol_ma20']); ?></td><td><?php echo esc_html($row['macd']); ?></td><td><?php echo esc_html($row['macd_signal']); ?></td><td><?php echo esc_html($row['rsi']); ?></td><td><?php echo esc_html($row['created_at']); ?></td></tr><?php endforeach; ?>
+                        <table class="widefat striped" style="min-width: 2800px;" id="lcni-ohlc-table"><thead><tr>
+                            <?php foreach ($ohlc_columns as $column_key => $column_label) : ?>
+                                <th data-col="<?php echo esc_attr($column_key); ?>"><?php echo esc_html($column_label); ?></th>
+                            <?php endforeach; ?>
+                        </tr></thead><tbody>
+                            <?php foreach ($ohlc_rows as $row) : ?>
+                                <tr>
+                                    <?php foreach ($ohlc_columns as $column_key => $column_label) : ?>
+                                        <td data-col="<?php echo esc_attr($column_key); ?>">
+                                            <?php
+                                            $value = isset($row[$column_key]) ? $row[$column_key] : '';
+                                            if ($column_key === 'event_time' && $value !== '') {
+                                                $value = gmdate('Y-m-d H:i:s', (int) $value);
+                                            }
+                                            echo esc_html((string) $value);
+                                            ?>
+                                        </td>
+                                    <?php endforeach; ?>
+                                </tr>
+                            <?php endforeach; ?>
                         </tbody></table>
                     </div>
                 <?php else : ?><p>Chưa có dữ liệu OHLC.</p><?php endif; ?>
+            </div>
+
+            <div id="lcni-tab-rule-settings" class="lcni-tab-content">
+                <p>Tùy chỉnh tham số rule cho các cột: <code>xay_nen</code>, <code>xay_nen_count_30</code>, <code>nen_type</code>, <code>pha_nen</code>. Khi lưu sẽ tự động tính lại toàn bộ dữ liệu.</p>
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-data-viewer')); ?>" style="max-width: 900px; background:#fff; border:1px solid #dcdcde; padding:12px;">
+                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                    <input type="hidden" name="lcni_admin_action" value="save_rule_settings">
+                    <input type="hidden" name="lcni_redirect_page" value="lcni-data-viewer">
+                    <input type="hidden" name="lcni_redirect_tab" value="lcni-tab-rule-settings">
+                    <table class="form-table" role="presentation"><tbody>
+                        <tr><th scope="row">RSI min / max (xây nền)</th><td><input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_rsi_min]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_rsi_min']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_rsi_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_rsi_max']); ?>"></td></tr>
+                        <tr><th scope="row">|Giá/MA10|, |Giá/MA20|, |Giá/MA50| tối đa</th><td><input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_gia_sv_ma10_abs_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_gia_sv_ma10_abs_max']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_gia_sv_ma20_abs_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_gia_sv_ma20_abs_max']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_gia_sv_ma50_abs_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_gia_sv_ma50_abs_max']); ?>"></td></tr>
+                        <tr><th scope="row">Vol sv Vol MA20 max / Volume min</th><td><input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_vol_sv_vol_ma20_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_vol_sv_vol_ma20_max']); ?>"> / <input type="number" step="1" name="lcni_rule_settings[xay_nen_volume_min]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_volume_min']); ?>"></td></tr>
+                        <tr><th scope="row">Biên độ |%T-1|, |%1W|, |%1M|, |%3M| tối đa</th><td><input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_pct_t_1_abs_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_pct_t_1_abs_max']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_pct_1w_abs_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_pct_1w_abs_max']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_pct_1m_abs_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_pct_1m_abs_max']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_pct_3m_abs_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_pct_3m_abs_max']); ?>"></td></tr>
+                        <tr><th scope="row">Ngưỡng Nền chặt / Nền vừa (xay_nen_count_30)</th><td><input type="number" step="1" name="lcni_rule_settings[nen_type_chat_min_count_30]" value="<?php echo esc_attr((string) $rule_settings['nen_type_chat_min_count_30']); ?>"> / <input type="number" step="1" name="lcni_rule_settings[nen_type_vua_min_count_30]" value="<?php echo esc_attr((string) $rule_settings['nen_type_vua_min_count_30']); ?>"></td></tr>
+                        <tr><th scope="row">Điều kiện phá nền (%T-1 min, Vol sv Vol MA20 min)</th><td><input type="number" step="0.0001" name="lcni_rule_settings[pha_nen_pct_t_1_min]" value="<?php echo esc_attr((string) $rule_settings['pha_nen_pct_t_1_min']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[pha_nen_vol_sv_vol_ma20_min]" value="<?php echo esc_attr((string) $rule_settings['pha_nen_vol_sv_vol_ma20_min']); ?>"></td></tr>
+                    </tbody></table>
+                    <?php submit_button('Lưu Rule Setting và tính lại'); ?>
+                </form>
             </div>
 
             <script>
@@ -574,21 +695,52 @@ class LCNI_Settings {
 
                     const buttons = nav.querySelectorAll('button[data-tab]');
                     const panes = document.querySelectorAll('.lcni-tab-content');
+                    const activeTabFromUrl = nav.getAttribute('data-active-tab') || 'lcni-tab-symbols';
+
+                    const activateTab = function(tabId) {
+                        buttons.forEach((btn) => btn.classList.toggle('active', btn.getAttribute('data-tab') === tabId));
+                        panes.forEach((pane) => pane.classList.toggle('active', pane.id === tabId));
+                    };
 
                     buttons.forEach((button) => {
-                        button.addEventListener('click', () => {
-                            const target = button.getAttribute('data-tab');
-
-                            buttons.forEach((btn) => btn.classList.remove('active'));
-                            panes.forEach((pane) => pane.classList.remove('active'));
-
-                            button.classList.add('active');
-                            const pane = document.getElementById(target);
-                            if (pane) {
-                                pane.classList.add('active');
-                            }
-                        });
+                        button.addEventListener('click', () => activateTab(button.getAttribute('data-tab')));
                     });
+
+                    activateTab(activeTabFromUrl);
+
+                    const filterInput = document.getElementById('lcni-ohlc-column-filter');
+                    const picker = document.getElementById('lcni-ohlc-column-picker');
+                    const table = document.getElementById('lcni-ohlc-table');
+
+                    if (filterInput && picker && table) {
+                        const toggleColumn = function(columnKey, isVisible) {
+                            table.querySelectorAll('[data-col="' + columnKey + '"]').forEach((cell) => {
+                                cell.style.display = isVisible ? '' : 'none';
+                            });
+                        };
+
+                        picker.querySelectorAll('input[data-column-toggle]').forEach((checkbox) => {
+                            checkbox.addEventListener('change', () => {
+                                toggleColumn(checkbox.getAttribute('data-column-toggle'), checkbox.checked);
+                            });
+                        });
+
+                        filterInput.addEventListener('keydown', (event) => {
+                            if (event.key !== 'Enter') {
+                                return;
+                            }
+
+                            event.preventDefault();
+                            const needle = filterInput.value.trim().toLowerCase();
+
+                            picker.querySelectorAll('.lcni-column-picker-item').forEach((item) => {
+                                const key = item.getAttribute('data-column-key') || '';
+                                const label = item.getAttribute('data-column-label') || '';
+                                const isMatch = needle === '' || key.includes(needle) || label.includes(needle);
+                                item.style.display = isMatch ? '' : 'none';
+                            });
+                        });
+                    }
                 })();
             </script>
         </div>
