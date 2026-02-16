@@ -1750,6 +1750,38 @@ class LCNI_DB {
             )
         );
 
+        if (trim($exchange) === '') {
+            $symbols_table = $wpdb->prefix . 'lcni_symbols';
+            $market_table = $wpdb->prefix . 'lcni_marketid';
+
+            $exchange = (string) $wpdb->get_var(
+                $wpdb->prepare(
+                    "SELECT m.exchange
+                    FROM {$symbols_table} s
+                    LEFT JOIN {$market_table} m ON m.market_id = s.market_id
+                    WHERE s.symbol = %s
+                    LIMIT 1",
+                    $symbol
+                )
+            );
+        }
+
+        if (trim($exchange) === '') {
+            $market_id = (string) $wpdb->get_var(
+                $wpdb->prepare(
+                    "SELECT market_id FROM {$wpdb->prefix}lcni_symbols WHERE symbol = %s LIMIT 1",
+                    $symbol
+                )
+            );
+
+            foreach (self::DEFAULT_MARKETS as $market) {
+                if ((string) $market['market_id'] === $market_id) {
+                    $exchange = (string) $market['exchange'];
+                    break;
+                }
+            }
+        }
+
         $exchange = strtoupper(trim($exchange));
         self::$symbol_exchange_cache[$symbol] = $exchange;
 
