@@ -157,10 +157,13 @@ class LCNI_Settings {
             $this->set_notice('success', 'Đã resume seed queue.');
         } elseif ($action === 'save_rule_settings') {
             $raw_rules = isset($_POST['lcni_rule_settings']) ? (array) wp_unslash($_POST['lcni_rule_settings']) : [];
-            $result = LCNI_DB::update_rule_settings($raw_rules);
+            $force_recalculate = !empty($_POST['lcni_rule_execute']);
+            $result = LCNI_DB::update_rule_settings($raw_rules, $force_recalculate);
 
             if (!empty($result['updated'])) {
                 $this->set_notice('success', sprintf('Đã lưu Rule Setting và tính lại %d symbol/timeframe.', (int) ($result['recalculated_series'] ?? 0)));
+            } elseif ($force_recalculate) {
+                $this->set_notice('success', sprintf('Đã thực thi Rule Setting và tính lại %d symbol/timeframe.', (int) ($result['recalculated_series'] ?? 0)));
             } else {
                 $this->set_notice('success', 'Rule Setting không thay đổi, giữ nguyên dữ liệu hiện tại.');
             }
@@ -175,7 +178,7 @@ class LCNI_Settings {
             $redirect_url = add_query_arg('tab', $redirect_tab, $redirect_url);
         }
 
-        if ($redirect_page === 'lcni-data-viewer' && in_array($redirect_tab, ['lcni-tab-symbols', 'lcni-tab-market', 'lcni-tab-icb2', 'lcni-tab-sym-icb-market', 'lcni-tab-ohlc', 'lcni-tab-rule-settings'], true)) {
+        if ($redirect_page === 'lcni-data-viewer' && in_array($redirect_tab, ['lcni-tab-symbols', 'lcni-tab-market', 'lcni-tab-icb2', 'lcni-tab-sym-icb-market', 'lcni-tab-ohlc', 'lcni-tab-rule-settings', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen'], true)) {
             $redirect_url = add_query_arg('tab', $redirect_tab, $redirect_url);
         }
 
@@ -569,6 +572,10 @@ class LCNI_Settings {
         $icb2_rows = $wpdb->get_results("SELECT id_icb2, name_icb2, updated_at FROM {$wpdb->prefix}lcni_icb2 ORDER BY id_icb2 ASC", ARRAY_A);
         $mapping_rows = $wpdb->get_results("SELECT map.symbol, map.market_id, m.exchange, map.id_icb2, i.name_icb2, map.updated_at FROM {$wpdb->prefix}lcni_sym_icb_market map LEFT JOIN {$wpdb->prefix}lcni_marketid m ON m.market_id = map.market_id LEFT JOIN {$wpdb->prefix}lcni_icb2 i ON i.id_icb2 = map.id_icb2 ORDER BY map.updated_at DESC LIMIT 50", ARRAY_A);
         $active_tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'lcni-tab-symbols';
+        $rule_sub_tabs = ['lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen'];
+        if (in_array($active_tab, $rule_sub_tabs, true)) {
+            $active_tab = 'lcni-tab-rule-settings';
+        }
         ?>
         <div class="wrap">
             <h1>Saved Data</h1>
@@ -580,9 +587,18 @@ class LCNI_Settings {
                 .lcni-tab-nav button.active { background: #fff; font-weight: 600; }
                 .lcni-tab-content { display: none; margin-top: 16px; }
                 .lcni-tab-content.active { display: block; }
-                .lcni-column-picker { border: 1px solid #dcdcde; padding: 10px; margin-bottom: 10px; max-width: 700px; background: #fff; }
+                .lcni-column-picker { border: 1px solid #dcdcde; padding: 10px; margin-bottom: 10px; max-width: 980px; background: #fff; }
+                .lcni-column-picker-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
                 .lcni-column-picker-list { display: grid; gap: 6px; grid-template-columns: repeat(3, minmax(0, 1fr)); max-height: 240px; overflow: auto; }
                 .lcni-column-picker-item { font-size: 12px; }
+                #lcni-ohlc-table th, #lcni-ohlc-table td { font-size: 11px; padding: 6px 8px; line-height: 1.3; white-space: nowrap; }
+                .lcni-sub-tab-nav { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; border-bottom: 1px solid #dcdcde; }
+                .lcni-sub-tab-nav button { border: 1px solid #dcdcde; border-bottom: 0; background: #f6f7f7; padding: 6px 10px; cursor: pointer; }
+                .lcni-sub-tab-nav button.active { background: #fff; font-weight: 600; }
+                .lcni-sub-tab-content { display: none; }
+                .lcni-sub-tab-content.active { display: block; }
+                .lcni-rule-form { max-width: 980px; background:#fff; border:1px solid #dcdcde; padding:12px; }
+                .lcni-rule-form .description { margin-top: 0; }
             </style>
 
             <div class="lcni-tab-nav" id="lcni-saved-data-tabs" data-active-tab="<?php echo esc_attr($active_tab); ?>">
@@ -630,11 +646,18 @@ class LCNI_Settings {
                 <?php if (!empty($ohlc_rows)) : ?>
                     <div class="lcni-column-picker">
                         <label for="lcni-ohlc-column-filter"><strong>Lọc cột hiển thị:</strong></label>
-                        <input type="text" id="lcni-ohlc-column-filter" class="regular-text" placeholder="Nhập tên cột rồi Enter để lọc danh sách cột" style="margin:6px 0;display:block;">
+                        <input type="text" id="lcni-ohlc-column-filter" class="regular-text" placeholder="Nhập tên cột để lọc danh sách cột" style="margin:6px 0;display:block;">
+                        <div class="lcni-column-picker-actions">
+                            <button type="button" class="button" id="lcni-ohlc-select-all">Chọn tất cả</button>
+                            <button type="button" class="button" id="lcni-ohlc-clear-all">Bỏ chọn tất cả</button>
+                            <button type="button" class="button" id="lcni-ohlc-select-rule">Chọn nhanh cột Rule</button>
+                            <button type="button" class="button" id="lcni-ohlc-reset-filter">Hiện lại danh sách</button>
+                        </div>
                         <div id="lcni-ohlc-column-picker" class="lcni-column-picker-list">
                             <?php foreach ($ohlc_columns as $column_key => $column_label) : ?>
+                                <?php $default_checked = in_array($column_key, ['symbol', 'timeframe', 'event_time', 'close_price', 'volume', 'macd', 'rsi', 'xay_nen', 'xay_nen_count_30', 'nen_type', 'pha_nen', 'created_at'], true); ?>
                                 <label class="lcni-column-picker-item" data-column-key="<?php echo esc_attr($column_key); ?>" data-column-label="<?php echo esc_attr(strtolower($column_label)); ?>">
-                                    <input type="checkbox" data-column-toggle="<?php echo esc_attr($column_key); ?>" checked>
+                                    <input type="checkbox" data-column-toggle="<?php echo esc_attr($column_key); ?>" <?php checked($default_checked); ?>>
                                     <?php echo esc_html($column_label); ?>
                                 </label>
                             <?php endforeach; ?>
@@ -668,22 +691,73 @@ class LCNI_Settings {
             </div>
 
             <div id="lcni-tab-rule-settings" class="lcni-tab-content">
-                <p>Tùy chỉnh tham số rule cho các cột: <code>xay_nen</code>, <code>xay_nen_count_30</code>, <code>nen_type</code>, <code>pha_nen</code>. Khi lưu sẽ tự động tính lại toàn bộ dữ liệu.</p>
-                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-data-viewer')); ?>" style="max-width: 900px; background:#fff; border:1px solid #dcdcde; padding:12px;">
-                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
-                    <input type="hidden" name="lcni_admin_action" value="save_rule_settings">
-                    <input type="hidden" name="lcni_redirect_page" value="lcni-data-viewer">
-                    <input type="hidden" name="lcni_redirect_tab" value="lcni-tab-rule-settings">
-                    <table class="form-table" role="presentation"><tbody>
-                        <tr><th scope="row">RSI min / max (xây nền)</th><td><input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_rsi_min]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_rsi_min']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_rsi_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_rsi_max']); ?>"></td></tr>
-                        <tr><th scope="row">|Giá/MA10|, |Giá/MA20|, |Giá/MA50| tối đa</th><td><input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_gia_sv_ma10_abs_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_gia_sv_ma10_abs_max']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_gia_sv_ma20_abs_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_gia_sv_ma20_abs_max']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_gia_sv_ma50_abs_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_gia_sv_ma50_abs_max']); ?>"></td></tr>
-                        <tr><th scope="row">Vol sv Vol MA20 max / Volume min</th><td><input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_vol_sv_vol_ma20_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_vol_sv_vol_ma20_max']); ?>"> / <input type="number" step="1" name="lcni_rule_settings[xay_nen_volume_min]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_volume_min']); ?>"></td></tr>
-                        <tr><th scope="row">Biên độ |%T-1|, |%1W|, |%1M|, |%3M| tối đa</th><td><input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_pct_t_1_abs_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_pct_t_1_abs_max']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_pct_1w_abs_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_pct_1w_abs_max']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_pct_1m_abs_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_pct_1m_abs_max']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_pct_3m_abs_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_pct_3m_abs_max']); ?>"></td></tr>
-                        <tr><th scope="row">Ngưỡng Nền chặt / Nền vừa (xay_nen_count_30)</th><td><input type="number" step="1" name="lcni_rule_settings[nen_type_chat_min_count_30]" value="<?php echo esc_attr((string) $rule_settings['nen_type_chat_min_count_30']); ?>"> / <input type="number" step="1" name="lcni_rule_settings[nen_type_vua_min_count_30]" value="<?php echo esc_attr((string) $rule_settings['nen_type_vua_min_count_30']); ?>"></td></tr>
-                        <tr><th scope="row">Điều kiện phá nền (%T-1 min, Vol sv Vol MA20 min)</th><td><input type="number" step="0.0001" name="lcni_rule_settings[pha_nen_pct_t_1_min]" value="<?php echo esc_attr((string) $rule_settings['pha_nen_pct_t_1_min']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[pha_nen_vol_sv_vol_ma20_min]" value="<?php echo esc_attr((string) $rule_settings['pha_nen_vol_sv_vol_ma20_min']); ?>"></td></tr>
-                    </tbody></table>
-                    <?php submit_button('Lưu Rule Setting và tính lại'); ?>
-                </form>
+                <p>Tùy chỉnh công thức theo từng cột để dễ hiểu, dễ thực thi và hạn chế xung đột giữa các rule.</p>
+                <div class="lcni-sub-tab-nav" id="lcni-rule-sub-tabs">
+                    <button type="button" data-sub-tab="lcni-tab-rule-xay-nen">xay_nen</button>
+                    <button type="button" data-sub-tab="lcni-tab-rule-xay-nen-count-30">xay_nen_count_30</button>
+                    <button type="button" data-sub-tab="lcni-tab-rule-nen-type">nen_type</button>
+                    <button type="button" data-sub-tab="lcni-tab-rule-pha-nen">pha_nen</button>
+                </div>
+
+                <div id="lcni-tab-rule-xay-nen" class="lcni-sub-tab-content">
+                    <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-data-viewer')); ?>" class="lcni-rule-form">
+                        <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                        <input type="hidden" name="lcni_admin_action" value="save_rule_settings">
+                        <input type="hidden" name="lcni_rule_execute" value="1">
+                        <input type="hidden" name="lcni_redirect_page" value="lcni-data-viewer">
+                        <input type="hidden" name="lcni_redirect_tab" value="lcni-tab-rule-xay-nen">
+                        <p class="description">Thiết lập điều kiện nhận diện cổ phiếu đang xây nền.</p>
+                        <table class="form-table" role="presentation"><tbody>
+                            <tr><th scope="row">RSI min / max</th><td><input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_rsi_min]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_rsi_min']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_rsi_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_rsi_max']); ?>"></td></tr>
+                            <tr><th scope="row">|Giá/MA10|, |Giá/MA20|, |Giá/MA50| tối đa</th><td><input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_gia_sv_ma10_abs_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_gia_sv_ma10_abs_max']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_gia_sv_ma20_abs_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_gia_sv_ma20_abs_max']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_gia_sv_ma50_abs_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_gia_sv_ma50_abs_max']); ?>"></td></tr>
+                            <tr><th scope="row">Vol sv Vol MA20 max / Volume min</th><td><input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_vol_sv_vol_ma20_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_vol_sv_vol_ma20_max']); ?>"> / <input type="number" step="1" name="lcni_rule_settings[xay_nen_volume_min]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_volume_min']); ?>"></td></tr>
+                            <tr><th scope="row">Biên độ |%T-1|, |%1W|, |%1M|, |%3M| tối đa</th><td><input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_pct_t_1_abs_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_pct_t_1_abs_max']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_pct_1w_abs_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_pct_1w_abs_max']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_pct_1m_abs_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_pct_1m_abs_max']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_pct_3m_abs_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_pct_3m_abs_max']); ?>"></td></tr>
+                        </tbody></table>
+                        <?php submit_button('Lưu & thực thi rule xay_nen'); ?>
+                    </form>
+                </div>
+
+                <div id="lcni-tab-rule-xay-nen-count-30" class="lcni-sub-tab-content">
+                    <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-data-viewer')); ?>" class="lcni-rule-form">
+                        <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                        <input type="hidden" name="lcni_admin_action" value="save_rule_settings">
+                        <input type="hidden" name="lcni_rule_execute" value="1">
+                        <input type="hidden" name="lcni_redirect_page" value="lcni-data-viewer">
+                        <input type="hidden" name="lcni_redirect_tab" value="lcni-tab-rule-xay-nen-count-30">
+                        <p class="description">xay_nen_count_30 được tính tự động từ kết quả xay_nen trong 30 phiên gần nhất. Tab này dùng để thực thi nhanh sau khi chỉnh xay_nen.</p>
+                        <?php submit_button('Thực thi lại xay_nen_count_30'); ?>
+                    </form>
+                </div>
+
+                <div id="lcni-tab-rule-nen-type" class="lcni-sub-tab-content">
+                    <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-data-viewer')); ?>" class="lcni-rule-form">
+                        <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                        <input type="hidden" name="lcni_admin_action" value="save_rule_settings">
+                        <input type="hidden" name="lcni_rule_execute" value="1">
+                        <input type="hidden" name="lcni_redirect_page" value="lcni-data-viewer">
+                        <input type="hidden" name="lcni_redirect_tab" value="lcni-tab-rule-nen-type">
+                        <p class="description">Xếp loại nền theo ngưỡng của xay_nen_count_30.</p>
+                        <table class="form-table" role="presentation"><tbody>
+                            <tr><th scope="row">Ngưỡng Nền chặt / Nền vừa (xay_nen_count_30)</th><td><input type="number" step="1" name="lcni_rule_settings[nen_type_chat_min_count_30]" value="<?php echo esc_attr((string) $rule_settings['nen_type_chat_min_count_30']); ?>"> / <input type="number" step="1" name="lcni_rule_settings[nen_type_vua_min_count_30]" value="<?php echo esc_attr((string) $rule_settings['nen_type_vua_min_count_30']); ?>"></td></tr>
+                        </tbody></table>
+                        <?php submit_button('Lưu & thực thi rule nen_type'); ?>
+                    </form>
+                </div>
+
+                <div id="lcni-tab-rule-pha-nen" class="lcni-sub-tab-content">
+                    <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-data-viewer')); ?>" class="lcni-rule-form">
+                        <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                        <input type="hidden" name="lcni_admin_action" value="save_rule_settings">
+                        <input type="hidden" name="lcni_rule_execute" value="1">
+                        <input type="hidden" name="lcni_redirect_page" value="lcni-data-viewer">
+                        <input type="hidden" name="lcni_redirect_tab" value="lcni-tab-rule-pha-nen">
+                        <p class="description">Điều kiện xác định phá nền dựa theo biến động giá và thanh khoản.</p>
+                        <table class="form-table" role="presentation"><tbody>
+                            <tr><th scope="row">Điều kiện phá nền (%T-1 min, Vol sv Vol MA20 min)</th><td><input type="number" step="0.0001" name="lcni_rule_settings[pha_nen_pct_t_1_min]" value="<?php echo esc_attr((string) $rule_settings['pha_nen_pct_t_1_min']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[pha_nen_vol_sv_vol_ma20_min]" value="<?php echo esc_attr((string) $rule_settings['pha_nen_vol_sv_vol_ma20_min']); ?>"></td></tr>
+                        </tbody></table>
+                        <?php submit_button('Lưu & thực thi rule pha_nen'); ?>
+                    </form>
+                </div>
             </div>
 
             <script>
@@ -711,35 +785,97 @@ class LCNI_Settings {
                     const filterInput = document.getElementById('lcni-ohlc-column-filter');
                     const picker = document.getElementById('lcni-ohlc-column-picker');
                     const table = document.getElementById('lcni-ohlc-table');
+                    const selectAllBtn = document.getElementById('lcni-ohlc-select-all');
+                    const clearAllBtn = document.getElementById('lcni-ohlc-clear-all');
+                    const selectRuleBtn = document.getElementById('lcni-ohlc-select-rule');
+                    const resetFilterBtn = document.getElementById('lcni-ohlc-reset-filter');
 
                     if (filterInput && picker && table) {
+                        const ruleColumns = ['xay_nen', 'xay_nen_count_30', 'nen_type', 'pha_nen', 'macd', 'rsi', 'symbol', 'timeframe', 'event_time', 'close_price', 'volume'];
+                        const checkboxes = Array.from(picker.querySelectorAll('input[data-column-toggle]'));
+
                         const toggleColumn = function(columnKey, isVisible) {
                             table.querySelectorAll('[data-col="' + columnKey + '"]').forEach((cell) => {
                                 cell.style.display = isVisible ? '' : 'none';
                             });
                         };
 
-                        picker.querySelectorAll('input[data-column-toggle]').forEach((checkbox) => {
+                        const applyColumnSelection = function() {
+                            checkboxes.forEach((checkbox) => {
+                                toggleColumn(checkbox.getAttribute('data-column-toggle'), checkbox.checked);
+                            });
+                        };
+
+                        const setSelectionForAll = function(isChecked) {
+                            checkboxes.forEach((checkbox) => {
+                                checkbox.checked = isChecked;
+                            });
+                            applyColumnSelection();
+                        };
+
+                        checkboxes.forEach((checkbox) => {
                             checkbox.addEventListener('change', () => {
                                 toggleColumn(checkbox.getAttribute('data-column-toggle'), checkbox.checked);
                             });
                         });
 
-                        filterInput.addEventListener('keydown', (event) => {
-                            if (event.key !== 'Enter') {
-                                return;
-                            }
+                        applyColumnSelection();
 
-                            event.preventDefault();
-                            const needle = filterInput.value.trim().toLowerCase();
+                        if (selectAllBtn) {
+                            selectAllBtn.addEventListener('click', () => setSelectionForAll(true));
+                        }
 
+                        if (clearAllBtn) {
+                            clearAllBtn.addEventListener('click', () => setSelectionForAll(false));
+                        }
+
+                        if (selectRuleBtn) {
+                            selectRuleBtn.addEventListener('click', () => {
+                                checkboxes.forEach((checkbox) => {
+                                    checkbox.checked = ruleColumns.includes(checkbox.getAttribute('data-column-toggle'));
+                                });
+                                applyColumnSelection();
+                            });
+                        }
+
+                        const applyFilter = function(needle) {
                             picker.querySelectorAll('.lcni-column-picker-item').forEach((item) => {
                                 const key = item.getAttribute('data-column-key') || '';
                                 const label = item.getAttribute('data-column-label') || '';
                                 const isMatch = needle === '' || key.includes(needle) || label.includes(needle);
                                 item.style.display = isMatch ? '' : 'none';
                             });
+                        };
+
+                        filterInput.addEventListener('input', () => {
+                            applyFilter(filterInput.value.trim().toLowerCase());
                         });
+
+                        if (resetFilterBtn) {
+                            resetFilterBtn.addEventListener('click', () => {
+                                filterInput.value = '';
+                                applyFilter('');
+                            });
+                        }
+                    }
+
+                    const ruleSubTabNav = document.getElementById('lcni-rule-sub-tabs');
+                    if (ruleSubTabNav) {
+                        const subButtons = ruleSubTabNav.querySelectorAll('button[data-sub-tab]');
+                        const subPanes = document.querySelectorAll('.lcni-sub-tab-content');
+                        const subTabDefault = (new URLSearchParams(window.location.search).get('tab')) || 'lcni-tab-rule-xay-nen';
+
+                        const activateSubTab = function(tabId) {
+                            subButtons.forEach((btn) => btn.classList.toggle('active', btn.getAttribute('data-sub-tab') === tabId));
+                            subPanes.forEach((pane) => pane.classList.toggle('active', pane.id === tabId));
+                        };
+
+                        subButtons.forEach((button) => {
+                            button.addEventListener('click', () => activateSubTab(button.getAttribute('data-sub-tab')));
+                        });
+
+                        const hasRequestedSubTab = Array.from(subButtons).some((btn) => btn.getAttribute('data-sub-tab') === subTabDefault);
+                        activateSubTab(hasRequestedSubTab ? subTabDefault : 'lcni-tab-rule-xay-nen');
                     }
                 })();
             </script>

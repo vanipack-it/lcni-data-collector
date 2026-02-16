@@ -432,21 +432,22 @@ class LCNI_DB {
         return $settings;
     }
 
-    public static function update_rule_settings($raw_settings) {
+    public static function update_rule_settings($raw_settings, $force_recalculate = false) {
         $current = self::get_rule_settings();
-        $sanitized = self::sanitize_rule_settings($raw_settings);
+        $incoming = is_array($raw_settings) ? $raw_settings : [];
+        $sanitized = self::sanitize_rule_settings(array_merge($current, $incoming));
 
         update_option('lcni_rule_settings', $sanitized);
         self::$rule_settings_cache = $sanitized;
 
-        if ($current === $sanitized) {
+        if ($current === $sanitized && !$force_recalculate) {
             return ['updated' => false, 'recalculated_series' => 0];
         }
 
         $recalculated_series = self::rebuild_all_ohlc_metrics();
-        self::log_change('rule_settings_updated', sprintf('Rule settings updated and recalculated %d symbol/timeframe series.', $recalculated_series));
+        self::log_change('rule_settings_updated', sprintf('Rule settings %s and recalculated %d symbol/timeframe series.', $current === $sanitized ? 'executed' : 'updated', $recalculated_series));
 
-        return ['updated' => true, 'recalculated_series' => $recalculated_series];
+        return ['updated' => $current !== $sanitized, 'recalculated_series' => $recalculated_series];
     }
 
     public static function rebuild_all_ohlc_metrics() {

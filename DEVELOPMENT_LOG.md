@@ -33,3 +33,8 @@
 - Sửa lỗi rebuild `trading_index` đang đánh số theo toàn bộ `symbol` (bỏ qua `timeframe`), dẫn đến sai chỉ số khi một mã có nhiều khung thời gian; đã cập nhật rebuild theo cặp `symbol + timeframe`.
 - Tăng độ bền luồng tự vá `rebuild_missing_ohlc_indicators()` bằng cách bổ sung điều kiện kiểm tra thiếu cho các cột `xay_nen`, `xay_nen_count_30`, `nen_type` để tự tính bù khi còn `NULL`.
 - Nâng phiên bản migration backfill `xay_nen_count_30/nen_type` lên `v2`, đồng thời rebuild lại `trading_index` theo đúng `timeframe` trong quá trình backfill.
+- Chuyển **Rule Setting** thành cụm tab con trong menu **LCNI Data > Saved Data** với 4 nhóm công thức: `xay_nen`, `xay_nen_count_30`, `nen_type`, `pha_nen`; mỗi tab có nút **Lưu & thực thi** riêng để thao tác độc lập.
+- Nâng cấp xử lý lưu rule theo hướng cập nhật từng phần (partial update) và hỗ trợ chế độ thực thi lại ngay cả khi giá trị không đổi, tránh ghi đè ngoài ý muốn khi chỉnh theo từng tab con.
+- Cải thiện tab **OHLC Data + Indicators**: hiển thị đúng cột theo checkbox ngay khi tải trang, thêm bộ nút chọn nhanh (chọn tất cả/bỏ chọn/chọn cột rule/reset lọc), đổi lọc cột sang realtime khi gõ để thao tác nhanh hơn với nhiều cột.
+- Giảm font bảng OHLC để tăng mật độ hiển thị cột trên cùng màn hình.
+
