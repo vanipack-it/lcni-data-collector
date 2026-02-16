@@ -21,3 +21,8 @@
 - Bổ sung migration `backfill_ohlc_trading_index_and_xay_nen` để tự quét các series còn thiếu `trading_index`/`xay_nen` và tính bù toàn bộ indicator.
 - Điều chỉnh nhãn `xay_nen` để phân biệt rõ trạng thái: `chưa đủ dữ liệu` (chưa đủ phiên tính công thức), `không xây nền` (đã tính nhưng không thỏa điều kiện), `xây nền` (thỏa điều kiện).
 - Cập nhật script SQL MySQL 8 cùng chuẩn phân loại `xay_nen` mới để khi rebuild bằng SQL không còn hiển thị `NULL` mơ hồ.
+
+## 2026-02-16
+- Sửa lỗi rebuild `trading_index` đang đánh số theo toàn bộ `symbol` (bỏ qua `timeframe`), dẫn đến sai chỉ số khi một mã có nhiều khung thời gian; đã cập nhật rebuild theo cặp `symbol + timeframe`.
+- Tăng độ bền luồng tự vá `rebuild_missing_ohlc_indicators()` bằng cách bổ sung điều kiện kiểm tra thiếu cho các cột `xay_nen`, `xay_nen_count_30`, `nen_type` để tự tính bù khi còn `NULL`.
+- Nâng phiên bản migration backfill `xay_nen_count_30/nen_type` lên `v2`, đồng thời rebuild lại `trading_index` theo đúng `timeframe` trong quá trình backfill.
