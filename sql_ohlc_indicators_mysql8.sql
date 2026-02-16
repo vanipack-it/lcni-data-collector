@@ -2,7 +2,8 @@
 -- Core requirement: all window functions ORDER BY event_time per symbol.
 
 ALTER TABLE wp_lcni_ohlc
-    ADD COLUMN IF NOT EXISTS pha_nen VARCHAR(30) NULL;
+    ADD COLUMN IF NOT EXISTS pha_nen VARCHAR(30) NULL,
+    ADD COLUMN IF NOT EXISTS tang_gia_kem_vol VARCHAR(50) NULL;
 
 -- Chạy câu lệnh dưới nếu index chưa tồn tại.
 CREATE INDEX idx_symbol_index
@@ -257,3 +258,30 @@ SET
         ELSE 'Nền lỏng'
     END,
     t.pha_nen = f.pha_nen;
+
+
+UPDATE wp_lcni_ohlc o
+JOIN wp_lcni_sym_icb_market m
+    ON o.symbol = m.symbol
+SET o.tang_gia_kem_vol =
+    CASE
+        WHEN UPPER(TRIM(m.exchange)) = 'HOSE'
+             AND o.pct_t_1 >= 0.03
+             AND (o.vol_sv_vol_ma10 + 1) > 1
+             AND (o.vol_sv_vol_ma20 + 1) > 1.5
+        THEN 'Tăng giá kèm Vol'
+
+        WHEN UPPER(TRIM(m.exchange)) = 'HNX'
+             AND o.pct_t_1 >= 0.06
+             AND (o.vol_sv_vol_ma10 + 1) > 1
+             AND (o.vol_sv_vol_ma20 + 1) > 1.5
+        THEN 'Tăng giá kèm Vol'
+
+        WHEN UPPER(TRIM(m.exchange)) = 'UPCOM'
+             AND o.pct_t_1 >= 0.10
+             AND (o.vol_sv_vol_ma10 + 1) > 1
+             AND (o.vol_sv_vol_ma20 + 1) > 1.5
+        THEN 'Tăng giá kèm Vol'
+
+        ELSE NULL
+    END;

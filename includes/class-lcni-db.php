@@ -7,6 +7,7 @@ if (!defined('ABSPATH')) {
 class LCNI_DB {
 
     private static $rule_settings_cache = null;
+    private static $symbol_exchange_cache = [];
 
     const SYMBOL_BATCH_LIMIT = 50;
     const DEFAULT_MARKETS = [
@@ -60,8 +61,10 @@ class LCNI_DB {
         }
 
         self::ensure_ohlc_indicator_columns();
+        self::ensure_symbol_market_icb_columns();
         self::ensure_ohlc_indexes();
         self::normalize_ohlc_numeric_columns();
+        self::sync_symbol_market_icb_mapping();
     }
 
     public static function run_pending_migrations() {
@@ -70,6 +73,7 @@ class LCNI_DB {
         self::backfill_ohlc_trading_index_and_xay_nen();
         self::backfill_ohlc_nen_type_metrics();
         self::backfill_ohlc_pha_nen_metrics();
+        self::backfill_ohlc_tang_gia_kem_vol_metrics();
         self::ensure_ohlc_indexes();
     }
 
@@ -136,6 +140,7 @@ class LCNI_DB {
             xay_nen_count_30 SMALLINT UNSIGNED DEFAULT NULL,
             nen_type VARCHAR(30) DEFAULT NULL,
             pha_nen VARCHAR(30) DEFAULT NULL,
+            tang_gia_kem_vol VARCHAR(50) DEFAULT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY  (id),
             UNIQUE KEY unique_ohlc (symbol, timeframe, event_time),
@@ -193,6 +198,7 @@ class LCNI_DB {
             symbol VARCHAR(20) NOT NULL,
             market_id VARCHAR(20) DEFAULT NULL,
             id_icb2 SMALLINT UNSIGNED DEFAULT NULL,
+            exchange VARCHAR(20) DEFAULT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY  (symbol),
@@ -258,6 +264,7 @@ class LCNI_DB {
         self::seed_icb2_reference_data($icb2_table);
         self::sync_symbol_market_icb_mapping();
         self::ensure_ohlc_indicator_columns();
+        self::ensure_symbol_market_icb_columns();
         self::ensure_ohlc_indexes();
         self::normalize_ohlc_numeric_columns();
         self::normalize_legacy_ratio_columns();
@@ -317,6 +324,7 @@ class LCNI_DB {
             'xay_nen_count_30' => 'SMALLINT UNSIGNED DEFAULT NULL',
             'nen_type' => 'VARCHAR(30) DEFAULT NULL',
             'pha_nen' => 'VARCHAR(30) DEFAULT NULL',
+            'tang_gia_kem_vol' => 'VARCHAR(50) DEFAULT NULL',
         ];
 
         foreach ($required_columns as $column_name => $column_definition) {
@@ -327,6 +335,26 @@ class LCNI_DB {
             $wpdb->query("ALTER TABLE {$table} ADD COLUMN {$column_name} {$column_definition}");
         }
     }
+
+    private static function ensure_symbol_market_icb_columns() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_sym_icb_market';
+        $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+        if ($exists !== $table) {
+            return;
+        }
+
+        $columns = $wpdb->get_col("SHOW COLUMNS FROM {$table}", 0);
+        if (!is_array($columns) || empty($columns)) {
+            return;
+        }
+
+        if (!in_array('exchange', $columns, true)) {
+            $wpdb->query("ALTER TABLE {$table} ADD COLUMN exchange VARCHAR(20) DEFAULT NULL AFTER id_icb2");
+        }
+    }
+
 
     private static function normalize_ohlc_numeric_columns() {
         global $wpdb;
@@ -397,6 +425,11 @@ class LCNI_DB {
             'nen_type_vua_min_count_30' => 15,
             'pha_nen_pct_t_1_min' => 0.03,
             'pha_nen_vol_sv_vol_ma20_min' => 0.5,
+            'tang_gia_kem_vol_hose_pct_t_1_min' => 0.03,
+            'tang_gia_kem_vol_hnx_pct_t_1_min' => 0.06,
+            'tang_gia_kem_vol_upcom_pct_t_1_min' => 0.10,
+            'tang_gia_kem_vol_vol_ratio_ma10_min' => 1,
+            'tang_gia_kem_vol_vol_ratio_ma20_min' => 1.5,
         ];
     }
 
@@ -620,6 +653,17 @@ class LCNI_DB {
 
         $recalculated_series = self::rebuild_all_ohlc_metrics();
         self::log_change('backfill_ohlc_pha_nen_metrics', sprintf('Backfilled pha_nen for %d symbol/timeframe series.', $recalculated_series));
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function backfill_ohlc_tang_gia_kem_vol_metrics() {
+        $migration_flag = 'lcni_ohlc_tang_gia_kem_vol_metrics_backfilled_v1';
+        if (get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        $recalculated_series = self::rebuild_all_ohlc_metrics();
+        self::log_change('backfill_ohlc_tang_gia_kem_vol_metrics', sprintf('Backfilled tang_gia_kem_vol for %d symbol/timeframe series.', $recalculated_series));
         update_option($migration_flag, 'yes');
     }
 
@@ -1049,6 +1093,7 @@ class LCNI_DB {
                     OR latest.xay_nen_count_30 IS NULL
                     OR latest.nen_type IS NULL
                     OR latest.pha_nen IS NULL
+                    OR latest.tang_gia_kem_vol IS NULL
                 LIMIT %d",
                 $limit
             ),
@@ -1102,6 +1147,7 @@ class LCNI_DB {
         $xay_nen_flags = [];
         $nen_types = [];
         $rules = self::get_rule_settings();
+        $exchange = self::get_exchange_by_symbol($symbol);
 
         for ($i = 0; $i < count($rows); $i++) {
             $close = (float) $rows[$i]['close_price'];
@@ -1186,8 +1232,16 @@ class LCNI_DB {
             $nen_type = self::determine_nen_type($xay_nen_count_30, $rules);
             $previous_nen_type = $i > 0 && isset($nen_types[$i - 1]) ? $nen_types[$i - 1] : null;
             $pct_t_1 = self::change_pct($closes, $i, 1);
+            $vol_sv_vol_ma10 = self::safe_ratio_pct($volume, $vol_ma10);
             $vol_sv_vol_ma20 = self::safe_ratio_pct($volume, $vol_ma20);
             $pha_nen = self::determine_pha_nen($previous_nen_type, $pct_t_1, $vol_sv_vol_ma20, $rules);
+            $tang_gia_kem_vol = self::determine_tang_gia_kem_vol(
+                $exchange,
+                $pct_t_1,
+                self::ratio_from_ratio_pct($vol_sv_vol_ma10),
+                self::ratio_from_ratio_pct($vol_sv_vol_ma20),
+                $rules
+            );
             $nen_types[] = $nen_type;
 
             $wpdb->update(
@@ -1221,7 +1275,7 @@ class LCNI_DB {
                     'gia_sv_ma50' => self::safe_ratio_pct($close, $ma50),
                     'gia_sv_ma100' => self::safe_ratio_pct($close, $ma100),
                     'gia_sv_ma200' => self::safe_ratio_pct($close, $ma200),
-                    'vol_sv_vol_ma10' => self::safe_ratio_pct($volume, $vol_ma10),
+                    'vol_sv_vol_ma10' => $vol_sv_vol_ma10,
                     'vol_sv_vol_ma20' => $vol_sv_vol_ma20,
                     'macd' => $macd,
                     'macd_signal' => $signal,
@@ -1230,9 +1284,10 @@ class LCNI_DB {
                     'xay_nen_count_30' => $xay_nen_count_30,
                     'nen_type' => $nen_type,
                     'pha_nen' => $pha_nen,
+                    'tang_gia_kem_vol' => $tang_gia_kem_vol,
                 ],
                 ['id' => (int) $rows[$i]['id']],
-                ['%d','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%s','%d','%s','%s'],
+                ['%d','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%s','%d','%s','%s','%s'],
                 ['%d']
             );
         }
@@ -1317,6 +1372,66 @@ class LCNI_DB {
         }
 
         return null;
+    }
+
+    private static function determine_tang_gia_kem_vol($exchange, $pct_t_1, $vol_ratio_ma10, $vol_ratio_ma20, $rules) {
+        if ($exchange === '' || $pct_t_1 === null || $vol_ratio_ma10 === null || $vol_ratio_ma20 === null) {
+            return null;
+        }
+
+        $pct_threshold_by_exchange = [
+            'HOSE' => (float) $rules['tang_gia_kem_vol_hose_pct_t_1_min'],
+            'HNX' => (float) $rules['tang_gia_kem_vol_hnx_pct_t_1_min'],
+            'UPCOM' => (float) $rules['tang_gia_kem_vol_upcom_pct_t_1_min'],
+        ];
+
+        if (!array_key_exists($exchange, $pct_threshold_by_exchange)) {
+            return null;
+        }
+
+        if (
+            (float) $pct_t_1 >= $pct_threshold_by_exchange[$exchange]
+            && (float) $vol_ratio_ma10 > (float) $rules['tang_gia_kem_vol_vol_ratio_ma10_min']
+            && (float) $vol_ratio_ma20 > (float) $rules['tang_gia_kem_vol_vol_ratio_ma20_min']
+        ) {
+            return 'Tăng giá kèm Vol';
+        }
+
+        return null;
+    }
+
+    private static function ratio_from_ratio_pct($ratio_pct) {
+        if ($ratio_pct === null) {
+            return null;
+        }
+
+        return (float) $ratio_pct + 1;
+    }
+
+    private static function get_exchange_by_symbol($symbol) {
+        global $wpdb;
+
+        $symbol = strtoupper((string) $symbol);
+        if ($symbol === '') {
+            return '';
+        }
+
+        if (array_key_exists($symbol, self::$symbol_exchange_cache)) {
+            return self::$symbol_exchange_cache[$symbol];
+        }
+
+        $mapping_table = $wpdb->prefix . 'lcni_sym_icb_market';
+        $exchange = (string) $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT exchange FROM {$mapping_table} WHERE symbol = %s LIMIT 1",
+                $symbol
+            )
+        );
+
+        $exchange = strtoupper(trim($exchange));
+        self::$symbol_exchange_cache[$symbol] = $exchange;
+
+        return $exchange;
     }
 
     private static function change_pct($series, $index, $lookback) {
@@ -1430,19 +1545,27 @@ class LCNI_DB {
 
         $symbols_table = $wpdb->prefix . 'lcni_symbols';
         $mapping_table = $wpdb->prefix . 'lcni_sym_icb_market';
+        $market_table = $wpdb->prefix . 'lcni_marketid';
 
         if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $mapping_table)) !== $mapping_table) {
             return;
         }
 
+        self::ensure_symbol_market_icb_columns();
+
         $wpdb->query(
-            "INSERT INTO {$mapping_table} (symbol, market_id, id_icb2)
-            SELECT symbol, market_id, id_icb2 FROM {$symbols_table}
+            "INSERT INTO {$mapping_table} (symbol, market_id, id_icb2, exchange)
+            SELECT s.symbol, s.market_id, s.id_icb2, UPPER(TRIM(COALESCE(m.exchange, '')))
+            FROM {$symbols_table} s
+            LEFT JOIN {$market_table} m ON m.market_id = s.market_id
             ON DUPLICATE KEY UPDATE
                 market_id = VALUES(market_id),
                 id_icb2 = VALUES(id_icb2),
+                exchange = VALUES(exchange),
                 updated_at = CURRENT_TIMESTAMP"
         );
+
+        self::$symbol_exchange_cache = [];
     }
 
     private static function count_cached_security_symbols() {
