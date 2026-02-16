@@ -13,6 +13,7 @@ define('LCNI_PATH', plugin_dir_path(__FILE__));
 define('LCNI_CRON_HOOK', 'lcni_collect_data_cron');
 define('LCNI_SEED_CRON_HOOK', 'lcni_seed_batch_cron');
 define('LCNI_SECDEF_DAILY_CRON_HOOK', 'lcni_sync_secdef_daily_cron');
+define('LCNI_RULE_REBUILD_CRON_HOOK', 'lcni_rule_rebuild_batch_cron');
 
 require_once LCNI_PATH . 'includes/class-lcni-db.php';
 require_once LCNI_PATH . 'includes/class-lcni-api.php';
@@ -71,6 +72,11 @@ function lcni_deactivate_plugin() {
     if ($secdef_timestamp) {
         wp_unschedule_event($secdef_timestamp, LCNI_SECDEF_DAILY_CRON_HOOK);
     }
+
+    $rule_rebuild_timestamp = wp_next_scheduled(LCNI_RULE_REBUILD_CRON_HOOK);
+    if ($rule_rebuild_timestamp) {
+        wp_unschedule_event($rule_rebuild_timestamp, LCNI_RULE_REBUILD_CRON_HOOK);
+    }
 }
 
 function lcni_run_cron_incremental_sync() {
@@ -92,10 +98,15 @@ function lcni_run_daily_secdef_sync() {
     LCNI_DB::collect_security_definitions();
 }
 
+function lcni_run_rule_rebuild_batch() {
+    LCNI_DB::process_rule_rebuild_batch();
+}
+
 add_filter('cron_schedules', 'lcni_register_custom_cron_schedules');
 add_action(LCNI_CRON_HOOK, 'lcni_run_cron_incremental_sync');
 add_action(LCNI_SEED_CRON_HOOK, 'lcni_run_seed_batch');
 add_action(LCNI_SECDEF_DAILY_CRON_HOOK, 'lcni_run_daily_secdef_sync');
+add_action(LCNI_RULE_REBUILD_CRON_HOOK, 'lcni_run_rule_rebuild_batch');
 add_action('plugins_loaded', 'lcni_ensure_plugin_tables');
 add_action('init', 'lcni_ensure_cron_scheduled');
 

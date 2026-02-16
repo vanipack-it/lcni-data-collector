@@ -11,6 +11,7 @@ class LCNI_Settings {
         add_action('admin_init', [$this, 'register_settings']);
         add_action('admin_init', [$this, 'handle_admin_actions']);
         add_action('wp_ajax_lcni_seed_dashboard_snapshot', [$this, 'ajax_seed_dashboard_snapshot']);
+        add_action('wp_ajax_lcni_rule_rebuild_status', [$this, 'ajax_rule_rebuild_status']);
     }
 
     public function menu() {
@@ -191,11 +192,12 @@ class LCNI_Settings {
                 wp_raise_memory_limit('admin');
 
                 $result = LCNI_DB::update_rule_settings($validated_rules, $force_recalculate);
+                $queued = (int) ($result['queued'] ?? 0);
 
                 if (!empty($result['updated'])) {
-                    $this->set_notice('success', sprintf('Đã lưu Rule Setting và tính lại %d symbol/timeframe.', (int) ($result['recalculated_series'] ?? 0)));
+                    $this->set_notice('success', sprintf('Đã lưu Rule Setting và đưa %d symbol/timeframe vào hàng đợi chạy nền.', $queued));
                 } elseif ($force_recalculate) {
-                    $this->set_notice('success', sprintf('Đã thực thi Rule Setting và tính lại %d symbol/timeframe.', (int) ($result['recalculated_series'] ?? 0)));
+                    $this->set_notice('success', sprintf('Đã thực thi Rule Setting và đưa %d symbol/timeframe vào hàng đợi chạy nền.', $queued));
                 } else {
                     $this->set_notice('success', 'Rule Setting không thay đổi, giữ nguyên dữ liệu hiện tại.');
                 }
@@ -418,6 +420,17 @@ class LCNI_Settings {
             'rows_html' => $this->render_task_rows($tasks),
             'updated_at' => current_time('mysql'),
         ]);
+    }
+
+    public function ajax_rule_rebuild_status() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Forbidden'], 403);
+        }
+
+        check_ajax_referer('lcni_rule_rebuild_nonce', 'nonce');
+
+        $status = LCNI_DB::get_rule_rebuild_status();
+        wp_send_json_success($status);
     }
 
     public function settings_page() {
@@ -686,7 +699,7 @@ class LCNI_Settings {
             'created_at' => 'Created At',
         ];
 
-        $ohlc_rows = $wpdb->get_results("SELECT symbol, timeframe, event_time, trading_index, open_price, high_price, low_price, close_price, volume, value_traded, pct_t_1, pct_t_3, pct_1w, pct_1m, pct_3m, pct_6m, pct_1y, ma10, ma20, ma50, ma100, ma200, h1m, h3m, h6m, h1y, l1m, l3m, l6m, l1y, vol_ma10, vol_ma20, gia_sv_ma10, gia_sv_ma20, gia_sv_ma50, gia_sv_ma100, gia_sv_ma200, vol_sv_vol_ma10, vol_sv_vol_ma20, macd, macd_signal, rsi, xay_nen, xay_nen_count_30, nen_type, pha_nen, tang_gia_kem_vol, created_at FROM {$wpdb->prefix}lcni_ohlc ORDER BY event_time DESC LIMIT 50", ARRAY_A);
+        $ohlc_rows = $wpdb->get_results("SELECT symbol, timeframe, event_time, trading_index, open_price, high_price, low_price, close_price, volume, value_traded, pct_t_1, pct_t_3, pct_1w, pct_1m, pct_3m, pct_6m, pct_1y, ma10, ma20, ma50, ma100, ma200, h1m, h3m, h6m, h1y, l1m, l3m, l6m, l1y, vol_ma10, vol_ma20, gia_sv_ma10, gia_sv_ma20, gia_sv_ma50, gia_sv_ma100, gia_sv_ma200, vol_sv_vol_ma10, vol_sv_vol_ma20, macd, macd_signal, rsi, xay_nen, xay_nen_count_30, nen_type, pha_nen, tang_gia_kem_vol, smart_money, created_at FROM {$wpdb->prefix}lcni_ohlc ORDER BY event_time DESC LIMIT 50", ARRAY_A);
         $symbol_rows = $wpdb->get_results("SELECT s.symbol, s.market_id, m.exchange, s.id_icb2, i.name_icb2, s.board_id, s.isin, s.basic_price, s.ceiling_price, s.floor_price, s.security_status, s.source, s.updated_at FROM {$wpdb->prefix}lcni_symbols s LEFT JOIN {$wpdb->prefix}lcni_marketid m ON m.market_id = s.market_id LEFT JOIN {$wpdb->prefix}lcni_icb2 i ON i.id_icb2 = s.id_icb2 ORDER BY s.updated_at DESC LIMIT 50", ARRAY_A);
         $market_rows = $wpdb->get_results("SELECT market_id, exchange, updated_at FROM {$wpdb->prefix}lcni_marketid ORDER BY CAST(market_id AS UNSIGNED), market_id", ARRAY_A);
         $icb2_rows = $wpdb->get_results("SELECT id_icb2, name_icb2, updated_at FROM {$wpdb->prefix}lcni_icb2 ORDER BY id_icb2 ASC", ARRAY_A);
@@ -829,7 +842,7 @@ class LCNI_Settings {
                     const resetFilterBtn = document.getElementById('lcni-ohlc-reset-filter');
 
                     if (filterInput && picker && table) {
-                        const ruleColumns = ['xay_nen', 'xay_nen_count_30', 'nen_type', 'pha_nen', 'tang_gia_kem_vol', 'macd', 'rsi', 'symbol', 'timeframe', 'event_time', 'close_price', 'volume'];
+                        const ruleColumns = ['xay_nen', 'xay_nen_count_30', 'nen_type', 'pha_nen', 'tang_gia_kem_vol', 'smart_money', 'macd', 'rsi', 'symbol', 'timeframe', 'event_time', 'close_price', 'volume'];
                         const checkboxes = Array.from(picker.querySelectorAll('input[data-column-toggle]'));
                         const storageKey = 'lcni_ohlc_visible_columns';
 
@@ -950,6 +963,7 @@ class LCNI_Settings {
     }
 
     private function render_rule_settings_section($rule_settings, $redirect_page = 'lcni-settings') {
+        $rule_rebuild_status = LCNI_DB::get_rule_rebuild_status();
         ?>
         <style>
             .lcni-sub-tab-nav { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; border-bottom: 1px solid #dcdcde; }
@@ -959,8 +973,25 @@ class LCNI_Settings {
             .lcni-sub-tab-content.active { display: block; }
             .lcni-rule-form { max-width: 980px; background:#fff; border:1px solid #dcdcde; padding:12px; }
             .lcni-rule-form .description { margin-top: 0; }
+            .lcni-rule-progress { max-width: 980px; border:1px solid #dcdcde; background:#fff; padding:12px; margin: 10px 0 16px; }
+            .lcni-rule-progress-track { position: relative; width: 100%; height: 16px; border-radius: 999px; background: #f0f0f1; overflow: hidden; }
+            .lcni-rule-progress-fill { position: absolute; top: 0; left: 0; height: 100%; background: #2271b1; transition: width 0.4s ease; }
+            .lcni-rule-progress-text { margin-top: 8px; font-size: 12px; color: #1d2327; }
         </style>
         <p>Tùy chỉnh công thức theo từng cột để dễ hiểu, dễ thực thi và hạn chế xung đột giữa các rule.</p>
+        <div class="lcni-rule-progress" id="lcni-rule-progress-wrapper"
+            data-total="<?php echo esc_attr((string) ($rule_rebuild_status['total'] ?? 0)); ?>"
+            data-processed="<?php echo esc_attr((string) ($rule_rebuild_status['processed'] ?? 0)); ?>"
+            data-status="<?php echo esc_attr((string) ($rule_rebuild_status['status'] ?? 'idle')); ?>"
+            data-progress="<?php echo esc_attr((string) ($rule_rebuild_status['progress_percent'] ?? 100)); ?>">
+            <strong>Tiến trình thực thi rule nền:</strong>
+            <div class="lcni-rule-progress-track">
+                <div class="lcni-rule-progress-fill" id="lcni-rule-progress-fill" style="width: <?php echo esc_attr((string) ($rule_rebuild_status['progress_percent'] ?? 100)); ?>%;"></div>
+            </div>
+            <div class="lcni-rule-progress-text" id="lcni-rule-progress-text">
+                <?php echo esc_html(sprintf('%s - %d/%d (%d%%)', strtoupper((string) ($rule_rebuild_status['status'] ?? 'idle')), (int) ($rule_rebuild_status['processed'] ?? 0), (int) ($rule_rebuild_status['total'] ?? 0), (int) ($rule_rebuild_status['progress_percent'] ?? 100))); ?>
+            </div>
+        </div>
         <div class="lcni-sub-tab-nav" id="lcni-rule-sub-tabs">
             <button type="button" data-sub-tab="lcni-tab-rule-xay-nen">xay_nen</button>
             <button type="button" data-sub-tab="lcni-tab-rule-xay-nen-count-30">xay_nen_count_30</button>
@@ -1067,6 +1098,63 @@ class LCNI_Settings {
 
                 const hasRequestedSubTab = Array.from(subButtons).some((btn) => btn.getAttribute('data-sub-tab') === subTabDefault);
                 activateSubTab(hasRequestedSubTab ? subTabDefault : 'lcni-tab-rule-xay-nen');
+
+                const progressWrapper = document.getElementById('lcni-rule-progress-wrapper');
+                const progressFill = document.getElementById('lcni-rule-progress-fill');
+                const progressText = document.getElementById('lcni-rule-progress-text');
+
+                if (!progressWrapper || !progressFill || !progressText) {
+                    return;
+                }
+
+                const endpoint = '<?php echo esc_js(admin_url('admin-ajax.php')); ?>';
+                const nonce = '<?php echo esc_js(wp_create_nonce('lcni_rule_rebuild_nonce')); ?>';
+
+                const renderProgress = function(payload) {
+                    const total = Number(payload.total || 0);
+                    const processed = Number(payload.processed || 0);
+                    const status = String(payload.status || 'idle').toUpperCase();
+                    const progress = Number(payload.progress_percent || (total === 0 ? 100 : 0));
+
+                    progressFill.style.width = Math.max(0, Math.min(100, progress)) + '%';
+                    progressText.textContent = status + ' - ' + processed + '/' + total + ' (' + progress + '%)';
+
+                    return status === 'RUNNING';
+                };
+
+                const pollProgress = function() {
+                    const body = new URLSearchParams();
+                    body.set('action', 'lcni_rule_rebuild_status');
+                    body.set('nonce', nonce);
+
+                    fetch(endpoint, {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                        },
+                        body: body.toString(),
+                    })
+                        .then((response) => response.json())
+                        .then((result) => {
+                            if (!result || !result.success || !result.data) {
+                                return;
+                            }
+
+                            const shouldContinue = renderProgress(result.data);
+                            if (shouldContinue) {
+                                window.setTimeout(pollProgress, 2000);
+                            }
+                        })
+                        .catch(() => {
+                            window.setTimeout(pollProgress, 4000);
+                        });
+                };
+
+                const initialStatus = String(progressWrapper.getAttribute('data-status') || '').toLowerCase();
+                if (initialStatus === 'running') {
+                    window.setTimeout(pollProgress, 1200);
+                }
             })();
         </script>
         <?php

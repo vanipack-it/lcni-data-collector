@@ -37,4 +37,7 @@
 - Nâng cấp xử lý lưu rule theo hướng cập nhật từng phần (partial update) và hỗ trợ chế độ thực thi lại ngay cả khi giá trị không đổi, tránh ghi đè ngoài ý muốn khi chỉnh theo từng tab con.
 - Cải thiện tab **OHLC Data + Indicators**: hiển thị đúng cột theo checkbox ngay khi tải trang, thêm bộ nút chọn nhanh (chọn tất cả/bỏ chọn/chọn cột rule/reset lọc), đổi lọc cột sang realtime khi gõ để thao tác nhanh hơn với nhiều cột.
 - Giảm font bảng OHLC để tăng mật độ hiển thị cột trên cùng màn hình.
+# 2026-02-16
+- Chuyển luồng **Lưu & thực thi Rule** sang chạy nền theo batch (cron), có trạng thái tiến trình realtime trên tab Rule Setting để tránh quá tải/sập admin khi rebuild toàn bộ dữ liệu.
+- Bổ sung cột `smart_money` trong `wp_lcni_ohlc`; giá trị trả về `Smart Money` khi đồng thời thỏa `pha_nen = Phá nền`, `tang_gia_kem_vol = Tăng giá kèm Vol` và `xep_hang` thuộc `A++, A+, A, B+` từ bảng `wp_lcni_symbol_tongquan`.
 
