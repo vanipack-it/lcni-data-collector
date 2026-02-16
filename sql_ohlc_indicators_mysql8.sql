@@ -178,8 +178,16 @@ final_calc AS (
     FROM gainloss g
     JOIN macd_signal ms ON ms.id = g.id
 )
+, final_with_nen_type AS (
+    SELECT
+        f.*,
+        SUM(CASE WHEN f.xay_nen = 'xây nền' THEN 1 ELSE 0 END)
+            OVER (PARTITION BY b.symbol ORDER BY b.event_time, b.id ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS xay_nen_count_30
+    FROM final_calc f
+    JOIN base b ON b.id = f.id
+)
 UPDATE wp_lcni_ohlc t
-JOIN final_calc f ON f.id = t.id
+JOIN final_with_nen_type f ON f.id = t.id
 SET
     t.pct_t_1 = f.pct_t_1,
     t.pct_t_3 = f.pct_t_3,
@@ -214,4 +222,10 @@ SET
     t.macd_signal = f.macd_signal,
     t.rsi = f.rsi,
     t.trading_index = f.trading_index,
-    t.xay_nen = f.xay_nen;
+    t.xay_nen = f.xay_nen,
+    t.xay_nen_count_30 = f.xay_nen_count_30,
+    t.nen_type = CASE
+        WHEN f.xay_nen_count_30 >= 24 THEN 'Nền chặt'
+        WHEN f.xay_nen_count_30 >= 15 THEN 'Nền vừa'
+        ELSE 'Nền lỏng'
+    END;

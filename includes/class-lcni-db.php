@@ -65,6 +65,7 @@ class LCNI_DB {
         self::normalize_legacy_ratio_columns();
         self::repair_ohlc_ratio_columns_over_normalized();
         self::backfill_ohlc_trading_index_and_xay_nen();
+        self::backfill_ohlc_nen_type_metrics();
     }
 
     public static function create_tables() {
@@ -127,6 +128,8 @@ class LCNI_DB {
             rsi DECIMAL(12,6) DEFAULT NULL,
             trading_index BIGINT UNSIGNED DEFAULT NULL,
             xay_nen VARCHAR(50) DEFAULT NULL,
+            xay_nen_count_30 SMALLINT UNSIGNED DEFAULT NULL,
+            nen_type VARCHAR(30) DEFAULT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY  (id),
             UNIQUE KEY unique_ohlc (symbol, timeframe, event_time),
@@ -303,6 +306,8 @@ class LCNI_DB {
             'rsi' => 'DECIMAL(12,6) DEFAULT NULL',
             'trading_index' => 'BIGINT UNSIGNED DEFAULT NULL',
             'xay_nen' => 'VARCHAR(50) DEFAULT NULL',
+            'xay_nen_count_30' => 'SMALLINT UNSIGNED DEFAULT NULL',
+            'nen_type' => 'VARCHAR(30) DEFAULT NULL',
         ];
 
         foreach ($required_columns as $column_name => $column_definition) {
@@ -458,6 +463,40 @@ class LCNI_DB {
         self::log_change(
             'backfill_ohlc_trading_index_xay_nen',
             sprintf('Backfilled trading_index/xay_nen for %d symbol/timeframe series with missing values.', count($series_with_missing_values))
+        );
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function backfill_ohlc_nen_type_metrics() {
+        global $wpdb;
+
+        $migration_flag = 'lcni_ohlc_nen_type_metrics_backfilled_v1';
+        if (get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $series_with_missing_values = $wpdb->get_results(
+            "SELECT DISTINCT symbol, timeframe
+            FROM {$table}
+            WHERE xay_nen_count_30 IS NULL
+                OR nen_type IS NULL",
+            ARRAY_A
+        );
+
+        if (empty($series_with_missing_values)) {
+            update_option($migration_flag, 'yes');
+
+            return;
+        }
+
+        foreach ($series_with_missing_values as $series) {
+            self::rebuild_ohlc_indicators($series['symbol'], $series['timeframe']);
+        }
+
+        self::log_change(
+            'backfill_ohlc_nen_type_metrics',
+            sprintf('Backfilled xay_nen_count_30/nen_type for %d symbol/timeframe series with missing values.', count($series_with_missing_values))
         );
         update_option($migration_flag, 'yes');
     }
@@ -934,6 +973,7 @@ class LCNI_DB {
         $ema12_multiplier = 2 / (12 + 1);
         $ema26_multiplier = 2 / (26 + 1);
         $signal_multiplier = 2 / (9 + 1);
+        $xay_nen_flags = [];
 
         for ($i = 0; $i < count($rows); $i++) {
             $close = (float) $rows[$i]['close_price'];
@@ -998,6 +1038,23 @@ class LCNI_DB {
             $vol_ma10 = self::window_average($volumes, $i, 10);
             $vol_ma20 = self::window_average($volumes, $i, 20);
 
+            $xay_nen = self::is_xay_nen(
+                $rsi,
+                self::safe_ratio_pct($close, $ma10),
+                self::safe_ratio_pct($close, $ma20),
+                self::safe_ratio_pct($close, $ma50),
+                self::safe_ratio_pct($volume, $vol_ma20),
+                $volume,
+                self::change_pct($closes, $i, 1),
+                self::change_pct($closes, $i, 5),
+                self::change_pct($closes, $i, 21),
+                self::change_pct($closes, $i, 63)
+            );
+
+            $xay_nen_flags[] = $xay_nen === 'xây nền' ? 1 : 0;
+            $window_start = max(0, count($xay_nen_flags) - 30);
+            $xay_nen_count_30 = array_sum(array_slice($xay_nen_flags, $window_start));
+
             $wpdb->update(
                 $table,
                 [
@@ -1034,21 +1091,12 @@ class LCNI_DB {
                     'macd' => $macd,
                     'macd_signal' => $signal,
                     'rsi' => $rsi,
-                    'xay_nen' => self::is_xay_nen(
-                        $rsi,
-                        self::safe_ratio_pct($close, $ma10),
-                        self::safe_ratio_pct($close, $ma20),
-                        self::safe_ratio_pct($close, $ma50),
-                        self::safe_ratio_pct($volume, $vol_ma20),
-                        $volume,
-                        self::change_pct($closes, $i, 1),
-                        self::change_pct($closes, $i, 5),
-                        self::change_pct($closes, $i, 21),
-                        self::change_pct($closes, $i, 63)
-                    ),
+                    'xay_nen' => $xay_nen,
+                    'xay_nen_count_30' => $xay_nen_count_30,
+                    'nen_type' => self::determine_nen_type($xay_nen_count_30),
                 ],
                 ['id' => (int) $rows[$i]['id']],
-                ['%d','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%s'],
+                ['%d','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%s','%d','%s'],
                 ['%d']
             );
         }
@@ -1103,6 +1151,18 @@ class LCNI_DB {
         }
 
         return 'không xây nền';
+    }
+
+    private static function determine_nen_type($xay_nen_count_30) {
+        if ($xay_nen_count_30 >= 24) {
+            return 'Nền chặt';
+        }
+
+        if ($xay_nen_count_30 >= 15) {
+            return 'Nền vừa';
+        }
+
+        return 'Nền lỏng';
     }
 
     private static function change_pct($series, $index, $lookback) {
