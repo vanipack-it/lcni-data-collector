@@ -721,9 +721,21 @@ class LCNI_Settings {
                         const checkboxes = Array.from(picker.querySelectorAll('input[data-column-toggle]'));
                         const storageKey = 'lcni_ohlc_visible_columns';
 
+                        const tableCells = Array.from(table.querySelectorAll('[data-col]'));
+
                         const toggleColumn = function(columnKey, isVisible) {
-                            table.querySelectorAll('[data-col="' + columnKey + '"]').forEach((cell) => {
-                                cell.hidden = !isVisible;
+                            tableCells.forEach((cell) => {
+                                if (cell.getAttribute('data-col') !== columnKey) {
+                                    return;
+                                }
+
+                                if (isVisible) {
+                                    cell.hidden = false;
+                                    cell.style.display = '';
+                                } else {
+                                    cell.hidden = true;
+                                    cell.style.display = 'none';
+                                }
                             });
                         };
 
