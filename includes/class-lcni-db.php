@@ -1976,9 +1976,15 @@ class LCNI_DB {
             FROM {$symbols_table} s
             LEFT JOIN {$market_table} m ON m.market_id = s.market_id
             ON DUPLICATE KEY UPDATE
-                market_id = VALUES(market_id),
-                id_icb2 = VALUES(id_icb2),
-                exchange = VALUES(exchange),
+                market_id = CASE
+                    WHEN VALUES(market_id) IS NULL OR VALUES(market_id) = '' THEN market_id
+                    ELSE VALUES(market_id)
+                END,
+                id_icb2 = COALESCE(VALUES(id_icb2), id_icb2),
+                exchange = CASE
+                    WHEN VALUES(exchange) IS NULL OR VALUES(exchange) = '' THEN exchange
+                    ELSE VALUES(exchange)
+                END,
                 updated_at = CURRENT_TIMESTAMP"
         );
 
