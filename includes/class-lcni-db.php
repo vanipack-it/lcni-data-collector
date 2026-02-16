@@ -422,7 +422,7 @@ class LCNI_DB {
 
         foreach ($all_series as $series) {
             self::rebuild_ohlc_indicators($series['symbol'], $series['timeframe']);
-            self::rebuild_ohlc_trading_index($series['symbol']);
+            self::rebuild_ohlc_trading_index($series['symbol'], $series['timeframe']);
         }
 
         self::log_change(
@@ -457,7 +457,7 @@ class LCNI_DB {
 
         foreach ($series_with_missing_values as $series) {
             self::rebuild_ohlc_indicators($series['symbol'], $series['timeframe']);
-            self::rebuild_ohlc_trading_index($series['symbol']);
+            self::rebuild_ohlc_trading_index($series['symbol'], $series['timeframe']);
         }
 
         self::log_change(
@@ -470,7 +470,7 @@ class LCNI_DB {
     private static function backfill_ohlc_nen_type_metrics() {
         global $wpdb;
 
-        $migration_flag = 'lcni_ohlc_nen_type_metrics_backfilled_v1';
+        $migration_flag = 'lcni_ohlc_nen_type_metrics_backfilled_v2';
         if (get_option($migration_flag) === 'yes') {
             return;
         }
@@ -492,6 +492,7 @@ class LCNI_DB {
 
         foreach ($series_with_missing_values as $series) {
             self::rebuild_ohlc_indicators($series['symbol'], $series['timeframe']);
+            self::rebuild_ohlc_trading_index($series['symbol'], $series['timeframe']);
         }
 
         self::log_change(
@@ -887,7 +888,7 @@ class LCNI_DB {
 
         foreach ($touched_series as $series) {
             self::rebuild_ohlc_indicators($series['symbol'], $series['timeframe']);
-            self::rebuild_ohlc_trading_index($series['symbol']);
+            self::rebuild_ohlc_trading_index($series['symbol'], $series['timeframe']);
         }
 
         if (!empty($touched_series)) {
@@ -923,6 +924,9 @@ class LCNI_DB {
                     OR latest.ma50 IS NULL
                     OR latest.macd IS NULL
                     OR latest.rsi IS NULL
+                    OR latest.xay_nen IS NULL
+                    OR latest.xay_nen_count_30 IS NULL
+                    OR latest.nen_type IS NULL
                 LIMIT %d",
                 $limit
             ),
@@ -935,7 +939,7 @@ class LCNI_DB {
 
         foreach ($missing_series as $series) {
             self::rebuild_ohlc_indicators($series['symbol'], $series['timeframe']);
-            self::rebuild_ohlc_trading_index($series['symbol']);
+            self::rebuild_ohlc_trading_index($series['symbol'], $series['timeframe']);
         }
 
         return count($missing_series);
@@ -1102,15 +1106,17 @@ class LCNI_DB {
         }
     }
 
-    private static function rebuild_ohlc_trading_index($symbol) {
+    private static function rebuild_ohlc_trading_index($symbol, $timeframe) {
         global $wpdb;
 
         $table = $wpdb->prefix . 'lcni_ohlc';
         $symbol = strtoupper((string) $symbol);
+        $timeframe = strtoupper((string) $timeframe);
         $rows = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT id FROM {$table} WHERE symbol = %s ORDER BY event_time ASC, id ASC",
-                $symbol
+                "SELECT id FROM {$table} WHERE symbol = %s AND timeframe = %s ORDER BY event_time ASC, id ASC",
+                $symbol,
+                $timeframe
             ),
             ARRAY_A
         );
