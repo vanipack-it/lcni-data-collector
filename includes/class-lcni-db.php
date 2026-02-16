@@ -10,6 +10,9 @@ class LCNI_DB {
     private static $symbol_exchange_cache = [];
 
     const SYMBOL_BATCH_LIMIT = 50;
+    const RULE_REBUILD_TASKS_OPTION = 'lcni_rule_rebuild_tasks';
+    const RULE_REBUILD_STATUS_OPTION = 'lcni_rule_rebuild_status';
+    const RULE_REBUILD_BATCH_SIZE = 5;
     const DEFAULT_MARKETS = [
         ['market_id' => '1', 'exchange' => 'UPCOM'],
         ['market_id' => '2', 'exchange' => 'HOSE'],
@@ -77,6 +80,7 @@ class LCNI_DB {
         self::backfill_ohlc_nen_type_metrics();
         self::backfill_ohlc_pha_nen_metrics();
         self::backfill_ohlc_tang_gia_kem_vol_metrics();
+        self::backfill_ohlc_smart_money_metrics();
         self::ensure_ohlc_indexes();
     }
 
@@ -145,6 +149,7 @@ class LCNI_DB {
             nen_type VARCHAR(30) DEFAULT NULL,
             pha_nen VARCHAR(30) DEFAULT NULL,
             tang_gia_kem_vol VARCHAR(50) DEFAULT NULL,
+            smart_money VARCHAR(30) DEFAULT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY  (id),
             UNIQUE KEY unique_ohlc (symbol, timeframe, event_time),
@@ -361,6 +366,7 @@ class LCNI_DB {
             'nen_type' => 'VARCHAR(30) DEFAULT NULL',
             'pha_nen' => 'VARCHAR(30) DEFAULT NULL',
             'tang_gia_kem_vol' => 'VARCHAR(50) DEFAULT NULL',
+            'smart_money' => 'VARCHAR(30) DEFAULT NULL',
         ];
 
         foreach ($required_columns as $column_name => $column_definition) {
@@ -619,10 +625,139 @@ class LCNI_DB {
             return ['updated' => false, 'recalculated_series' => 0];
         }
 
-        $recalculated_series = self::rebuild_all_ohlc_metrics();
-        self::log_change('rule_settings_updated', sprintf('Rule settings %s and recalculated %d symbol/timeframe series.', $current === $sanitized ? 'executed' : 'updated', $recalculated_series));
+        $queued = self::enqueue_rule_rebuild();
+        self::log_change('rule_settings_updated', sprintf('Rule settings %s and queued %d symbol/timeframe series for background recalculation.', $current === $sanitized ? 'executed' : 'updated', $queued));
 
-        return ['updated' => $current !== $sanitized, 'recalculated_series' => $recalculated_series];
+        return ['updated' => $current !== $sanitized, 'recalculated_series' => $queued, 'queued' => $queued];
+    }
+
+    public static function get_rule_rebuild_status() {
+        $status = get_option(self::RULE_REBUILD_STATUS_OPTION, []);
+        if (!is_array($status)) {
+            $status = [];
+        }
+
+        $defaults = [
+            'status' => 'idle',
+            'total' => 0,
+            'processed' => 0,
+            'updated_at' => current_time('mysql'),
+        ];
+
+        $normalized = array_merge($defaults, $status);
+        $normalized['total'] = max(0, (int) $normalized['total']);
+        $normalized['processed'] = max(0, min((int) $normalized['processed'], (int) $normalized['total']));
+        $normalized['progress_percent'] = self::calculate_rule_rebuild_progress($normalized['processed'], $normalized['total']);
+
+        return $normalized;
+    }
+
+    public static function enqueue_rule_rebuild() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $all_series = $wpdb->get_results("SELECT DISTINCT symbol, timeframe FROM {$table}", ARRAY_A);
+        $tasks = [];
+
+        foreach ((array) $all_series as $series) {
+            $symbol = strtoupper(trim((string) ($series['symbol'] ?? '')));
+            $timeframe = strtoupper(trim((string) ($series['timeframe'] ?? '')));
+            if ($symbol === '' || $timeframe === '') {
+                continue;
+            }
+
+            $tasks[] = [
+                'symbol' => $symbol,
+                'timeframe' => $timeframe,
+            ];
+        }
+
+        update_option(self::RULE_REBUILD_TASKS_OPTION, $tasks, false);
+        update_option(
+            self::RULE_REBUILD_STATUS_OPTION,
+            [
+                'status' => empty($tasks) ? 'done' : 'running',
+                'total' => count($tasks),
+                'processed' => 0,
+                'updated_at' => current_time('mysql'),
+            ],
+            false
+        );
+
+        if (!empty($tasks) && defined('LCNI_RULE_REBUILD_CRON_HOOK')) {
+            wp_clear_scheduled_hook(LCNI_RULE_REBUILD_CRON_HOOK);
+            wp_schedule_single_event(time() + 1, LCNI_RULE_REBUILD_CRON_HOOK);
+        }
+
+        return count($tasks);
+    }
+
+    public static function process_rule_rebuild_batch($batch_size = self::RULE_REBUILD_BATCH_SIZE) {
+        $batch_size = max(1, (int) $batch_size);
+        $tasks = get_option(self::RULE_REBUILD_TASKS_OPTION, []);
+        if (!is_array($tasks)) {
+            $tasks = [];
+        }
+
+        if (empty($tasks)) {
+            update_option(
+                self::RULE_REBUILD_STATUS_OPTION,
+                [
+                    'status' => 'done',
+                    'total' => 0,
+                    'processed' => 0,
+                    'updated_at' => current_time('mysql'),
+                ],
+                false
+            );
+
+            return ['processed_in_batch' => 0, 'remaining' => 0, 'done' => true];
+        }
+
+        $status = self::get_rule_rebuild_status();
+        $processed = (int) $status['processed'];
+        $processed_in_batch = 0;
+
+        while ($processed_in_batch < $batch_size && !empty($tasks)) {
+            $task = array_shift($tasks);
+            self::rebuild_ohlc_indicators($task['symbol'], $task['timeframe']);
+            self::rebuild_ohlc_trading_index($task['symbol'], $task['timeframe']);
+            $processed_in_batch++;
+            $processed++;
+        }
+
+        update_option(self::RULE_REBUILD_TASKS_OPTION, $tasks, false);
+
+        $done = empty($tasks);
+        update_option(
+            self::RULE_REBUILD_STATUS_OPTION,
+            [
+                'status' => $done ? 'done' : 'running',
+                'total' => max((int) $status['total'], $processed + count($tasks)),
+                'processed' => $processed,
+                'updated_at' => current_time('mysql'),
+            ],
+            false
+        );
+
+        if ($done) {
+            self::log_change('rule_rebuild_completed', sprintf('Background rule rebuild completed for %d symbol/timeframe series.', $processed));
+            wp_clear_scheduled_hook(LCNI_RULE_REBUILD_CRON_HOOK);
+        } elseif (defined('LCNI_RULE_REBUILD_CRON_HOOK')) {
+            wp_schedule_single_event(time() + 1, LCNI_RULE_REBUILD_CRON_HOOK);
+        }
+
+        return ['processed_in_batch' => $processed_in_batch, 'remaining' => count($tasks), 'done' => $done];
+    }
+
+    private static function calculate_rule_rebuild_progress($processed, $total) {
+        $total = max(0, (int) $total);
+        $processed = max(0, (int) $processed);
+        if ($total === 0) {
+            return 100;
+        }
+
+        return (int) floor(($processed / $total) * 100);
     }
 
     public static function rebuild_all_ohlc_metrics() {
@@ -806,6 +941,17 @@ class LCNI_DB {
 
         $recalculated_series = self::rebuild_all_ohlc_metrics();
         self::log_change('backfill_ohlc_tang_gia_kem_vol_metrics', sprintf('Backfilled tang_gia_kem_vol for %d symbol/timeframe series.', $recalculated_series));
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function backfill_ohlc_smart_money_metrics() {
+        $migration_flag = 'lcni_ohlc_smart_money_metrics_backfilled_v1';
+        if (get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        $recalculated_series = self::rebuild_all_ohlc_metrics();
+        self::log_change('backfill_ohlc_smart_money_metrics', sprintf('Backfilled smart_money for %d symbol/timeframe series.', $recalculated_series));
         update_option($migration_flag, 'yes');
     }
 
@@ -1550,6 +1696,7 @@ class LCNI_DB {
                     OR latest.nen_type IS NULL
                     OR latest.pha_nen IS NULL
                     OR latest.tang_gia_kem_vol IS NULL
+                    OR latest.smart_money IS NULL
                 LIMIT %d",
                 $limit
             ),
@@ -1698,6 +1845,7 @@ class LCNI_DB {
                 self::ratio_from_ratio_pct($vol_sv_vol_ma20),
                 $rules
             );
+            $smart_money = self::determine_smart_money($symbol, $pha_nen, $tang_gia_kem_vol);
             $nen_types[] = $nen_type;
 
             $wpdb->update(
@@ -1741,9 +1889,10 @@ class LCNI_DB {
                     'nen_type' => $nen_type,
                     'pha_nen' => $pha_nen,
                     'tang_gia_kem_vol' => $tang_gia_kem_vol,
+                    'smart_money' => $smart_money,
                 ],
                 ['id' => (int) $rows[$i]['id']],
-                ['%d','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%s','%d','%s','%s','%s'],
+                ['%d','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%s','%d','%s','%s','%s','%s'],
                 ['%d']
             );
         }
@@ -1862,6 +2011,35 @@ class LCNI_DB {
         }
 
         return (float) $ratio_pct + 1;
+    }
+
+    private static function determine_smart_money($symbol, $pha_nen, $tang_gia_kem_vol) {
+        if ($pha_nen !== 'Phá nền' || $tang_gia_kem_vol !== 'Tăng giá kèm Vol') {
+            return null;
+        }
+
+        $xep_hang = self::get_symbol_xep_hang($symbol);
+        if (in_array($xep_hang, ['A++', 'A+', 'A', 'B+'], true)) {
+            return 'Smart Money';
+        }
+
+        return null;
+    }
+
+    private static function get_symbol_xep_hang($symbol) {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_symbol_tongquan';
+        $symbol = strtoupper((string) $symbol);
+        if ($symbol === '') {
+            return '';
+        }
+
+        $xep_hang = (string) $wpdb->get_var(
+            $wpdb->prepare("SELECT xep_hang FROM {$table} WHERE symbol = %s LIMIT 1", $symbol)
+        );
+
+        return strtoupper(trim($xep_hang));
     }
 
     private static function get_exchange_by_symbol($symbol) {

@@ -3,7 +3,8 @@
 
 ALTER TABLE wp_lcni_ohlc
     ADD COLUMN IF NOT EXISTS pha_nen VARCHAR(30) NULL,
-    ADD COLUMN IF NOT EXISTS tang_gia_kem_vol VARCHAR(50) NULL;
+    ADD COLUMN IF NOT EXISTS tang_gia_kem_vol VARCHAR(50) NULL,
+    ADD COLUMN IF NOT EXISTS smart_money VARCHAR(30) NULL;
 
 -- Chạy câu lệnh dưới nếu index chưa tồn tại.
 CREATE INDEX idx_symbol_index
@@ -283,5 +284,17 @@ SET o.tang_gia_kem_vol =
              AND (o.vol_sv_vol_ma20 + 1) > 1.5
         THEN 'Tăng giá kèm Vol'
 
+        ELSE NULL
+    END;
+
+UPDATE wp_lcni_ohlc o
+LEFT JOIN wp_lcni_symbol_tongquan tq
+    ON tq.symbol = o.symbol
+SET o.smart_money =
+    CASE
+        WHEN o.pha_nen = 'Phá nền'
+            AND o.tang_gia_kem_vol = 'Tăng giá kèm Vol'
+            AND UPPER(TRIM(COALESCE(tq.xep_hang, ''))) IN ('A++', 'A+', 'A', 'B+')
+        THEN 'Smart Money'
         ELSE NULL
     END;
