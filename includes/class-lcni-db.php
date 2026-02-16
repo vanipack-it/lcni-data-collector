@@ -739,7 +739,7 @@ class LCNI_DB {
     }
 
     private static function backfill_ohlc_tang_gia_kem_vol_metrics() {
-        $migration_flag = 'lcni_ohlc_tang_gia_kem_vol_metrics_backfilled_v1';
+        $migration_flag = 'lcni_ohlc_tang_gia_kem_vol_metrics_backfilled_v2';
         if (get_option($migration_flag) === 'yes') {
             return;
         }
@@ -1782,8 +1782,30 @@ class LCNI_DB {
             }
         }
 
-        $exchange = strtoupper(trim($exchange));
+        $exchange = self::normalize_exchange($exchange);
         self::$symbol_exchange_cache[$symbol] = $exchange;
+
+        return $exchange;
+    }
+
+    private static function normalize_exchange($exchange) {
+        $exchange = strtoupper(trim((string) $exchange));
+        if ($exchange === '') {
+            return '';
+        }
+
+        $compact_exchange = str_replace([' ', '-', '_'], '', $exchange);
+        $aliases = [
+            'HSX' => 'HOSE',
+            'HOSE' => 'HOSE',
+            'HNX' => 'HNX',
+            'HASTC' => 'HNX',
+            'UPCOM' => 'UPCOM',
+        ];
+
+        if (array_key_exists($compact_exchange, $aliases)) {
+            return $aliases[$compact_exchange];
+        }
 
         return $exchange;
     }

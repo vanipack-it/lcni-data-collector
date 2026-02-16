@@ -265,19 +265,19 @@ JOIN wp_lcni_sym_icb_market m
     ON o.symbol = m.symbol
 SET o.tang_gia_kem_vol =
     CASE
-        WHEN UPPER(TRIM(m.exchange)) = 'HOSE'
+        WHEN UPPER(REPLACE(REPLACE(REPLACE(TRIM(m.exchange), ' ', ''), '-', ''), '_', '')) IN ('HOSE', 'HSX')
              AND o.pct_t_1 >= 0.03
              AND (o.vol_sv_vol_ma10 + 1) > 1
              AND (o.vol_sv_vol_ma20 + 1) > 1.5
         THEN 'Tăng giá kèm Vol'
 
-        WHEN UPPER(TRIM(m.exchange)) = 'HNX'
+        WHEN UPPER(REPLACE(REPLACE(REPLACE(TRIM(m.exchange), ' ', ''), '-', ''), '_', '')) IN ('HNX', 'HASTC')
              AND o.pct_t_1 >= 0.06
              AND (o.vol_sv_vol_ma10 + 1) > 1
              AND (o.vol_sv_vol_ma20 + 1) > 1.5
         THEN 'Tăng giá kèm Vol'
 
-        WHEN UPPER(TRIM(m.exchange)) = 'UPCOM'
+        WHEN UPPER(REPLACE(REPLACE(REPLACE(TRIM(m.exchange), ' ', ''), '-', ''), '_', '')) = 'UPCOM'
              AND o.pct_t_1 >= 0.10
              AND (o.vol_sv_vol_ma10 + 1) > 1
              AND (o.vol_sv_vol_ma20 + 1) > 1.5
