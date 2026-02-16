@@ -174,7 +174,7 @@ class LCNI_Settings {
         $redirect_page = in_array($redirect_page, ['lcni-settings', 'lcni-data-viewer'], true) ? $redirect_page : 'lcni-settings';
         $redirect_url = admin_url('admin.php?page=' . $redirect_page);
 
-        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'rule_settings', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen'], true)) {
+        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'rule_settings', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol'], true)) {
             $redirect_url = add_query_arg('tab', $redirect_tab, $redirect_url);
         }
 
@@ -350,7 +350,7 @@ class LCNI_Settings {
         global $wpdb;
 
         $active_tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'general';
-        $rule_sub_tabs = ['lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen'];
+        $rule_sub_tabs = ['lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol'];
         if (in_array($active_tab, $rule_sub_tabs, true)) {
             $active_tab = 'rule_settings';
         }
@@ -571,14 +571,15 @@ class LCNI_Settings {
             'xay_nen_count_30' => 'Xây nền count 30',
             'nen_type' => 'Nền type',
             'pha_nen' => 'Phá nền',
+            'tang_gia_kem_vol' => 'Tăng giá kèm Vol',
             'created_at' => 'Created At',
         ];
 
-        $ohlc_rows = $wpdb->get_results("SELECT symbol, timeframe, event_time, trading_index, open_price, high_price, low_price, close_price, volume, value_traded, pct_t_1, pct_t_3, pct_1w, pct_1m, pct_3m, pct_6m, pct_1y, ma10, ma20, ma50, ma100, ma200, h1m, h3m, h6m, h1y, l1m, l3m, l6m, l1y, vol_ma10, vol_ma20, gia_sv_ma10, gia_sv_ma20, gia_sv_ma50, gia_sv_ma100, gia_sv_ma200, vol_sv_vol_ma10, vol_sv_vol_ma20, macd, macd_signal, rsi, xay_nen, xay_nen_count_30, nen_type, pha_nen, created_at FROM {$wpdb->prefix}lcni_ohlc ORDER BY event_time DESC LIMIT 50", ARRAY_A);
+        $ohlc_rows = $wpdb->get_results("SELECT symbol, timeframe, event_time, trading_index, open_price, high_price, low_price, close_price, volume, value_traded, pct_t_1, pct_t_3, pct_1w, pct_1m, pct_3m, pct_6m, pct_1y, ma10, ma20, ma50, ma100, ma200, h1m, h3m, h6m, h1y, l1m, l3m, l6m, l1y, vol_ma10, vol_ma20, gia_sv_ma10, gia_sv_ma20, gia_sv_ma50, gia_sv_ma100, gia_sv_ma200, vol_sv_vol_ma10, vol_sv_vol_ma20, macd, macd_signal, rsi, xay_nen, xay_nen_count_30, nen_type, pha_nen, tang_gia_kem_vol, created_at FROM {$wpdb->prefix}lcni_ohlc ORDER BY event_time DESC LIMIT 50", ARRAY_A);
         $symbol_rows = $wpdb->get_results("SELECT s.symbol, s.market_id, m.exchange, s.id_icb2, i.name_icb2, s.board_id, s.isin, s.basic_price, s.ceiling_price, s.floor_price, s.security_status, s.source, s.updated_at FROM {$wpdb->prefix}lcni_symbols s LEFT JOIN {$wpdb->prefix}lcni_marketid m ON m.market_id = s.market_id LEFT JOIN {$wpdb->prefix}lcni_icb2 i ON i.id_icb2 = s.id_icb2 ORDER BY s.updated_at DESC LIMIT 50", ARRAY_A);
         $market_rows = $wpdb->get_results("SELECT market_id, exchange, updated_at FROM {$wpdb->prefix}lcni_marketid ORDER BY CAST(market_id AS UNSIGNED), market_id", ARRAY_A);
         $icb2_rows = $wpdb->get_results("SELECT id_icb2, name_icb2, updated_at FROM {$wpdb->prefix}lcni_icb2 ORDER BY id_icb2 ASC", ARRAY_A);
-        $mapping_rows = $wpdb->get_results("SELECT map.symbol, map.market_id, m.exchange, map.id_icb2, i.name_icb2, map.updated_at FROM {$wpdb->prefix}lcni_sym_icb_market map LEFT JOIN {$wpdb->prefix}lcni_marketid m ON m.market_id = map.market_id LEFT JOIN {$wpdb->prefix}lcni_icb2 i ON i.id_icb2 = map.id_icb2 ORDER BY map.updated_at DESC LIMIT 50", ARRAY_A);
+        $mapping_rows = $wpdb->get_results("SELECT map.symbol, map.market_id, map.exchange, map.id_icb2, i.name_icb2, map.updated_at FROM {$wpdb->prefix}lcni_sym_icb_market map LEFT JOIN {$wpdb->prefix}lcni_icb2 i ON i.id_icb2 = map.id_icb2 ORDER BY map.updated_at DESC LIMIT 50", ARRAY_A);
         $active_tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'lcni-tab-symbols';
         ?>
         <div class="wrap">
@@ -651,7 +652,7 @@ class LCNI_Settings {
                         </div>
                         <div id="lcni-ohlc-column-picker" class="lcni-column-picker-list">
                             <?php foreach ($ohlc_columns as $column_key => $column_label) : ?>
-                                <?php $default_checked = in_array($column_key, ['symbol', 'timeframe', 'event_time', 'close_price', 'volume', 'macd', 'rsi', 'xay_nen', 'xay_nen_count_30', 'nen_type', 'pha_nen', 'created_at'], true); ?>
+                                <?php $default_checked = in_array($column_key, ['symbol', 'timeframe', 'event_time', 'close_price', 'volume', 'macd', 'rsi', 'xay_nen', 'xay_nen_count_30', 'nen_type', 'pha_nen', 'tang_gia_kem_vol', 'created_at'], true); ?>
                                 <label class="lcni-column-picker-item" data-column-key="<?php echo esc_attr($column_key); ?>" data-column-label="<?php echo esc_attr(strtolower($column_label)); ?>">
                                     <input type="checkbox" data-column-toggle="<?php echo esc_attr($column_key); ?>" <?php checked($default_checked); ?>>
                                     <?php echo esc_html($column_label); ?>
@@ -717,7 +718,7 @@ class LCNI_Settings {
                     const resetFilterBtn = document.getElementById('lcni-ohlc-reset-filter');
 
                     if (filterInput && picker && table) {
-                        const ruleColumns = ['xay_nen', 'xay_nen_count_30', 'nen_type', 'pha_nen', 'macd', 'rsi', 'symbol', 'timeframe', 'event_time', 'close_price', 'volume'];
+                        const ruleColumns = ['xay_nen', 'xay_nen_count_30', 'nen_type', 'pha_nen', 'tang_gia_kem_vol', 'macd', 'rsi', 'symbol', 'timeframe', 'event_time', 'close_price', 'volume'];
                         const checkboxes = Array.from(picker.querySelectorAll('input[data-column-toggle]'));
                         const storageKey = 'lcni_ohlc_visible_columns';
 
@@ -854,6 +855,7 @@ class LCNI_Settings {
             <button type="button" data-sub-tab="lcni-tab-rule-xay-nen-count-30">xay_nen_count_30</button>
             <button type="button" data-sub-tab="lcni-tab-rule-nen-type">nen_type</button>
             <button type="button" data-sub-tab="lcni-tab-rule-pha-nen">pha_nen</button>
+            <button type="button" data-sub-tab="lcni-tab-rule-tang-gia-kem-vol">tang_gia_kem_vol</button>
         </div>
 
         <div id="lcni-tab-rule-xay-nen" class="lcni-sub-tab-content">
@@ -913,6 +915,22 @@ class LCNI_Settings {
                     <tr><th scope="row">Điều kiện phá nền (%T-1 min, Vol sv Vol MA20 min)</th><td><input type="number" step="0.0001" name="lcni_rule_settings[pha_nen_pct_t_1_min]" value="<?php echo esc_attr((string) $rule_settings['pha_nen_pct_t_1_min']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[pha_nen_vol_sv_vol_ma20_min]" value="<?php echo esc_attr((string) $rule_settings['pha_nen_vol_sv_vol_ma20_min']); ?>"></td></tr>
                 </tbody></table>
                 <?php submit_button('Lưu & thực thi rule pha_nen'); ?>
+            </form>
+        </div>
+
+        <div id="lcni-tab-rule-tang-gia-kem-vol" class="lcni-sub-tab-content">
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=' . $redirect_page)); ?>" class="lcni-rule-form">
+                <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                <input type="hidden" name="lcni_admin_action" value="save_rule_settings">
+                <input type="hidden" name="lcni_rule_execute" value="1">
+                <input type="hidden" name="lcni_redirect_page" value="<?php echo esc_attr($redirect_page); ?>">
+                <input type="hidden" name="lcni_redirect_tab" value="lcni-tab-rule-tang-gia-kem-vol">
+                <p class="description">JOIN trực tiếp symbol -&gt; exchange từ bảng lcni_sym_icb_market để gắn nhãn “Tăng giá kèm Vol”.</p>
+                <table class="form-table" role="presentation"><tbody>
+                    <tr><th scope="row">Ngưỡng %T-1 theo sàn (HOSE / HNX / UPCOM)</th><td><input type="number" step="0.0001" name="lcni_rule_settings[tang_gia_kem_vol_hose_pct_t_1_min]" value="<?php echo esc_attr((string) $rule_settings['tang_gia_kem_vol_hose_pct_t_1_min']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[tang_gia_kem_vol_hnx_pct_t_1_min]" value="<?php echo esc_attr((string) $rule_settings['tang_gia_kem_vol_hnx_pct_t_1_min']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[tang_gia_kem_vol_upcom_pct_t_1_min]" value="<?php echo esc_attr((string) $rule_settings['tang_gia_kem_vol_upcom_pct_t_1_min']); ?>"></td></tr>
+                    <tr><th scope="row">Ngưỡng Vol ratio (Vol/VolMA10, Vol/VolMA20)</th><td><input type="number" step="0.0001" name="lcni_rule_settings[tang_gia_kem_vol_vol_ratio_ma10_min]" value="<?php echo esc_attr((string) $rule_settings['tang_gia_kem_vol_vol_ratio_ma10_min']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[tang_gia_kem_vol_vol_ratio_ma20_min]" value="<?php echo esc_attr((string) $rule_settings['tang_gia_kem_vol_vol_ratio_ma20_min']); ?>"></td></tr>
+                </tbody></table>
+                <?php submit_button('Lưu & thực thi rule tang_gia_kem_vol'); ?>
             </form>
         </div>
 
