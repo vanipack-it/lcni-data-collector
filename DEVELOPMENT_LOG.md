@@ -23,6 +23,13 @@
 - Cập nhật script SQL MySQL 8 cùng chuẩn phân loại `xay_nen` mới để khi rebuild bằng SQL không còn hiển thị `NULL` mơ hồ.
 
 ## 2026-02-16
+
+- Bổ sung cột `pha_nen` cho `lcni_ohlc`, tính theo điều kiện phiên trước có `nen_type` thuộc `Nền vừa/Nền chặt` kết hợp `%T-1` và `vol_sv_vol_ma20`; áp dụng cho cả dữ liệu đã có và dữ liệu mới cập nhật.
+- Bổ sung migration/backfill `pha_nen` và mở rộng luồng rebuild để tự tính lại đầy đủ các cột `xay_nen`, `xay_nen_count_30`, `nen_type`, `pha_nen` khi thiếu dữ liệu.
+- Bổ sung cơ chế đảm bảo index `idx_symbol_index(symbol, trading_index)` cho bảng `lcni_ohlc` để tăng tốc truy vấn join theo symbol + trading_index.
+- Nâng cấp tab **OHLC Data + Indicators**: cho phép chọn cột hiển thị bằng checkbox và lọc nhanh danh sách cột bằng thao tác nhập từ khóa rồi nhấn Enter.
+- Bổ sung tab **Rule Setting** trong Saved Data để cấu hình tham số tính `xay_nen/xay_nen_count_30/nen_type/pha_nen`; khi lưu tham số mới hệ thống tự động tính lại toàn bộ series.
+- Cập nhật script `sql_ohlc_indicators_mysql8.sql` để thêm `pha_nen` và phản ánh công thức tính phá nền trong luồng rebuild SQL.
 - Sửa lỗi rebuild `trading_index` đang đánh số theo toàn bộ `symbol` (bỏ qua `timeframe`), dẫn đến sai chỉ số khi một mã có nhiều khung thời gian; đã cập nhật rebuild theo cặp `symbol + timeframe`.
 - Tăng độ bền luồng tự vá `rebuild_missing_ohlc_indicators()` bằng cách bổ sung điều kiện kiểm tra thiếu cho các cột `xay_nen`, `xay_nen_count_30`, `nen_type` để tự tính bù khi còn `NULL`.
 - Nâng phiên bản migration backfill `xay_nen_count_30/nen_type` lên `v2`, đồng thời rebuild lại `trading_index` theo đúng `timeframe` trong quá trình backfill.

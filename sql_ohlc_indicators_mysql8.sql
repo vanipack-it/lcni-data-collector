@@ -1,6 +1,13 @@
 -- Rebuild indicator columns for wp_lcni_ohlc (MySQL 8+).
 -- Core requirement: all window functions ORDER BY event_time per symbol.
 
+ALTER TABLE wp_lcni_ohlc
+    ADD COLUMN IF NOT EXISTS pha_nen VARCHAR(30) NULL;
+
+-- Chạy câu lệnh dưới nếu index chưa tồn tại.
+CREATE INDEX idx_symbol_index
+ON wp_lcni_ohlc (symbol, trading_index);
+
 WITH RECURSIVE
 base AS (
     SELECT
@@ -186,8 +193,28 @@ final_calc AS (
     FROM final_calc f
     JOIN base b ON b.id = f.id
 )
+, final_with_pha_nen AS (
+    SELECT
+        n.*,
+        CASE
+            WHEN LAG(
+                CASE
+                    WHEN n.xay_nen_count_30 >= 24 THEN 'Nền chặt'
+                    WHEN n.xay_nen_count_30 >= 15 THEN 'Nền vừa'
+                    ELSE 'Nền lỏng'
+                END,
+                1
+            ) OVER (PARTITION BY b.symbol ORDER BY b.event_time, b.id) IN ('Nền vừa', 'Nền chặt')
+                AND n.pct_t_1 > 0.03
+                AND n.vol_sv_vol_ma20 >= 0.5
+            THEN 'Phá nền'
+            ELSE NULL
+        END AS pha_nen
+    FROM final_with_nen_type n
+    JOIN base b ON b.id = n.id
+)
 UPDATE wp_lcni_ohlc t
-JOIN final_with_nen_type f ON f.id = t.id
+JOIN final_with_pha_nen f ON f.id = t.id
 SET
     t.pct_t_1 = f.pct_t_1,
     t.pct_t_3 = f.pct_t_3,
@@ -228,4 +255,5 @@ SET
         WHEN f.xay_nen_count_30 >= 24 THEN 'Nền chặt'
         WHEN f.xay_nen_count_30 >= 15 THEN 'Nền vừa'
         ELSE 'Nền lỏng'
-    END;
+    END,
+    t.pha_nen = f.pha_nen;
