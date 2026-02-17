@@ -4,7 +4,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-function lcni_get_tradingview_symbol($symbol) {
+function lcni_get_chart_symbol($symbol) {
     $stock = LCNI_StockRepository::get_stock($symbol);
     $exchange = strtoupper(trim((string) ($stock['exchange'] ?? '')));
     $normalized_symbol = strtoupper(sanitize_text_field((string) $symbol));
@@ -16,12 +16,12 @@ function lcni_get_tradingview_symbol($symbol) {
         'UPCOM' => 'UPCOM',
     ];
 
-    $tradingview_exchange = 'HOSE';
+    $chart_exchange = 'HOSE';
     if (isset($exchange_aliases[$exchange])) {
-        $tradingview_exchange = $exchange_aliases[$exchange];
+        $chart_exchange = $exchange_aliases[$exchange];
     }
 
-    return $tradingview_exchange . ':' . $normalized_symbol;
+    return $chart_exchange . ':' . $normalized_symbol;
 }
 
 function lcni_get_stock($symbol) {
@@ -30,10 +30,12 @@ function lcni_get_stock($symbol) {
         return null;
     }
 
-    $stock['tradingview_symbol'] = lcni_get_tradingview_symbol($stock['symbol']);
-    $stock['tradingview_embed_url'] = sprintf(
-        'https://www.tradingview.com/chart/?symbol=%s',
-        rawurlencode($stock['tradingview_symbol'])
+    $normalized_symbol = strtoupper(sanitize_text_field((string) $stock['symbol']));
+
+    $stock['chart_library'] = 'lightweight-charts';
+    $stock['chart_symbol'] = lcni_get_chart_symbol($normalized_symbol);
+    $stock['chart_data_endpoint'] = esc_url_raw(
+        rest_url(sprintf('lcni/v1/stock/%s/history', rawurlencode($normalized_symbol)))
     );
 
     return $stock;
@@ -41,4 +43,24 @@ function lcni_get_stock($symbol) {
 
 function lcni_get_stock_history($symbol, $limit = 120, $timeframe = '1D') {
     return LCNI_StockRepository::get_stock_history($symbol, $limit, $timeframe);
+}
+
+function lcni_get_lightweight_chart_series($symbol, $limit = 120, $timeframe = '1D') {
+    $history = LCNI_StockRepository::get_stock_history($symbol, $limit, $timeframe);
+    if (empty($history)) {
+        return [];
+    }
+
+    $series = [];
+    foreach (array_reverse($history) as $candle) {
+        $series[] = [
+            'time' => (int) ($candle['event_time'] ?? 0),
+            'open' => (float) ($candle['open_price'] ?? 0),
+            'high' => (float) ($candle['high_price'] ?? 0),
+            'low' => (float) ($candle['low_price'] ?? 0),
+            'close' => (float) ($candle['close_price'] ?? 0),
+        ];
+    }
+
+    return $series;
 }
