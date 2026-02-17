@@ -24,7 +24,7 @@ class LCNI_StockQueryService {
     }
 
     public function getStockDetail($symbol) {
-        $normalized_symbol = strtoupper(sanitize_text_field((string) $symbol));
+        $normalized_symbol = $this->normalizeSymbol($symbol);
         if ($normalized_symbol === '') {
             return null;
         }
@@ -61,8 +61,23 @@ class LCNI_StockQueryService {
         );
     }
 
+    public function getStockDetailPage($symbol) {
+        $normalized_symbol = $this->normalizeSymbol($symbol);
+        if ($normalized_symbol === '') {
+            return null;
+        }
+
+        return $this->cache->remember(
+            'stock_detail_page:' . $normalized_symbol,
+            function () use ($normalized_symbol) {
+                return $this->repository->getDetailPageBySymbol($normalized_symbol);
+            },
+            120
+        );
+    }
+
     public function getStockHistory($symbol, $limit) {
-        $normalized_symbol = strtoupper(sanitize_text_field((string) $symbol));
+        $normalized_symbol = $this->normalizeSymbol($symbol);
         if ($normalized_symbol === '') {
             return [];
         }
@@ -106,5 +121,18 @@ class LCNI_StockQueryService {
             ],
             'items' => $payload['items'],
         ];
+    }
+
+    private function normalizeSymbol($symbol) {
+        $normalized_symbol = strtoupper(sanitize_text_field((string) $symbol));
+        if ($normalized_symbol === '') {
+            return '';
+        }
+
+        if (preg_match('/^[A-Z0-9._-]{1,15}$/', $normalized_symbol) !== 1) {
+            return '';
+        }
+
+        return $normalized_symbol;
     }
 }

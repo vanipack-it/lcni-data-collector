@@ -47,6 +47,69 @@ class LCNI_Data_StockRepository {
         return is_array($rows) ? $rows : [];
     }
 
+
+    public function getDetailPageBySymbol($symbol) {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT event_time, close_price, ma10, ma20, ma50, ma100, ma200, rsi
+                 FROM {$table}
+                 WHERE symbol = %s AND timeframe = '1D'
+                 ORDER BY event_time DESC
+                 LIMIT %d",
+                $symbol,
+                200
+            ),
+            ARRAY_A
+        );
+
+        if (!is_array($rows) || empty($rows)) {
+            return null;
+        }
+
+        $latest = $rows[0];
+        $history = array_reverse($rows);
+
+        return [
+            'symbol' => $symbol,
+            'price_history' => array_map(
+                static function ($row) {
+                    return [
+                        'time' => (int) $row['event_time'],
+                        'price' => (float) $row['close_price'],
+                    ];
+                },
+                $history
+            ),
+            'ma_values' => array_map(
+                static function ($row) {
+                    return [
+                        'time' => (int) $row['event_time'],
+                        'ma10' => $row['ma10'] !== null ? (float) $row['ma10'] : null,
+                        'ma20' => $row['ma20'] !== null ? (float) $row['ma20'] : null,
+                        'ma50' => $row['ma50'] !== null ? (float) $row['ma50'] : null,
+                        'ma100' => $row['ma100'] !== null ? (float) $row['ma100'] : null,
+                        'ma200' => $row['ma200'] !== null ? (float) $row['ma200'] : null,
+                    ];
+                },
+                $history
+            ),
+            'rsi_values' => array_map(
+                static function ($row) {
+                    return [
+                        'time' => (int) $row['event_time'],
+                        'rsi' => $row['rsi'] !== null ? (float) $row['rsi'] : null,
+                    ];
+                },
+                $history
+            ),
+            'last_updated_time' => (int) $latest['event_time'],
+        ];
+    }
+
     public function getStocks($page, $per_page) {
         global $wpdb;
 

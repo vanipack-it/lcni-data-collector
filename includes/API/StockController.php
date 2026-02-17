@@ -15,6 +15,23 @@ class LCNI_StockController {
     }
 
     public function registerRoutes() {
+        register_rest_route('lcni/v1', '/stock', [
+            'methods' => WP_REST_Server::READABLE,
+            'callback' => [$this, 'getStockByQuery'],
+            'permission_callback' => [$this->access_control, 'canAccessStocks'],
+            'args' => [
+                'symbol' => [
+                    'required' => true,
+                    'sanitize_callback' => static function ($value) {
+                        return strtoupper(sanitize_text_field((string) $value));
+                    },
+                    'validate_callback' => static function ($value) {
+                        return is_string($value) && preg_match('/^[A-Z0-9._-]{1,15}$/', strtoupper($value)) === 1;
+                    },
+                ],
+            ],
+        ]);
+
         register_rest_route('lcni/v1', '/stock/(?P<symbol>[A-Za-z0-9_\-]+)', [
             'methods' => WP_REST_Server::READABLE,
             'callback' => [$this, 'getStock'],
@@ -48,6 +65,16 @@ class LCNI_StockController {
                 ],
             ],
         ]);
+    }
+
+    public function getStockByQuery(WP_REST_Request $request) {
+        $stock = $this->service->getStockDetailPage($request->get_param('symbol'));
+
+        if (!$stock) {
+            return new WP_Error('stock_not_found', 'Stock not found.', ['status' => 404]);
+        }
+
+        return rest_ensure_response($stock);
     }
 
     public function getStock(WP_REST_Request $request) {
