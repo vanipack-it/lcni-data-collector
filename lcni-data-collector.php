@@ -23,6 +23,8 @@ require_once LCNI_PATH . 'includes/class-lcni-seed-scheduler.php';
 require_once LCNI_PATH . 'includes/class-lcni-settings.php';
 require_once LCNI_PATH . 'includes/class-lcni-update-manager.php';
 require_once LCNI_PATH . 'includes/class-lcni-rest-api.php';
+require_once LCNI_PATH . 'includes/class-lcni-stock-repository.php';
+require_once LCNI_PATH . 'includes/lcni-stock-functions.php';
 
 function lcni_register_custom_cron_schedules($schedules) {
     if (!isset($schedules['lcni_every_minute'])) {
