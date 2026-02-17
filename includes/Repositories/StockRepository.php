@@ -91,6 +91,32 @@ class LCNI_Data_StockRepository {
         return is_array($rows) ? $rows : [];
     }
 
+    public function getChartDataBySymbol($symbol, $limit = 200) {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_stock_prices';
+        $safe_limit = max(1, min(2000, (int) $limit));
+
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT time, open, high, low, close, volume
+                 FROM (
+                     SELECT time, open, high, low, close, volume
+                     FROM {$table}
+                     WHERE symbol = %s
+                     ORDER BY time DESC
+                     LIMIT %d
+                 ) prices
+                 ORDER BY time ASC",
+                $symbol,
+                $safe_limit
+            ),
+            ARRAY_A
+        );
+
+        return is_array($rows) ? $rows : [];
+    }
+
 
     public function getDetailPageBySymbol($symbol) {
         global $wpdb;

@@ -67,6 +67,31 @@ class LCNI_StockController {
         ]);
 
 
+
+        register_rest_route('lcni/v1', '/chart', [
+            'methods' => WP_REST_Server::READABLE,
+            'callback' => [$this, 'getChart'],
+            'permission_callback' => [$this->access_control, 'canAccessStocks'],
+            'args' => [
+                'symbol' => [
+                    'required' => true,
+                    'sanitize_callback' => static function ($value) {
+                        return strtoupper(sanitize_text_field((string) $value));
+                    },
+                    'validate_callback' => static function ($value) {
+                        return is_string($value) && preg_match('/^[A-Z0-9._-]{1,15}$/', strtoupper($value)) === 1;
+                    },
+                ],
+                'range' => [
+                    'default' => '1D',
+                    'sanitize_callback' => static function ($value) {
+                        return strtoupper(sanitize_text_field((string) $value));
+                    },
+                ],
+            ],
+        ]);
+
+
         register_rest_route('lcni/v1', '/candles', [
             'methods' => WP_REST_Server::READABLE,
             'callback' => [$this, 'getCandles'],
@@ -123,6 +148,16 @@ class LCNI_StockController {
         }
 
         return rest_ensure_response($result);
+    }
+
+
+    public function getChart(WP_REST_Request $request) {
+        $chart = $this->service->getChartData(
+            $request->get_param('symbol'),
+            $request->get_param('range')
+        );
+
+        return rest_ensure_response($chart);
     }
 
     public function getCandles(WP_REST_Request $request) {
