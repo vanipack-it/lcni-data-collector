@@ -5,7 +5,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   const apiUrl = container.dataset.apiUrl;
-  console.log("LCNI: API URL", apiUrl);
 
   if (!apiUrl) {
     container.textContent = "NO DATA";
@@ -13,34 +12,222 @@ document.addEventListener("DOMContentLoaded", async () => {
     return;
   }
 
+  const buildShell = () => {
+    container.innerHTML = "";
+
+    const controls = document.createElement("div");
+    controls.style.display = "flex";
+    controls.style.flexWrap = "wrap";
+    controls.style.gap = "12px";
+    controls.style.marginBottom = "12px";
+    controls.style.alignItems = "center";
+
+    const mainChartWrap = document.createElement("div");
+    mainChartWrap.style.height = "420px";
+
+    const volumeWrap = document.createElement("div");
+    volumeWrap.style.height = "160px";
+    volumeWrap.style.marginTop = "8px";
+
+    const macdWrap = document.createElement("div");
+    macdWrap.style.height = "180px";
+    macdWrap.style.marginTop = "8px";
+
+    const rsiWrap = document.createElement("div");
+    rsiWrap.style.height = "160px";
+    rsiWrap.style.marginTop = "8px";
+
+    container.appendChild(controls);
+    container.appendChild(mainChartWrap);
+    container.appendChild(volumeWrap);
+    container.appendChild(macdWrap);
+    container.appendChild(rsiWrap);
+
+    return { controls, mainChartWrap, volumeWrap, macdWrap, rsiWrap };
+  };
+
+  const createCheckbox = (labelText, checked, onChange) => {
+    const label = document.createElement("label");
+    label.style.display = "inline-flex";
+    label.style.alignItems = "center";
+    label.style.gap = "6px";
+    label.style.cursor = "pointer";
+
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = checked;
+    input.addEventListener("change", () => onChange(input.checked));
+
+    const text = document.createElement("span");
+    text.textContent = labelText;
+
+    label.appendChild(input);
+    label.appendChild(text);
+
+    return label;
+  };
+
+  const lineSeriesDataFromCandles = (candles) => candles.map((candle) => ({
+    time: candle.time,
+    value: candle.close
+  }));
+
+  const seriesDataFilter = (candles, key) => candles
+    .filter((item) => typeof item[key] === "number" && Number.isFinite(item[key]))
+    .map((item) => ({ time: item.time, value: item[key] }));
+
   try {
     const response = await fetch(apiUrl, { credentials: "same-origin" });
     if (!response.ok) {
       throw new Error(`LCNI: request failed (${response.status})`);
     }
 
-    const data = await response.json();
-    if (!Array.isArray(data)) {
+    const payload = await response.json();
+    const candles = Array.isArray(payload) ? payload : payload?.candles;
+    if (!Array.isArray(candles)) {
       throw new Error("LCNI: invalid candles payload");
     }
 
-    console.log("LCNI: data length", data.length);
-    console.log("LCNI: first candle", data[0] || null);
-
-    if (!data.length) {
-      console.error("LCNI: empty dataset");
+    if (!candles.length) {
       container.textContent = "NO DATA";
       return;
     }
 
-    const chart = LightweightCharts.createChart(container, {
+    const { controls, mainChartWrap, volumeWrap, macdWrap, rsiWrap } = buildShell();
+
+    const commonOptions = {
       autoSize: true,
-      layout: { background: { color: "#fff" }, textColor: "#333" }
+      layout: {
+        background: { color: "#fff" },
+        textColor: "#333"
+      },
+      grid: {
+        vertLines: { color: "#efefef" },
+        horzLines: { color: "#efefef" }
+      }
+    };
+
+    const mainChart = LightweightCharts.createChart(mainChartWrap, commonOptions);
+    const volumeChart = LightweightCharts.createChart(volumeWrap, commonOptions);
+    const macdChart = LightweightCharts.createChart(macdWrap, commonOptions);
+    const rsiChart = LightweightCharts.createChart(rsiWrap, commonOptions);
+
+    const candleSeries = mainChart.addCandlestickSeries();
+    const lineSeries = mainChart.addLineSeries({ color: "#2563eb", lineWidth: 2 });
+
+    candleSeries.setData(candles);
+    lineSeries.setData(lineSeriesDataFromCandles(candles));
+
+    const volumeSeries = volumeChart.addHistogramSeries({
+      priceFormat: { type: "volume" },
+      priceScaleId: ""
     });
 
-    const series = chart.addCandlestickSeries();
+    volumeSeries.setData(candles.map((item) => ({
+      time: item.time,
+      value: typeof item.volume === "number" ? item.volume : 0,
+      color: item.close >= item.open ? "#16a34a" : "#dc2626"
+    })));
 
-    series.setData(data);
+    const macdSeries = macdChart.addLineSeries({ color: "#1d4ed8", lineWidth: 2 });
+    const signalSeries = macdChart.addLineSeries({ color: "#f59e0b", lineWidth: 2 });
+    const macdHistogramSeries = macdChart.addHistogramSeries({
+      priceScaleId: "",
+      base: 0
+    });
+
+    macdSeries.setData(seriesDataFilter(candles, "macd"));
+    signalSeries.setData(seriesDataFilter(candles, "macd_signal"));
+    macdHistogramSeries.setData(candles
+      .filter((item) => typeof item.macd_histogram === "number" && Number.isFinite(item.macd_histogram))
+      .map((item) => ({
+        time: item.time,
+        value: item.macd_histogram,
+        color: item.macd_histogram >= 0 ? "rgba(22,163,74,0.55)" : "rgba(220,38,38,0.55)"
+      })));
+
+    const rsiSeries = rsiChart.addLineSeries({ color: "#7c3aed", lineWidth: 2 });
+    const rsiUpperSeries = rsiChart.addLineSeries({ color: "#f97316", lineStyle: 2, lineWidth: 1 });
+    const rsiLowerSeries = rsiChart.addLineSeries({ color: "#0ea5e9", lineStyle: 2, lineWidth: 1 });
+
+    const rsiData = seriesDataFilter(candles, "rsi");
+    rsiSeries.setData(rsiData);
+    rsiUpperSeries.setData(candles.map((item) => ({ time: item.time, value: 70 })));
+    rsiLowerSeries.setData(candles.map((item) => ({ time: item.time, value: 30 })));
+
+    let chartMode = "line";
+    const chartModeWrap = document.createElement("label");
+    chartModeWrap.style.display = "inline-flex";
+    chartModeWrap.style.gap = "6px";
+    chartModeWrap.style.alignItems = "center";
+
+    const modeText = document.createElement("span");
+    modeText.textContent = "Kiểu chart";
+
+    const modeSelect = document.createElement("select");
+    [
+      { value: "line", label: "Line" },
+      { value: "candlestick", label: "Candlestick" }
+    ].forEach((mode) => {
+      const option = document.createElement("option");
+      option.value = mode.value;
+      option.textContent = mode.label;
+      modeSelect.appendChild(option);
+    });
+
+    const syncMode = () => {
+      candleSeries.applyOptions({ visible: chartMode === "candlestick" });
+      lineSeries.applyOptions({ visible: chartMode === "line" });
+    };
+
+    modeSelect.value = chartMode;
+    modeSelect.addEventListener("change", () => {
+      chartMode = modeSelect.value;
+      syncMode();
+    });
+
+    chartModeWrap.appendChild(modeText);
+    chartModeWrap.appendChild(modeSelect);
+    controls.appendChild(chartModeWrap);
+
+    controls.appendChild(createCheckbox("Volume", true, (checked) => {
+      volumeWrap.style.display = checked ? "block" : "none";
+    }));
+
+    controls.appendChild(createCheckbox("MACD", true, (checked) => {
+      macdWrap.style.display = checked ? "block" : "none";
+    }));
+
+    controls.appendChild(createCheckbox("RSI", true, (checked) => {
+      rsiWrap.style.display = checked ? "block" : "none";
+    }));
+
+    syncMode();
+
+    const syncTimeScale = (sourceChart, targetCharts) => {
+      sourceChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+        if (!range) {
+          return;
+        }
+        targetCharts.forEach((chart) => {
+          chart.timeScale().setVisibleLogicalRange(range);
+        });
+      });
+    };
+
+    syncTimeScale(mainChart, [volumeChart, macdChart, rsiChart]);
+    syncTimeScale(volumeChart, [mainChart, macdChart, rsiChart]);
+    syncTimeScale(macdChart, [mainChart, volumeChart, rsiChart]);
+    syncTimeScale(rsiChart, [mainChart, volumeChart, macdChart]);
+
+    mainChart.timeScale().fitContent();
+    volumeChart.timeScale().fitContent();
+    macdChart.timeScale().fitContent();
+    rsiChart.timeScale().fitContent();
+
+    if (!rsiData.length) {
+      rsiWrap.style.display = "none";
+    }
   } catch (error) {
     console.error(error);
     container.textContent = "NO DATA";
