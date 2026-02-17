@@ -85,6 +85,12 @@ class LCNI_StockController {
                     'default' => 200,
                     'sanitize_callback' => 'absint',
                 ],
+                'tf' => [
+                    'default' => 'D',
+                    'sanitize_callback' => static function ($value) {
+                        return strtoupper(sanitize_text_field((string) $value));
+                    },
+                ],
             ],
         ]);
     }
@@ -120,7 +126,11 @@ class LCNI_StockController {
     }
 
     public function getCandles(WP_REST_Request $request) {
-        $candles = $this->service->getCandles($request->get_param('symbol'), $request->get_param('limit'));
+        $candles = $this->service->getCandles(
+            $request->get_param('symbol'),
+            $request->get_param('limit'),
+            $request->get_param('tf')
+        );
 
         return rest_ensure_response($candles);
     }

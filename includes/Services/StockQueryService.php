@@ -123,18 +123,23 @@ class LCNI_StockQueryService {
         ];
     }
 
-    public function getCandles($symbol, $limit = 200) {
+    public function getCandles($symbol, $limit = 200, $timeframe = 'D') {
         $normalized_symbol = $this->normalizeSymbol($symbol);
         if ($normalized_symbol === '') {
             return [];
         }
 
         $safe_limit = max(1, min(500, (int) $limit));
+        $normalized_timeframe = $this->normalizeTimeframe($timeframe);
 
         return $this->cache->remember(
-            'candles:' . $normalized_symbol . ':' . $safe_limit,
-            function () use ($normalized_symbol, $safe_limit) {
-                $rows = $this->repository->getCandlesBySymbol($normalized_symbol, $safe_limit);
+            'candles:' . $normalized_symbol . ':' . $normalized_timeframe . ':' . $safe_limit,
+            function () use ($normalized_symbol, $safe_limit, $normalized_timeframe) {
+                $rows = $this->repository->getCandlesBySymbol($normalized_symbol, $safe_limit, $normalized_timeframe);
+
+                if (empty($rows)) {
+                    return [];
+                }
 
                 return array_map(
                     static function ($row) {
@@ -142,9 +147,10 @@ class LCNI_StockQueryService {
                         $close = (float) $row->close_price;
                         $macd = $row->macd !== null ? (float) $row->macd : null;
                         $macd_signal = $row->macd_signal !== null ? (float) $row->macd_signal : null;
+                        $time = strtotime((string) $row->trading_date);
 
                         return [
-                            'time' => (string) $row->trading_date,
+                            'time' => $time !== false ? (int) $time : 0,
                             'timestamp' => isset($row->event_time) ? (int) $row->event_time : null,
                             'open' => $open,
                             'high' => (float) $row->high_price,
@@ -162,6 +168,16 @@ class LCNI_StockQueryService {
                 );
             }
         );
+    }
+
+    private function normalizeTimeframe($timeframe) {
+        $normalized_timeframe = strtoupper(sanitize_text_field((string) $timeframe));
+
+        if ($normalized_timeframe === 'D' || $normalized_timeframe === '1D') {
+            return '1D';
+        }
+
+        return '1D';
     }
 
     private function normalizeSymbol($symbol) {
