@@ -82,6 +82,7 @@ class LCNI_DB {
         self::backfill_ohlc_tang_gia_kem_vol_metrics();
         self::backfill_ohlc_smart_money_metrics();
         self::backfill_ohlc_rs_1m_by_exchange();
+        self::backfill_ohlc_rs_1w_by_exchange();
         self::ensure_ohlc_indexes();
     }
 
@@ -117,6 +118,7 @@ class LCNI_DB {
             pct_1w DECIMAL(12,6) DEFAULT NULL,
             pct_1m DECIMAL(12,6) DEFAULT NULL,
             rs_1m_by_exchange DECIMAL(6,2) DEFAULT NULL,
+            rs_1w_by_exchange DECIMAL(6,2) DEFAULT NULL,
             pct_3m DECIMAL(12,6) DEFAULT NULL,
             pct_6m DECIMAL(12,6) DEFAULT NULL,
             pct_1y DECIMAL(12,6) DEFAULT NULL,
@@ -335,6 +337,7 @@ class LCNI_DB {
             'pct_1w' => 'DECIMAL(12,6) DEFAULT NULL',
             'pct_1m' => 'DECIMAL(12,6) DEFAULT NULL',
             'rs_1m_by_exchange' => 'DECIMAL(6,2) DEFAULT NULL',
+            'rs_1w_by_exchange' => 'DECIMAL(6,2) DEFAULT NULL',
             'pct_3m' => 'DECIMAL(12,6) DEFAULT NULL',
             'pct_6m' => 'DECIMAL(12,6) DEFAULT NULL',
             'pct_1y' => 'DECIMAL(12,6) DEFAULT NULL',
@@ -779,6 +782,7 @@ class LCNI_DB {
         }
 
         self::rebuild_rs_1m_by_exchange();
+        self::rebuild_rs_1w_by_exchange();
 
         return count($all_series);
     }
@@ -968,6 +972,17 @@ class LCNI_DB {
 
         self::rebuild_rs_1m_by_exchange();
         self::log_change('backfill_ohlc_rs_1m_by_exchange', 'Backfilled rs_1m_by_exchange for OHLC rows by exchange ranking.');
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function backfill_ohlc_rs_1w_by_exchange() {
+        $migration_flag = 'lcni_ohlc_rs_1w_by_exchange_backfilled_v1';
+        if (get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        self::rebuild_rs_1w_by_exchange();
+        self::log_change('backfill_ohlc_rs_1w_by_exchange', 'Backfilled rs_1w_by_exchange for OHLC rows by exchange ranking.');
         update_option($migration_flag, 'yes');
     }
 
@@ -1808,6 +1823,7 @@ class LCNI_DB {
         if (!empty($touched_series)) {
             self::rebuild_missing_ohlc_indicators(5);
             self::rebuild_rs_1m_by_exchange(array_keys($touched_event_times), array_keys($touched_timeframes));
+            self::rebuild_rs_1w_by_exchange(array_keys($touched_event_times), array_keys($touched_timeframes));
         }
 
         return [
@@ -2048,10 +2064,28 @@ class LCNI_DB {
 
 
     private static function rebuild_rs_1m_by_exchange($event_times = [], $timeframes = []) {
+        self::rebuild_rs_by_exchange('pct_1m', 'rs_1m_by_exchange', $event_times, $timeframes);
+    }
+
+    private static function rebuild_rs_1w_by_exchange($event_times = [], $timeframes = []) {
+        self::rebuild_rs_by_exchange('pct_1w', 'rs_1w_by_exchange', $event_times, $timeframes);
+    }
+
+    private static function rebuild_rs_by_exchange($source_column, $target_column, $event_times = [], $timeframes = []) {
         global $wpdb;
 
         $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
         $mapping_table = $wpdb->prefix . 'lcni_sym_icb_market';
+        $source_column = sanitize_key((string) $source_column);
+        $target_column = sanitize_key((string) $target_column);
+
+        if (!in_array($source_column, ['pct_1m', 'pct_1w'], true)) {
+            return;
+        }
+
+        if (!in_array($target_column, ['rs_1m_by_exchange', 'rs_1w_by_exchange'], true)) {
+            return;
+        }
 
         $event_times = array_values(array_filter(array_map('intval', (array) $event_times), function ($value) {
             return $value > 0;
@@ -2086,7 +2120,7 @@ class LCNI_DB {
                     o2.symbol,
                     RANK() OVER (
                         PARTITION BY o2.event_time, o2.timeframe, m2.exchange
-                        ORDER BY o2.pct_1m DESC
+                        ORDER BY o2.{$source_column} DESC
                     ) AS rank_val,
                     COUNT(*) OVER (
                         PARTITION BY o2.event_time, o2.timeframe, m2.exchange
@@ -2095,13 +2129,13 @@ class LCNI_DB {
                 JOIN {$mapping_table} m2
                     ON o2.symbol = m2.symbol
                 WHERE o2.volume >= 50000
-                  AND o2.pct_1m IS NOT NULL{$where_clause}
+                  AND o2.{$source_column} IS NOT NULL{$where_clause}
             ) r
                 ON o.event_time = r.event_time
                 AND o.timeframe = r.timeframe
                 AND o.symbol = r.symbol
                 AND m.exchange = r.exchange
-            SET o.rs_1m_by_exchange =
+            SET o.{$target_column} =
                 CASE
                     WHEN o.volume >= 50000 THEN
                         CASE
