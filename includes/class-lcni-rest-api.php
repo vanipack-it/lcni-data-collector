@@ -18,6 +18,21 @@ class LCNI_Rest_API {
         $this->stock_controller = new LCNI_StockController($stock_service, $access_control);
 
         add_action('rest_api_init', [$this, 'register_routes']);
+        add_filter('rest_pre_serve_request', [$this, 'set_no_cache_headers'], 10, 4);
+    }
+
+
+    public function set_no_cache_headers($served, $result, $request, $server) {
+        if (!($request instanceof WP_REST_Request)) {
+            return $served;
+        }
+
+        $route = (string) $request->get_route();
+        if (strpos($route, '/lcni/v1/') === 0) {
+            header('Cache-Control: no-cache, no-store, must-revalidate');
+        }
+
+        return $served;
     }
 
     public function register_routes() {

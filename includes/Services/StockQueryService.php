@@ -170,6 +170,75 @@ class LCNI_StockQueryService {
         );
     }
 
+
+    public function getChartData($symbol, $range = '1D') {
+        $normalized_symbol = $this->normalizeSymbol($symbol);
+        if ($normalized_symbol === '') {
+            return [
+                'success' => false,
+                'message' => 'NO_DATA',
+            ];
+        }
+
+        $normalized_range = strtoupper(sanitize_text_field((string) $range));
+        $limit = $this->resolveChartRangeLimit($normalized_range);
+
+        $rows = $this->repository->getChartDataBySymbol($normalized_symbol, $limit);
+        if (empty($rows)) {
+            return [
+                'success' => false,
+                'message' => 'NO_DATA',
+            ];
+        }
+
+        $items = [];
+        foreach ($rows as $row) {
+            $time = isset($row['time']) ? (int) $row['time'] : 0;
+            $open = isset($row['open']) ? (float) $row['open'] : null;
+            $high = isset($row['high']) ? (float) $row['high'] : null;
+            $low = isset($row['low']) ? (float) $row['low'] : null;
+            $close = isset($row['close']) ? (float) $row['close'] : null;
+            $volume = isset($row['volume']) ? (int) $row['volume'] : 0;
+
+            if ($time <= 0 || $open === null || $high === null || $low === null || $close === null) {
+                continue;
+            }
+
+            $items[] = [
+                'time' => $time,
+                'open' => $open,
+                'high' => $high,
+                'low' => $low,
+                'close' => $close,
+                'volume' => $volume,
+            ];
+        }
+
+        if (empty($items)) {
+            return [
+                'success' => false,
+                'message' => 'NO_DATA',
+            ];
+        }
+
+        return $items;
+    }
+
+    private function resolveChartRangeLimit($range) {
+        $map = [
+            '1D' => 1,
+            '5D' => 5,
+            '1M' => 30,
+            '3M' => 90,
+            '6M' => 180,
+            '1Y' => 365,
+            '5Y' => 1825,
+            'MAX' => 2000,
+        ];
+
+        return isset($map[$range]) ? $map[$range] : 200;
+    }
+
     private function normalizeTimeframe($timeframe) {
         $normalized_timeframe = strtoupper(sanitize_text_field((string) $timeframe));
 

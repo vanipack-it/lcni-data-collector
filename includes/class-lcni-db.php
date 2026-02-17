@@ -46,6 +46,7 @@ class LCNI_DB {
 
         $required_tables = [
             $wpdb->prefix . 'lcni_ohlc',
+            $wpdb->prefix . 'lcni_stock_prices',
             $wpdb->prefix . 'lcni_security_definition',
             $wpdb->prefix . 'lcni_symbols',
             $wpdb->prefix . 'lcni_symbol_tongquan',
@@ -90,6 +91,7 @@ class LCNI_DB {
         $charset_collate = $wpdb->get_charset_collate();
         $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
         $security_definition_table = $wpdb->prefix . 'lcni_security_definition';
+        $stock_prices_table = $wpdb->prefix . 'lcni_stock_prices';
         $symbol_table = $wpdb->prefix . 'lcni_symbols';
         $symbol_tongquan_table = $wpdb->prefix . 'lcni_symbol_tongquan';
         $log_table = $wpdb->prefix . 'lcni_change_logs';
@@ -156,6 +158,21 @@ class LCNI_DB {
             KEY idx_symbol_timeframe (symbol, timeframe),
             KEY idx_event_time (event_time),
             KEY idx_symbol_index (symbol, trading_index)
+        ) {$charset_collate};";
+
+        $sql_stock_prices = "CREATE TABLE {$stock_prices_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            symbol VARCHAR(20) NOT NULL,
+            time BIGINT UNSIGNED NOT NULL,
+            open DECIMAL(20,2) NOT NULL,
+            high DECIMAL(20,2) NOT NULL,
+            low DECIMAL(20,2) NOT NULL,
+            close DECIMAL(20,2) NOT NULL,
+            volume BIGINT UNSIGNED NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            UNIQUE KEY unique_symbol_time (symbol, time),
+            KEY idx_symbol_time (symbol, time)
         ) {$charset_collate};";
 
         // Legacy table for backward compatibility.
@@ -290,6 +307,7 @@ class LCNI_DB {
         ) {$charset_collate};";
 
         dbDelta($sql_ohlc);
+        dbDelta($sql_stock_prices);
         dbDelta($sql_security_definition);
         dbDelta($sql_symbols);
         dbDelta($sql_change_logs);
@@ -310,7 +328,7 @@ class LCNI_DB {
         self::normalize_legacy_ratio_columns();
         self::sync_symbol_tongquan_with_symbols();
 
-        self::log_change('activation', 'Created/updated OHLC, lcni_symbols, lcni_symbol_tongquan, seed task, market, icb2, sym_icb_market and change log tables.');
+        self::log_change('activation', 'Created/updated OHLC, stock_prices, lcni_symbols, lcni_symbol_tongquan, seed task, market, icb2, sym_icb_market and change log tables.');
     }
 
     private static function ensure_ohlc_indicator_columns() {
@@ -1717,6 +1735,7 @@ class LCNI_DB {
         }
 
         $table = $wpdb->prefix . 'lcni_ohlc';
+        $stock_prices_table = $wpdb->prefix . 'lcni_stock_prices';
         $inserted = 0;
         $updated = 0;
         $touched_series = [];
@@ -1772,6 +1791,26 @@ class LCNI_DB {
             );
 
             $result = $wpdb->query($query);
+
+            $stock_prices_query = $wpdb->prepare(
+                "INSERT INTO {$stock_prices_table}
+                (symbol, time, open, high, low, close, volume)
+                VALUES (%s, %d, %f, %f, %f, %f, %d)
+                ON DUPLICATE KEY UPDATE
+                    open = VALUES(open),
+                    high = VALUES(high),
+                    low = VALUES(low),
+                    close = VALUES(close),
+                    volume = VALUES(volume)",
+                $record['symbol'],
+                $record['event_time'],
+                $record['open_price'],
+                $record['high_price'],
+                $record['low_price'],
+                $record['close_price'],
+                $record['volume']
+            );
+            $wpdb->query($stock_prices_query);
 
             if ($result === 1) {
                 $inserted++;
