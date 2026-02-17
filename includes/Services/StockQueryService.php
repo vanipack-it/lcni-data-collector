@@ -139,7 +139,7 @@ class LCNI_StockQueryService {
                 return array_map(
                     static function ($row) {
                         return [
-                            'time' => strtotime($row->trading_date),
+                            'time' => (string) $row->trading_date,
                             'open' => (float) $row->open_price,
                             'high' => (float) $row->high_price,
                             'low' => (float) $row->low_price,

@@ -6,6 +6,15 @@ if (!defined('ABSPATH')) {
 
 class LCNI_Data_StockRepository {
 
+    private function toLightweightBusinessDay($event_time) {
+        $timestamp = (int) $event_time;
+        if ($timestamp <= 0) {
+            return null;
+        }
+
+        return gmdate('Y-m-d', $timestamp);
+    }
+
     public function getLatestBySymbol($symbol) {
         global $wpdb;
 
@@ -101,18 +110,21 @@ class LCNI_Data_StockRepository {
         return [
             'symbol' => $symbol,
             'price_history' => array_map(
-                static function ($row) {
+                function ($row) {
+                    $time = $this->toLightweightBusinessDay($row['event_time']);
+
                     return [
-                        'time' => (int) $row['event_time'],
+                        'time' => $time,
+                        'value' => (float) $row['close_price'],
                         'price' => (float) $row['close_price'],
                     ];
                 },
                 $history
             ),
             'ma_values' => array_map(
-                static function ($row) {
+                function ($row) {
                     return [
-                        'time' => (int) $row['event_time'],
+                        'time' => $this->toLightweightBusinessDay($row['event_time']),
                         'ma10' => $row['ma10'] !== null ? (float) $row['ma10'] : null,
                         'ma20' => $row['ma20'] !== null ? (float) $row['ma20'] : null,
                         'ma50' => $row['ma50'] !== null ? (float) $row['ma50'] : null,
@@ -123,9 +135,9 @@ class LCNI_Data_StockRepository {
                 $history
             ),
             'rsi_values' => array_map(
-                static function ($row) {
+                function ($row) {
                     return [
-                        'time' => (int) $row['event_time'],
+                        'time' => $this->toLightweightBusinessDay($row['event_time']),
                         'rsi' => $row['rsi'] !== null ? (float) $row['rsi'] : null,
                     ];
                 },
