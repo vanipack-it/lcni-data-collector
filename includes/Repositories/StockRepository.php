@@ -102,9 +102,13 @@ class LCNI_Data_StockRepository {
             'symbol' => $symbol,
             'price_history' => array_map(
                 static function ($row) {
+                    $price = (float) $row['close_price'];
+
                     return [
                         'time' => (int) $row['event_time'],
-                        'price' => (float) $row['close_price'],
+                        'price' => $price,
+                        // Backward-compatible key for chart libraries (e.g. lightweight-charts line series).
+                        'value' => $price,
                     ];
                 },
                 $history
