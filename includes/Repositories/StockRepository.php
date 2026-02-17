@@ -47,6 +47,31 @@ class LCNI_Data_StockRepository {
         return is_array($rows) ? $rows : [];
     }
 
+    public function getCandlesBySymbol($symbol, $limit = 200) {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $safe_limit = max(1, min(500, (int) $limit));
+
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT DATE(FROM_UNIXTIME(event_time)) AS trading_date,
+                        open_price,
+                        high_price,
+                        low_price,
+                        close_price
+                 FROM {$table}
+                 WHERE symbol = %s AND timeframe = '1D'
+                 ORDER BY event_time ASC
+                 LIMIT %d",
+                $symbol,
+                $safe_limit
+            )
+        );
+
+        return is_array($rows) ? $rows : [];
+    }
+
 
     public function getDetailPageBySymbol($symbol) {
         global $wpdb;

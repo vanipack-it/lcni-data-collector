@@ -123,6 +123,35 @@ class LCNI_StockQueryService {
         ];
     }
 
+    public function getCandles($symbol, $limit = 200) {
+        $normalized_symbol = $this->normalizeSymbol($symbol);
+        if ($normalized_symbol === '') {
+            return [];
+        }
+
+        $safe_limit = max(1, min(500, (int) $limit));
+
+        return $this->cache->remember(
+            'candles:' . $normalized_symbol . ':' . $safe_limit,
+            function () use ($normalized_symbol, $safe_limit) {
+                $rows = $this->repository->getCandlesBySymbol($normalized_symbol, $safe_limit);
+
+                return array_map(
+                    static function ($row) {
+                        return [
+                            'time' => strtotime($row->trading_date),
+                            'open' => (float) $row->open_price,
+                            'high' => (float) $row->high_price,
+                            'low' => (float) $row->low_price,
+                            'close' => (float) $row->close_price,
+                        ];
+                    },
+                    $rows
+                );
+            }
+        );
+    }
+
     private function normalizeSymbol($symbol) {
         $normalized_symbol = strtoupper(sanitize_text_field((string) $symbol));
         if ($normalized_symbol === '') {
