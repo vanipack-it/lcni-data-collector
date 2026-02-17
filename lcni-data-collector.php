@@ -21,6 +21,8 @@ require_once LCNI_PATH . 'includes/class-lcni-seed-repository.php';
 require_once LCNI_PATH . 'includes/class-lcni-history-fetcher.php';
 require_once LCNI_PATH . 'includes/class-lcni-seed-scheduler.php';
 require_once LCNI_PATH . 'includes/class-lcni-settings.php';
+require_once LCNI_PATH . 'includes/class-lcni-update-manager.php';
+require_once LCNI_PATH . 'includes/class-lcni-rest-api.php';
 
 function lcni_register_custom_cron_schedules($schedules) {
     if (!isset($schedules['lcni_every_minute'])) {
@@ -77,6 +79,11 @@ function lcni_deactivate_plugin() {
     if ($rule_rebuild_timestamp) {
         wp_unschedule_event($rule_rebuild_timestamp, LCNI_RULE_REBUILD_CRON_HOOK);
     }
+
+    $runtime_update_timestamp = wp_next_scheduled(LCNI_Update_Manager::CRON_HOOK);
+    if ($runtime_update_timestamp) {
+        wp_unschedule_event($runtime_update_timestamp, LCNI_Update_Manager::CRON_HOOK);
+    }
 }
 
 function lcni_run_cron_incremental_sync() {
@@ -114,3 +121,5 @@ register_activation_hook(__FILE__, 'lcni_activate_plugin');
 register_deactivation_hook(__FILE__, 'lcni_deactivate_plugin');
 
 new LCNI_Settings();
+LCNI_Update_Manager::init();
+new LCNI_Rest_API();
