@@ -1,5 +1,10 @@
 # Development Log
 
+## 2026-02-17
+- Nâng cấp dữ liệu endpoint chi tiết/candles để hỗ trợ chart nâng cao: bổ sung full `ohlc`, `volume`, `macd`, `macd_signal`, `macd_histogram`, `rsi` trên từng mốc thời gian.
+- Mở rộng payload `stock detail page` với `ohlc_history`, `volume_values`, `macd_values` (giữ tương thích ngược với `price_history`, `ma_values`, `rsi_values`).
+- Nâng cấp script `assets/js/lcni-chart.js`: thêm lựa chọn chuyển đổi `Line`/`Candlestick`, thêm panel `Volume`, `MACD`, `RSI` có thể bật/tắt trực tiếp trên chart.
+
 ## 2026-02-14
 - Điều tra lỗi import CSV trả về `updated 0 / total N` dù file có dữ liệu.
 - Bổ sung cơ chế `LCNI_DB::ensure_tables_exist()` để tự động tạo bảng nếu plugin chưa chạy activation hoặc bị thiếu bảng.

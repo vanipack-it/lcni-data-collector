@@ -65,10 +65,15 @@ class LCNI_Data_StockRepository {
         $rows = $wpdb->get_results(
             $wpdb->prepare(
                 "SELECT DATE(FROM_UNIXTIME(event_time)) AS trading_date,
+                        event_time,
                         open_price,
                         high_price,
                         low_price,
-                        close_price
+                        close_price,
+                        volume,
+                        macd,
+                        macd_signal,
+                        rsi
                  FROM {$table}
                  WHERE symbol = %s AND timeframe = '1D'
                  ORDER BY event_time ASC
@@ -89,13 +94,14 @@ class LCNI_Data_StockRepository {
 
         $rows = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT event_time, close_price, ma10, ma20, ma50, ma100, ma200, rsi
-                 FROM {$table}
-                 WHERE symbol = %s AND timeframe = '1D'
-                 ORDER BY event_time DESC
-                 LIMIT %d",
+                "SELECT event_time, open_price, high_price, low_price, close_price, volume,
+                        ma10, ma20, ma50, ma100, ma200, macd, macd_signal, rsi
+                FROM {$table}
+                WHERE symbol = %s AND timeframe = '1D'
+                ORDER BY event_time DESC
+                LIMIT %d",
                 $symbol,
-                200
+                250
             ),
             ARRAY_A
         );
@@ -121,6 +127,27 @@ class LCNI_Data_StockRepository {
                 },
                 $history
             ),
+            'ohlc_history' => array_map(
+                function ($row) {
+                    return [
+                        'time' => $this->toLightweightBusinessDay($row['event_time']),
+                        'open' => (float) $row['open_price'],
+                        'high' => (float) $row['high_price'],
+                        'low' => (float) $row['low_price'],
+                        'close' => (float) $row['close_price'],
+                    ];
+                },
+                $history
+            ),
+            'volume_values' => array_map(
+                function ($row) {
+                    return [
+                        'time' => $this->toLightweightBusinessDay($row['event_time']),
+                        'volume' => isset($row['volume']) ? (float) $row['volume'] : 0.0,
+                    ];
+                },
+                $history
+            ),
             'ma_values' => array_map(
                 function ($row) {
                     return [
@@ -139,6 +166,16 @@ class LCNI_Data_StockRepository {
                     return [
                         'time' => $this->toLightweightBusinessDay($row['event_time']),
                         'rsi' => $row['rsi'] !== null ? (float) $row['rsi'] : null,
+                    ];
+                },
+                $history
+            ),
+            'macd_values' => array_map(
+                function ($row) {
+                    return [
+                        'time' => $this->toLightweightBusinessDay($row['event_time']),
+                        'macd' => isset($row['macd']) ? (float) $row['macd'] : null,
+                        'signal' => isset($row['macd_signal']) ? (float) $row['macd_signal'] : null,
                     ];
                 },
                 $history

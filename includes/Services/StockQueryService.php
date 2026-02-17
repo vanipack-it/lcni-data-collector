@@ -138,12 +138,24 @@ class LCNI_StockQueryService {
 
                 return array_map(
                     static function ($row) {
+                        $open = (float) $row->open_price;
+                        $close = (float) $row->close_price;
+                        $macd = $row->macd !== null ? (float) $row->macd : null;
+                        $macd_signal = $row->macd_signal !== null ? (float) $row->macd_signal : null;
+
                         return [
                             'time' => (string) $row->trading_date,
-                            'open' => (float) $row->open_price,
+                            'timestamp' => isset($row->event_time) ? (int) $row->event_time : null,
+                            'open' => $open,
                             'high' => (float) $row->high_price,
                             'low' => (float) $row->low_price,
-                            'close' => (float) $row->close_price,
+                            'close' => $close,
+                            'volume' => isset($row->volume) ? (float) $row->volume : 0.0,
+                            'macd' => $macd,
+                            'macd_signal' => $macd_signal,
+                            'macd_histogram' => ($macd !== null && $macd_signal !== null) ? ($macd - $macd_signal) : null,
+                            'rsi' => $row->rsi !== null ? (float) $row->rsi : null,
+                            'trend' => $close >= $open ? 'up' : 'down',
                         ];
                     },
                     $rows
