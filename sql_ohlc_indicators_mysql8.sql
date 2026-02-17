@@ -310,7 +310,7 @@ LEFT JOIN (
         m2.exchange,
         RANK() OVER (
             PARTITION BY o2.event_time, m2.exchange
-            ORDER BY o2.pct_1m DESC
+            ORDER BY o2.pct_1w DESC
         ) AS rank_val,
         COUNT(*) OVER (
             PARTITION BY o2.event_time, m2.exchange
@@ -319,7 +319,7 @@ LEFT JOIN (
     JOIN wp_lcni_sym_icb_market m2
         ON o2.symbol = m2.symbol
     WHERE o2.volume >= 50000
-      AND o2.pct_1m IS NOT NULL
+      AND o2.pct_1w IS NOT NULL
 ) r
     ON o.event_time = r.event_time
    AND o.symbol = r.symbol

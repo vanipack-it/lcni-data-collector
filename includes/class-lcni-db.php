@@ -2064,7 +2064,7 @@ class LCNI_DB {
 
 
     private static function rebuild_rs_1m_by_exchange($event_times = [], $timeframes = []) {
-        self::rebuild_rs_by_exchange('pct_1m', 'rs_1m_by_exchange', $event_times, $timeframes);
+        self::rebuild_rs_by_exchange('pct_1w', 'rs_1m_by_exchange', $event_times, $timeframes);
     }
 
     private static function rebuild_rs_1w_by_exchange($event_times = [], $timeframes = []) {
