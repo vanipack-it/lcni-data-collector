@@ -56,7 +56,7 @@ class LCNI_Data_StockRepository {
         return is_array($rows) ? $rows : [];
     }
 
-    public function getCandlesBySymbol($symbol, $limit = 200) {
+    public function getCandlesBySymbol($symbol, $limit = 200, $timeframe = '1D') {
         global $wpdb;
 
         $table = $wpdb->prefix . 'lcni_ohlc';
@@ -64,21 +64,26 @@ class LCNI_Data_StockRepository {
 
         $rows = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT DATE(FROM_UNIXTIME(event_time)) AS trading_date,
-                        event_time,
-                        open_price,
-                        high_price,
-                        low_price,
-                        close_price,
-                        volume,
-                        macd,
-                        macd_signal,
-                        rsi
-                 FROM {$table}
-                 WHERE symbol = %s AND timeframe = '1D'
-                 ORDER BY event_time ASC
-                 LIMIT %d",
+                "SELECT trading_date, event_time, open_price, high_price, low_price, close_price, volume, macd, macd_signal, rsi
+                 FROM (
+                     SELECT DATE(FROM_UNIXTIME(event_time)) AS trading_date,
+                            event_time,
+                            open_price,
+                            high_price,
+                            low_price,
+                            close_price,
+                            volume,
+                            macd,
+                            macd_signal,
+                            rsi
+                     FROM {$table}
+                     WHERE symbol = %s AND timeframe = %s
+                     ORDER BY event_time DESC
+                     LIMIT %d
+                 ) candles
+                 ORDER BY event_time ASC",
                 $symbol,
+                $timeframe,
                 $safe_limit
             )
         );
