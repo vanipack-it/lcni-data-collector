@@ -2104,7 +2104,10 @@ class LCNI_DB {
             SET o.rs_1m_by_exchange =
                 CASE
                     WHEN o.volume >= 50000 THEN
-                        ROUND((1 - ((r.rank_val - 1) / NULLIF(r.total_rows - 1, 0))) * 100)
+                        CASE
+                            WHEN r.total_rows <= 1 THEN 100
+                            ELSE ROUND((1 - ((r.rank_val - 1) / (r.total_rows - 1))) * 100)
+                        END
                     ELSE NULL
                 END";
 
