@@ -83,6 +83,7 @@ class LCNI_DB {
         self::backfill_ohlc_smart_money_metrics();
         self::backfill_ohlc_rs_1m_by_exchange();
         self::backfill_ohlc_rs_1w_by_exchange();
+        self::backfill_ohlc_rs_3m_by_exchange();
         self::ensure_ohlc_indexes();
     }
 
@@ -119,6 +120,7 @@ class LCNI_DB {
             pct_1m DECIMAL(12,6) DEFAULT NULL,
             rs_1m_by_exchange DECIMAL(6,2) DEFAULT NULL,
             rs_1w_by_exchange DECIMAL(6,2) DEFAULT NULL,
+            rs_3m_by_exchange DECIMAL(6,2) DEFAULT NULL,
             pct_3m DECIMAL(12,6) DEFAULT NULL,
             pct_6m DECIMAL(12,6) DEFAULT NULL,
             pct_1y DECIMAL(12,6) DEFAULT NULL,
@@ -338,6 +340,7 @@ class LCNI_DB {
             'pct_1m' => 'DECIMAL(12,6) DEFAULT NULL',
             'rs_1m_by_exchange' => 'DECIMAL(6,2) DEFAULT NULL',
             'rs_1w_by_exchange' => 'DECIMAL(6,2) DEFAULT NULL',
+            'rs_3m_by_exchange' => 'DECIMAL(6,2) DEFAULT NULL',
             'pct_3m' => 'DECIMAL(12,6) DEFAULT NULL',
             'pct_6m' => 'DECIMAL(12,6) DEFAULT NULL',
             'pct_1y' => 'DECIMAL(12,6) DEFAULT NULL',
@@ -783,6 +786,7 @@ class LCNI_DB {
 
         self::rebuild_rs_1m_by_exchange();
         self::rebuild_rs_1w_by_exchange();
+        self::rebuild_rs_3m_by_exchange();
 
         return count($all_series);
     }
@@ -983,6 +987,17 @@ class LCNI_DB {
 
         self::rebuild_rs_1w_by_exchange();
         self::log_change('backfill_ohlc_rs_1w_by_exchange', 'Backfilled rs_1w_by_exchange for OHLC rows by exchange ranking.');
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function backfill_ohlc_rs_3m_by_exchange() {
+        $migration_flag = 'lcni_ohlc_rs_3m_by_exchange_backfilled_v1';
+        if (get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        self::rebuild_rs_3m_by_exchange();
+        self::log_change('backfill_ohlc_rs_3m_by_exchange', 'Backfilled rs_3m_by_exchange for OHLC rows by exchange ranking.');
         update_option($migration_flag, 'yes');
     }
 
@@ -1824,6 +1839,7 @@ class LCNI_DB {
             self::rebuild_missing_ohlc_indicators(5);
             self::rebuild_rs_1m_by_exchange(array_keys($touched_event_times), array_keys($touched_timeframes));
             self::rebuild_rs_1w_by_exchange(array_keys($touched_event_times), array_keys($touched_timeframes));
+            self::rebuild_rs_3m_by_exchange(array_keys($touched_event_times), array_keys($touched_timeframes));
         }
 
         return [
@@ -2064,11 +2080,15 @@ class LCNI_DB {
 
 
     private static function rebuild_rs_1m_by_exchange($event_times = [], $timeframes = []) {
-        self::rebuild_rs_by_exchange('pct_1w', 'rs_1m_by_exchange', $event_times, $timeframes);
+        self::rebuild_rs_by_exchange('pct_1m', 'rs_1m_by_exchange', $event_times, $timeframes);
     }
 
     private static function rebuild_rs_1w_by_exchange($event_times = [], $timeframes = []) {
         self::rebuild_rs_by_exchange('pct_1w', 'rs_1w_by_exchange', $event_times, $timeframes);
+    }
+
+    private static function rebuild_rs_3m_by_exchange($event_times = [], $timeframes = []) {
+        self::rebuild_rs_by_exchange('pct_3m', 'rs_3m_by_exchange', $event_times, $timeframes);
     }
 
     private static function rebuild_rs_by_exchange($source_column, $target_column, $event_times = [], $timeframes = []) {
@@ -2079,11 +2099,11 @@ class LCNI_DB {
         $source_column = sanitize_key((string) $source_column);
         $target_column = sanitize_key((string) $target_column);
 
-        if (!in_array($source_column, ['pct_1m', 'pct_1w'], true)) {
+        if (!in_array($source_column, ['pct_1m', 'pct_1w', 'pct_3m'], true)) {
             return;
         }
 
-        if (!in_array($target_column, ['rs_1m_by_exchange', 'rs_1w_by_exchange'], true)) {
+        if (!in_array($target_column, ['rs_1m_by_exchange', 'rs_1w_by_exchange', 'rs_3m_by_exchange'], true)) {
             return;
         }
 
