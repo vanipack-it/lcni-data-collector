@@ -1857,7 +1857,10 @@ class LCNI_DB {
             self::rebuild_missing_ohlc_indicators(5);
             self::rebuild_rs_1m_by_exchange(array_keys($touched_event_times), array_keys($touched_timeframes));
             self::rebuild_rs_1w_by_exchange(array_keys($touched_event_times), array_keys($touched_timeframes));
-            self::rebuild_rs_3m_by_exchange(array_keys($touched_event_times), array_keys($touched_timeframes));
+            // pct_3m values are recalculated for the full symbol/timeframe series above.
+            // Rebuild RS 3M for the whole timeframe scope so rows that become eligible
+            // after historical backfills are not left NULL.
+            self::rebuild_rs_3m_by_exchange([], array_keys($touched_timeframes));
         }
 
         return [
