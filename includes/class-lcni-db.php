@@ -81,6 +81,7 @@ class LCNI_DB {
         self::backfill_ohlc_pha_nen_metrics();
         self::backfill_ohlc_tang_gia_kem_vol_metrics();
         self::backfill_ohlc_smart_money_metrics();
+        self::backfill_ohlc_rs_1m_by_exchange();
         self::ensure_ohlc_indexes();
     }
 
@@ -115,6 +116,7 @@ class LCNI_DB {
             pct_t_3 DECIMAL(12,6) DEFAULT NULL,
             pct_1w DECIMAL(12,6) DEFAULT NULL,
             pct_1m DECIMAL(12,6) DEFAULT NULL,
+            rs_1m_by_exchange DECIMAL(6,2) DEFAULT NULL,
             pct_3m DECIMAL(12,6) DEFAULT NULL,
             pct_6m DECIMAL(12,6) DEFAULT NULL,
             pct_1y DECIMAL(12,6) DEFAULT NULL,
@@ -332,6 +334,7 @@ class LCNI_DB {
             'pct_t_3' => 'DECIMAL(12,6) DEFAULT NULL',
             'pct_1w' => 'DECIMAL(12,6) DEFAULT NULL',
             'pct_1m' => 'DECIMAL(12,6) DEFAULT NULL',
+            'rs_1m_by_exchange' => 'DECIMAL(6,2) DEFAULT NULL',
             'pct_3m' => 'DECIMAL(12,6) DEFAULT NULL',
             'pct_6m' => 'DECIMAL(12,6) DEFAULT NULL',
             'pct_1y' => 'DECIMAL(12,6) DEFAULT NULL',
@@ -775,6 +778,8 @@ class LCNI_DB {
             self::rebuild_ohlc_trading_index($series['symbol'], $series['timeframe']);
         }
 
+        self::rebuild_rs_1m_by_exchange();
+
         return count($all_series);
     }
 
@@ -952,6 +957,17 @@ class LCNI_DB {
 
         $recalculated_series = self::rebuild_all_ohlc_metrics();
         self::log_change('backfill_ohlc_smart_money_metrics', sprintf('Backfilled smart_money for %d symbol/timeframe series.', $recalculated_series));
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function backfill_ohlc_rs_1m_by_exchange() {
+        $migration_flag = 'lcni_ohlc_rs_1m_by_exchange_backfilled_v1';
+        if (get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        self::rebuild_rs_1m_by_exchange();
+        self::log_change('backfill_ohlc_rs_1m_by_exchange', 'Backfilled rs_1m_by_exchange for OHLC rows by exchange ranking.');
         update_option($migration_flag, 'yes');
     }
 
@@ -1720,6 +1736,8 @@ class LCNI_DB {
         $inserted = 0;
         $updated = 0;
         $touched_series = [];
+        $touched_event_times = [];
+        $touched_timeframes = [];
 
         foreach ($rows as $row) {
             $event_time = isset($row['event_time']) ? (int) $row['event_time'] : strtotime((string) ($row['candle_time'] ?? ''));
@@ -1748,6 +1766,8 @@ class LCNI_DB {
                 'symbol' => $record['symbol'],
                 'timeframe' => $record['timeframe'],
             ];
+            $touched_event_times[$record['event_time']] = true;
+            $touched_timeframes[$record['timeframe']] = true;
 
             $query = $wpdb->prepare(
                 "INSERT INTO {$table}
@@ -1787,6 +1807,7 @@ class LCNI_DB {
 
         if (!empty($touched_series)) {
             self::rebuild_missing_ohlc_indicators(5);
+            self::rebuild_rs_1m_by_exchange(array_keys($touched_event_times), array_keys($touched_timeframes));
         }
 
         return [
@@ -2023,6 +2044,95 @@ class LCNI_DB {
                 ['%d']
             );
         }
+    }
+
+
+    private static function rebuild_rs_1m_by_exchange($event_times = [], $timeframes = []) {
+        global $wpdb;
+
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $mapping_table = $wpdb->prefix . 'lcni_sym_icb_market';
+
+        $event_times = array_values(array_filter(array_map('intval', (array) $event_times), function ($value) {
+            return $value > 0;
+        }));
+        $timeframes = array_values(array_filter(array_map(function ($timeframe) {
+            return strtoupper(sanitize_text_field((string) $timeframe));
+        }, (array) $timeframes)));
+
+        $filters = [];
+        $params = [];
+
+        if (!empty($event_times)) {
+            $filters[] = 'o2.event_time IN (' . implode(', ', array_fill(0, count($event_times), '%d')) . ')';
+            $params = array_merge($params, $event_times);
+        }
+
+        if (!empty($timeframes)) {
+            $filters[] = 'o2.timeframe IN (' . implode(', ', array_fill(0, count($timeframes), '%s')) . ')';
+            $params = array_merge($params, $timeframes);
+        }
+
+        $where_clause = empty($filters) ? '' : (' AND ' . implode(' AND ', $filters));
+
+        $sql = "UPDATE {$ohlc_table} o
+            JOIN {$mapping_table} m
+                ON o.symbol = m.symbol
+            LEFT JOIN (
+                SELECT
+                    o2.event_time,
+                    o2.timeframe,
+                    m2.exchange,
+                    o2.symbol,
+                    RANK() OVER (
+                        PARTITION BY o2.event_time, o2.timeframe, m2.exchange
+                        ORDER BY o2.pct_1m DESC
+                    ) AS rank_val,
+                    COUNT(*) OVER (
+                        PARTITION BY o2.event_time, o2.timeframe, m2.exchange
+                    ) AS total_rows
+                FROM {$ohlc_table} o2
+                JOIN {$mapping_table} m2
+                    ON o2.symbol = m2.symbol
+                WHERE o2.volume >= 50000
+                  AND o2.pct_1m IS NOT NULL{$where_clause}
+            ) r
+                ON o.event_time = r.event_time
+                AND o.timeframe = r.timeframe
+                AND o.symbol = r.symbol
+                AND m.exchange = r.exchange
+            SET o.rs_1m_by_exchange =
+                CASE
+                    WHEN o.volume >= 50000 THEN
+                        ROUND((1 - ((r.rank_val - 1) / NULLIF(r.total_rows - 1, 0))) * 100)
+                    ELSE NULL
+                END";
+
+        if (!empty($event_times) || !empty($timeframes)) {
+            $outer_filters = [];
+
+            if (!empty($event_times)) {
+                $outer_filters[] = 'o.event_time IN (' . implode(', ', array_fill(0, count($event_times), '%d')) . ')';
+                $params = array_merge($params, $event_times);
+            }
+
+            if (!empty($timeframes)) {
+                $outer_filters[] = 'o.timeframe IN (' . implode(', ', array_fill(0, count($timeframes), '%s')) . ')';
+                $params = array_merge($params, $timeframes);
+            }
+
+            if (!empty($outer_filters)) {
+                $sql .= ' WHERE ' . implode(' AND ', $outer_filters);
+            }
+        }
+
+        if (empty($params)) {
+            $wpdb->query($sql);
+
+            return;
+        }
+
+        $wpdb->query($wpdb->prepare($sql, $params));
     }
 
     private static function rebuild_ohlc_trading_index($symbol, $timeframe) {

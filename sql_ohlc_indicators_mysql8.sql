@@ -4,7 +4,8 @@
 ALTER TABLE wp_lcni_ohlc
     ADD COLUMN IF NOT EXISTS pha_nen VARCHAR(30) NULL,
     ADD COLUMN IF NOT EXISTS tang_gia_kem_vol VARCHAR(50) NULL,
-    ADD COLUMN IF NOT EXISTS smart_money VARCHAR(30) NULL;
+    ADD COLUMN IF NOT EXISTS smart_money VARCHAR(30) NULL,
+    ADD COLUMN IF NOT EXISTS rs_1m_by_exchange DECIMAL(6,2) NULL;
 
 -- Chạy câu lệnh dưới nếu index chưa tồn tại.
 CREATE INDEX idx_symbol_index
@@ -296,5 +297,36 @@ SET o.smart_money =
             AND o.tang_gia_kem_vol = 'Tăng giá kèm Vol'
             AND UPPER(TRIM(COALESCE(tq.xep_hang, ''))) IN ('A++', 'A+', 'A', 'B+')
         THEN 'Smart Money'
+        ELSE NULL
+    END;
+
+UPDATE wp_lcni_ohlc o
+JOIN wp_lcni_sym_icb_market m
+    ON o.symbol = m.symbol
+LEFT JOIN (
+    SELECT
+        o2.event_time,
+        o2.symbol,
+        m2.exchange,
+        RANK() OVER (
+            PARTITION BY o2.event_time, m2.exchange
+            ORDER BY o2.pct_1m DESC
+        ) AS rank_val,
+        COUNT(*) OVER (
+            PARTITION BY o2.event_time, m2.exchange
+        ) AS total_rows
+    FROM wp_lcni_ohlc o2
+    JOIN wp_lcni_sym_icb_market m2
+        ON o2.symbol = m2.symbol
+    WHERE o2.volume >= 50000
+      AND o2.pct_1m IS NOT NULL
+) r
+    ON o.event_time = r.event_time
+   AND o.symbol = r.symbol
+   AND m.exchange = r.exchange
+SET o.rs_1m_by_exchange =
+    CASE
+        WHEN o.volume >= 50000 THEN
+            ROUND((1 - ((r.rank_val - 1) / NULLIF(r.total_rows - 1, 0))) * 100)
         ELSE NULL
     END;
