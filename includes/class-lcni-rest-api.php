@@ -6,7 +6,17 @@ if (!defined('ABSPATH')) {
 
 class LCNI_Rest_API {
 
+    private $stock_controller;
+
     public function __construct() {
+        $access_control = new LCNI_AccessControl();
+        $repository = new LCNI_Data_StockRepository();
+        $indicator_service = new LCNI_IndicatorService();
+        $cache = new LCNI_CacheService('lcni_rest_api', 60);
+        $stock_service = new LCNI_StockQueryService($repository, $indicator_service, $access_control, $cache);
+
+        $this->stock_controller = new LCNI_StockController($stock_service, $access_control);
+
         add_action('rest_api_init', [$this, 'register_routes']);
     }
 
@@ -23,17 +33,7 @@ class LCNI_Rest_API {
             'permission_callback' => '__return_true',
         ]);
 
-        register_rest_route('lcni/v1', '/stock/(?P<symbol>[A-Za-z0-9_\-]+)', [
-            'methods' => 'GET',
-            'callback' => [$this, 'get_stock_detail'],
-            'permission_callback' => '__return_true',
-        ]);
-
-        register_rest_route('lcni/v1', '/stock/(?P<symbol>[A-Za-z0-9_\-]+)/history', [
-            'methods' => 'GET',
-            'callback' => [$this, 'get_stock_history'],
-            'permission_callback' => '__return_true',
-        ]);
+        $this->stock_controller->registerRoutes();
 
         register_rest_route('lcni/v1', '/user/package', [
             'methods' => 'GET',
@@ -148,35 +148,6 @@ class LCNI_Rest_API {
                 'total_pages' => (int) ceil($total / $per_page),
             ],
             'items' => $rows,
-        ]);
-    }
-
-    public function get_stock_detail(WP_REST_Request $request) {
-        $symbol = strtoupper(sanitize_text_field((string) ($request->get_param('symbol') ?: $request->get_param('ticker'))));
-        $stock = lcni_get_stock($symbol);
-
-        if (empty($stock)) {
-            return new WP_Error('stock_not_found', 'Không tìm thấy dữ liệu symbol.', ['status' => 404]);
-        }
-
-        return rest_ensure_response($stock);
-    }
-
-    public function get_stock_history(WP_REST_Request $request) {
-        $symbol = strtoupper(sanitize_text_field((string) $request->get_param('symbol')));
-        $limit = max(1, min(500, (int) ($request->get_param('limit') ?: 120)));
-        $timeframe = strtoupper(sanitize_text_field((string) ($request->get_param('timeframe') ?: '1D')));
-
-        $history = lcni_get_stock_history($symbol, $limit, $timeframe);
-        if (empty($history)) {
-            return new WP_Error('stock_history_not_found', 'Không tìm thấy dữ liệu lịch sử symbol.', ['status' => 404]);
-        }
-
-        return rest_ensure_response([
-            'symbol' => $symbol,
-            'timeframe' => $timeframe,
-            'limit' => $limit,
-            'items' => $history,
         ]);
     }
 
