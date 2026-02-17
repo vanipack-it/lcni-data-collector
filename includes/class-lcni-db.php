@@ -1556,6 +1556,133 @@ class LCNI_DB {
         ];
     }
 
+    public static function collect_intraday_data() {
+        self::ensure_tables_exist();
+
+        if (!self::is_trading_session_open()) {
+            self::log_change('intraday_skipped', 'Intraday update skipped because market is out of trading session.');
+
+            return new WP_Error('out_of_trading_session', 'Ngoài giờ giao dịch.');
+        }
+
+        global $wpdb;
+
+        $timeframe = strtoupper((string) get_option('lcni_timeframe', '1D'));
+        $symbol_table = $wpdb->prefix . 'lcni_symbols';
+        $symbols = $wpdb->get_col("SELECT symbol FROM {$symbol_table} ORDER BY symbol ASC");
+
+        $total_symbols = count($symbols);
+        if ($total_symbols === 0) {
+            return [
+                'processed_symbols' => 0,
+                'pending_symbols' => 0,
+                'total_symbols' => 0,
+                'changed_symbols' => 0,
+                'indicators_done' => true,
+                'message' => 'Không có symbol để cập nhật.',
+            ];
+        }
+
+        $day_start = strtotime(current_time('Y-m-d 00:00:00'));
+        $now = time();
+        $processed_symbols = 0;
+        $changed_symbols = 0;
+
+        foreach ($symbols as $symbol) {
+            $symbol = strtoupper((string) $symbol);
+            $latest_today_event_time = (int) $wpdb->get_var(
+                $wpdb->prepare(
+                    "SELECT MAX(event_time)
+                    FROM {$wpdb->prefix}lcni_ohlc
+                    WHERE symbol = %s AND timeframe = %s AND event_time >= %d",
+                    $symbol,
+                    $timeframe,
+                    $day_start
+                )
+            );
+
+            $from_timestamp = $latest_today_event_time > 0 ? max($day_start, $latest_today_event_time - 3600) : $day_start;
+            $payload = LCNI_API::get_candles_by_range($symbol, $timeframe, $from_timestamp, $now);
+
+            if (!is_array($payload)) {
+                continue;
+            }
+
+            $rows = lcni_convert_candles($payload, $symbol, $timeframe);
+            if (empty($rows)) {
+                $processed_symbols++;
+                continue;
+            }
+
+            $rows = array_values(array_filter(
+                $rows,
+                static function ($row) use ($day_start) {
+                    $event_time = isset($row['event_time']) ? (int) $row['event_time'] : 0;
+
+                    return $event_time >= $day_start;
+                }
+            ));
+
+            if (empty($rows)) {
+                $processed_symbols++;
+                continue;
+            }
+
+            $latest_close_before = (float) $wpdb->get_var(
+                $wpdb->prepare(
+                    "SELECT close_price FROM {$wpdb->prefix}lcni_ohlc
+                    WHERE symbol = %s AND timeframe = %s
+                    ORDER BY event_time DESC LIMIT 1",
+                    $symbol,
+                    $timeframe
+                )
+            );
+
+            self::upsert_ohlc_rows($rows);
+
+            $latest_close_after = (float) $wpdb->get_var(
+                $wpdb->prepare(
+                    "SELECT close_price FROM {$wpdb->prefix}lcni_ohlc
+                    WHERE symbol = %s AND timeframe = %s
+                    ORDER BY event_time DESC LIMIT 1",
+                    $symbol,
+                    $timeframe
+                )
+            );
+
+            if ($latest_close_after !== $latest_close_before) {
+                $changed_symbols++;
+            }
+
+            $processed_symbols++;
+        }
+
+        return [
+            'processed_symbols' => $processed_symbols,
+            'pending_symbols' => max(0, $total_symbols - $processed_symbols),
+            'total_symbols' => $total_symbols,
+            'changed_symbols' => $changed_symbols,
+            'indicators_done' => true,
+            'message' => 'Cập nhật dữ liệu trong phiên hoàn tất.',
+        ];
+    }
+
+    public static function is_trading_session_open() {
+        $timestamp = current_time('timestamp');
+        $day_of_week = (int) gmdate('N', $timestamp + (get_option('gmt_offset', 0) * HOUR_IN_SECONDS));
+
+        if ($day_of_week >= 6) {
+            return false;
+        }
+
+        $time_text = current_time('H:i');
+        if ($time_text < '09:00' || $time_text > '15:00') {
+            return false;
+        }
+
+        return true;
+    }
+
     public static function get_latest_event_time($symbol, $timeframe) {
         global $wpdb;
 
