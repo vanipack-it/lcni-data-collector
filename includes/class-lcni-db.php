@@ -991,14 +991,32 @@ class LCNI_DB {
     }
 
     private static function backfill_ohlc_rs_3m_by_exchange() {
-        $migration_flag = 'lcni_ohlc_rs_3m_by_exchange_backfilled_v1';
-        if (get_option($migration_flag) === 'yes') {
+        $migration_flag = 'lcni_ohlc_rs_3m_by_exchange_backfilled_v2';
+        if (get_option($migration_flag) === 'yes' && !self::has_missing_rs_3m_by_exchange_rows()) {
             return;
         }
 
         self::rebuild_rs_3m_by_exchange();
         self::log_change('backfill_ohlc_rs_3m_by_exchange', 'Backfilled rs_3m_by_exchange for OHLC rows by exchange ranking.');
         update_option($migration_flag, 'yes');
+    }
+
+    private static function has_missing_rs_3m_by_exchange_rows() {
+        global $wpdb;
+
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $mapping_table = $wpdb->prefix . 'lcni_sym_icb_market';
+        $missing_count = (int) $wpdb->get_var(
+            "SELECT COUNT(*)
+            FROM {$ohlc_table} o
+            INNER JOIN {$mapping_table} m
+                ON o.symbol = m.symbol
+            WHERE o.volume >= 50000
+                AND o.pct_3m IS NOT NULL
+                AND o.rs_3m_by_exchange IS NULL"
+        );
+
+        return $missing_count > 0;
     }
 
     private static function seed_market_reference_data($market_table) {
