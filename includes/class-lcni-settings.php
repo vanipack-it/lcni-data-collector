@@ -1062,7 +1062,11 @@ class LCNI_Settings {
         <?php
     }
 
-    private function sanitize_frontend_module_settings($value) {
+    public function sanitize_frontend_module_settings($value) {
+        if (!is_array($value)) {
+            $value = [];
+        }
+
         $default = $this->get_default_frontend_module_settings();
         $allowed_fields = isset($value['allowed_fields']) && is_array($value['allowed_fields'])
             ? array_values(array_intersect($default['fields'], array_map('sanitize_key', $value['allowed_fields'])))
