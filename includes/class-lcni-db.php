@@ -1037,14 +1037,28 @@ class LCNI_DB {
     }
 
     private static function backfill_ohlc_rs_exchange_signals() {
-        $migration_flag = 'lcni_ohlc_rs_exchange_signals_backfilled_v1';
-        if (get_option($migration_flag) === 'yes') {
+        $migration_flag = 'lcni_ohlc_rs_exchange_signals_backfilled_v2';
+        if (get_option($migration_flag) === 'yes' && !self::has_missing_rs_exchange_signal_rows()) {
             return;
         }
 
         self::rebuild_rs_exchange_signals();
         self::log_change('backfill_ohlc_rs_exchange_signals', 'Backfilled rs_exchange_status and rs_exchange_recommend for OHLC rows.');
         update_option($migration_flag, 'yes');
+    }
+
+    private static function has_missing_rs_exchange_signal_rows() {
+        global $wpdb;
+
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $missing_count = (int) $wpdb->get_var(
+            "SELECT COUNT(*)
+            FROM {$ohlc_table}
+            WHERE rs_exchange_status IS NULL
+                OR rs_exchange_recommend IS NULL"
+        );
+
+        return $missing_count > 0;
     }
 
     private static function has_missing_rs_3m_by_exchange_rows() {
@@ -1957,9 +1971,34 @@ class LCNI_DB {
             return 0;
         }
 
+        $event_times = [];
+        $timeframes = [];
+
         foreach ($missing_series as $series) {
             self::rebuild_ohlc_indicators($series['symbol'], $series['timeframe']);
             self::rebuild_ohlc_trading_index($series['symbol'], $series['timeframe']);
+            $timeframes[$series['timeframe']] = true;
+
+            $series_event_times = $wpdb->get_col(
+                $wpdb->prepare(
+                    "SELECT DISTINCT event_time
+                    FROM {$table}
+                    WHERE symbol = %s AND timeframe = %s",
+                    $series['symbol'],
+                    $series['timeframe']
+                )
+            );
+
+            foreach ((array) $series_event_times as $event_time) {
+                $event_times[(int) $event_time] = true;
+            }
+        }
+
+        if (!empty($timeframes)) {
+            self::rebuild_rs_1m_by_exchange(array_keys($event_times), array_keys($timeframes));
+            self::rebuild_rs_1w_by_exchange(array_keys($event_times), array_keys($timeframes));
+            self::rebuild_rs_3m_by_exchange(array_keys($event_times), array_keys($timeframes));
+            self::rebuild_rs_exchange_signals(array_keys($event_times), array_keys($timeframes));
         }
 
         return count($missing_series);
@@ -2232,7 +2271,7 @@ class LCNI_DB {
                             AND cur.rs_1m_by_exchange < %f
                             AND cur.rs_3m_by_exchange < %f
                             THEN 'RS -> Yếu'
-                        ELSE NULL
+                        ELSE 'RS -> Theo dõi'
                     END,
                 cur.rs_exchange_recommend =
                     CASE
