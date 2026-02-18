@@ -6,6 +6,8 @@ if (!defined('ABSPATH')) {
 
 class LCNI_Chart_Shortcodes {
 
+    const VERSION = '1.0.0';
+
     public function __construct() {
         add_action('init', [$this, 'register_shortcodes']);
         add_action('wp_enqueue_scripts', [$this, 'register_assets']);
@@ -21,12 +23,12 @@ class LCNI_Chart_Shortcodes {
         $chart_script_path = LCNI_PATH . 'assets/js/lcni-chart.js';
         $chart_script_version = file_exists($chart_script_path)
             ? (string) filemtime($chart_script_path)
-            : '1.0.0';
+            : self::VERSION;
 
         $sync_script_path = LCNI_PATH . 'assets/js/lcni-stock-sync.js';
         $sync_script_version = file_exists($sync_script_path)
             ? (string) filemtime($sync_script_path)
-            : '1.0.0';
+            : self::VERSION;
 
         wp_register_script(
             'lcni-stock-sync',
@@ -147,18 +149,52 @@ class LCNI_Chart_Shortcodes {
         $query_param = sanitize_key((string) ($args['query_param'] ?? ''));
         $limit = max(10, min(1000, (int) ($args['limit'] ?? 200)));
         $height = max(260, min(1000, (int) ($args['height'] ?? 420)));
+        $admin_config = $this->get_admin_config();
 
         $api_base = rest_url('lcni/v1/candles');
 
         return sprintf(
-            '<div data-lcni-chart data-api-base="%1$s" data-symbol="%2$s" data-fallback-symbol="%3$s" data-query-param="%4$s" data-limit="%5$d" data-main-height="%6$d"></div>',
+            '<div data-lcni-chart data-api-base="%1$s" data-symbol="%2$s" data-fallback-symbol="%3$s" data-query-param="%4$s" data-limit="%5$d" data-main-height="%6$d" data-admin-config="%7$s"></div>',
             esc_url($api_base),
             esc_attr($symbol),
             esc_attr($fallback_symbol),
             esc_attr($query_param),
             $limit,
-            $height
+            $height,
+            esc_attr(wp_json_encode($admin_config))
         );
+    }
+
+    private function get_admin_config() {
+        $default = [
+            'default_mode' => 'line',
+            'allowed_panels' => ['volume', 'macd', 'rsi', 'rs'],
+            'compact_mode' => true,
+        ];
+
+        $saved = get_option('lcni_frontend_settings_chart', []);
+        if (!is_array($saved)) {
+            return $default;
+        }
+
+        $allowed_panels = isset($saved['allowed_panels']) && is_array($saved['allowed_panels'])
+            ? array_values(array_intersect($default['allowed_panels'], array_map('sanitize_key', $saved['allowed_panels'])))
+            : $default['allowed_panels'];
+
+        if (empty($allowed_panels)) {
+            $allowed_panels = $default['allowed_panels'];
+        }
+
+        $mode = sanitize_key((string) ($saved['default_mode'] ?? $default['default_mode']));
+        if (!in_array($mode, ['line', 'candlestick'], true)) {
+            $mode = $default['default_mode'];
+        }
+
+        return [
+            'default_mode' => $mode,
+            'allowed_panels' => $allowed_panels,
+            'compact_mode' => isset($saved['compact_mode']) ? (bool) $saved['compact_mode'] : $default['compact_mode'],
+        ];
     }
 
     private function sanitize_symbol($symbol) {

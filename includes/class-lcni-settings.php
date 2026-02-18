@@ -35,6 +35,7 @@ class LCNI_Settings {
         register_setting('lcni_settings_group', 'lcni_update_interval_minutes', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_update_interval'], 'default' => 5]);
         register_setting('lcni_settings_group', 'lcni_frontend_settings_signals', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_frontend_module_settings'], 'default' => []]);
         register_setting('lcni_settings_group', 'lcni_frontend_settings_overview', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_frontend_module_settings'], 'default' => []]);
+        register_setting('lcni_settings_group', 'lcni_frontend_settings_chart', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_frontend_chart_settings'], 'default' => []]);
     }
 
     public function sanitize_timeframe($value) {
@@ -224,23 +225,32 @@ class LCNI_Settings {
             }
         } elseif ($action === 'save_frontend_settings') {
             $module = isset($_POST['lcni_frontend_module']) ? sanitize_key(wp_unslash($_POST['lcni_frontend_module'])) : '';
-            $allowed_modules = ['signals', 'overview'];
+            $allowed_modules = ['signals', 'overview', 'chart'];
 
             if (!in_array($module, $allowed_modules, true)) {
                 $this->set_notice('error', 'Module frontend không hợp lệ.');
             } else {
-                $input = [
-                    'allowed_fields' => isset($_POST['lcni_frontend_allowed_fields']) ? (array) wp_unslash($_POST['lcni_frontend_allowed_fields']) : [],
-                    'styles' => [
-                        'label_color' => isset($_POST['lcni_frontend_style_label_color']) ? wp_unslash($_POST['lcni_frontend_style_label_color']) : '',
-                        'value_color' => isset($_POST['lcni_frontend_style_value_color']) ? wp_unslash($_POST['lcni_frontend_style_value_color']) : '',
-                        'item_background' => isset($_POST['lcni_frontend_style_item_background']) ? wp_unslash($_POST['lcni_frontend_style_item_background']) : '',
-                        'label_font_size' => isset($_POST['lcni_frontend_style_label_font_size']) ? wp_unslash($_POST['lcni_frontend_style_label_font_size']) : '',
-                        'value_font_size' => isset($_POST['lcni_frontend_style_value_font_size']) ? wp_unslash($_POST['lcni_frontend_style_value_font_size']) : '',
-                    ],
-                ];
+                if ($module === 'chart') {
+                    $input = [
+                        'allowed_panels' => isset($_POST['lcni_frontend_allowed_panels']) ? (array) wp_unslash($_POST['lcni_frontend_allowed_panels']) : [],
+                        'default_mode' => isset($_POST['lcni_frontend_default_mode']) ? wp_unslash($_POST['lcni_frontend_default_mode']) : '',
+                        'compact_mode' => isset($_POST['lcni_frontend_compact_mode']) ? wp_unslash($_POST['lcni_frontend_compact_mode']) : '',
+                    ];
+                    update_option('lcni_frontend_settings_chart', $this->sanitize_frontend_chart_settings($input));
+                } else {
+                    $input = [
+                        'allowed_fields' => isset($_POST['lcni_frontend_allowed_fields']) ? (array) wp_unslash($_POST['lcni_frontend_allowed_fields']) : [],
+                        'styles' => [
+                            'label_color' => isset($_POST['lcni_frontend_style_label_color']) ? wp_unslash($_POST['lcni_frontend_style_label_color']) : '',
+                            'value_color' => isset($_POST['lcni_frontend_style_value_color']) ? wp_unslash($_POST['lcni_frontend_style_value_color']) : '',
+                            'item_background' => isset($_POST['lcni_frontend_style_item_background']) ? wp_unslash($_POST['lcni_frontend_style_item_background']) : '',
+                            'label_font_size' => isset($_POST['lcni_frontend_style_label_font_size']) ? wp_unslash($_POST['lcni_frontend_style_label_font_size']) : '',
+                            'value_font_size' => isset($_POST['lcni_frontend_style_value_font_size']) ? wp_unslash($_POST['lcni_frontend_style_value_font_size']) : '',
+                        ],
+                    ];
 
-                update_option('lcni_frontend_settings_' . $module, $this->sanitize_frontend_module_settings($input));
+                    update_option('lcni_frontend_settings_' . $module, $this->sanitize_frontend_module_settings($input));
+                }
                 $this->set_notice('success', 'Đã lưu Frontend Settings cho module ' . $module . '.');
             }
         }
@@ -250,7 +260,7 @@ class LCNI_Settings {
         $redirect_page = in_array($redirect_page, ['lcni-settings', 'lcni-data-viewer'], true) ? $redirect_page : 'lcni-settings';
         $redirect_url = admin_url('admin.php?page=' . $redirect_page);
 
-        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange', 'lcni-tab-frontend-signals', 'lcni-tab-frontend-overview'], true)) {
+        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange', 'lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart'], true)) {
             $redirect_url = add_query_arg('tab', $redirect_tab, $redirect_url);
         }
 
@@ -479,7 +489,7 @@ class LCNI_Settings {
 
         $active_tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'general';
         $rule_sub_tabs = ['lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange'];
-        $frontend_sub_tabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview'];
+        $frontend_sub_tabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart'];
         if (in_array($active_tab, $rule_sub_tabs, true)) {
             $active_tab = 'rule_settings';
         }
@@ -1090,6 +1100,41 @@ class LCNI_Settings {
         ];
     }
 
+
+    public function sanitize_frontend_chart_settings($value) {
+        if (!is_array($value)) {
+            $value = [];
+        }
+
+        $default = [
+            'default_mode' => 'line',
+            'allowed_panels' => ['volume', 'macd', 'rsi', 'rs'],
+            'compact_mode' => true,
+        ];
+
+        $allowed_panels = isset($value['allowed_panels']) && is_array($value['allowed_panels'])
+            ? array_values(array_intersect($default['allowed_panels'], array_map('sanitize_key', $value['allowed_panels'])))
+            : $default['allowed_panels'];
+
+        if (empty($allowed_panels)) {
+            $allowed_panels = $default['allowed_panels'];
+        }
+
+        $mode = sanitize_key((string) ($value['default_mode'] ?? $default['default_mode']));
+        if (!in_array($mode, ['line', 'candlestick'], true)) {
+            $mode = $default['default_mode'];
+        }
+
+        $compact_raw = $value['compact_mode'] ?? $default['compact_mode'];
+        $compact_mode = in_array($compact_raw, [1, '1', true, 'true', 'yes', 'on'], true);
+
+        return [
+            'default_mode' => $mode,
+            'allowed_panels' => $allowed_panels,
+            'compact_mode' => $compact_mode,
+        ];
+    }
+
     private function sanitize_frontend_font_size($size, $fallback) {
         $value = (int) $size;
 
@@ -1126,6 +1171,7 @@ class LCNI_Settings {
         ];
         $signals = $this->sanitize_frontend_module_settings(get_option('lcni_frontend_settings_signals', ['allowed_fields' => array_keys($signals_labels)]));
         $overview = $this->sanitize_frontend_module_settings(get_option('lcni_frontend_settings_overview', ['allowed_fields' => array_keys($overview_labels)]));
+        $chart = $this->sanitize_frontend_chart_settings(get_option('lcni_frontend_settings_chart', []));
         ?>
         <style>
             .lcni-sub-tab-nav { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; border-bottom: 1px solid #dcdcde; }
@@ -1140,9 +1186,11 @@ class LCNI_Settings {
         <div class="lcni-sub-tab-nav" id="lcni-front-sub-tabs">
             <button type="button" data-sub-tab="lcni-tab-frontend-signals">LCNi Signals</button>
             <button type="button" data-sub-tab="lcni-tab-frontend-overview">Stock Overview</button>
+            <button type="button" data-sub-tab="lcni-tab-frontend-chart">Stock Chart</button>
         </div>
         <?php $this->render_frontend_module_form('signals', 'lcni-tab-frontend-signals', $signals_labels, $signals); ?>
         <?php $this->render_frontend_module_form('overview', 'lcni-tab-frontend-overview', $overview_labels, $overview); ?>
+        <?php $this->render_frontend_chart_form('chart', 'lcni-tab-frontend-chart', $chart); ?>
         <script>
             (function() {
                 const nav = document.getElementById('lcni-front-sub-tabs');
@@ -1153,13 +1201,14 @@ class LCNI_Settings {
                 const activate = function(tabId){
                     buttons.forEach((btn) => btn.classList.toggle('active', btn.getAttribute('data-sub-tab') === tabId));
                     panes.forEach((pane) => {
-                        if (pane.id === 'lcni-tab-frontend-signals' || pane.id === 'lcni-tab-frontend-overview') {
+                        if (pane.id === 'lcni-tab-frontend-signals' || pane.id === 'lcni-tab-frontend-overview' || pane.id === 'lcni-tab-frontend-chart') {
                             pane.classList.toggle('active', pane.id === tabId);
                         }
                     });
                 };
                 buttons.forEach((btn) => btn.addEventListener('click', () => activate(btn.getAttribute('data-sub-tab'))));
-                activate(current === 'lcni-tab-frontend-overview' ? 'lcni-tab-frontend-overview' : 'lcni-tab-frontend-signals');
+                const validTabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart'];
+                activate(validTabs.includes(current) ? current : 'lcni-tab-frontend-signals');
             })();
         </script>
         <?php
@@ -1186,6 +1235,52 @@ class LCNI_Settings {
                     <tr><th>Màu nền item</th><td><input type="color" name="lcni_frontend_style_item_background" value="<?php echo esc_attr((string) ($settings['styles']['item_background'] ?? '#f9fafb')); ?>"></td></tr>
                     <tr><th>Cỡ chữ label</th><td><input type="number" min="10" max="40" name="lcni_frontend_style_label_font_size" value="<?php echo esc_attr((string) ($settings['styles']['label_font_size'] ?? 12)); ?>"> px</td></tr>
                     <tr><th>Cỡ chữ value</th><td><input type="number" min="10" max="40" name="lcni_frontend_style_value_font_size" value="<?php echo esc_attr((string) ($settings['styles']['value_font_size'] ?? 14)); ?>"> px</td></tr>
+                </tbody></table>
+                <?php submit_button('Lưu Frontend Settings'); ?>
+            </form>
+        </div>
+        <?php
+    }
+
+
+    private function render_frontend_chart_form($module, $tab_id, $settings) {
+        $allowed_panels = (array) ($settings['allowed_panels'] ?? []);
+        $default_mode = (string) ($settings['default_mode'] ?? 'line');
+        $compact_mode = !empty($settings['compact_mode']);
+        $panel_labels = [
+            'volume' => 'Volume',
+            'macd' => 'MACD',
+            'rsi' => 'RSI',
+            'rs' => 'RS by LCNi',
+        ];
+        ?>
+        <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
+                <h3>Stock Chart</h3>
+                <p>Chọn panel cho phép user bật/tắt, kiểu chart mặc định và chế độ hiển thị gọn.</p>
+                <div class="lcni-front-grid">
+                    <?php foreach ($panel_labels as $key => $label) : ?>
+                        <label><input type="checkbox" name="lcni_frontend_allowed_panels[]" value="<?php echo esc_attr($key); ?>" <?php checked(in_array($key, $allowed_panels, true)); ?>> <?php echo esc_html($label); ?></label>
+                    <?php endforeach; ?>
+                </div>
+                <table class="form-table" role="presentation"><tbody>
+                    <tr>
+                        <th>Kiểu chart mặc định</th>
+                        <td>
+                            <select name="lcni_frontend_default_mode">
+                                <option value="line" <?php selected($default_mode, 'line'); ?>>Line</option>
+                                <option value="candlestick" <?php selected($default_mode, 'candlestick'); ?>>Candlestick</option>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Compact mode</th>
+                        <td><label><input type="checkbox" name="lcni_frontend_compact_mode" value="1" <?php checked($compact_mode); ?>> Bật chế độ gọn (đưa controls vào vùng chart)</label></td>
+                    </tr>
                 </tbody></table>
                 <?php submit_button('Lưu Frontend Settings'); ?>
             </form>

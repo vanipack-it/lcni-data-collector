@@ -87,8 +87,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const buildField = (label, value, styles) => {
     const item = document.createElement("div");
-    item.style.padding = "8px";
+    item.style.padding = "8px 10px";
     item.style.borderRadius = "6px";
+    item.style.minHeight = "56px";
     item.style.background = styles.item_background || "#f9fafb";
 
     const labelElement = document.createElement("small");
@@ -154,13 +155,14 @@ document.addEventListener("DOMContentLoaded", () => {
         container.innerHTML = "";
         const wrap = document.createElement("div");
         wrap.style.border = "1px solid #e5e7eb";
-        wrap.style.padding = "12px";
+        wrap.style.padding = "10px";
         wrap.style.borderRadius = "8px";
 
         const header = document.createElement("div");
         header.style.display = "flex";
         header.style.justifyContent = "space-between";
         header.style.alignItems = "center";
+        header.style.gap = "8px";
 
         const title = document.createElement("strong");
         title.textContent = `${payload.symbol} · LCNi Signals v${container.dataset.version || "1.0.0"}`;
@@ -185,6 +187,7 @@ document.addEventListener("DOMContentLoaded", () => {
           const label = document.createElement("label");
           label.style.display = "inline-flex";
           label.style.marginRight = "10px";
+          label.style.marginBottom = "4px";
           label.style.gap = "5px";
 
           const checkbox = document.createElement("input");
@@ -226,9 +229,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const grid = document.createElement("div");
         grid.style.display = "grid";
-        grid.style.gridTemplateColumns = "repeat(auto-fit,minmax(220px,1fr))";
-        grid.style.gap = "10px";
-        grid.style.marginTop = "10px";
+        grid.style.gridTemplateColumns = "repeat(auto-fit,minmax(180px,1fr))";
+        grid.style.gap = "8px";
+        grid.style.marginTop = "8px";
 
         selectedFields.forEach((key) => {
           grid.appendChild(buildField(labels[key], payload[key], styles));
