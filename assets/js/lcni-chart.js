@@ -20,6 +20,19 @@ document.addEventListener("DOMContentLoaded", async () => {
       return /^[A-Z0-9._-]{1,15}$/.test(symbol) ? symbol : "";
     };
 
+  const parseAdminConfig = (rawConfig) => {
+    if (!rawConfig) {
+      return {};
+    }
+
+    try {
+      const parsed = JSON.parse(rawConfig);
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (error) {
+      return {};
+    }
+  };
+
   const stockSync = stockSyncUtils
     ? stockSyncUtils.createStockSync()
     : {
@@ -36,6 +49,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     const queryParam = container.dataset.queryParam;
     const fixedSymbol = sanitizeSymbol(container.dataset.symbol);
     const fallbackSymbol = sanitizeSymbol(container.dataset.fallbackSymbol);
+    const adminConfig = parseAdminConfig(container.dataset.adminConfig);
+
+    const allPanels = ["volume", "macd", "rsi", "rs"];
+    const allowedPanels = Array.isArray(adminConfig.allowed_panels) && adminConfig.allowed_panels.length
+      ? adminConfig.allowed_panels.filter((panel) => allPanels.includes(panel))
+      : allPanels;
+    const compactMode = adminConfig.compact_mode !== false;
 
     stockSync.configureQueryParam(queryParam || "symbol");
 
@@ -52,12 +72,35 @@ document.addEventListener("DOMContentLoaded", async () => {
     const buildShell = (symbol) => {
       container.innerHTML = "";
 
+      const root = document.createElement("div");
+      root.style.border = "1px solid #e5e7eb";
+      root.style.borderRadius = "8px";
+      root.style.padding = "10px";
+      root.style.background = "#fff";
+
+      const mainWrapHolder = document.createElement("div");
+      mainWrapHolder.style.position = "relative";
+
       const controls = document.createElement("div");
       controls.style.display = "flex";
       controls.style.flexWrap = "wrap";
-      controls.style.gap = "12px";
-      controls.style.marginBottom = "12px";
+      controls.style.gap = "8px";
       controls.style.alignItems = "center";
+      controls.style.padding = "6px 8px";
+      controls.style.border = "1px solid rgba(229, 231, 235, 0.95)";
+      controls.style.borderRadius = "6px";
+      controls.style.background = "rgba(255,255,255,0.94)";
+      controls.style.zIndex = "5";
+      controls.style.fontSize = "12px";
+
+      if (compactMode) {
+        controls.style.position = "absolute";
+        controls.style.top = "8px";
+        controls.style.left = "8px";
+      } else {
+        controls.style.position = "relative";
+        controls.style.marginBottom = "10px";
+      }
 
       const title = document.createElement("strong");
       title.textContent = symbol;
@@ -67,26 +110,27 @@ document.addEventListener("DOMContentLoaded", async () => {
       const mainHeight = Number(container.dataset.mainHeight || 420);
       mainChartWrap.style.height = `${Number.isFinite(mainHeight) ? mainHeight : 420}px`;
 
-      const panelWrap = () => {
+      mainWrapHolder.appendChild(mainChartWrap);
+      mainWrapHolder.appendChild(controls);
+
+      const panelWrap = (height = 160) => {
         const wrap = document.createElement("div");
-        wrap.style.height = "160px";
+        wrap.style.height = `${height}px`;
         wrap.style.marginTop = "8px";
         return wrap;
       };
 
-      const volumeWrap = panelWrap();
-      const macdWrap = panelWrap();
-      macdWrap.style.height = "180px";
-      const rsiWrap = panelWrap();
-      const rsWrap = panelWrap();
-      rsWrap.style.height = "180px";
+      const volumeWrap = panelWrap(150);
+      const macdWrap = panelWrap(170);
+      const rsiWrap = panelWrap(150);
+      const rsWrap = panelWrap(170);
 
-      container.appendChild(controls);
-      container.appendChild(mainChartWrap);
-      container.appendChild(volumeWrap);
-      container.appendChild(macdWrap);
-      container.appendChild(rsiWrap);
-      container.appendChild(rsWrap);
+      root.appendChild(mainWrapHolder);
+      root.appendChild(volumeWrap);
+      root.appendChild(macdWrap);
+      root.appendChild(rsiWrap);
+      root.appendChild(rsWrap);
+      container.appendChild(root);
 
       return { controls, mainChartWrap, volumeWrap, macdWrap, rsiWrap, rsWrap };
     };
@@ -95,7 +139,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       const label = document.createElement("label");
       label.style.display = "inline-flex";
       label.style.alignItems = "center";
-      label.style.gap = "6px";
+      label.style.gap = "4px";
       label.style.cursor = "pointer";
 
       const input = document.createElement("input");
@@ -142,7 +186,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         const commonOptions = {
           autoSize: true,
           layout: { background: { color: "#fff" }, textColor: "#333" },
-          grid: { vertLines: { color: "#efefef" }, horzLines: { color: "#efefef" } }
+          grid: { vertLines: { color: "#efefef" }, horzLines: { color: "#efefef" } },
+          rightPriceScale: { borderColor: "#e5e7eb" }
         };
 
         const mainChart = LightweightCharts.createChart(mainChartWrap, commonOptions);
@@ -182,12 +227,15 @@ document.addEventListener("DOMContentLoaded", async () => {
         rsChart.addLineSeries({ color: "#f59e0b", lineWidth: 2 }).setData(rs1mData);
         rsChart.addLineSeries({ color: "#ef4444", lineWidth: 2 }).setData(rs3mData);
 
-        let chartMode = "line";
+        let chartMode = adminConfig.default_mode === "candlestick" ? "candlestick" : "line";
         const modeSelect = document.createElement("select");
         [{ value: "line", label: "Line" }, { value: "candlestick", label: "Candlestick" }].forEach((mode) => {
           const option = document.createElement("option");
           option.value = mode.value;
           option.textContent = mode.label;
+          if (mode.value === chartMode) {
+            option.selected = true;
+          }
           modeSelect.appendChild(option);
         });
 
@@ -203,18 +251,39 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         const chartModeWrap = document.createElement("label");
         chartModeWrap.style.display = "inline-flex";
-        chartModeWrap.style.gap = "6px";
+        chartModeWrap.style.gap = "4px";
         chartModeWrap.style.alignItems = "center";
-        chartModeWrap.appendChild(Object.assign(document.createElement("span"), { textContent: "Kiểu chart" }));
+        chartModeWrap.appendChild(Object.assign(document.createElement("span"), { textContent: "Kiểu" }));
         chartModeWrap.appendChild(modeSelect);
         controls.appendChild(chartModeWrap);
 
-        controls.appendChild(createCheckbox("Volume", true, (checked) => { volumeWrap.style.display = checked ? "block" : "none"; }));
-        controls.appendChild(createCheckbox("MACD", true, (checked) => { macdWrap.style.display = checked ? "block" : "none"; }));
-        controls.appendChild(createCheckbox("RSI", true, (checked) => { rsiWrap.style.display = checked ? "block" : "none"; }));
-        controls.appendChild(createCheckbox("RS by LCNi", true, (checked) => { rsWrap.style.display = checked ? "block" : "none"; }));
+        const panels = {
+          volume: { label: "Volume", wrap: volumeWrap, chart: volumeChart },
+          macd: { label: "MACD", wrap: macdWrap, chart: macdChart },
+          rsi: { label: "RSI", wrap: rsiWrap, chart: rsiChart },
+          rs: { label: "RS", wrap: rsWrap, chart: rsChart }
+        };
 
-        syncMode();
+        const panelVisibility = {
+          volume: allowedPanels.includes("volume"),
+          macd: allowedPanels.includes("macd"),
+          rsi: allowedPanels.includes("rsi") && !!rsiData.length,
+          rs: allowedPanels.includes("rs") && (!!rs1wData.length || !!rs1mData.length || !!rs3mData.length)
+        };
+
+        Object.keys(panels).forEach((key) => {
+          panels[key].wrap.style.display = panelVisibility[key] ? "block" : "none";
+          if (!allowedPanels.includes(key)) {
+            return;
+          }
+          controls.appendChild(createCheckbox(panels[key].label, panelVisibility[key], (checked) => {
+            panelVisibility[key] = checked;
+            panels[key].wrap.style.display = checked ? "block" : "none";
+            applySharedTimeAxis();
+          }));
+        });
+
+        const charts = [mainChart, volumeChart, macdChart, rsiChart, rsChart];
 
         const syncTimeScale = (sourceChart, targetCharts) => {
           sourceChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
@@ -231,15 +300,19 @@ document.addEventListener("DOMContentLoaded", async () => {
         syncTimeScale(rsiChart, [mainChart, volumeChart, macdChart, rsChart]);
         syncTimeScale(rsChart, [mainChart, volumeChart, macdChart, rsiChart]);
 
-        [mainChart, volumeChart, macdChart, rsiChart, rsChart].forEach((chart) => chart.timeScale().fitContent());
+        const applySharedTimeAxis = () => {
+          const activePanels = ["volume", "macd", "rsi", "rs"].filter((key) => panelVisibility[key]);
+          const lastPanel = activePanels.length ? activePanels[activePanels.length - 1] : null;
 
-        if (!rsiData.length) {
-          rsiWrap.style.display = "none";
-        }
+          mainChart.applyOptions({ timeScale: { visible: activePanels.length === 0 } });
+          Object.keys(panels).forEach((key) => {
+            panels[key].chart.applyOptions({ timeScale: { visible: key === lastPanel } });
+          });
+        };
 
-        if (!rs1wData.length && !rs1mData.length && !rs3mData.length) {
-          rsWrap.style.display = "none";
-        }
+        syncMode();
+        applySharedTimeAxis();
+        charts.forEach((chart) => chart.timeScale().fitContent());
       } catch (error) {
         console.error(error);
         container.textContent = "NO DATA";

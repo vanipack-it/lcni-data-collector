@@ -147,7 +147,7 @@ document.addEventListener("DOMContentLoaded", () => {
         container.innerHTML = "";
         const wrap = document.createElement("div");
         wrap.style.border = "1px solid #e5e7eb";
-        wrap.style.padding = "12px";
+        wrap.style.padding = "10px";
         wrap.style.borderRadius = "8px";
 
         const header = document.createElement("div");
@@ -166,7 +166,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const panel = document.createElement("div");
         panel.style.display = "none";
-        panel.style.marginTop = "8px";
+        panel.style.marginTop = "6px";
         panel.style.padding = "8px";
         panel.style.border = "1px dashed #d1d5db";
 
@@ -212,13 +212,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const grid = document.createElement("div");
         grid.style.display = "grid";
-        grid.style.gridTemplateColumns = "repeat(auto-fit,minmax(220px,1fr))";
-        grid.style.gap = "10px";
-        grid.style.marginTop = "10px";
+        grid.style.gridTemplateColumns = "repeat(auto-fit,minmax(180px,1fr))";
+        grid.style.gap = "8px";
+        grid.style.marginTop = "8px";
 
         selectedFields.forEach((field) => {
           const item = document.createElement("div");
-          item.style.padding = "8px";
+          item.style.padding = "8px 10px";
+          item.style.minHeight = "56px";
           item.style.background = styles.item_background || "#f9fafb";
           item.style.borderRadius = "6px";
 
@@ -240,7 +241,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
 
         const historyTitle = document.createElement("div");
-        historyTitle.style.marginTop = "10px";
+        historyTitle.style.marginTop = "8px";
         historyTitle.innerHTML = "<small>Lịch sử đổi symbol (session)</small>";
 
         const historyList = document.createElement("ul");
