@@ -238,6 +238,22 @@ class LCNI_Settings {
                     ];
                     update_option('lcni_frontend_settings_chart', $this->sanitize_frontend_chart_settings($input));
                 } else {
+                    $rule_fields = isset($_POST['lcni_frontend_rule_field']) ? (array) wp_unslash($_POST['lcni_frontend_rule_field']) : [];
+                    $rule_operators = isset($_POST['lcni_frontend_rule_operator']) ? (array) wp_unslash($_POST['lcni_frontend_rule_operator']) : [];
+                    $rule_values = isset($_POST['lcni_frontend_rule_value']) ? (array) wp_unslash($_POST['lcni_frontend_rule_value']) : [];
+                    $rule_colors = isset($_POST['lcni_frontend_rule_color']) ? (array) wp_unslash($_POST['lcni_frontend_rule_color']) : [];
+                    $value_rules = [];
+
+                    $rule_count = max(count($rule_fields), count($rule_operators), count($rule_values), count($rule_colors));
+                    for ($i = 0; $i < $rule_count; $i++) {
+                        $value_rules[] = [
+                            'field' => $rule_fields[$i] ?? '',
+                            'operator' => $rule_operators[$i] ?? '',
+                            'value' => $rule_values[$i] ?? '',
+                            'color' => $rule_colors[$i] ?? '',
+                        ];
+                    }
+
                     $input = [
                         'allowed_fields' => isset($_POST['lcni_frontend_allowed_fields']) ? (array) wp_unslash($_POST['lcni_frontend_allowed_fields']) : [],
                         'styles' => [
@@ -246,6 +262,7 @@ class LCNI_Settings {
                             'item_background' => isset($_POST['lcni_frontend_style_item_background']) ? wp_unslash($_POST['lcni_frontend_style_item_background']) : '',
                             'label_font_size' => isset($_POST['lcni_frontend_style_label_font_size']) ? wp_unslash($_POST['lcni_frontend_style_label_font_size']) : '',
                             'value_font_size' => isset($_POST['lcni_frontend_style_value_font_size']) ? wp_unslash($_POST['lcni_frontend_style_value_font_size']) : '',
+                            'value_rules' => $value_rules,
                         ],
                     ];
 
@@ -1096,6 +1113,7 @@ class LCNI_Settings {
                 'item_background' => sanitize_hex_color((string) ($styles['item_background'] ?? $default['styles']['item_background'])) ?: $default['styles']['item_background'],
                 'label_font_size' => $this->sanitize_frontend_font_size($styles['label_font_size'] ?? $default['styles']['label_font_size'], $default['styles']['label_font_size']),
                 'value_font_size' => $this->sanitize_frontend_font_size($styles['value_font_size'] ?? $default['styles']['value_font_size'], $default['styles']['value_font_size']),
+                'value_rules' => $this->sanitize_frontend_value_rules($styles['value_rules'] ?? [], $default['fields']),
             ],
         ];
     }
@@ -1141,6 +1159,47 @@ class LCNI_Settings {
         return $value >= 10 && $value <= 40 ? $value : (int) $fallback;
     }
 
+    private function sanitize_frontend_value_rules($rules, $allowed_fields) {
+        if (!is_array($rules)) {
+            return [];
+        }
+
+        $operators = ['equals', 'contains', 'gt', 'gte', 'lt', 'lte'];
+        $normalized = [];
+
+        foreach ($rules as $rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+
+            $field = sanitize_key((string) ($rule['field'] ?? ''));
+            $operator = sanitize_key((string) ($rule['operator'] ?? ''));
+            $value = sanitize_text_field((string) ($rule['value'] ?? ''));
+            $color = sanitize_hex_color((string) ($rule['color'] ?? ''));
+
+            if ($field === '' || $field === 'all') {
+                $field = '*';
+            }
+
+            if ($field !== '*' && !in_array($field, $allowed_fields, true)) {
+                continue;
+            }
+
+            if (!in_array($operator, $operators, true) || $value === '' || !$color) {
+                continue;
+            }
+
+            $normalized[] = [
+                'field' => $field,
+                'operator' => $operator,
+                'value' => $value,
+                'color' => $color,
+            ];
+        }
+
+        return array_slice($normalized, 0, 50);
+    }
+
     private function get_default_frontend_module_settings() {
         return [
             'fields' => ['xay_nen', 'xay_nen_count_30', 'nen_type', 'pha_nen', 'tang_gia_kem_vol', 'smart_money', 'rs_exchange_status', 'rs_exchange_recommend', 'rs_recommend_status', 'symbol', 'exchange', 'icb2_name', 'eps', 'eps_1y_pct', 'dt_1y_pct', 'bien_ln_gop', 'bien_ln_rong', 'roe', 'de_ratio', 'pe_ratio', 'pb_ratio', 'ev_ebitda', 'tcbs_khuyen_nghi', 'co_tuc_pct', 'tc_rating', 'so_huu_nn_pct', 'tien_mat_rong_von_hoa', 'tien_mat_rong_tong_tai_san', 'loi_nhuan_4_quy_gan_nhat', 'tang_truong_dt_quy_gan_nhat', 'tang_truong_dt_quy_gan_nhi', 'tang_truong_ln_quy_gan_nhat', 'tang_truong_ln_quy_gan_nhi'],
@@ -1150,6 +1209,7 @@ class LCNI_Settings {
                 'item_background' => '#f9fafb',
                 'label_font_size' => 12,
                 'value_font_size' => 14,
+                'value_rules' => [],
             ],
         ];
     }
@@ -1215,6 +1275,8 @@ class LCNI_Settings {
     }
 
     private function render_frontend_module_form($module, $tab_id, $labels, $settings) {
+        $value_rules = isset($settings['styles']['value_rules']) && is_array($settings['styles']['value_rules']) ? $settings['styles']['value_rules'] : [];
+        $rule_rows = max(5, count($value_rules) + 1);
         ?>
         <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
             <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
@@ -1235,6 +1297,54 @@ class LCNI_Settings {
                     <tr><th>Màu nền item</th><td><input type="color" name="lcni_frontend_style_item_background" value="<?php echo esc_attr((string) ($settings['styles']['item_background'] ?? '#f9fafb')); ?>"></td></tr>
                     <tr><th>Cỡ chữ label</th><td><input type="number" min="10" max="40" name="lcni_frontend_style_label_font_size" value="<?php echo esc_attr((string) ($settings['styles']['label_font_size'] ?? 12)); ?>"> px</td></tr>
                     <tr><th>Cỡ chữ value</th><td><input type="number" min="10" max="40" name="lcni_frontend_style_value_font_size" value="<?php echo esc_attr((string) ($settings['styles']['value_font_size'] ?? 14)); ?>"> px</td></tr>
+                    <tr>
+                        <th>Rule màu theo value</th>
+                        <td>
+                            <p class="description">Thiết lập màu value theo điều kiện. Chọn "Tất cả fields" để áp dụng cho mọi field.</p>
+                            <table style="border-collapse:collapse; width:100%; max-width:760px;">
+                                <thead>
+                                    <tr>
+                                        <th style="text-align:left; padding:4px;">Field</th>
+                                        <th style="text-align:left; padding:4px;">Điều kiện</th>
+                                        <th style="text-align:left; padding:4px;">Giá trị so sánh</th>
+                                        <th style="text-align:left; padding:4px;">Màu</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php for ($i = 0; $i < $rule_rows; $i++) :
+                                        $rule = $value_rules[$i] ?? [];
+                                        $rule_field = (string) ($rule['field'] ?? '*');
+                                        $rule_operator = (string) ($rule['operator'] ?? 'equals');
+                                        $rule_value = (string) ($rule['value'] ?? '');
+                                        $rule_color = (string) ($rule['color'] ?? '#111827');
+                                        ?>
+                                        <tr>
+                                            <td style="padding:4px;">
+                                                <select name="lcni_frontend_rule_field[]">
+                                                    <option value="*" <?php selected($rule_field, '*'); ?>>Tất cả fields</option>
+                                                    <?php foreach ($labels as $field_key => $field_label) : ?>
+                                                        <option value="<?php echo esc_attr($field_key); ?>" <?php selected($rule_field, $field_key); ?>><?php echo esc_html($field_label); ?></option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                            </td>
+                                            <td style="padding:4px;">
+                                                <select name="lcni_frontend_rule_operator[]">
+                                                    <option value="equals" <?php selected($rule_operator, 'equals'); ?>>Bằng (=)</option>
+                                                    <option value="contains" <?php selected($rule_operator, 'contains'); ?>>Chứa</option>
+                                                    <option value="gt" <?php selected($rule_operator, 'gt'); ?>>Lớn hơn (&gt;)</option>
+                                                    <option value="gte" <?php selected($rule_operator, 'gte'); ?>>Lớn hơn hoặc bằng (&ge;)</option>
+                                                    <option value="lt" <?php selected($rule_operator, 'lt'); ?>>Nhỏ hơn (&lt;)</option>
+                                                    <option value="lte" <?php selected($rule_operator, 'lte'); ?>>Nhỏ hơn hoặc bằng (&le;)</option>
+                                                </select>
+                                            </td>
+                                            <td style="padding:4px;"><input type="text" name="lcni_frontend_rule_value[]" value="<?php echo esc_attr($rule_value); ?>" placeholder="Ví dụ: 0, MUA, breakout"></td>
+                                            <td style="padding:4px;"><input type="color" name="lcni_frontend_rule_color[]" value="<?php echo esc_attr($rule_color); ?>"></td>
+                                        </tr>
+                                    <?php endfor; ?>
+                                </tbody>
+                            </table>
+                        </td>
+                    </tr>
                 </tbody></table>
                 <?php submit_button('Lưu Frontend Settings'); ?>
             </form>

@@ -168,6 +168,7 @@ class LCNI_Stock_Signals_Shortcodes {
                 'item_background' => $this->sanitize_hex_color($styles['item_background'] ?? $default['styles']['item_background'], $default['styles']['item_background']),
                 'label_font_size' => $this->sanitize_font_size($styles['label_font_size'] ?? $default['styles']['label_font_size'], $default['styles']['label_font_size']),
                 'value_font_size' => $this->sanitize_font_size($styles['value_font_size'] ?? $default['styles']['value_font_size'], $default['styles']['value_font_size']),
+                'value_rules' => $this->sanitize_value_rules($styles['value_rules'] ?? [], $default['allowed_fields']),
             ],
         ];
     }
@@ -181,8 +182,50 @@ class LCNI_Stock_Signals_Shortcodes {
                 'item_background' => '#f9fafb',
                 'label_font_size' => 12,
                 'value_font_size' => 14,
+                'value_rules' => [],
             ],
         ];
+    }
+
+    private function sanitize_value_rules($rules, $allowed_fields) {
+        if (!is_array($rules)) {
+            return [];
+        }
+
+        $operators = ['equals', 'contains', 'gt', 'gte', 'lt', 'lte'];
+        $normalized = [];
+
+        foreach ($rules as $rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+
+            $field = sanitize_key((string) ($rule['field'] ?? ''));
+            $operator = sanitize_key((string) ($rule['operator'] ?? ''));
+            $value = sanitize_text_field((string) ($rule['value'] ?? ''));
+            $color = sanitize_hex_color((string) ($rule['color'] ?? ''));
+
+            if ($field === '') {
+                $field = '*';
+            }
+
+            if ($field !== '*' && !in_array($field, $allowed_fields, true)) {
+                continue;
+            }
+
+            if (!in_array($operator, $operators, true) || $value === '' || !$color) {
+                continue;
+            }
+
+            $normalized[] = [
+                'field' => $field,
+                'operator' => $operator,
+                'value' => $value,
+                'color' => $color,
+            ];
+        }
+
+        return array_slice($normalized, 0, 50);
     }
 
     private function sanitize_hex_color($color, $fallback) {
