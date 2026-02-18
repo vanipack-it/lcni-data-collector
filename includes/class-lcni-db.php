@@ -2356,20 +2356,20 @@ class LCNI_DB {
         $sql = "UPDATE {$table}
             SET rs_recommend_status =
                 CASE
-                    WHEN LOWER(REPLACE(IFNULL(rs_exchange_status, ''), ' ', '')) = 'rs->vaosongmanh'
-                        AND LOWER(REPLACE(IFNULL(rs_exchange_recommend, ''), ' ', '')) = 'rs->goiymua'
+                    WHEN LOWER(REPLACE(IFNULL(rs_exchange_status, ''), ' ', '')) IN ('rs->vaosongmanh', 'rs->vàosóngmạnh')
+                        AND LOWER(REPLACE(IFNULL(rs_exchange_recommend, ''), ' ', '')) IN ('rs->goiymua', 'rs->gợiýmua')
                         THEN 'Dẫn dắt – Vào sóng sớm'
-                    WHEN LOWER(REPLACE(IFNULL(rs_exchange_status, ''), ' ', '')) = 'rs->giutrendmanh'
-                        AND LOWER(REPLACE(IFNULL(rs_exchange_recommend, ''), ' ', '')) = 'rs->goiymua'
+                    WHEN LOWER(REPLACE(IFNULL(rs_exchange_status, ''), ' ', '')) IN ('rs->giutrendmanh', 'rs->giữtrendmạnh')
+                        AND LOWER(REPLACE(IFNULL(rs_exchange_recommend, ''), ' ', '')) IN ('rs->goiymua', 'rs->gợiýmua')
                         THEN 'Dẫn dắt – Tiếp diễn xu hướng'
-                    WHEN LOWER(REPLACE(IFNULL(rs_exchange_status, ''), ' ', '')) = 'rs->tangdanon'
-                        AND LOWER(REPLACE(IFNULL(rs_exchange_recommend, ''), ' ', '')) = 'rs->goiymua'
+                    WHEN LOWER(REPLACE(IFNULL(rs_exchange_status, ''), ' ', '')) IN ('rs->tangdanon', 'rs->tăngdầnổn')
+                        AND LOWER(REPLACE(IFNULL(rs_exchange_recommend, ''), ' ', '')) IN ('rs->goiymua', 'rs->gợiýmua')
                         THEN 'Cơ hội mua – Đang hình thành'
-                    WHEN LOWER(REPLACE(IFNULL(rs_exchange_status, ''), ' ', '')) = 'rs->daochieugiam'
-                        AND LOWER(REPLACE(IFNULL(rs_exchange_recommend, ''), ' ', '')) = 'rs->goiyban'
+                    WHEN LOWER(REPLACE(IFNULL(rs_exchange_status, ''), ' ', '')) IN ('rs->daochieugiam', 'rs->đảochiềugiảm')
+                        AND LOWER(REPLACE(IFNULL(rs_exchange_recommend, ''), ' ', '')) IN ('rs->goiyban', 'rs->gợiýbán')
                         THEN 'Suy yếu – Mất sức mạnh'
-                    WHEN LOWER(REPLACE(IFNULL(rs_exchange_status, ''), ' ', '')) = 'rs->yeu'
-                        AND LOWER(REPLACE(IFNULL(rs_exchange_recommend, ''), ' ', '')) = 'rs->goiyban'
+                    WHEN LOWER(REPLACE(IFNULL(rs_exchange_status, ''), ' ', '')) IN ('rs->yeu', 'rs->yếu')
+                        AND LOWER(REPLACE(IFNULL(rs_exchange_recommend, ''), ' ', '')) IN ('rs->goiyban', 'rs->gợiýbán')
                         THEN 'Tránh – Rất yếu'
                     ELSE 'Theo dõi'
                 END{$where_clause}";
