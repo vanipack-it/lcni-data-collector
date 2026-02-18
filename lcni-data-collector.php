@@ -2,7 +2,7 @@
 /*
 Plugin Name: LCNI Data Collector
 Description: LCNI Market Data Engine: lấy nến, lưu DB, cron auto update
-Version: 1.7
+Version: 1.8
 */
 
 if (!defined('ABSPATH')) {
@@ -35,6 +35,8 @@ require_once LCNI_PATH . 'includes/lcni-stock-functions.php';
 require_once LCNI_PATH . 'includes/class-lcni-chart-shortcodes.php';
 require_once LCNI_PATH . 'includes/class-lcni-stock-overview-shortcodes.php';
 require_once LCNI_PATH . 'includes/class-lcni-stock-signals-shortcodes.php';
+require_once LCNI_PATH . 'includes/class-lcni-watchlist-shortcodes.php';
+require_once LCNI_PATH . 'includes/class-lcni-user-admin.php';
 
 function lcni_register_custom_cron_schedules($schedules) {
     if (!isset($schedules['lcni_every_minute'])) {
@@ -136,5 +138,7 @@ new LCNI_Settings();
 new LCNI_Chart_Shortcodes();
 new LCNI_Stock_Overview_Shortcodes();
 new LCNI_Stock_Signals_Shortcodes();
+new LCNI_Watchlist_Shortcodes();
+new LCNI_User_Admin();
 LCNI_Update_Manager::init();
 new LCNI_Rest_API();

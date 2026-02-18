@@ -66,6 +66,11 @@ class LCNI_Rest_API {
                 },
             ],
         ]);
+        register_rest_route('lcni/v1', '/watchlist/settings', [
+            'methods' => 'GET',
+            'callback' => [$this, 'get_watchlist_settings'],
+            'permission_callback' => '__return_true',
+        ]);
     }
 
     public function get_dashboard() {
@@ -153,16 +158,26 @@ class LCNI_Rest_API {
 
     public function get_user_package() {
         $user_id = get_current_user_id();
-        $package = get_user_meta($user_id, 'lcni_user_package', true);
+        $package = strtolower((string) get_user_meta($user_id, 'lcni_user_package', true));
+        $package = in_array($package, ['free', 'premium'], true) ? $package : 'free';
 
         return rest_ensure_response([
-            'package' => $package ?: 'free',
+            'package' => $package,
             'features' => [
                 'dashboard' => true,
                 'screener' => true,
                 'stock_detail' => true,
-                'watchlist' => $package !== 'free',
+                'watchlist' => $package === 'premium',
             ],
+        ]);
+    }
+
+    public function get_watchlist_settings() {
+        $settings = get_option('lcni_frontend_settings_watchlist', []);
+
+        return rest_ensure_response([
+            'allowed_fields' => isset($settings['allowed_fields']) && is_array($settings['allowed_fields']) ? array_values($settings['allowed_fields']) : [],
+            'styles' => isset($settings['styles']) && is_array($settings['styles']) ? $settings['styles'] : [],
         ]);
     }
 

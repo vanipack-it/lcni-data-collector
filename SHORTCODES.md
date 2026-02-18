@@ -74,3 +74,27 @@ Ví dụ:
 
 - Chỉ hiển thị dữ liệu tại `event_time` mới nhất đang có dữ liệu của mã.
 - Có thể phối hợp với các shortcode chart/overview để admin đặt linh hoạt nhiều module trên cùng page.
+
+## 4) Watchlist (v1.8)
+
+### `[lcni_watchlist]`
+Hiển thị bảng watchlist của user đang đăng nhập.
+
+Ví dụ:
+```text
+[lcni_watchlist]
+```
+
+Nếu chưa đăng nhập, shortcode sẽ hiển thị link đến trang đăng nhập/đăng ký.
+
+### `[lcni_watchlist_add]`
+Nút thêm nhanh mã cổ phiếu vào watchlist.
+
+Ví dụ:
+```text
+[lcni_watchlist_add symbol="FPT" label="Thêm vào Watchlist"]
+```
+
+- `symbol`: mã cổ phiếu cần thêm.
+- `label`: text nút.
+- `class`: class CSS bổ sung.
