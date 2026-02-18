@@ -18,6 +18,11 @@ class LCNI_Chart_Shortcodes {
     }
 
     public function register_assets() {
+        $chart_script_path = LCNI_PATH . 'assets/js/lcni-chart.js';
+        $chart_script_version = file_exists($chart_script_path)
+            ? (string) filemtime($chart_script_path)
+            : '1.0.0';
+
         wp_register_script(
             'lcni-lightweight-charts',
             'https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js',
@@ -30,7 +35,7 @@ class LCNI_Chart_Shortcodes {
             'lcni-chart',
             LCNI_URL . 'assets/js/lcni-chart.js',
             ['lcni-lightweight-charts'],
-            '1.0.0',
+            $chart_script_version,
             true
         );
     }
