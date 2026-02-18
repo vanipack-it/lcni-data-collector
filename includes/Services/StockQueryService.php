@@ -167,6 +167,21 @@ class LCNI_StockQueryService {
         );
     }
 
+    public function getStockOverview($symbol) {
+        $normalized_symbol = $this->normalizeSymbol($symbol);
+        if ($normalized_symbol === '') {
+            return null;
+        }
+
+        return $this->cache->remember(
+            'stock_overview:' . $normalized_symbol,
+            function () use ($normalized_symbol) {
+                return $this->repository->getOverviewBySymbol($normalized_symbol);
+            },
+            120
+        );
+    }
+
     private function normalizeSymbol($symbol) {
         $normalized_symbol = strtoupper(sanitize_text_field((string) $symbol));
         if ($normalized_symbol === '') {
