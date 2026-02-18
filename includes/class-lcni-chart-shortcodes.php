@@ -23,6 +23,19 @@ class LCNI_Chart_Shortcodes {
             ? (string) filemtime($chart_script_path)
             : '1.0.0';
 
+        $sync_script_path = LCNI_PATH . 'assets/js/lcni-stock-sync.js';
+        $sync_script_version = file_exists($sync_script_path)
+            ? (string) filemtime($sync_script_path)
+            : '1.0.0';
+
+        wp_register_script(
+            'lcni-stock-sync',
+            LCNI_URL . 'assets/js/lcni-stock-sync.js',
+            [],
+            $sync_script_version,
+            true
+        );
+
         wp_register_script(
             'lcni-lightweight-charts',
             'https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js',
@@ -34,7 +47,7 @@ class LCNI_Chart_Shortcodes {
         wp_register_script(
             'lcni-chart',
             LCNI_URL . 'assets/js/lcni-chart.js',
-            ['lcni-lightweight-charts'],
+            ['lcni-lightweight-charts', 'lcni-stock-sync'],
             $chart_script_version,
             true
         );

@@ -48,10 +48,15 @@ class LCNI_Stock_Overview_Shortcodes {
     }
 
     public function register_assets() {
+        $sync_script_path = LCNI_PATH . 'assets/js/lcni-stock-sync.js';
+        $sync_version = file_exists($sync_script_path) ? (string) filemtime($sync_script_path) : self::VERSION;
+
+        wp_register_script('lcni-stock-sync', LCNI_URL . 'assets/js/lcni-stock-sync.js', [], $sync_version, true);
+
         $script_path = LCNI_PATH . 'assets/js/lcni-stock-overview.js';
         $version = file_exists($script_path) ? (string) filemtime($script_path) : self::VERSION;
 
-        wp_register_script('lcni-stock-overview', LCNI_URL . 'assets/js/lcni-stock-overview.js', [], $version, true);
+        wp_register_script('lcni-stock-overview', LCNI_URL . 'assets/js/lcni-stock-overview.js', ['lcni-stock-sync'], $version, true);
     }
 
     public function register_routes() {

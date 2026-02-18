@@ -4,10 +4,13 @@ document.addEventListener("DOMContentLoaded", () => {
     return;
   }
 
-  const sanitizeSymbol = (value) => {
-    const symbol = String(value || "").toUpperCase().trim();
-    return /^[A-Z0-9._-]{1,15}$/.test(symbol) ? symbol : "";
-  };
+  const stockSyncUtils = window.LCNIStockSyncUtils || null;
+  const sanitizeSymbol = stockSyncUtils
+    ? stockSyncUtils.sanitizeSymbol
+    : (value) => {
+      const symbol = String(value || "").toUpperCase().trim();
+      return /^[A-Z0-9._-]{1,15}$/.test(symbol) ? symbol : "";
+    };
 
   const labels = {
     symbol: "Mã",
@@ -38,12 +41,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const defaultFields = Object.keys(labels);
 
-  const stockSync = window.LCNIStockSync || {
-    subscribe() {},
-    setSymbol() {},
-    getCurrentSymbol() { return ""; },
-    getHistory() { return []; }
-  };
+  const stockSync = stockSyncUtils
+    ? stockSyncUtils.createStockSync()
+    : {
+      subscribe() {},
+      setSymbol() {},
+      getCurrentSymbol() { return ""; },
+      getHistory() { return []; },
+      configureQueryParam() {}
+    };
 
   const formatValue = (key, value) => {
     if (value === null || value === undefined || value === "") {
@@ -87,6 +93,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const settingsApi = container.dataset.settingsApi;
     const queryParam = container.dataset.queryParam;
     const fixedSymbol = sanitizeSymbol(container.dataset.symbol);
+
+    stockSync.configureQueryParam(queryParam || "symbol");
 
     let selectedFields = await loadSettings(settingsApi);
 

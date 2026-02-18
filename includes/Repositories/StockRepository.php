@@ -203,6 +203,36 @@ class LCNI_Data_StockRepository {
         ];
     }
 
+    public function getLatestSignalsBySymbol($symbol) {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT symbol,
+                        event_time,
+                        xay_nen,
+                        xay_nen_count_30,
+                        nen_type,
+                        pha_nen,
+                        tang_gia_kem_vol,
+                        smart_money,
+                        rs_exchange_status,
+                        rs_exchange_recommend,
+                        rs_recommend_status
+                 FROM {$table}
+                 WHERE symbol = %s AND timeframe = '1D'
+                 ORDER BY event_time DESC
+                 LIMIT 1",
+                $symbol
+            ),
+            ARRAY_A
+        );
+
+        return $row ?: null;
+    }
+
     public function getStocks($page, $per_page) {
         global $wpdb;
 
