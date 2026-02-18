@@ -17,26 +17,93 @@ document.addEventListener("DOMContentLoaded", async () => {
     return /^[A-Z0-9._-]{1,15}$/.test(symbol) ? symbol : "";
   };
 
-  const query = new URLSearchParams(window.location.search);
+  const createStockSync = () => {
+    if (window.LCNIStockSync) {
+      return window.LCNIStockSync;
+    }
+
+    const listeners = [];
+    const query = new URLSearchParams(window.location.search);
+    const currentFromQuery = sanitizeSymbol(query.get("symbol"));
+
+    const state = {
+      currentSymbol: currentFromQuery,
+      history: []
+    };
+
+    const notify = (symbol, source) => {
+      state.currentSymbol = symbol;
+      state.history.push({ symbol, source: source || "unknown", at: Date.now() });
+      try {
+        sessionStorage.setItem("lcni_stock_symbol_history", JSON.stringify(state.history.slice(-50)));
+      } catch (error) {
+        console.warn("LCNI: unable to persist stock history", error);
+      }
+
+      listeners.forEach((cb) => cb(symbol, source));
+      window.dispatchEvent(new CustomEvent("lcni:symbol-change", { detail: { symbol, source } }));
+    };
+
+    const syncUrl = (symbol) => {
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.set("symbol", symbol);
+      window.history.pushState({ ...window.history.state, lcniSymbol: symbol }, "", nextUrl.toString());
+    };
+
+    window.addEventListener("popstate", () => {
+      const symbol = sanitizeSymbol(new URLSearchParams(window.location.search).get("symbol"));
+      if (symbol) {
+        notify(symbol, "popstate");
+      }
+    });
+
+    window.LCNIStockSync = {
+      getCurrentSymbol() {
+        return state.currentSymbol;
+      },
+      getHistory() {
+        return state.history.slice();
+      },
+      subscribe(cb) {
+        listeners.push(cb);
+      },
+      setSymbol(symbol, options = {}) {
+        const next = sanitizeSymbol(symbol);
+        if (!next || next === state.currentSymbol) {
+          return;
+        }
+
+        if (options.pushState !== false) {
+          syncUrl(next);
+        }
+
+        notify(next, options.source || "manual");
+      }
+    };
+
+    return window.LCNIStockSync;
+  };
+
+  const stockSync = createStockSync();
 
   const renderChart = async (container) => {
     const apiBase = container.dataset.apiBase;
     const limit = Number(container.dataset.limit || 200);
     const queryParam = container.dataset.queryParam;
-
-    const symbolFromQuery = queryParam ? sanitizeSymbol(query.get(queryParam)) : "";
     const fixedSymbol = sanitizeSymbol(container.dataset.symbol);
     const fallbackSymbol = sanitizeSymbol(container.dataset.fallbackSymbol);
-    const symbol = fixedSymbol || symbolFromQuery || fallbackSymbol;
 
-    if (!apiBase || !symbol) {
-      container.textContent = "NO DATA";
-      return;
-    }
+    const resolveSymbol = () => {
+      if (fixedSymbol) {
+        return fixedSymbol;
+      }
 
-    const apiUrl = `${apiBase}?symbol=${encodeURIComponent(symbol)}&limit=${Number.isFinite(limit) ? limit : 200}`;
+      const query = new URLSearchParams(window.location.search);
+      const symbolFromQuery = queryParam ? sanitizeSymbol(query.get(queryParam)) : "";
+      return stockSync.getCurrentSymbol() || symbolFromQuery || fallbackSymbol;
+    };
 
-    const buildShell = () => {
+    const buildShell = (symbol) => {
       container.innerHTML = "";
 
       const controls = document.createElement("div");
@@ -54,21 +121,19 @@ document.addEventListener("DOMContentLoaded", async () => {
       const mainHeight = Number(container.dataset.mainHeight || 420);
       mainChartWrap.style.height = `${Number.isFinite(mainHeight) ? mainHeight : 420}px`;
 
-      const volumeWrap = document.createElement("div");
-      volumeWrap.style.height = "160px";
-      volumeWrap.style.marginTop = "8px";
+      const panelWrap = () => {
+        const wrap = document.createElement("div");
+        wrap.style.height = "160px";
+        wrap.style.marginTop = "8px";
+        return wrap;
+      };
 
-      const macdWrap = document.createElement("div");
+      const volumeWrap = panelWrap();
+      const macdWrap = panelWrap();
       macdWrap.style.height = "180px";
-      macdWrap.style.marginTop = "8px";
-
-      const rsiWrap = document.createElement("div");
-      rsiWrap.style.height = "160px";
-      rsiWrap.style.marginTop = "8px";
-
-      const rsWrap = document.createElement("div");
+      const rsiWrap = panelWrap();
+      const rsWrap = panelWrap();
       rsWrap.style.height = "180px";
-      rsWrap.style.marginTop = "8px";
 
       container.appendChild(controls);
       container.appendChild(mainChartWrap);
@@ -101,195 +166,165 @@ document.addEventListener("DOMContentLoaded", async () => {
       return label;
     };
 
-    const lineSeriesDataFromCandles = (candles) => candles.map((candle) => ({
-      time: candle.time,
-      value: candle.close
-    }));
-
     const seriesDataFilter = (candles, key) => candles
       .filter((item) => typeof item[key] === "number" && Number.isFinite(item[key]))
       .map((item) => ({ time: item.time, value: item[key] }));
 
-    try {
-      const response = await fetch(apiUrl, { credentials: "same-origin" });
-      if (!response.ok) {
-        throw new Error(`LCNI: request failed (${response.status})`);
-      }
-
-      const payload = await response.json();
-      const candles = Array.isArray(payload) ? payload : payload?.candles;
-      if (!Array.isArray(candles)) {
-        throw new Error("LCNI: invalid candles payload");
-      }
-
-      if (!candles.length) {
+    const fetchAndRender = async (symbol) => {
+      if (!apiBase || !symbol) {
         container.textContent = "NO DATA";
         return;
       }
 
-      const { controls, mainChartWrap, volumeWrap, macdWrap, rsiWrap, rsWrap } = buildShell();
+      const apiUrl = `${apiBase}?symbol=${encodeURIComponent(symbol)}&limit=${Number.isFinite(limit) ? limit : 200}`;
 
-      const commonOptions = {
-        autoSize: true,
-        layout: {
-          background: { color: "#fff" },
-          textColor: "#333"
-        },
-        grid: {
-          vertLines: { color: "#efefef" },
-          horzLines: { color: "#efefef" }
+      try {
+        const response = await fetch(apiUrl, { credentials: "same-origin" });
+        if (!response.ok) {
+          throw new Error(`LCNI: request failed (${response.status})`);
         }
-      };
 
-      const mainChart = LightweightCharts.createChart(mainChartWrap, commonOptions);
-      const volumeChart = LightweightCharts.createChart(volumeWrap, commonOptions);
-      const macdChart = LightweightCharts.createChart(macdWrap, commonOptions);
-      const rsiChart = LightweightCharts.createChart(rsiWrap, commonOptions);
-      const rsChart = LightweightCharts.createChart(rsWrap, commonOptions);
+        const payload = await response.json();
+        const candles = Array.isArray(payload) ? payload : payload?.candles;
+        if (!Array.isArray(candles) || !candles.length) {
+          container.textContent = "NO DATA";
+          return;
+        }
 
-      const candleSeries = mainChart.addCandlestickSeries();
-      const lineSeries = mainChart.addLineSeries({ color: "#2563eb", lineWidth: 2 });
+        const { controls, mainChartWrap, volumeWrap, macdWrap, rsiWrap, rsWrap } = buildShell(symbol);
 
-      candleSeries.setData(candles);
-      lineSeries.setData(lineSeriesDataFromCandles(candles));
+        const commonOptions = {
+          autoSize: true,
+          layout: { background: { color: "#fff" }, textColor: "#333" },
+          grid: { vertLines: { color: "#efefef" }, horzLines: { color: "#efefef" } }
+        };
 
-      const volumeSeries = volumeChart.addHistogramSeries({
-        priceFormat: { type: "volume" },
-        priceScaleId: ""
-      });
+        const mainChart = LightweightCharts.createChart(mainChartWrap, commonOptions);
+        const volumeChart = LightweightCharts.createChart(volumeWrap, commonOptions);
+        const macdChart = LightweightCharts.createChart(macdWrap, commonOptions);
+        const rsiChart = LightweightCharts.createChart(rsiWrap, commonOptions);
+        const rsChart = LightweightCharts.createChart(rsWrap, commonOptions);
 
-      volumeSeries.setData(candles.map((item) => ({
-        time: item.time,
-        value: typeof item.volume === "number" ? item.volume : 0,
-        color: item.close >= item.open ? "#16a34a" : "#dc2626"
-      })));
+        const candleSeries = mainChart.addCandlestickSeries();
+        const lineSeries = mainChart.addLineSeries({ color: "#2563eb", lineWidth: 2 });
 
-      const macdSeries = macdChart.addLineSeries({ color: "#1d4ed8", lineWidth: 2 });
-      const signalSeries = macdChart.addLineSeries({ color: "#f59e0b", lineWidth: 2 });
-      const macdHistogramSeries = macdChart.addHistogramSeries({
-        priceScaleId: "",
-        base: 0
-      });
+        candleSeries.setData(candles);
+        lineSeries.setData(candles.map((item) => ({ time: item.time, value: item.close })));
 
-      macdSeries.setData(seriesDataFilter(candles, "macd"));
-      signalSeries.setData(seriesDataFilter(candles, "macd_signal"));
-      macdHistogramSeries.setData(candles
-        .filter((item) => typeof item.macd_histogram === "number" && Number.isFinite(item.macd_histogram))
-        .map((item) => ({
+        volumeChart.addHistogramSeries({ priceFormat: { type: "volume" }, priceScaleId: "" }).setData(candles.map((item) => ({
           time: item.time,
-          value: item.macd_histogram,
-          color: item.macd_histogram >= 0 ? "rgba(22,163,74,0.55)" : "rgba(220,38,38,0.55)"
+          value: typeof item.volume === "number" ? item.volume : 0,
+          color: item.close >= item.open ? "#16a34a" : "#dc2626"
         })));
 
-      const rsiSeries = rsiChart.addLineSeries({ color: "#7c3aed", lineWidth: 2 });
-      const rsiUpperSeries = rsiChart.addLineSeries({ color: "#f97316", lineStyle: 2, lineWidth: 1 });
-      const rsiLowerSeries = rsiChart.addLineSeries({ color: "#0ea5e9", lineStyle: 2, lineWidth: 1 });
+        macdChart.addLineSeries({ color: "#1d4ed8", lineWidth: 2 }).setData(seriesDataFilter(candles, "macd"));
+        macdChart.addLineSeries({ color: "#f59e0b", lineWidth: 2 }).setData(seriesDataFilter(candles, "macd_signal"));
+        macdChart.addHistogramSeries({ priceScaleId: "", base: 0 }).setData(candles
+          .filter((item) => typeof item.macd_histogram === "number" && Number.isFinite(item.macd_histogram))
+          .map((item) => ({ time: item.time, value: item.macd_histogram, color: item.macd_histogram >= 0 ? "rgba(22,163,74,0.55)" : "rgba(220,38,38,0.55)" })));
 
-      const rsiData = seriesDataFilter(candles, "rsi");
-      rsiSeries.setData(rsiData);
-      rsiUpperSeries.setData(candles.map((item) => ({ time: item.time, value: 70 })));
-      rsiLowerSeries.setData(candles.map((item) => ({ time: item.time, value: 30 })));
+        const rsiData = seriesDataFilter(candles, "rsi");
+        rsiChart.addLineSeries({ color: "#7c3aed", lineWidth: 2 }).setData(rsiData);
+        rsiChart.addLineSeries({ color: "#f97316", lineStyle: 2, lineWidth: 1 }).setData(candles.map((item) => ({ time: item.time, value: 70 })));
+        rsiChart.addLineSeries({ color: "#0ea5e9", lineStyle: 2, lineWidth: 1 }).setData(candles.map((item) => ({ time: item.time, value: 30 })));
 
-      const rs1wSeries = rsChart.addLineSeries({ color: "#0ea5e9", lineWidth: 2 });
-      const rs1mSeries = rsChart.addLineSeries({ color: "#f59e0b", lineWidth: 2 });
-      const rs3mSeries = rsChart.addLineSeries({ color: "#ef4444", lineWidth: 2 });
+        const rs1wData = seriesDataFilter(candles, "rs_1w_by_exchange");
+        const rs1mData = seriesDataFilter(candles, "rs_1m_by_exchange");
+        const rs3mData = seriesDataFilter(candles, "rs_3m_by_exchange");
 
-      const rs1wData = seriesDataFilter(candles, "rs_1w_by_exchange");
-      const rs1mData = seriesDataFilter(candles, "rs_1m_by_exchange");
-      const rs3mData = seriesDataFilter(candles, "rs_3m_by_exchange");
+        rsChart.addLineSeries({ color: "#0ea5e9", lineWidth: 2 }).setData(rs1wData);
+        rsChart.addLineSeries({ color: "#f59e0b", lineWidth: 2 }).setData(rs1mData);
+        rsChart.addLineSeries({ color: "#ef4444", lineWidth: 2 }).setData(rs3mData);
 
-      rs1wSeries.setData(rs1wData);
-      rs1mSeries.setData(rs1mData);
-      rs3mSeries.setData(rs3mData);
-
-      let chartMode = "line";
-      const chartModeWrap = document.createElement("label");
-      chartModeWrap.style.display = "inline-flex";
-      chartModeWrap.style.gap = "6px";
-      chartModeWrap.style.alignItems = "center";
-
-      const modeText = document.createElement("span");
-      modeText.textContent = "Kiểu chart";
-
-      const modeSelect = document.createElement("select");
-      [
-        { value: "line", label: "Line" },
-        { value: "candlestick", label: "Candlestick" }
-      ].forEach((mode) => {
-        const option = document.createElement("option");
-        option.value = mode.value;
-        option.textContent = mode.label;
-        modeSelect.appendChild(option);
-      });
-
-      const syncMode = () => {
-        candleSeries.applyOptions({ visible: chartMode === "candlestick" });
-        lineSeries.applyOptions({ visible: chartMode === "line" });
-      };
-
-      modeSelect.value = chartMode;
-      modeSelect.addEventListener("change", () => {
-        chartMode = modeSelect.value;
-        syncMode();
-      });
-
-      chartModeWrap.appendChild(modeText);
-      chartModeWrap.appendChild(modeSelect);
-      controls.appendChild(chartModeWrap);
-
-      controls.appendChild(createCheckbox("Volume", true, (checked) => {
-        volumeWrap.style.display = checked ? "block" : "none";
-      }));
-
-      controls.appendChild(createCheckbox("MACD", true, (checked) => {
-        macdWrap.style.display = checked ? "block" : "none";
-      }));
-
-      controls.appendChild(createCheckbox("RSI", true, (checked) => {
-        rsiWrap.style.display = checked ? "block" : "none";
-      }));
-
-      controls.appendChild(createCheckbox("RS by LCNi", true, (checked) => {
-        rsWrap.style.display = checked ? "block" : "none";
-      }));
-
-      syncMode();
-
-      const syncTimeScale = (sourceChart, targetCharts) => {
-        sourceChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-          if (!range) {
-            return;
-          }
-          targetCharts.forEach((chart) => {
-            chart.timeScale().setVisibleLogicalRange(range);
-          });
+        let chartMode = "line";
+        const modeSelect = document.createElement("select");
+        [{ value: "line", label: "Line" }, { value: "candlestick", label: "Candlestick" }].forEach((mode) => {
+          const option = document.createElement("option");
+          option.value = mode.value;
+          option.textContent = mode.label;
+          modeSelect.appendChild(option);
         });
-      };
 
-      syncTimeScale(mainChart, [volumeChart, macdChart, rsiChart, rsChart]);
-      syncTimeScale(volumeChart, [mainChart, macdChart, rsiChart, rsChart]);
-      syncTimeScale(macdChart, [mainChart, volumeChart, rsiChart, rsChart]);
-      syncTimeScale(rsiChart, [mainChart, volumeChart, macdChart, rsChart]);
-      syncTimeScale(rsChart, [mainChart, volumeChart, macdChart, rsiChart]);
+        const syncMode = () => {
+          candleSeries.applyOptions({ visible: chartMode === "candlestick" });
+          lineSeries.applyOptions({ visible: chartMode === "line" });
+        };
 
-      mainChart.timeScale().fitContent();
-      volumeChart.timeScale().fitContent();
-      macdChart.timeScale().fitContent();
-      rsiChart.timeScale().fitContent();
-      rsChart.timeScale().fitContent();
+        modeSelect.addEventListener("change", () => {
+          chartMode = modeSelect.value;
+          syncMode();
+        });
 
-      if (!rsiData.length) {
-        rsiWrap.style.display = "none";
+        const chartModeWrap = document.createElement("label");
+        chartModeWrap.style.display = "inline-flex";
+        chartModeWrap.style.gap = "6px";
+        chartModeWrap.style.alignItems = "center";
+        chartModeWrap.appendChild(Object.assign(document.createElement("span"), { textContent: "Kiểu chart" }));
+        chartModeWrap.appendChild(modeSelect);
+        controls.appendChild(chartModeWrap);
+
+        controls.appendChild(createCheckbox("Volume", true, (checked) => { volumeWrap.style.display = checked ? "block" : "none"; }));
+        controls.appendChild(createCheckbox("MACD", true, (checked) => { macdWrap.style.display = checked ? "block" : "none"; }));
+        controls.appendChild(createCheckbox("RSI", true, (checked) => { rsiWrap.style.display = checked ? "block" : "none"; }));
+        controls.appendChild(createCheckbox("RS by LCNi", true, (checked) => { rsWrap.style.display = checked ? "block" : "none"; }));
+
+        syncMode();
+
+        const syncTimeScale = (sourceChart, targetCharts) => {
+          sourceChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+            if (!range) {
+              return;
+            }
+            targetCharts.forEach((chart) => chart.timeScale().setVisibleLogicalRange(range));
+          });
+        };
+
+        syncTimeScale(mainChart, [volumeChart, macdChart, rsiChart, rsChart]);
+        syncTimeScale(volumeChart, [mainChart, macdChart, rsiChart, rsChart]);
+        syncTimeScale(macdChart, [mainChart, volumeChart, rsiChart, rsChart]);
+        syncTimeScale(rsiChart, [mainChart, volumeChart, macdChart, rsChart]);
+        syncTimeScale(rsChart, [mainChart, volumeChart, macdChart, rsiChart]);
+
+        [mainChart, volumeChart, macdChart, rsiChart, rsChart].forEach((chart) => chart.timeScale().fitContent());
+
+        if (!rsiData.length) {
+          rsiWrap.style.display = "none";
+        }
+
+        if (!rs1wData.length && !rs1mData.length && !rs3mData.length) {
+          rsWrap.style.display = "none";
+        }
+      } catch (error) {
+        console.error(error);
+        container.textContent = "NO DATA";
       }
+    };
 
-      if (!rs1wData.length && !rs1mData.length && !rs3mData.length) {
-        rsWrap.style.display = "none";
+    const initialSymbol = resolveSymbol();
+    await fetchAndRender(initialSymbol);
+
+    stockSync.subscribe(async (nextSymbol) => {
+      if (fixedSymbol || !nextSymbol) {
+        return;
       }
-    } catch (error) {
-      console.error(error);
-      container.textContent = "NO DATA";
-    }
+      await fetchAndRender(nextSymbol);
+    });
   };
+
+  document.addEventListener("click", (event) => {
+    const link = event.target.closest("[data-lcni-symbol-link]");
+    if (!link) {
+      return;
+    }
+
+    const symbol = sanitizeSymbol(link.dataset.lcniSymbolLink || link.dataset.symbol || "");
+    if (!symbol) {
+      return;
+    }
+
+    event.preventDefault();
+    stockSync.setSymbol(symbol, { source: "link", pushState: true });
+  });
 
   await Promise.all(Array.from(containers).map((container) => renderChart(container)));
 });

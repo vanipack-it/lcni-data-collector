@@ -1,6 +1,10 @@
 # Development Log
 
 ## 2026-02-18
+- Bổ sung module shortcodes `lcni_stock_overview` và `lcni_stock_overview_query` để hiển thị bộ chỉ số cơ bản từ `wp_lcni_symbol_tongquan` (kèm Sàn + ICB2), có nút setting góc phải cho phép user tùy chỉnh field hiển thị và lưu cá nhân theo `user_meta`.
+- Thêm REST endpoint `GET /wp-json/lcni/v1/stock-overview?symbol=XXX` và `GET/POST /wp-json/lcni/v1/stock-overview/settings` để phục vụ module overview + lưu cấu hình cá nhân.
+- Nâng cấp đồng bộ symbol không reload trang giữa chart/overview: click link cổ phiếu dùng `pushState`, gọi lại API và cập nhật đồng thời các module trên cùng page; có lưu lịch sử thay đổi symbol trong session.
+- Tăng phiên bản plugin lên `1.6` để dễ theo dõi release.
 - Bổ sung cột `rs_recommend_status` vào bảng `wp_lcni_ohlc` (schema tạo mới + cơ chế tự thêm cột cho hệ thống đang chạy).
 - Thêm migration/backfill `rs_recommend_status` để cập nhật dữ liệu cho các bản ghi cũ và tự gắn cờ phiên bản migration `v1`.
 - Chuẩn hóa công thức mapping theo cặp `rs_exchange_status` + `rs_exchange_recommend` với xử lý chống sai lệch khoảng trắng, tránh lỗi do chuỗi rỗng/định dạng không đồng nhất; mặc định trả về `Theo dõi`.

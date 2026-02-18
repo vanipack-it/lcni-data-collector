@@ -240,4 +240,54 @@ class LCNI_Data_StockRepository {
             'items' => is_array($items) ? $items : [],
         ];
     }
+
+    public function getOverviewBySymbol($symbol) {
+        global $wpdb;
+
+        $tongquan_table = $wpdb->prefix . 'lcni_symbol_tongquan';
+        $symbols_table = $wpdb->prefix . 'lcni_symbols';
+        $mapping_table = $wpdb->prefix . 'lcni_sym_icb_market';
+        $market_table = $wpdb->prefix . 'lcni_marketid';
+        $icb2_table = $wpdb->prefix . 'lcni_icb2';
+
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT t.symbol,
+                        UPPER(TRIM(COALESCE(map.exchange, m.exchange, ''))) AS exchange,
+                        i.name_icb2 AS icb2_name,
+                        t.eps,
+                        t.eps_1y_pct,
+                        t.dt_1y_pct,
+                        t.bien_ln_gop,
+                        t.bien_ln_rong,
+                        t.roe,
+                        t.de_ratio,
+                        t.pe_ratio,
+                        t.pb_ratio,
+                        t.ev_ebitda,
+                        t.tcbs_khuyen_nghi,
+                        t.co_tuc_pct,
+                        t.tc_rating,
+                        t.so_huu_nn_pct,
+                        t.tien_mat_rong_von_hoa,
+                        t.tien_mat_rong_tong_tai_san,
+                        t.loi_nhuan_4_quy_gan_nhat,
+                        t.tang_truong_dt_quy_gan_nhat,
+                        t.tang_truong_dt_quy_gan_nhi,
+                        t.tang_truong_ln_quy_gan_nhat,
+                        t.tang_truong_ln_quy_gan_nhi
+                 FROM {$tongquan_table} t
+                 LEFT JOIN {$symbols_table} s ON s.symbol = t.symbol
+                 LEFT JOIN {$mapping_table} map ON map.symbol = t.symbol
+                 LEFT JOIN {$market_table} m ON m.market_id = s.market_id
+                 LEFT JOIN {$icb2_table} i ON i.id_icb2 = COALESCE(map.id_icb2, s.id_icb2)
+                 WHERE t.symbol = %s
+                 LIMIT 1",
+                $symbol
+            ),
+            ARRAY_A
+        );
+
+        return $row ?: null;
+    }
 }
