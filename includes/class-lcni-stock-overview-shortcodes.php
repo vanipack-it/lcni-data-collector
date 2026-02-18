@@ -36,6 +36,14 @@ class LCNI_Stock_Overview_Shortcodes {
         'tang_truong_ln_quy_gan_nhi',
     ];
 
+    private $default_styles = [
+        'label_color' => '#4b5563',
+        'value_color' => '#111827',
+        'item_background' => '#f9fafb',
+        'label_font_size' => 12,
+        'value_font_size' => 14,
+    ];
+
     public function __construct() {
         add_action('init', [$this, 'register_shortcodes']);
         add_action('wp_enqueue_scripts', [$this, 'register_assets']);
@@ -114,24 +122,36 @@ class LCNI_Stock_Overview_Shortcodes {
     }
 
     public function get_settings() {
+        $admin_config = $this->get_admin_config();
+        $allowed_fields = (array) ($admin_config['allowed_fields'] ?? $this->default_fields);
         $fields = get_user_meta(get_current_user_id(), self::SETTINGS_META_KEY, true);
         if (!is_array($fields) || empty($fields)) {
-            $fields = $this->default_fields;
+            $fields = $allowed_fields;
+        }
+
+        $fields = array_values(array_intersect($allowed_fields, array_map('sanitize_key', $fields)));
+        if (empty($fields)) {
+            $fields = $allowed_fields;
         }
 
         return rest_ensure_response([
-            'fields' => array_values(array_intersect($this->default_fields, $fields)),
+            'fields' => $fields,
             'version' => self::VERSION,
         ]);
     }
 
     public function save_settings(WP_REST_Request $request) {
+        $admin_config = $this->get_admin_config();
+        $allowed_fields = (array) ($admin_config['allowed_fields'] ?? $this->default_fields);
         $fields = $request->get_param('fields');
         if (!is_array($fields) || empty($fields)) {
             return new WP_Error('invalid_fields', 'Danh sách fields không hợp lệ.', ['status' => 400]);
         }
 
-        $normalized = array_values(array_intersect($this->default_fields, array_map('sanitize_key', $fields)));
+        $normalized = array_values(array_intersect($allowed_fields, array_map('sanitize_key', $fields)));
+        if (empty($normalized)) {
+            $normalized = $allowed_fields;
+        }
         update_user_meta(get_current_user_id(), self::SETTINGS_META_KEY, $normalized);
 
         return rest_ensure_response([
@@ -142,15 +162,52 @@ class LCNI_Stock_Overview_Shortcodes {
 
     private function render_container($symbol, $query_param, $version) {
         wp_enqueue_script('lcni-stock-overview');
+        $admin_config = $this->get_admin_config();
 
         return sprintf(
-            '<div data-lcni-stock-overview data-symbol="%1$s" data-query-param="%2$s" data-api-base="%3$s" data-settings-api="%4$s" data-version="%5$s"></div>',
+            '<div data-lcni-stock-overview data-symbol="%1$s" data-query-param="%2$s" data-api-base="%3$s" data-settings-api="%4$s" data-admin-config="%5$s" data-version="%6$s"></div>',
             esc_attr($symbol),
             esc_attr($query_param),
             esc_url(rest_url('lcni/v1/stock-overview')),
             esc_url(rest_url('lcni/v1/stock-overview/settings')),
+            esc_attr(wp_json_encode($admin_config)),
             esc_attr($version)
         );
+    }
+
+    private function get_admin_config() {
+        $saved = get_option('lcni_frontend_settings_overview', []);
+        $styles = isset($saved['styles']) && is_array($saved['styles']) ? $saved['styles'] : [];
+        $allowed_fields = isset($saved['allowed_fields']) && is_array($saved['allowed_fields'])
+            ? array_values(array_intersect($this->default_fields, array_map('sanitize_key', $saved['allowed_fields'])))
+            : $this->default_fields;
+
+        if (empty($allowed_fields)) {
+            $allowed_fields = $this->default_fields;
+        }
+
+        return [
+            'allowed_fields' => $allowed_fields,
+            'styles' => [
+                'label_color' => $this->sanitize_hex_color($styles['label_color'] ?? $this->default_styles['label_color'], $this->default_styles['label_color']),
+                'value_color' => $this->sanitize_hex_color($styles['value_color'] ?? $this->default_styles['value_color'], $this->default_styles['value_color']),
+                'item_background' => $this->sanitize_hex_color($styles['item_background'] ?? $this->default_styles['item_background'], $this->default_styles['item_background']),
+                'label_font_size' => $this->sanitize_font_size($styles['label_font_size'] ?? $this->default_styles['label_font_size'], $this->default_styles['label_font_size']),
+                'value_font_size' => $this->sanitize_font_size($styles['value_font_size'] ?? $this->default_styles['value_font_size'], $this->default_styles['value_font_size']),
+            ],
+        ];
+    }
+
+    private function sanitize_hex_color($color, $fallback) {
+        $sanitized = sanitize_hex_color((string) $color);
+
+        return $sanitized ?: $fallback;
+    }
+
+    private function sanitize_font_size($size, $fallback) {
+        $value = (int) $size;
+
+        return $value >= 10 && $value <= 40 ? $value : (int) $fallback;
     }
 
     private function sanitize_symbol($symbol) {

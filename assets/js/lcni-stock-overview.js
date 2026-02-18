@@ -41,6 +41,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const defaultFields = Object.keys(labels);
 
+  const parseAdminConfig = (rawConfig) => {
+    if (!rawConfig) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(rawConfig);
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch (error) {
+      return null;
+    }
+  };
+
   const stockSync = stockSyncUtils
     ? stockSyncUtils.createStockSync()
     : {
@@ -93,10 +106,19 @@ document.addEventListener("DOMContentLoaded", () => {
     const settingsApi = container.dataset.settingsApi;
     const queryParam = container.dataset.queryParam;
     const fixedSymbol = sanitizeSymbol(container.dataset.symbol);
+    const adminConfig = parseAdminConfig(container.dataset.adminConfig);
+    const allowedFields = Array.isArray(adminConfig?.allowed_fields) && adminConfig.allowed_fields.length
+      ? adminConfig.allowed_fields.filter((field) => labels[field])
+      : defaultFields;
+    const styles = adminConfig?.styles || {};
 
     stockSync.configureQueryParam(queryParam || "symbol");
 
     let selectedFields = await loadSettings(settingsApi);
+    selectedFields = selectedFields.filter((field) => allowedFields.includes(field));
+    if (!selectedFields.length) {
+      selectedFields = allowedFields;
+    }
 
     const resolveSymbol = () => {
       if (fixedSymbol) {
@@ -148,7 +170,7 @@ document.addEventListener("DOMContentLoaded", () => {
         panel.style.padding = "8px";
         panel.style.border = "1px dashed #d1d5db";
 
-        defaultFields.forEach((field) => {
+        allowedFields.forEach((field) => {
           const label = document.createElement("label");
           label.style.display = "inline-flex";
           label.style.marginRight = "10px";
@@ -171,6 +193,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
         saveBtn.addEventListener("click", async () => {
           selectedFields = Array.from(panel.querySelectorAll('input[type="checkbox"]:checked')).map((input) => input.value);
+          selectedFields = selectedFields.filter((field) => allowedFields.includes(field));
+          if (!selectedFields.length) {
+            selectedFields = allowedFields;
+          }
           await saveSettings(settingsApi, selectedFields);
           await render(symbol);
         });
@@ -193,9 +219,23 @@ document.addEventListener("DOMContentLoaded", () => {
         selectedFields.forEach((field) => {
           const item = document.createElement("div");
           item.style.padding = "8px";
-          item.style.background = "#f9fafb";
+          item.style.background = styles.item_background || "#f9fafb";
           item.style.borderRadius = "6px";
-          item.innerHTML = `<small>${labels[field]}</small><div><strong>${formatValue(field, payload[field])}</strong></div>`;
+
+          const labelEl = document.createElement("small");
+          labelEl.textContent = labels[field];
+          labelEl.style.color = styles.label_color || "#4b5563";
+          labelEl.style.fontSize = `${styles.label_font_size || 12}px`;
+
+          const valueWrap = document.createElement("div");
+          const valueStrong = document.createElement("strong");
+          valueStrong.textContent = formatValue(field, payload[field]);
+          valueStrong.style.color = styles.value_color || "#111827";
+          valueStrong.style.fontSize = `${styles.value_font_size || 14}px`;
+
+          valueWrap.appendChild(valueStrong);
+          item.appendChild(labelEl);
+          item.appendChild(valueWrap);
           grid.appendChild(item);
         });
 
