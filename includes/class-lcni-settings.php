@@ -35,6 +35,7 @@ class LCNI_Settings {
         register_setting('lcni_settings_group', 'lcni_update_interval_minutes', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_update_interval'], 'default' => 5]);
         register_setting('lcni_settings_group', 'lcni_frontend_settings_signals', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_frontend_module_settings'], 'default' => []]);
         register_setting('lcni_settings_group', 'lcni_frontend_settings_overview', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_frontend_module_settings'], 'default' => []]);
+        register_setting('lcni_settings_group', 'lcni_frontend_settings_watchlist', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_frontend_module_settings'], 'default' => []]);
     }
 
     public function sanitize_timeframe($value) {
@@ -98,8 +99,12 @@ class LCNI_Settings {
             return;
         }
 
+        if (!isset($_POST['lcni_action_nonce'])) {
+            return;
+        }
+
         $action = sanitize_text_field(wp_unslash($_POST['lcni_admin_action']));
-        $nonce = isset($_POST['lcni_action_nonce']) ? sanitize_text_field(wp_unslash($_POST['lcni_action_nonce'])) : '';
+        $nonce = sanitize_text_field(wp_unslash($_POST['lcni_action_nonce']));
 
         if (!wp_verify_nonce($nonce, 'lcni_admin_actions')) {
             $this->set_notice('error', 'Nonce không hợp lệ, vui lòng thử lại.');
@@ -224,7 +229,7 @@ class LCNI_Settings {
             }
         } elseif ($action === 'save_frontend_settings') {
             $module = isset($_POST['lcni_frontend_module']) ? sanitize_key(wp_unslash($_POST['lcni_frontend_module'])) : '';
-            $allowed_modules = ['signals', 'overview'];
+            $allowed_modules = ['signals', 'overview', 'watchlist'];
 
             if (!in_array($module, $allowed_modules, true)) {
                 $this->set_notice('error', 'Module frontend không hợp lệ.');
@@ -250,7 +255,7 @@ class LCNI_Settings {
         $redirect_page = in_array($redirect_page, ['lcni-settings', 'lcni-data-viewer'], true) ? $redirect_page : 'lcni-settings';
         $redirect_url = admin_url('admin.php?page=' . $redirect_page);
 
-        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange', 'lcni-tab-frontend-signals', 'lcni-tab-frontend-overview'], true)) {
+        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange', 'lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-watchlist'], true)) {
             $redirect_url = add_query_arg('tab', $redirect_tab, $redirect_url);
         }
 
@@ -479,7 +484,7 @@ class LCNI_Settings {
 
         $active_tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'general';
         $rule_sub_tabs = ['lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange'];
-        $frontend_sub_tabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview'];
+        $frontend_sub_tabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-watchlist'];
         if (in_array($active_tab, $rule_sub_tabs, true)) {
             $active_tab = 'rule_settings';
         }
@@ -1098,7 +1103,7 @@ class LCNI_Settings {
 
     private function get_default_frontend_module_settings() {
         return [
-            'fields' => ['xay_nen', 'xay_nen_count_30', 'nen_type', 'pha_nen', 'tang_gia_kem_vol', 'smart_money', 'rs_exchange_status', 'rs_exchange_recommend', 'rs_recommend_status', 'symbol', 'exchange', 'icb2_name', 'eps', 'eps_1y_pct', 'dt_1y_pct', 'bien_ln_gop', 'bien_ln_rong', 'roe', 'de_ratio', 'pe_ratio', 'pb_ratio', 'ev_ebitda', 'tcbs_khuyen_nghi', 'co_tuc_pct', 'tc_rating', 'so_huu_nn_pct', 'tien_mat_rong_von_hoa', 'tien_mat_rong_tong_tai_san', 'loi_nhuan_4_quy_gan_nhat', 'tang_truong_dt_quy_gan_nhat', 'tang_truong_dt_quy_gan_nhi', 'tang_truong_ln_quy_gan_nhat', 'tang_truong_ln_quy_gan_nhi'],
+            'fields' => ['xay_nen', 'xay_nen_count_30', 'nen_type', 'pha_nen', 'tang_gia_kem_vol', 'smart_money', 'rs_exchange_status', 'rs_exchange_recommend', 'rs_recommend_status', 'symbol', 'exchange', 'icb2_name', 'eps', 'eps_1y_pct', 'dt_1y_pct', 'bien_ln_gop', 'bien_ln_rong', 'roe', 'de_ratio', 'pe_ratio', 'pb_ratio', 'ev_ebitda', 'tcbs_khuyen_nghi', 'co_tuc_pct', 'tc_rating', 'so_huu_nn_pct', 'tien_mat_rong_von_hoa', 'tien_mat_rong_tong_tai_san', 'loi_nhuan_4_quy_gan_nhat', 'tang_truong_dt_quy_gan_nhat', 'tang_truong_dt_quy_gan_nhi', 'tang_truong_ln_quy_gan_nhat', 'tang_truong_ln_quy_gan_nhi', 'close_price', 'pct_t_1', 'volume', 'value_traded', 'rsi', 'macd', 'macd_signal', 'event_time'],
             'styles' => [
                 'label_color' => '#4b5563',
                 'value_color' => '#111827',
@@ -1126,6 +1131,20 @@ class LCNI_Settings {
         ];
         $signals = $this->sanitize_frontend_module_settings(get_option('lcni_frontend_settings_signals', ['allowed_fields' => array_keys($signals_labels)]));
         $overview = $this->sanitize_frontend_module_settings(get_option('lcni_frontend_settings_overview', ['allowed_fields' => array_keys($overview_labels)]));
+        $watchlist_labels = [
+            'symbol' => 'Mã CK',
+            'close_price' => 'Giá đóng cửa gần nhất',
+            'pct_t_1' => '% T-1',
+            'volume' => 'Khối lượng',
+            'value_traded' => 'Giá trị giao dịch',
+            'rs_exchange_status' => 'Trạng thái RS',
+            'rs_exchange_recommend' => 'Khuyến nghị RS',
+            'rsi' => 'RSI',
+            'macd' => 'MACD',
+            'macd_signal' => 'MACD Signal',
+            'event_time' => 'Ngày dữ liệu gần nhất',
+        ];
+        $watchlist = $this->sanitize_frontend_module_settings(get_option('lcni_frontend_settings_watchlist', ['allowed_fields' => array_keys($watchlist_labels)]));
         ?>
         <style>
             .lcni-sub-tab-nav { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; border-bottom: 1px solid #dcdcde; }
@@ -1140,9 +1159,11 @@ class LCNI_Settings {
         <div class="lcni-sub-tab-nav" id="lcni-front-sub-tabs">
             <button type="button" data-sub-tab="lcni-tab-frontend-signals">LCNi Signals</button>
             <button type="button" data-sub-tab="lcni-tab-frontend-overview">Stock Overview</button>
+            <button type="button" data-sub-tab="lcni-tab-frontend-watchlist">Watchlist</button>
         </div>
         <?php $this->render_frontend_module_form('signals', 'lcni-tab-frontend-signals', $signals_labels, $signals); ?>
         <?php $this->render_frontend_module_form('overview', 'lcni-tab-frontend-overview', $overview_labels, $overview); ?>
+        <?php $this->render_frontend_module_form('watchlist', 'lcni-tab-frontend-watchlist', $watchlist_labels, $watchlist); ?>
         <script>
             (function() {
                 const nav = document.getElementById('lcni-front-sub-tabs');
@@ -1153,13 +1174,13 @@ class LCNI_Settings {
                 const activate = function(tabId){
                     buttons.forEach((btn) => btn.classList.toggle('active', btn.getAttribute('data-sub-tab') === tabId));
                     panes.forEach((pane) => {
-                        if (pane.id === 'lcni-tab-frontend-signals' || pane.id === 'lcni-tab-frontend-overview') {
+                        if (pane.id === 'lcni-tab-frontend-signals' || pane.id === 'lcni-tab-frontend-overview' || pane.id === 'lcni-tab-frontend-watchlist') {
                             pane.classList.toggle('active', pane.id === tabId);
                         }
                     });
                 };
                 buttons.forEach((btn) => btn.addEventListener('click', () => activate(btn.getAttribute('data-sub-tab'))));
-                activate(current === 'lcni-tab-frontend-overview' ? 'lcni-tab-frontend-overview' : 'lcni-tab-frontend-signals');
+                activate(current === 'lcni-tab-frontend-overview' ? 'lcni-tab-frontend-overview' : (current === 'lcni-tab-frontend-watchlist' ? 'lcni-tab-frontend-watchlist' : 'lcni-tab-frontend-signals'));
             })();
         </script>
         <?php
@@ -1173,7 +1194,7 @@ class LCNI_Settings {
                 <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
                 <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
                 <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
-                <h3><?php echo esc_html($module === 'signals' ? 'LCNi Signals' : 'Stock Overview'); ?></h3>
+                <h3><?php echo esc_html($module === 'signals' ? 'LCNi Signals' : ($module === 'overview' ? 'Stock Overview' : 'Watchlist')); ?></h3>
                 <p>Chọn chỉ báo được phép hiển thị để user frontend tùy chọn yêu thích.</p>
                 <div class="lcni-front-grid">
                     <?php foreach ($labels as $key => $label) : ?>
