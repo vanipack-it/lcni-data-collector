@@ -84,6 +84,7 @@ class LCNI_DB {
         self::backfill_ohlc_rs_1m_by_exchange();
         self::backfill_ohlc_rs_1w_by_exchange();
         self::backfill_ohlc_rs_3m_by_exchange();
+        self::backfill_ohlc_rs_exchange_signals();
         self::ensure_ohlc_indexes();
     }
 
@@ -121,6 +122,8 @@ class LCNI_DB {
             rs_1m_by_exchange DECIMAL(6,2) DEFAULT NULL,
             rs_1w_by_exchange DECIMAL(6,2) DEFAULT NULL,
             rs_3m_by_exchange DECIMAL(6,2) DEFAULT NULL,
+            rs_exchange_status VARCHAR(50) DEFAULT NULL,
+            rs_exchange_recommend VARCHAR(50) DEFAULT NULL,
             pct_3m DECIMAL(12,6) DEFAULT NULL,
             pct_6m DECIMAL(12,6) DEFAULT NULL,
             pct_1y DECIMAL(12,6) DEFAULT NULL,
@@ -341,6 +344,8 @@ class LCNI_DB {
             'rs_1m_by_exchange' => 'DECIMAL(6,2) DEFAULT NULL',
             'rs_1w_by_exchange' => 'DECIMAL(6,2) DEFAULT NULL',
             'rs_3m_by_exchange' => 'DECIMAL(6,2) DEFAULT NULL',
+            'rs_exchange_status' => 'VARCHAR(50) DEFAULT NULL',
+            'rs_exchange_recommend' => 'VARCHAR(50) DEFAULT NULL',
             'pct_3m' => 'DECIMAL(12,6) DEFAULT NULL',
             'pct_6m' => 'DECIMAL(12,6) DEFAULT NULL',
             'pct_1y' => 'DECIMAL(12,6) DEFAULT NULL',
@@ -531,6 +536,25 @@ class LCNI_DB {
             'tang_gia_kem_vol_upcom_pct_t_1_min' => 0.10,
             'tang_gia_kem_vol_vol_ratio_ma10_min' => 1,
             'tang_gia_kem_vol_vol_ratio_ma20_min' => 1.5,
+            'rs_exchange_status_song_manh_1w_min' => 80,
+            'rs_exchange_status_song_manh_1m_min' => 70,
+            'rs_exchange_status_song_manh_3m_max' => 50,
+            'rs_exchange_status_giu_trend_1w_min' => 60,
+            'rs_exchange_status_giu_trend_1m_min' => 70,
+            'rs_exchange_status_giu_trend_3m_min' => 70,
+            'rs_exchange_status_yeu_1w_max' => 50,
+            'rs_exchange_status_yeu_1m_max' => 50,
+            'rs_exchange_status_yeu_3m_max' => 50,
+            'rs_exchange_recommend_volume_min' => 50000,
+            'rs_exchange_recommend_buy_1w_min' => 70,
+            'rs_exchange_recommend_buy_1w_gain_over_1m' => 0,
+            'rs_exchange_recommend_buy_pct_1w_min' => 0.03,
+            'rs_exchange_recommend_buy_pct_1m_max' => 0.2,
+            'rs_exchange_recommend_buy_pct_3m_max' => 0.4,
+            'rs_exchange_recommend_buy_pct_t_1_min' => 0.02,
+            'rs_exchange_recommend_buy_volume_boost_ratio' => 1.5,
+            'rs_exchange_recommend_sell_1w_max' => 50,
+            'rs_exchange_recommend_sell_pct_1w_max' => -0.03,
         ];
     }
 
@@ -726,13 +750,23 @@ class LCNI_DB {
         $status = self::get_rule_rebuild_status();
         $processed = (int) $status['processed'];
         $processed_in_batch = 0;
+        $touched_timeframes = [];
 
         while ($processed_in_batch < $batch_size && !empty($tasks)) {
             $task = array_shift($tasks);
             self::rebuild_ohlc_indicators($task['symbol'], $task['timeframe']);
             self::rebuild_ohlc_trading_index($task['symbol'], $task['timeframe']);
+            $touched_timeframes[(string) $task['timeframe']] = true;
             $processed_in_batch++;
             $processed++;
+        }
+
+        if (!empty($touched_timeframes)) {
+            $timeframes = array_keys($touched_timeframes);
+            self::rebuild_rs_1m_by_exchange([], $timeframes);
+            self::rebuild_rs_1w_by_exchange([], $timeframes);
+            self::rebuild_rs_3m_by_exchange([], $timeframes);
+            self::rebuild_rs_exchange_signals([], $timeframes);
         }
 
         update_option(self::RULE_REBUILD_TASKS_OPTION, $tasks, false);
@@ -787,6 +821,7 @@ class LCNI_DB {
         self::rebuild_rs_1m_by_exchange();
         self::rebuild_rs_1w_by_exchange();
         self::rebuild_rs_3m_by_exchange();
+        self::rebuild_rs_exchange_signals();
 
         return count($all_series);
     }
@@ -998,6 +1033,17 @@ class LCNI_DB {
 
         self::rebuild_rs_3m_by_exchange();
         self::log_change('backfill_ohlc_rs_3m_by_exchange', 'Backfilled rs_3m_by_exchange for OHLC rows by exchange ranking.');
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function backfill_ohlc_rs_exchange_signals() {
+        $migration_flag = 'lcni_ohlc_rs_exchange_signals_backfilled_v1';
+        if (get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        self::rebuild_rs_exchange_signals();
+        self::log_change('backfill_ohlc_rs_exchange_signals', 'Backfilled rs_exchange_status and rs_exchange_recommend for OHLC rows.');
         update_option($migration_flag, 'yes');
     }
 
@@ -1861,6 +1907,7 @@ class LCNI_DB {
             // Rebuild RS 3M for the whole timeframe scope so rows that become eligible
             // after historical backfills are not left NULL.
             self::rebuild_rs_3m_by_exchange([], array_keys($touched_timeframes));
+            self::rebuild_rs_exchange_signals([], array_keys($touched_timeframes));
         }
 
         return [
@@ -1898,6 +1945,8 @@ class LCNI_DB {
                     OR latest.pha_nen IS NULL
                     OR latest.tang_gia_kem_vol IS NULL
                     OR latest.smart_money IS NULL
+                    OR latest.rs_exchange_status IS NULL
+                    OR latest.rs_exchange_recommend IS NULL
                 LIMIT %d",
                 $limit
             ),
@@ -2110,6 +2159,103 @@ class LCNI_DB {
 
     private static function rebuild_rs_3m_by_exchange($event_times = [], $timeframes = []) {
         self::rebuild_rs_by_exchange('pct_3m', 'rs_3m_by_exchange', $event_times, $timeframes);
+    }
+
+    private static function rebuild_rs_exchange_signals($event_times = [], $timeframes = []) {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $rules = self::get_rule_settings();
+        $params = [
+            (float) $rules['rs_exchange_status_song_manh_1w_min'],
+            (float) $rules['rs_exchange_status_song_manh_1m_min'],
+            (float) $rules['rs_exchange_status_song_manh_3m_max'],
+            (float) $rules['rs_exchange_status_giu_trend_1w_min'],
+            (float) $rules['rs_exchange_status_giu_trend_1m_min'],
+            (float) $rules['rs_exchange_status_giu_trend_3m_min'],
+            (float) $rules['rs_exchange_status_yeu_1w_max'],
+            (float) $rules['rs_exchange_status_yeu_1m_max'],
+            (float) $rules['rs_exchange_status_yeu_3m_max'],
+            (float) $rules['rs_exchange_recommend_volume_min'],
+            (float) $rules['rs_exchange_recommend_buy_1w_min'],
+            (float) $rules['rs_exchange_recommend_buy_1w_gain_over_1m'],
+            (float) $rules['rs_exchange_recommend_buy_pct_1w_min'],
+            (float) $rules['rs_exchange_recommend_buy_pct_1m_max'],
+            (float) $rules['rs_exchange_recommend_buy_pct_3m_max'],
+            (float) $rules['rs_exchange_recommend_buy_pct_t_1_min'],
+            (float) $rules['rs_exchange_recommend_buy_volume_boost_ratio'],
+            (float) $rules['rs_exchange_recommend_sell_1w_max'],
+            (float) $rules['rs_exchange_recommend_sell_pct_1w_max'],
+        ];
+
+        $where_clause = '';
+        if (!empty($event_times) || !empty($timeframes)) {
+            $filters = [];
+            if (!empty($event_times)) {
+                $filters[] = 'cur.event_time IN (' . implode(', ', array_fill(0, count($event_times), '%d')) . ')';
+                $params = array_merge($params, array_map('intval', $event_times));
+            }
+
+            if (!empty($timeframes)) {
+                $filters[] = 'cur.timeframe IN (' . implode(', ', array_fill(0, count($timeframes), '%s')) . ')';
+                $params = array_merge($params, $timeframes);
+            }
+
+            if (!empty($filters)) {
+                $where_clause = ' WHERE ' . implode(' AND ', $filters);
+            }
+        }
+
+        $sql = "UPDATE {$table} cur
+            LEFT JOIN {$table} prev
+                ON prev.symbol = cur.symbol
+                AND prev.timeframe = cur.timeframe
+                AND prev.trading_index = cur.trading_index - 1
+            SET
+                cur.rs_exchange_status =
+                    CASE
+                        WHEN cur.rs_1w_by_exchange >= %f
+                            AND cur.rs_1m_by_exchange >= %f
+                            AND cur.rs_3m_by_exchange < %f
+                            THEN 'RS -> Vào Sóng Mạnh'
+                        WHEN cur.rs_1w_by_exchange >= %f
+                            AND cur.rs_1m_by_exchange >= %f
+                            AND cur.rs_3m_by_exchange >= %f
+                            THEN 'RS -> Giữ Trend Mạnh'
+                        WHEN cur.rs_1w_by_exchange > cur.rs_1m_by_exchange
+                            AND cur.rs_1m_by_exchange > cur.rs_3m_by_exchange
+                            THEN 'RS -> Tăng dần ổn'
+                        WHEN cur.rs_1w_by_exchange < cur.rs_1m_by_exchange
+                            AND cur.rs_1m_by_exchange < cur.rs_3m_by_exchange
+                            THEN 'RS -> Đảo chiều giảm'
+                        WHEN cur.rs_1w_by_exchange < %f
+                            AND cur.rs_1m_by_exchange < %f
+                            AND cur.rs_3m_by_exchange < %f
+                            THEN 'RS -> Yếu'
+                        ELSE NULL
+                    END,
+                cur.rs_exchange_recommend =
+                    CASE
+                        WHEN cur.volume >= %f
+                            AND cur.rs_1w_by_exchange > %f
+                            AND cur.rs_1w_by_exchange > cur.rs_1m_by_exchange + %f
+                            AND cur.rs_1w_by_exchange > IFNULL(prev.rs_1w_by_exchange, 0)
+                            AND cur.rs_1m_by_exchange > IFNULL(prev.rs_1m_by_exchange, 0)
+                            AND cur.pct_1w >= %f
+                            AND NOT (cur.pct_1m > %f OR cur.pct_3m > %f)
+                            AND (
+                                cur.pct_t_1 > %f
+                                OR cur.volume > (%f * cur.vol_ma20)
+                            )
+                            THEN 'RS -> Gợi ý Mua'
+                        WHEN cur.rs_1w_by_exchange < cur.rs_1m_by_exchange
+                            AND cur.rs_1w_by_exchange < %f
+                            AND cur.pct_1w < %f
+                            THEN 'RS->Gợi ý Bán'
+                        ELSE 'RS->Theo dõi'
+                    END{$where_clause}";
+
+        $wpdb->query($wpdb->prepare($sql, $params));
     }
 
     private static function rebuild_rs_by_exchange($source_column, $target_column, $event_times = [], $timeframes = []) {

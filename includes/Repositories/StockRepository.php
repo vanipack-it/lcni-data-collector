@@ -22,7 +22,8 @@ class LCNI_Data_StockRepository {
         $row = $wpdb->get_row(
             $wpdb->prepare(
                 "SELECT symbol, timeframe, event_time, open_price, high_price, low_price, close_price, volume,
-                        pct_t_1, ma10, ma20, ma50, ma100, ma200, rsi, xay_nen, pha_nen, tang_gia_kem_vol, smart_money
+                        pct_t_1, ma10, ma20, ma50, ma100, ma200, rsi, xay_nen, pha_nen, tang_gia_kem_vol, smart_money,
+                        rs_exchange_status, rs_exchange_recommend
                  FROM {$table}
                  WHERE symbol = %s AND timeframe = '1D'
                  ORDER BY event_time DESC

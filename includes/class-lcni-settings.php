@@ -227,7 +227,7 @@ class LCNI_Settings {
         $redirect_page = in_array($redirect_page, ['lcni-settings', 'lcni-data-viewer'], true) ? $redirect_page : 'lcni-settings';
         $redirect_url = admin_url('admin.php?page=' . $redirect_page);
 
-        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol'], true)) {
+        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange'], true)) {
             $redirect_url = add_query_arg('tab', $redirect_tab, $redirect_url);
         }
 
@@ -455,7 +455,7 @@ class LCNI_Settings {
         global $wpdb;
 
         $active_tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'general';
-        $rule_sub_tabs = ['lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol'];
+        $rule_sub_tabs = ['lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange'];
         if (in_array($active_tab, $rule_sub_tabs, true)) {
             $active_tab = 'rule_settings';
         }
@@ -731,6 +731,8 @@ class LCNI_Settings {
             'rs_1m_by_exchange' => 'RS 1M (Exchange)',
             'rs_1w_by_exchange' => 'RS 1W (Exchange)',
             'rs_3m_by_exchange' => 'RS 3M (Exchange)',
+            'rs_exchange_status' => 'RS Exchange Status',
+            'rs_exchange_recommend' => 'RS Exchange Recommend',
             'pct_3m' => '%3M',
             'pct_6m' => '%6M',
             'pct_1y' => '%1Y',
@@ -767,7 +769,7 @@ class LCNI_Settings {
             'created_at' => 'Created At',
         ];
 
-        $ohlc_rows = $wpdb->get_results("SELECT symbol, timeframe, event_time, trading_index, open_price, high_price, low_price, close_price, volume, value_traded, pct_t_1, pct_t_3, pct_1w, pct_1m, rs_1m_by_exchange, rs_1w_by_exchange, rs_3m_by_exchange, pct_3m, pct_6m, pct_1y, ma10, ma20, ma50, ma100, ma200, h1m, h3m, h6m, h1y, l1m, l3m, l6m, l1y, vol_ma10, vol_ma20, gia_sv_ma10, gia_sv_ma20, gia_sv_ma50, gia_sv_ma100, gia_sv_ma200, vol_sv_vol_ma10, vol_sv_vol_ma20, macd, macd_signal, rsi, xay_nen, xay_nen_count_30, nen_type, pha_nen, tang_gia_kem_vol, smart_money, created_at FROM {$wpdb->prefix}lcni_ohlc ORDER BY event_time DESC LIMIT 50", ARRAY_A);
+        $ohlc_rows = $wpdb->get_results("SELECT symbol, timeframe, event_time, trading_index, open_price, high_price, low_price, close_price, volume, value_traded, pct_t_1, pct_t_3, pct_1w, pct_1m, rs_1m_by_exchange, rs_1w_by_exchange, rs_3m_by_exchange, rs_exchange_status, rs_exchange_recommend, pct_3m, pct_6m, pct_1y, ma10, ma20, ma50, ma100, ma200, h1m, h3m, h6m, h1y, l1m, l3m, l6m, l1y, vol_ma10, vol_ma20, gia_sv_ma10, gia_sv_ma20, gia_sv_ma50, gia_sv_ma100, gia_sv_ma200, vol_sv_vol_ma10, vol_sv_vol_ma20, macd, macd_signal, rsi, xay_nen, xay_nen_count_30, nen_type, pha_nen, tang_gia_kem_vol, smart_money, created_at FROM {$wpdb->prefix}lcni_ohlc ORDER BY event_time DESC LIMIT 50", ARRAY_A);
         $symbol_rows = $wpdb->get_results("SELECT s.symbol, s.market_id, m.exchange, s.id_icb2, i.name_icb2, s.board_id, s.isin, s.basic_price, s.ceiling_price, s.floor_price, s.security_status, s.source, s.updated_at FROM {$wpdb->prefix}lcni_symbols s LEFT JOIN {$wpdb->prefix}lcni_marketid m ON m.market_id = s.market_id LEFT JOIN {$wpdb->prefix}lcni_icb2 i ON i.id_icb2 = s.id_icb2 ORDER BY s.updated_at DESC LIMIT 50", ARRAY_A);
         $market_rows = $wpdb->get_results("SELECT market_id, exchange, updated_at FROM {$wpdb->prefix}lcni_marketid ORDER BY CAST(market_id AS UNSIGNED), market_id", ARRAY_A);
         $icb2_rows = $wpdb->get_results("SELECT id_icb2, name_icb2, updated_at FROM {$wpdb->prefix}lcni_icb2 ORDER BY id_icb2 ASC", ARRAY_A);
@@ -910,7 +912,7 @@ class LCNI_Settings {
                     const resetFilterBtn = document.getElementById('lcni-ohlc-reset-filter');
 
                     if (filterInput && picker && table) {
-                        const ruleColumns = ['xay_nen', 'xay_nen_count_30', 'nen_type', 'pha_nen', 'tang_gia_kem_vol', 'smart_money', 'macd', 'rsi', 'symbol', 'timeframe', 'event_time', 'close_price', 'volume'];
+                        const ruleColumns = ['xay_nen', 'xay_nen_count_30', 'nen_type', 'pha_nen', 'tang_gia_kem_vol', 'smart_money', 'rs_exchange_status', 'rs_exchange_recommend', 'macd', 'rsi', 'symbol', 'timeframe', 'event_time', 'close_price', 'volume'];
                         const checkboxes = Array.from(picker.querySelectorAll('input[data-column-toggle]'));
                         const storageKey = 'lcni_ohlc_visible_columns';
 
@@ -1066,6 +1068,7 @@ class LCNI_Settings {
             <button type="button" data-sub-tab="lcni-tab-rule-nen-type">nen_type</button>
             <button type="button" data-sub-tab="lcni-tab-rule-pha-nen">pha_nen</button>
             <button type="button" data-sub-tab="lcni-tab-rule-tang-gia-kem-vol">tang_gia_kem_vol</button>
+            <button type="button" data-sub-tab="lcni-tab-rule-rs-exchange">rs_exchange</button>
         </div>
 
         <div id="lcni-tab-rule-xay-nen" class="lcni-sub-tab-content">
@@ -1141,6 +1144,27 @@ class LCNI_Settings {
                     <tr><th scope="row">Ngưỡng Vol ratio (Vol/VolMA10, Vol/VolMA20)</th><td><input type="number" step="0.0001" name="lcni_rule_settings[tang_gia_kem_vol_vol_ratio_ma10_min]" value="<?php echo esc_attr((string) $rule_settings['tang_gia_kem_vol_vol_ratio_ma10_min']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[tang_gia_kem_vol_vol_ratio_ma20_min]" value="<?php echo esc_attr((string) $rule_settings['tang_gia_kem_vol_vol_ratio_ma20_min']); ?>"></td></tr>
                 </tbody></table>
                 <?php submit_button('Lưu & thực thi rule tang_gia_kem_vol'); ?>
+            </form>
+        </div>
+
+        <div id="lcni-tab-rule-rs-exchange" class="lcni-sub-tab-content">
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=' . $redirect_page)); ?>" class="lcni-rule-form">
+                <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                <input type="hidden" name="lcni_admin_action" value="save_rule_settings">
+                <input type="hidden" name="lcni_rule_execute" value="1">
+                <input type="hidden" name="lcni_redirect_page" value="<?php echo esc_attr($redirect_page); ?>">
+                <input type="hidden" name="lcni_redirect_tab" value="lcni-tab-rule-rs-exchange">
+                <p class="description">Thiết lập rule cho <code>rs_exchange_status</code> và <code>rs_exchange_recommend</code>.</p>
+                <table class="form-table" role="presentation"><tbody>
+                    <tr><th scope="row">Vào Sóng Mạnh (1W min / 1M min / 3M max)</th><td><input type="number" step="0.01" name="lcni_rule_settings[rs_exchange_status_song_manh_1w_min]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_status_song_manh_1w_min']); ?>"> / <input type="number" step="0.01" name="lcni_rule_settings[rs_exchange_status_song_manh_1m_min]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_status_song_manh_1m_min']); ?>"> / <input type="number" step="0.01" name="lcni_rule_settings[rs_exchange_status_song_manh_3m_max]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_status_song_manh_3m_max']); ?>"></td></tr>
+                    <tr><th scope="row">Giữ Trend Mạnh (1W min / 1M min / 3M min)</th><td><input type="number" step="0.01" name="lcni_rule_settings[rs_exchange_status_giu_trend_1w_min]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_status_giu_trend_1w_min']); ?>"> / <input type="number" step="0.01" name="lcni_rule_settings[rs_exchange_status_giu_trend_1m_min]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_status_giu_trend_1m_min']); ?>"> / <input type="number" step="0.01" name="lcni_rule_settings[rs_exchange_status_giu_trend_3m_min]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_status_giu_trend_3m_min']); ?>"></td></tr>
+                    <tr><th scope="row">Yếu (1W max / 1M max / 3M max)</th><td><input type="number" step="0.01" name="lcni_rule_settings[rs_exchange_status_yeu_1w_max]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_status_yeu_1w_max']); ?>"> / <input type="number" step="0.01" name="lcni_rule_settings[rs_exchange_status_yeu_1m_max]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_status_yeu_1m_max']); ?>"> / <input type="number" step="0.01" name="lcni_rule_settings[rs_exchange_status_yeu_3m_max]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_status_yeu_3m_max']); ?>"></td></tr>
+                    <tr><th scope="row">Gợi ý mua (Volume min / RS1W min / RS1W-1M min)</th><td><input type="number" step="1" name="lcni_rule_settings[rs_exchange_recommend_volume_min]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_recommend_volume_min']); ?>"> / <input type="number" step="0.01" name="lcni_rule_settings[rs_exchange_recommend_buy_1w_min]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_recommend_buy_1w_min']); ?>"> / <input type="number" step="0.01" name="lcni_rule_settings[rs_exchange_recommend_buy_1w_gain_over_1m]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_recommend_buy_1w_gain_over_1m']); ?>"></td></tr>
+                    <tr><th scope="row">Gợi ý mua (%1W min / %1M max / %3M max)</th><td><input type="number" step="0.0001" name="lcni_rule_settings[rs_exchange_recommend_buy_pct_1w_min]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_recommend_buy_pct_1w_min']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[rs_exchange_recommend_buy_pct_1m_max]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_recommend_buy_pct_1m_max']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[rs_exchange_recommend_buy_pct_3m_max]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_recommend_buy_pct_3m_max']); ?>"></td></tr>
+                    <tr><th scope="row">Gợi ý mua (%T-1 min / Volume boost ratio)</th><td><input type="number" step="0.0001" name="lcni_rule_settings[rs_exchange_recommend_buy_pct_t_1_min]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_recommend_buy_pct_t_1_min']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[rs_exchange_recommend_buy_volume_boost_ratio]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_recommend_buy_volume_boost_ratio']); ?>"></td></tr>
+                    <tr><th scope="row">Gợi ý bán (RS1W max / %1W max)</th><td><input type="number" step="0.01" name="lcni_rule_settings[rs_exchange_recommend_sell_1w_max]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_recommend_sell_1w_max']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[rs_exchange_recommend_sell_pct_1w_max]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_recommend_sell_pct_1w_max']); ?>"></td></tr>
+                </tbody></table>
+                <?php submit_button('Lưu & thực thi rule rs_exchange'); ?>
             </form>
         </div>
 
