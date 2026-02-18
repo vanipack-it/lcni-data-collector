@@ -6,11 +6,13 @@ if (!defined('ABSPATH')) {
 
 class LCNI_Stock_Signals_Shortcodes {
 
+    const SETTINGS_META_KEY = 'lcni_stock_signals_fields';
     const VERSION = '1.0.0';
 
     public function __construct() {
         add_action('init', [$this, 'register_shortcodes']);
         add_action('wp_enqueue_scripts', [$this, 'register_assets']);
+        add_action('rest_api_init', [$this, 'register_routes']);
     }
 
     public function register_shortcodes() {
@@ -28,6 +30,25 @@ class LCNI_Stock_Signals_Shortcodes {
         $version = file_exists($script_path) ? (string) filemtime($script_path) : self::VERSION;
 
         wp_register_script('lcni-stock-signals', LCNI_URL . 'assets/js/lcni-stock-signals.js', ['lcni-stock-sync'], $version, true);
+    }
+
+    public function register_routes() {
+        register_rest_route('lcni/v1', '/stock-signals/settings', [
+            [
+                'methods' => WP_REST_Server::READABLE,
+                'callback' => [$this, 'get_settings'],
+                'permission_callback' => static function () {
+                    return is_user_logged_in();
+                },
+            ],
+            [
+                'methods' => WP_REST_Server::CREATABLE,
+                'callback' => [$this, 'save_settings'],
+                'permission_callback' => static function () {
+                    return is_user_logged_in();
+                },
+            ],
+        ]);
     }
 
     public function render_fixed($atts = []) {
@@ -66,14 +87,114 @@ class LCNI_Stock_Signals_Shortcodes {
 
     private function render_container($symbol, $query_param, $version) {
         wp_enqueue_script('lcni-stock-signals');
+        $admin_config = $this->get_admin_config();
 
         return sprintf(
-            '<div data-lcni-stock-signals data-symbol="%1$s" data-query-param="%2$s" data-api-base="%3$s" data-version="%4$s"></div>',
+            '<div data-lcni-stock-signals data-symbol="%1$s" data-query-param="%2$s" data-api-base="%3$s" data-settings-api="%4$s" data-admin-config="%5$s" data-version="%6$s"></div>',
             esc_attr($symbol),
             esc_attr($query_param),
             esc_url(rest_url('lcni/v1/stock-signals')),
+            esc_url(rest_url('lcni/v1/stock-signals/settings')),
+            esc_attr(wp_json_encode($admin_config)),
             esc_attr($version)
         );
+    }
+
+    public function get_settings() {
+        $admin_config = $this->get_admin_config();
+        $allowed_fields = (array) ($admin_config['allowed_fields'] ?? []);
+        $fields = get_user_meta(get_current_user_id(), self::SETTINGS_META_KEY, true);
+
+        if (!is_array($fields) || empty($fields)) {
+            $fields = $allowed_fields;
+        }
+
+        $fields = array_values(array_intersect($allowed_fields, array_map('sanitize_key', $fields)));
+        if (empty($fields)) {
+            $fields = $allowed_fields;
+        }
+
+        return rest_ensure_response([
+            'fields' => $fields,
+            'version' => self::VERSION,
+        ]);
+    }
+
+    public function save_settings(WP_REST_Request $request) {
+        $admin_config = $this->get_admin_config();
+        $allowed_fields = (array) ($admin_config['allowed_fields'] ?? []);
+        $fields = $request->get_param('fields');
+
+        if (!is_array($fields)) {
+            return new WP_Error('invalid_fields', 'Danh sách fields không hợp lệ.', ['status' => 400]);
+        }
+
+        $normalized = array_values(array_intersect($allowed_fields, array_map('sanitize_key', $fields)));
+        if (empty($normalized)) {
+            $normalized = $allowed_fields;
+        }
+
+        update_user_meta(get_current_user_id(), self::SETTINGS_META_KEY, $normalized);
+
+        return rest_ensure_response([
+            'fields' => $normalized,
+            'version' => self::VERSION,
+        ]);
+    }
+
+    private function get_admin_config() {
+        $default = $this->get_default_admin_config();
+        $saved = get_option('lcni_frontend_settings_signals', []);
+
+        if (!is_array($saved)) {
+            return $default;
+        }
+
+        $allowed_fields = isset($saved['allowed_fields']) && is_array($saved['allowed_fields'])
+            ? array_values(array_intersect($default['allowed_fields'], array_map('sanitize_key', $saved['allowed_fields'])))
+            : $default['allowed_fields'];
+
+        if (empty($allowed_fields)) {
+            $allowed_fields = $default['allowed_fields'];
+        }
+
+        $styles = isset($saved['styles']) && is_array($saved['styles']) ? $saved['styles'] : [];
+
+        return [
+            'allowed_fields' => $allowed_fields,
+            'styles' => [
+                'label_color' => $this->sanitize_hex_color($styles['label_color'] ?? $default['styles']['label_color'], $default['styles']['label_color']),
+                'value_color' => $this->sanitize_hex_color($styles['value_color'] ?? $default['styles']['value_color'], $default['styles']['value_color']),
+                'item_background' => $this->sanitize_hex_color($styles['item_background'] ?? $default['styles']['item_background'], $default['styles']['item_background']),
+                'label_font_size' => $this->sanitize_font_size($styles['label_font_size'] ?? $default['styles']['label_font_size'], $default['styles']['label_font_size']),
+                'value_font_size' => $this->sanitize_font_size($styles['value_font_size'] ?? $default['styles']['value_font_size'], $default['styles']['value_font_size']),
+            ],
+        ];
+    }
+
+    private function get_default_admin_config() {
+        return [
+            'allowed_fields' => ['xay_nen', 'xay_nen_count_30', 'nen_type', 'pha_nen', 'tang_gia_kem_vol', 'smart_money', 'rs_exchange_status', 'rs_exchange_recommend', 'rs_recommend_status'],
+            'styles' => [
+                'label_color' => '#4b5563',
+                'value_color' => '#111827',
+                'item_background' => '#f9fafb',
+                'label_font_size' => 12,
+                'value_font_size' => 14,
+            ],
+        ];
+    }
+
+    private function sanitize_hex_color($color, $fallback) {
+        $sanitized = sanitize_hex_color((string) $color);
+
+        return $sanitized ?: $fallback;
+    }
+
+    private function sanitize_font_size($size, $fallback) {
+        $value = (int) $size;
+
+        return $value >= 10 && $value <= 40 ? $value : (int) $fallback;
     }
 
     private function sanitize_symbol($symbol) {

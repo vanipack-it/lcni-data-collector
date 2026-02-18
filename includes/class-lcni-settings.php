@@ -33,6 +33,8 @@ class LCNI_Settings {
         register_setting('lcni_settings_group', 'lcni_access_token', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_api_credential'], 'default' => '']);
         register_setting('lcni_settings_group', 'lcni_secdef_url', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_secdef_url'], 'default' => LCNI_API::SECDEF_URL]);
         register_setting('lcni_settings_group', 'lcni_update_interval_minutes', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_update_interval'], 'default' => 5]);
+        register_setting('lcni_settings_group', 'lcni_frontend_settings_signals', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_frontend_module_settings'], 'default' => []]);
+        register_setting('lcni_settings_group', 'lcni_frontend_settings_overview', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_frontend_module_settings'], 'default' => []]);
     }
 
     public function sanitize_timeframe($value) {
@@ -220,6 +222,27 @@ class LCNI_Settings {
             } else {
                 $this->set_notice('success', 'Đã chạy cập nhật thủ công.');
             }
+        } elseif ($action === 'save_frontend_settings') {
+            $module = isset($_POST['lcni_frontend_module']) ? sanitize_key(wp_unslash($_POST['lcni_frontend_module'])) : '';
+            $allowed_modules = ['signals', 'overview'];
+
+            if (!in_array($module, $allowed_modules, true)) {
+                $this->set_notice('error', 'Module frontend không hợp lệ.');
+            } else {
+                $input = [
+                    'allowed_fields' => isset($_POST['lcni_frontend_allowed_fields']) ? (array) wp_unslash($_POST['lcni_frontend_allowed_fields']) : [],
+                    'styles' => [
+                        'label_color' => isset($_POST['lcni_frontend_style_label_color']) ? wp_unslash($_POST['lcni_frontend_style_label_color']) : '',
+                        'value_color' => isset($_POST['lcni_frontend_style_value_color']) ? wp_unslash($_POST['lcni_frontend_style_value_color']) : '',
+                        'item_background' => isset($_POST['lcni_frontend_style_item_background']) ? wp_unslash($_POST['lcni_frontend_style_item_background']) : '',
+                        'label_font_size' => isset($_POST['lcni_frontend_style_label_font_size']) ? wp_unslash($_POST['lcni_frontend_style_label_font_size']) : '',
+                        'value_font_size' => isset($_POST['lcni_frontend_style_value_font_size']) ? wp_unslash($_POST['lcni_frontend_style_value_font_size']) : '',
+                    ],
+                ];
+
+                update_option('lcni_frontend_settings_' . $module, $this->sanitize_frontend_module_settings($input));
+                $this->set_notice('success', 'Đã lưu Frontend Settings cho module ' . $module . '.');
+            }
         }
 
         $redirect_tab = isset($_POST['lcni_redirect_tab']) ? sanitize_key(wp_unslash($_POST['lcni_redirect_tab'])) : '';
@@ -227,7 +250,7 @@ class LCNI_Settings {
         $redirect_page = in_array($redirect_page, ['lcni-settings', 'lcni-data-viewer'], true) ? $redirect_page : 'lcni-settings';
         $redirect_url = admin_url('admin.php?page=' . $redirect_page);
 
-        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange'], true)) {
+        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange', 'lcni-tab-frontend-signals', 'lcni-tab-frontend-overview'], true)) {
             $redirect_url = add_query_arg('tab', $redirect_tab, $redirect_url);
         }
 
@@ -456,11 +479,15 @@ class LCNI_Settings {
 
         $active_tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'general';
         $rule_sub_tabs = ['lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange'];
+        $frontend_sub_tabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview'];
         if (in_array($active_tab, $rule_sub_tabs, true)) {
             $active_tab = 'rule_settings';
         }
+        if (in_array($active_tab, $frontend_sub_tabs, true)) {
+            $active_tab = 'frontend_settings';
+        }
 
-        if (!in_array($active_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'change_logs'], true)) {
+        if (!in_array($active_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'change_logs'], true)) {
             $active_tab = 'general';
         }
 
@@ -490,6 +517,7 @@ class LCNI_Settings {
                 <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=seed_dashboard')); ?>" class="nav-tab <?php echo $active_tab === 'seed_dashboard' ? 'nav-tab-active' : ''; ?>">Seed Dashboard</a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=update_data')); ?>" class="nav-tab <?php echo $active_tab === 'update_data' ? 'nav-tab-active' : ''; ?>">Update Data</a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=rule_settings')); ?>" class="nav-tab <?php echo $active_tab === 'rule_settings' ? 'nav-tab-active' : ''; ?>">Rule Setting</a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=frontend_settings')); ?>" class="nav-tab <?php echo $active_tab === 'frontend_settings' ? 'nav-tab-active' : ''; ?>">Frontend Setting</a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=change_logs')); ?>" class="nav-tab <?php echo $active_tab === 'change_logs' ? 'nav-tab-active' : ''; ?>">Change Logs</a>
             </h2>
 
@@ -696,6 +724,8 @@ class LCNI_Settings {
 
             <?php elseif ($active_tab === 'rule_settings') : ?>
                 <?php $this->render_rule_settings_section($rule_settings, 'lcni-settings'); ?>
+            <?php elseif ($active_tab === 'frontend_settings') : ?>
+                <?php $this->render_frontend_settings_section(); ?>
             <?php else : ?>
                 <h2>Change Logs</h2>
                 <?php if (!empty($logs)) : ?>
@@ -1028,6 +1058,133 @@ class LCNI_Settings {
 
                 })();
             </script>
+        </div>
+        <?php
+    }
+
+    private function sanitize_frontend_module_settings($value) {
+        $default = $this->get_default_frontend_module_settings();
+        $allowed_fields = isset($value['allowed_fields']) && is_array($value['allowed_fields'])
+            ? array_values(array_intersect($default['fields'], array_map('sanitize_key', $value['allowed_fields'])))
+            : $default['fields'];
+
+        if (empty($allowed_fields)) {
+            $allowed_fields = $default['fields'];
+        }
+
+        $styles = isset($value['styles']) && is_array($value['styles']) ? $value['styles'] : [];
+
+        return [
+            'allowed_fields' => $allowed_fields,
+            'styles' => [
+                'label_color' => sanitize_hex_color((string) ($styles['label_color'] ?? $default['styles']['label_color'])) ?: $default['styles']['label_color'],
+                'value_color' => sanitize_hex_color((string) ($styles['value_color'] ?? $default['styles']['value_color'])) ?: $default['styles']['value_color'],
+                'item_background' => sanitize_hex_color((string) ($styles['item_background'] ?? $default['styles']['item_background'])) ?: $default['styles']['item_background'],
+                'label_font_size' => $this->sanitize_frontend_font_size($styles['label_font_size'] ?? $default['styles']['label_font_size'], $default['styles']['label_font_size']),
+                'value_font_size' => $this->sanitize_frontend_font_size($styles['value_font_size'] ?? $default['styles']['value_font_size'], $default['styles']['value_font_size']),
+            ],
+        ];
+    }
+
+    private function sanitize_frontend_font_size($size, $fallback) {
+        $value = (int) $size;
+
+        return $value >= 10 && $value <= 40 ? $value : (int) $fallback;
+    }
+
+    private function get_default_frontend_module_settings() {
+        return [
+            'fields' => ['xay_nen', 'xay_nen_count_30', 'nen_type', 'pha_nen', 'tang_gia_kem_vol', 'smart_money', 'rs_exchange_status', 'rs_exchange_recommend', 'rs_recommend_status', 'symbol', 'exchange', 'icb2_name', 'eps', 'eps_1y_pct', 'dt_1y_pct', 'bien_ln_gop', 'bien_ln_rong', 'roe', 'de_ratio', 'pe_ratio', 'pb_ratio', 'ev_ebitda', 'tcbs_khuyen_nghi', 'co_tuc_pct', 'tc_rating', 'so_huu_nn_pct', 'tien_mat_rong_von_hoa', 'tien_mat_rong_tong_tai_san', 'loi_nhuan_4_quy_gan_nhat', 'tang_truong_dt_quy_gan_nhat', 'tang_truong_dt_quy_gan_nhi', 'tang_truong_ln_quy_gan_nhat', 'tang_truong_ln_quy_gan_nhi'],
+            'styles' => [
+                'label_color' => '#4b5563',
+                'value_color' => '#111827',
+                'item_background' => '#f9fafb',
+                'label_font_size' => 12,
+                'value_font_size' => 14,
+            ],
+        ];
+    }
+
+    private function render_frontend_settings_section() {
+        $signals_labels = [
+            'xay_nen' => 'Nền giá',
+            'xay_nen_count_30' => 'Số phiên đi nền trong 30 phiên',
+            'nen_type' => 'Dạng nền',
+            'pha_nen' => 'Tín hiệu phá nền',
+            'tang_gia_kem_vol' => 'Tăng giá kèm Vol',
+            'smart_money' => 'Tín hiệu smart',
+            'rs_exchange_status' => 'Trạng thái sức mạnh giá',
+            'rs_exchange_recommend' => 'Gợi ý sức mạnh giá',
+            'rs_recommend_status' => 'Gợi ý trạng thái sức mạnh giá',
+        ];
+        $overview_labels = [
+            'symbol' => 'Mã', 'exchange' => 'Sàn', 'icb2_name' => 'Ngành ICB 2', 'eps' => 'EPS', 'eps_1y_pct' => '% EPS 1 năm', 'dt_1y_pct' => '% DT 1 năm', 'bien_ln_gop' => 'Biên LN gộp', 'bien_ln_rong' => 'Biên LN ròng', 'roe' => 'ROE', 'de_ratio' => 'D/E', 'pe_ratio' => 'P/E', 'pb_ratio' => 'P/B', 'ev_ebitda' => 'EV/EBITDA', 'tcbs_khuyen_nghi' => 'TCBS khuyến nghị', 'co_tuc_pct' => '% Cổ tức', 'tc_rating' => 'TC Rating', 'so_huu_nn_pct' => '% Sở hữu NN', 'tien_mat_rong_von_hoa' => 'Tiền mặt ròng/Vốn hóa', 'tien_mat_rong_tong_tai_san' => 'Tiền mặt ròng/Tổng tài sản', 'loi_nhuan_4_quy_gan_nhat' => 'Lợi nhuận 4 quý gần nhất', 'tang_truong_dt_quy_gan_nhat' => 'Tăng trưởng DT quý gần nhất', 'tang_truong_dt_quy_gan_nhi' => 'Tăng trưởng DT quý gần nhì', 'tang_truong_ln_quy_gan_nhat' => 'Tăng trưởng LN quý gần nhất', 'tang_truong_ln_quy_gan_nhi' => 'Tăng trưởng LN quý gần nhì'
+        ];
+        $signals = $this->sanitize_frontend_module_settings(get_option('lcni_frontend_settings_signals', ['allowed_fields' => array_keys($signals_labels)]));
+        $overview = $this->sanitize_frontend_module_settings(get_option('lcni_frontend_settings_overview', ['allowed_fields' => array_keys($overview_labels)]));
+        ?>
+        <style>
+            .lcni-sub-tab-nav { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; border-bottom: 1px solid #dcdcde; }
+            .lcni-sub-tab-nav button { border: 1px solid #dcdcde; border-bottom: 0; background: #f6f7f7; padding: 6px 10px; cursor: pointer; }
+            .lcni-sub-tab-nav button.active { background: #fff; font-weight: 600; }
+            .lcni-sub-tab-content { display: none; }
+            .lcni-sub-tab-content.active { display: block; }
+            .lcni-front-form { max-width: 980px; background:#fff; border:1px solid #dcdcde; padding:12px; }
+            .lcni-front-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px,1fr)); gap:8px 16px; margin:12px 0;}
+        </style>
+        <p>Cấu hình hiển thị frontend cho từng shortcode module.</p>
+        <div class="lcni-sub-tab-nav" id="lcni-front-sub-tabs">
+            <button type="button" data-sub-tab="lcni-tab-frontend-signals">LCNi Signals</button>
+            <button type="button" data-sub-tab="lcni-tab-frontend-overview">Stock Overview</button>
+        </div>
+        <?php $this->render_frontend_module_form('signals', 'lcni-tab-frontend-signals', $signals_labels, $signals); ?>
+        <?php $this->render_frontend_module_form('overview', 'lcni-tab-frontend-overview', $overview_labels, $overview); ?>
+        <script>
+            (function() {
+                const nav = document.getElementById('lcni-front-sub-tabs');
+                if (!nav) { return; }
+                const buttons = nav.querySelectorAll('button[data-sub-tab]');
+                const panes = document.querySelectorAll('.lcni-sub-tab-content');
+                const current = (new URLSearchParams(window.location.search).get('tab')) || 'lcni-tab-frontend-signals';
+                const activate = function(tabId){
+                    buttons.forEach((btn) => btn.classList.toggle('active', btn.getAttribute('data-sub-tab') === tabId));
+                    panes.forEach((pane) => {
+                        if (pane.id === 'lcni-tab-frontend-signals' || pane.id === 'lcni-tab-frontend-overview') {
+                            pane.classList.toggle('active', pane.id === tabId);
+                        }
+                    });
+                };
+                buttons.forEach((btn) => btn.addEventListener('click', () => activate(btn.getAttribute('data-sub-tab'))));
+                activate(current === 'lcni-tab-frontend-overview' ? 'lcni-tab-frontend-overview' : 'lcni-tab-frontend-signals');
+            })();
+        </script>
+        <?php
+    }
+
+    private function render_frontend_module_form($module, $tab_id, $labels, $settings) {
+        ?>
+        <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
+                <h3><?php echo esc_html($module === 'signals' ? 'LCNi Signals' : 'Stock Overview'); ?></h3>
+                <p>Chọn chỉ báo được phép hiển thị để user frontend tùy chọn yêu thích.</p>
+                <div class="lcni-front-grid">
+                    <?php foreach ($labels as $key => $label) : ?>
+                        <label><input type="checkbox" name="lcni_frontend_allowed_fields[]" value="<?php echo esc_attr($key); ?>" <?php checked(in_array($key, (array) ($settings['allowed_fields'] ?? []), true)); ?>> <?php echo esc_html($label); ?></label>
+                    <?php endforeach; ?>
+                </div>
+                <table class="form-table" role="presentation"><tbody>
+                    <tr><th>Màu label</th><td><input type="color" name="lcni_frontend_style_label_color" value="<?php echo esc_attr((string) ($settings['styles']['label_color'] ?? '#4b5563')); ?>"></td></tr>
+                    <tr><th>Màu value</th><td><input type="color" name="lcni_frontend_style_value_color" value="<?php echo esc_attr((string) ($settings['styles']['value_color'] ?? '#111827')); ?>"></td></tr>
+                    <tr><th>Màu nền item</th><td><input type="color" name="lcni_frontend_style_item_background" value="<?php echo esc_attr((string) ($settings['styles']['item_background'] ?? '#f9fafb')); ?>"></td></tr>
+                    <tr><th>Cỡ chữ label</th><td><input type="number" min="10" max="40" name="lcni_frontend_style_label_font_size" value="<?php echo esc_attr((string) ($settings['styles']['label_font_size'] ?? 12)); ?>"> px</td></tr>
+                    <tr><th>Cỡ chữ value</th><td><input type="number" min="10" max="40" name="lcni_frontend_style_value_font_size" value="<?php echo esc_attr((string) ($settings['styles']['value_font_size'] ?? 14)); ?>"> px</td></tr>
+                </tbody></table>
+                <?php submit_button('Lưu Frontend Settings'); ?>
+            </form>
         </div>
         <?php
     }
