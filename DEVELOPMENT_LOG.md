@@ -57,3 +57,11 @@
 - Chuyển luồng **Lưu & thực thi Rule** sang chạy nền theo batch (cron), có trạng thái tiến trình realtime trên tab Rule Setting để tránh quá tải/sập admin khi rebuild toàn bộ dữ liệu.
 - Bổ sung cột `smart_money` trong `wp_lcni_ohlc`; giá trị trả về `Smart Money` khi đồng thời thỏa `pha_nen = Phá nền`, `tang_gia_kem_vol = Tăng giá kèm Vol` và `xep_hang` thuộc `A++, A+, A, B+` từ bảng `wp_lcni_symbol_tongquan`.
 
+
+
+## 2026-02-18
+- Bổ sung module LCNi Signals với shortcodes mới `lcni_stock_signals` và `lcni_stock_signals_query` để hiển thị các trường custom (`xay_nen`, `xay_nen_count_30`, `nen_type`, `pha_nen`, `tang_gia_kem_vol`, `smart_money`, `rs_exchange_status`, `rs_exchange_recommend`, `rs_recommend_status`) tại `event_time` gần nhất có dữ liệu.
+- Thêm REST endpoint `GET /wp-json/lcni/v1/stock-signals?symbol=XXX` phục vụ module signals.
+- Bổ sung shared asset `lcni-stock-sync.js` để đồng bộ đổi symbol giữa chart/overview/signals và sửa lỗi đồng bộ khi đặt nhiều shortcode chart/module trên cùng page (hỗ trợ query param động thay vì cố định `symbol`).
+- Tạo tài liệu `SHORTCODES.md` liệt kê toàn bộ shortcode và cách dùng.
+- Tăng phiên bản plugin lên `1.7`.

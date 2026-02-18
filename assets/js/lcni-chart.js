@@ -12,79 +12,23 @@ document.addEventListener("DOMContentLoaded", async () => {
     return;
   }
 
-  const sanitizeSymbol = (value) => {
-    const symbol = String(value || "").toUpperCase().trim();
-    return /^[A-Z0-9._-]{1,15}$/.test(symbol) ? symbol : "";
-  };
-
-  const createStockSync = () => {
-    if (window.LCNIStockSync) {
-      return window.LCNIStockSync;
-    }
-
-    const listeners = [];
-    const query = new URLSearchParams(window.location.search);
-    const currentFromQuery = sanitizeSymbol(query.get("symbol"));
-
-    const state = {
-      currentSymbol: currentFromQuery,
-      history: []
+  const stockSyncUtils = window.LCNIStockSyncUtils || null;
+  const sanitizeSymbol = stockSyncUtils
+    ? stockSyncUtils.sanitizeSymbol
+    : (value) => {
+      const symbol = String(value || "").toUpperCase().trim();
+      return /^[A-Z0-9._-]{1,15}$/.test(symbol) ? symbol : "";
     };
 
-    const notify = (symbol, source) => {
-      state.currentSymbol = symbol;
-      state.history.push({ symbol, source: source || "unknown", at: Date.now() });
-      try {
-        sessionStorage.setItem("lcni_stock_symbol_history", JSON.stringify(state.history.slice(-50)));
-      } catch (error) {
-        console.warn("LCNI: unable to persist stock history", error);
-      }
-
-      listeners.forEach((cb) => cb(symbol, source));
-      window.dispatchEvent(new CustomEvent("lcni:symbol-change", { detail: { symbol, source } }));
+  const stockSync = stockSyncUtils
+    ? stockSyncUtils.createStockSync()
+    : {
+      subscribe() {},
+      setSymbol() {},
+      getCurrentSymbol() { return ""; },
+      getHistory() { return []; },
+      configureQueryParam() {}
     };
-
-    const syncUrl = (symbol) => {
-      const nextUrl = new URL(window.location.href);
-      nextUrl.searchParams.set("symbol", symbol);
-      window.history.pushState({ ...window.history.state, lcniSymbol: symbol }, "", nextUrl.toString());
-    };
-
-    window.addEventListener("popstate", () => {
-      const symbol = sanitizeSymbol(new URLSearchParams(window.location.search).get("symbol"));
-      if (symbol) {
-        notify(symbol, "popstate");
-      }
-    });
-
-    window.LCNIStockSync = {
-      getCurrentSymbol() {
-        return state.currentSymbol;
-      },
-      getHistory() {
-        return state.history.slice();
-      },
-      subscribe(cb) {
-        listeners.push(cb);
-      },
-      setSymbol(symbol, options = {}) {
-        const next = sanitizeSymbol(symbol);
-        if (!next || next === state.currentSymbol) {
-          return;
-        }
-
-        if (options.pushState !== false) {
-          syncUrl(next);
-        }
-
-        notify(next, options.source || "manual");
-      }
-    };
-
-    return window.LCNIStockSync;
-  };
-
-  const stockSync = createStockSync();
 
   const renderChart = async (container) => {
     const apiBase = container.dataset.apiBase;
@@ -92,6 +36,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     const queryParam = container.dataset.queryParam;
     const fixedSymbol = sanitizeSymbol(container.dataset.symbol);
     const fallbackSymbol = sanitizeSymbol(container.dataset.fallbackSymbol);
+
+    stockSync.configureQueryParam(queryParam || "symbol");
 
     const resolveSymbol = () => {
       if (fixedSymbol) {

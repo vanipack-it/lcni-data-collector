@@ -167,6 +167,40 @@ class LCNI_StockQueryService {
         );
     }
 
+
+    public function getStockSignals($symbol) {
+        $normalized_symbol = $this->normalizeSymbol($symbol);
+        if ($normalized_symbol === '') {
+            return null;
+        }
+
+        return $this->cache->remember(
+            'stock_signals:' . $normalized_symbol,
+            function () use ($normalized_symbol) {
+                $row = $this->repository->getLatestSignalsBySymbol($normalized_symbol);
+                if (!$row) {
+                    return null;
+                }
+
+                return [
+                    'symbol' => $row['symbol'],
+                    'event_time' => isset($row['event_time']) ? (int) $row['event_time'] : null,
+                    'event_date' => isset($row['event_time']) ? gmdate('Y-m-d', (int) $row['event_time']) : null,
+                    'xay_nen' => $row['xay_nen'] ?? null,
+                    'xay_nen_count_30' => isset($row['xay_nen_count_30']) ? (int) $row['xay_nen_count_30'] : null,
+                    'nen_type' => $row['nen_type'] ?? null,
+                    'pha_nen' => $row['pha_nen'] ?? null,
+                    'tang_gia_kem_vol' => $row['tang_gia_kem_vol'] ?? null,
+                    'smart_money' => $row['smart_money'] ?? null,
+                    'rs_exchange_status' => $row['rs_exchange_status'] ?? null,
+                    'rs_exchange_recommend' => $row['rs_exchange_recommend'] ?? null,
+                    'rs_recommend_status' => $row['rs_recommend_status'] ?? null,
+                ];
+            },
+            120
+        );
+    }
+
     public function getStockOverview($symbol) {
         $normalized_symbol = $this->normalizeSymbol($symbol);
         if ($normalized_symbol === '') {
