@@ -66,13 +66,18 @@ document.addEventListener("DOMContentLoaded", async () => {
       rsiWrap.style.height = "160px";
       rsiWrap.style.marginTop = "8px";
 
+      const rsWrap = document.createElement("div");
+      rsWrap.style.height = "180px";
+      rsWrap.style.marginTop = "8px";
+
       container.appendChild(controls);
       container.appendChild(mainChartWrap);
       container.appendChild(volumeWrap);
       container.appendChild(macdWrap);
       container.appendChild(rsiWrap);
+      container.appendChild(rsWrap);
 
-      return { controls, mainChartWrap, volumeWrap, macdWrap, rsiWrap };
+      return { controls, mainChartWrap, volumeWrap, macdWrap, rsiWrap, rsWrap };
     };
 
     const createCheckbox = (labelText, checked, onChange) => {
@@ -122,7 +127,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         return;
       }
 
-      const { controls, mainChartWrap, volumeWrap, macdWrap, rsiWrap } = buildShell();
+      const { controls, mainChartWrap, volumeWrap, macdWrap, rsiWrap, rsWrap } = buildShell();
 
       const commonOptions = {
         autoSize: true,
@@ -140,6 +145,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       const volumeChart = LightweightCharts.createChart(volumeWrap, commonOptions);
       const macdChart = LightweightCharts.createChart(macdWrap, commonOptions);
       const rsiChart = LightweightCharts.createChart(rsiWrap, commonOptions);
+      const rsChart = LightweightCharts.createChart(rsWrap, commonOptions);
 
       const candleSeries = mainChart.addCandlestickSeries();
       const lineSeries = mainChart.addLineSeries({ color: "#2563eb", lineWidth: 2 });
@@ -183,6 +189,18 @@ document.addEventListener("DOMContentLoaded", async () => {
       rsiSeries.setData(rsiData);
       rsiUpperSeries.setData(candles.map((item) => ({ time: item.time, value: 70 })));
       rsiLowerSeries.setData(candles.map((item) => ({ time: item.time, value: 30 })));
+
+      const rs1wSeries = rsChart.addLineSeries({ color: "#0ea5e9", lineWidth: 2 });
+      const rs1mSeries = rsChart.addLineSeries({ color: "#f59e0b", lineWidth: 2 });
+      const rs3mSeries = rsChart.addLineSeries({ color: "#ef4444", lineWidth: 2 });
+
+      const rs1wData = seriesDataFilter(candles, "rs_1w_by_exchange");
+      const rs1mData = seriesDataFilter(candles, "rs_1m_by_exchange");
+      const rs3mData = seriesDataFilter(candles, "rs_3m_by_exchange");
+
+      rs1wSeries.setData(rs1wData);
+      rs1mSeries.setData(rs1mData);
+      rs3mSeries.setData(rs3mData);
 
       let chartMode = "line";
       const chartModeWrap = document.createElement("label");
@@ -231,6 +249,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         rsiWrap.style.display = checked ? "block" : "none";
       }));
 
+      controls.appendChild(createCheckbox("RS by LCNi", true, (checked) => {
+        rsWrap.style.display = checked ? "block" : "none";
+      }));
+
       syncMode();
 
       const syncTimeScale = (sourceChart, targetCharts) => {
@@ -244,18 +266,24 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
       };
 
-      syncTimeScale(mainChart, [volumeChart, macdChart, rsiChart]);
-      syncTimeScale(volumeChart, [mainChart, macdChart, rsiChart]);
-      syncTimeScale(macdChart, [mainChart, volumeChart, rsiChart]);
-      syncTimeScale(rsiChart, [mainChart, volumeChart, macdChart]);
+      syncTimeScale(mainChart, [volumeChart, macdChart, rsiChart, rsChart]);
+      syncTimeScale(volumeChart, [mainChart, macdChart, rsiChart, rsChart]);
+      syncTimeScale(macdChart, [mainChart, volumeChart, rsiChart, rsChart]);
+      syncTimeScale(rsiChart, [mainChart, volumeChart, macdChart, rsChart]);
+      syncTimeScale(rsChart, [mainChart, volumeChart, macdChart, rsiChart]);
 
       mainChart.timeScale().fitContent();
       volumeChart.timeScale().fitContent();
       macdChart.timeScale().fitContent();
       rsiChart.timeScale().fitContent();
+      rsChart.timeScale().fitContent();
 
       if (!rsiData.length) {
         rsiWrap.style.display = "none";
+      }
+
+      if (!rs1wData.length && !rs1mData.length && !rs3mData.length) {
+        rsWrap.style.display = "none";
       }
     } catch (error) {
       console.error(error);

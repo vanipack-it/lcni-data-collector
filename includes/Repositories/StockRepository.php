@@ -65,20 +65,38 @@ class LCNI_Data_StockRepository {
 
         $rows = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT DATE(FROM_UNIXTIME(event_time)) AS trading_date,
-                        event_time,
-                        open_price,
-                        high_price,
-                        low_price,
-                        close_price,
-                        volume,
-                        macd,
-                        macd_signal,
-                        rsi
-                 FROM {$table}
-                 WHERE symbol = %s AND timeframe = '1D'
-                 ORDER BY event_time ASC
-                 LIMIT %d",
+                "SELECT DATE(FROM_UNIXTIME(t.event_time)) AS trading_date,
+                        t.event_time,
+                        t.open_price,
+                        t.high_price,
+                        t.low_price,
+                        t.close_price,
+                        t.volume,
+                        t.macd,
+                        t.macd_signal,
+                        t.rsi,
+                        t.rs_1w_by_exchange,
+                        t.rs_1m_by_exchange,
+                        t.rs_3m_by_exchange
+                 FROM (
+                    SELECT event_time,
+                           open_price,
+                           high_price,
+                           low_price,
+                           close_price,
+                           volume,
+                           macd,
+                           macd_signal,
+                           rsi,
+                           rs_1w_by_exchange,
+                           rs_1m_by_exchange,
+                           rs_3m_by_exchange
+                    FROM {$table}
+                    WHERE symbol = %s AND timeframe = '1D'
+                    ORDER BY event_time DESC
+                    LIMIT %d
+                 ) AS t
+                 ORDER BY t.event_time ASC",
                 $symbol,
                 $safe_limit
             )
