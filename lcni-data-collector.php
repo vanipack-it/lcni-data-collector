@@ -10,6 +10,7 @@ if (!defined('ABSPATH')) {
 }
 
 define('LCNI_PATH', plugin_dir_path(__FILE__));
+define('LCNI_URL', plugin_dir_url(__FILE__));
 define('LCNI_CRON_HOOK', 'lcni_collect_data_cron');
 define('LCNI_SEED_CRON_HOOK', 'lcni_seed_batch_cron');
 define('LCNI_SECDEF_DAILY_CRON_HOOK', 'lcni_sync_secdef_daily_cron');
@@ -31,6 +32,7 @@ require_once LCNI_PATH . 'includes/API/StockController.php';
 require_once LCNI_PATH . 'includes/class-lcni-rest-api.php';
 require_once LCNI_PATH . 'includes/class-lcni-stock-repository.php';
 require_once LCNI_PATH . 'includes/lcni-stock-functions.php';
+require_once LCNI_PATH . 'includes/class-lcni-chart-shortcodes.php';
 
 function lcni_register_custom_cron_schedules($schedules) {
     if (!isset($schedules['lcni_every_minute'])) {
@@ -129,5 +131,6 @@ register_activation_hook(__FILE__, 'lcni_activate_plugin');
 register_deactivation_hook(__FILE__, 'lcni_deactivate_plugin');
 
 new LCNI_Settings();
+new LCNI_Chart_Shortcodes();
 LCNI_Update_Manager::init();
 new LCNI_Rest_API();
