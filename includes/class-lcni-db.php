@@ -85,6 +85,7 @@ class LCNI_DB {
         self::backfill_ohlc_rs_1w_by_exchange();
         self::backfill_ohlc_rs_3m_by_exchange();
         self::backfill_ohlc_rs_exchange_signals();
+        self::backfill_ohlc_rs_recommend_status();
         self::ensure_ohlc_indexes();
     }
 
@@ -124,6 +125,7 @@ class LCNI_DB {
             rs_3m_by_exchange DECIMAL(6,2) DEFAULT NULL,
             rs_exchange_status VARCHAR(50) DEFAULT NULL,
             rs_exchange_recommend VARCHAR(50) DEFAULT NULL,
+            rs_recommend_status VARCHAR(80) DEFAULT NULL,
             pct_3m DECIMAL(12,6) DEFAULT NULL,
             pct_6m DECIMAL(12,6) DEFAULT NULL,
             pct_1y DECIMAL(12,6) DEFAULT NULL,
@@ -346,6 +348,7 @@ class LCNI_DB {
             'rs_3m_by_exchange' => 'DECIMAL(6,2) DEFAULT NULL',
             'rs_exchange_status' => 'VARCHAR(50) DEFAULT NULL',
             'rs_exchange_recommend' => 'VARCHAR(50) DEFAULT NULL',
+            'rs_recommend_status' => 'VARCHAR(80) DEFAULT NULL',
             'pct_3m' => 'DECIMAL(12,6) DEFAULT NULL',
             'pct_6m' => 'DECIMAL(12,6) DEFAULT NULL',
             'pct_1y' => 'DECIMAL(12,6) DEFAULT NULL',
@@ -1047,6 +1050,17 @@ class LCNI_DB {
         update_option($migration_flag, 'yes');
     }
 
+    private static function backfill_ohlc_rs_recommend_status() {
+        $migration_flag = 'lcni_ohlc_rs_recommend_status_backfilled_v1';
+        if (get_option($migration_flag) === 'yes' && !self::has_missing_rs_recommend_status_rows()) {
+            return;
+        }
+
+        self::rebuild_rs_recommend_status();
+        self::log_change('backfill_ohlc_rs_recommend_status', 'Backfilled rs_recommend_status from rs_exchange_status and rs_exchange_recommend.');
+        update_option($migration_flag, 'yes');
+    }
+
     private static function has_missing_rs_exchange_signal_rows() {
         global $wpdb;
 
@@ -1056,6 +1070,20 @@ class LCNI_DB {
             FROM {$ohlc_table}
             WHERE rs_exchange_status IS NULL
                 OR rs_exchange_recommend IS NULL"
+        );
+
+        return $missing_count > 0;
+    }
+
+    private static function has_missing_rs_recommend_status_rows() {
+        global $wpdb;
+
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $missing_count = (int) $wpdb->get_var(
+            "SELECT COUNT(*)
+            FROM {$ohlc_table}
+            WHERE rs_recommend_status IS NULL
+                OR TRIM(rs_recommend_status) = ''"
         );
 
         return $missing_count > 0;
@@ -2293,6 +2321,64 @@ class LCNI_DB {
                             THEN 'RS->Gợi ý Bán'
                         ELSE 'RS->Theo dõi'
                     END{$where_clause}";
+
+        $wpdb->query($wpdb->prepare($sql, $params));
+        self::rebuild_rs_recommend_status($event_times, $timeframes);
+    }
+
+    private static function rebuild_rs_recommend_status($event_times = [], $timeframes = []) {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+
+        $event_times = array_values(array_filter(array_map('intval', (array) $event_times), function ($value) {
+            return $value > 0;
+        }));
+        $timeframes = array_values(array_filter(array_map(function ($timeframe) {
+            return strtoupper(sanitize_text_field((string) $timeframe));
+        }, (array) $timeframes)));
+
+        $params = [];
+        $filters = [];
+
+        if (!empty($event_times)) {
+            $filters[] = 'event_time IN (' . implode(', ', array_fill(0, count($event_times), '%d')) . ')';
+            $params = array_merge($params, array_map('intval', $event_times));
+        }
+
+        if (!empty($timeframes)) {
+            $filters[] = 'timeframe IN (' . implode(', ', array_fill(0, count($timeframes), '%s')) . ')';
+            $params = array_merge($params, $timeframes);
+        }
+
+        $where_clause = !empty($filters) ? ' WHERE ' . implode(' AND ', $filters) : '';
+
+        $sql = "UPDATE {$table}
+            SET rs_recommend_status =
+                CASE
+                    WHEN LOWER(REPLACE(IFNULL(rs_exchange_status, ''), ' ', '')) = 'rs->vaosongmanh'
+                        AND LOWER(REPLACE(IFNULL(rs_exchange_recommend, ''), ' ', '')) = 'rs->goiymua'
+                        THEN 'Dẫn dắt – Vào sóng sớm'
+                    WHEN LOWER(REPLACE(IFNULL(rs_exchange_status, ''), ' ', '')) = 'rs->giutrendmanh'
+                        AND LOWER(REPLACE(IFNULL(rs_exchange_recommend, ''), ' ', '')) = 'rs->goiymua'
+                        THEN 'Dẫn dắt – Tiếp diễn xu hướng'
+                    WHEN LOWER(REPLACE(IFNULL(rs_exchange_status, ''), ' ', '')) = 'rs->tangdanon'
+                        AND LOWER(REPLACE(IFNULL(rs_exchange_recommend, ''), ' ', '')) = 'rs->goiymua'
+                        THEN 'Cơ hội mua – Đang hình thành'
+                    WHEN LOWER(REPLACE(IFNULL(rs_exchange_status, ''), ' ', '')) = 'rs->daochieugiam'
+                        AND LOWER(REPLACE(IFNULL(rs_exchange_recommend, ''), ' ', '')) = 'rs->goiyban'
+                        THEN 'Suy yếu – Mất sức mạnh'
+                    WHEN LOWER(REPLACE(IFNULL(rs_exchange_status, ''), ' ', '')) = 'rs->yeu'
+                        AND LOWER(REPLACE(IFNULL(rs_exchange_recommend, ''), ' ', '')) = 'rs->goiyban'
+                        THEN 'Tránh – Rất yếu'
+                    ELSE 'Theo dõi'
+                END{$where_clause}";
+
+        if (empty($params)) {
+            $wpdb->query($sql);
+
+            return;
+        }
 
         $wpdb->query($wpdb->prepare($sql, $params));
     }

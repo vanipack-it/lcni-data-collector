@@ -1,5 +1,12 @@
 # Development Log
 
+## 2026-02-18
+- Bổ sung cột `rs_recommend_status` vào bảng `wp_lcni_ohlc` (schema tạo mới + cơ chế tự thêm cột cho hệ thống đang chạy).
+- Thêm migration/backfill `rs_recommend_status` để cập nhật dữ liệu cho các bản ghi cũ và tự gắn cờ phiên bản migration `v1`.
+- Chuẩn hóa công thức mapping theo cặp `rs_exchange_status` + `rs_exchange_recommend` với xử lý chống sai lệch khoảng trắng, tránh lỗi do chuỗi rỗng/định dạng không đồng nhất; mặc định trả về `Theo dõi`.
+- Tích hợp tính lại `rs_recommend_status` ngay sau bước rebuild `rs_exchange_status`/`rs_exchange_recommend` để các dòng mới phát sinh luôn có giá trị đúng.
+- Ghi lịch sử thay đổi qua `lcni_change_logs` cho luồng backfill `rs_recommend_status`.
+
 ## 2026-02-17
 - Nâng cấp dữ liệu endpoint chi tiết/candles để hỗ trợ chart nâng cao: bổ sung full `ohlc`, `volume`, `macd`, `macd_signal`, `macd_histogram`, `rsi` trên từng mốc thời gian.
 - Mở rộng payload `stock detail page` với `ohlc_history`, `volume_values`, `macd_values` (giữ tương thích ngược với `price_history`, `ma_values`, `rsi_values`).
