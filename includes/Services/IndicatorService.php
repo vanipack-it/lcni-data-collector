@@ -27,6 +27,8 @@ class LCNI_IndicatorService {
             'pha_nen' => $row['pha_nen'] ?? null,
             'tang_gia_kem_vol' => $row['tang_gia_kem_vol'] ?? null,
             'smart_money' => $row['smart_money'] ?? null,
+            'rs_exchange_status' => $row['rs_exchange_status'] ?? null,
+            'rs_exchange_recommend' => $row['rs_exchange_recommend'] ?? null,
         ], static function ($value) {
             return $value !== null && $value !== '';
         });
