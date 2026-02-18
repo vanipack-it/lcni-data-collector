@@ -218,3 +218,33 @@ Dùng trong phiên định kỳ ATO/ATC để cung cấp giá đóng cửa, giá
 - Có thể import CSV symbol từ trang admin `LCNI Data` để phục vụ seed queue.
 - Nút `Sync Security Definition` sẽ cập nhật các trường Security Definition (giá trần/sàn/tham chiếu, trạng thái giao dịch...) vào `lcni_symbols`.
 - Cron tự động đồng bộ Security Definition chạy hàng ngày lúc 08:00.
+
+## Shortcode chart (Lightweight Charts)
+
+Plugin hỗ trợ nhúng chart trực tiếp bằng shortcode, không phụ thuộc vào theme.
+
+### 1) Chart theo mã cố định
+
+```text
+[lcni_stock_chart symbol="HPG" limit="200" height="420"]
+```
+
+- `symbol`: mã cổ phiếu cố định (bắt buộc).
+- `limit`: số nến lấy từ endpoint `/wp-json/lcni/v1/candles` (mặc định 200).
+- `height`: chiều cao chart chính (mặc định 420).
+
+### 2) Chart thay đổi theo query param + shortcode form
+
+Shortcode form để nhập mã:
+
+```text
+[lcni_stock_query_form param="symbol" placeholder="Nhập mã" button_text="Xem chart"]
+```
+
+Shortcode chart đọc theo query param:
+
+```text
+[lcni_stock_chart_query param="symbol" default_symbol="HPG" limit="200" height="420"]
+```
+
+Ví dụ: khi truy cập `?symbol=FPT`, chart sẽ tự đổi theo `FPT`.

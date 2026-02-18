@@ -74,7 +74,10 @@ class LCNI_Data_StockRepository {
                         volume,
                         macd,
                         macd_signal,
-                        rsi
+                        rsi,
+                        rs_1w_by_exchange,
+                        rs_1m_by_exchange,
+                        rs_3m_by_exchange
                  FROM {$table}
                  WHERE symbol = %s AND timeframe = '1D'
                  ORDER BY event_time ASC

@@ -155,6 +155,9 @@ class LCNI_StockQueryService {
                             'macd_signal' => $macd_signal,
                             'macd_histogram' => ($macd !== null && $macd_signal !== null) ? ($macd - $macd_signal) : null,
                             'rsi' => $row->rsi !== null ? (float) $row->rsi : null,
+                            'rs_1w_by_exchange' => $row->rs_1w_by_exchange !== null ? (float) $row->rs_1w_by_exchange : null,
+                            'rs_1m_by_exchange' => $row->rs_1m_by_exchange !== null ? (float) $row->rs_1m_by_exchange : null,
+                            'rs_3m_by_exchange' => $row->rs_3m_by_exchange !== null ? (float) $row->rs_3m_by_exchange : null,
                             'trend' => $close >= $open ? 'up' : 'down',
                         ];
                     },
