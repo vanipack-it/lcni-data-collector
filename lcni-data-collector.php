@@ -2,7 +2,7 @@
 /*
 Plugin Name: LCNI Data Collector
 Description: LCNI Market Data Engine: lấy nến, lưu DB, cron auto update
-Version: 1.7
+Version: 1.8
 */
 
 if (!defined('ABSPATH')) {
@@ -35,6 +35,13 @@ require_once LCNI_PATH . 'includes/lcni-stock-functions.php';
 require_once LCNI_PATH . 'includes/class-lcni-chart-shortcodes.php';
 require_once LCNI_PATH . 'includes/class-lcni-stock-overview-shortcodes.php';
 require_once LCNI_PATH . 'includes/class-lcni-stock-signals-shortcodes.php';
+require_once LCNI_PATH . 'includes/class-lcni-watchlist-shortcodes.php';
+require_once LCNI_PATH . 'includes/class-lcni-user-features.php';
+require_once LCNI_PATH . 'includes/Repositories/UserWatchlistRepository.php';
+require_once LCNI_PATH . 'includes/Services/UserMembershipService.php';
+require_once LCNI_PATH . 'includes/Services/WatchlistService.php';
+require_once LCNI_PATH . 'includes/Services/SignalNotificationService.php';
+require_once LCNI_PATH . 'includes/API/UserController.php';
 
 function lcni_register_custom_cron_schedules($schedules) {
     if (!isset($schedules['lcni_every_minute'])) {
@@ -49,12 +56,14 @@ function lcni_register_custom_cron_schedules($schedules) {
 
 function lcni_activate_plugin() {
     LCNI_DB::create_tables();
+    LCNI_User_Features::create_tables();
     LCNI_DB::run_pending_migrations();
     lcni_ensure_cron_scheduled();
 }
 
 function lcni_ensure_plugin_tables() {
     LCNI_DB::ensure_tables_exist();
+    LCNI_User_Features::ensure_tables_exist();
 }
 
 function lcni_ensure_cron_scheduled() {
@@ -136,5 +145,19 @@ new LCNI_Settings();
 new LCNI_Chart_Shortcodes();
 new LCNI_Stock_Overview_Shortcodes();
 new LCNI_Stock_Signals_Shortcodes();
+
+new LCNI_Watchlist_Shortcodes();
+
+add_action('rest_api_init', static function () {
+    global $wpdb;
+
+    $membership = new LCNI_UserMembershipService();
+    $watchlist_repo = new LCNI_UserWatchlistRepository($wpdb);
+    $watchlist = new LCNI_WatchlistService($watchlist_repo, $membership);
+    $notifications = new LCNI_SignalNotificationService($wpdb);
+
+    $controller = new LCNI_UserController($membership, $watchlist, $notifications);
+    $controller->register_routes();
+});
 LCNI_Update_Manager::init();
 new LCNI_Rest_API();

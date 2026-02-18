@@ -1,0 +1,7 @@
+.lcni-watchlist { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; }
+.lcni-watchlist__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.lcni-watchlist__body table { width: 100%; border-collapse: collapse; }
+.lcni-watchlist__body th, .lcni-watchlist__body td { border-bottom: 1px solid #eee; padding: 6px; text-align: left; }
+.lcni-watchlist-add { background: transparent; border: none; cursor: pointer; }
+.lcni-watchlist-add.added { color: #dc2626; }
+.lcni-symbol-link { border: 0; background: transparent; color: #2563eb; cursor: pointer; }
