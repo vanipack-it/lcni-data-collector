@@ -1,3 +1,6 @@
+- Phát hành phiên bản 1.8: thêm lớp user feature gồm đăng ký/đăng nhập qua REST, phân hạng thành viên free/premium, watchlist theo user, tùy chỉnh cột watchlist theo admin + user, và module thông báo signal (in-app/email/browser preferences).
+- Bổ sung shortcode mới `lcni_watchlist`, `lcni_watchlist_add_button` cùng assets frontend để thao tác thêm/xóa mã, tùy chỉnh cột và mở popup tóm tắt khi click symbol.
+
 # Development Log
 
 ## 2026-02-18

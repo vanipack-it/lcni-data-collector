@@ -74,3 +74,20 @@ Ví dụ:
 
 - Chỉ hiển thị dữ liệu tại `event_time` mới nhất đang có dữ liệu của mã.
 - Có thể phối hợp với các shortcode chart/overview để admin đặt linh hoạt nhiều module trên cùng page.
+
+
+## 4) Watchlist người dùng (v1.8)
+
+### `[lcni_watchlist]`
+Render bảng watchlist theo user đăng nhập, có nút cài đặt cột và popup thông tin mã khi click symbol.
+
+```text
+[lcni_watchlist title="My Watchlist" popup="1"]
+```
+
+### `[lcni_watchlist_add_button]`
+Nút thêm mã vào watchlist (icon tim), dùng tại bất kỳ vị trí nào trên frontend.
+
+```text
+[lcni_watchlist_add_button symbol="SSI"]
+```
