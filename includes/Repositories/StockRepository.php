@@ -6,6 +6,9 @@ if (!defined('ABSPATH')) {
 
 class LCNI_Data_StockRepository {
 
+    const CACHE_GROUP = 'lcni_stock_repository';
+    const CACHE_TTL = 60;
+
     private function toLightweightBusinessDay($event_time) {
         $timestamp = (int) $event_time;
         if ($timestamp <= 0) {
@@ -239,7 +242,14 @@ class LCNI_Data_StockRepository {
         $table = $wpdb->prefix . 'lcni_ohlc';
         $symbols_table = $wpdb->prefix . 'lcni_symbols';
         $offset = max(0, ($page - 1) * $per_page);
-        $latest_time = (int) $wpdb->get_var("SELECT MAX(event_time) FROM {$table} WHERE timeframe = '1D'");
+        $latest_time = $this->getLatestDailyEventTime($table);
+
+        if ($latest_time <= 0) {
+            return [
+                'total' => 0,
+                'items' => [],
+            ];
+        }
 
         $total = (int) $wpdb->get_var(
             $wpdb->prepare(
@@ -269,6 +279,33 @@ class LCNI_Data_StockRepository {
             'total' => $total,
             'items' => is_array($items) ? $items : [],
         ];
+    }
+
+    private function getLatestDailyEventTime($table) {
+        $cache_key = 'latest_daily_event_time:' . md5((string) $table);
+        $cache_hit = false;
+        $cached = wp_cache_get($cache_key, self::CACHE_GROUP, false, $cache_hit);
+
+        if ($cache_hit) {
+            return (int) $cached;
+        }
+
+        $transient = get_transient($cache_key);
+        if ($transient !== false) {
+            wp_cache_set($cache_key, $transient, self::CACHE_GROUP, self::CACHE_TTL);
+
+            return (int) $transient;
+        }
+
+        global $wpdb;
+        $latest_time = (int) $wpdb->get_var(
+            "SELECT MAX(event_time) FROM {$table} WHERE timeframe = '1D'"
+        );
+
+        wp_cache_set($cache_key, $latest_time, self::CACHE_GROUP, self::CACHE_TTL);
+        set_transient($cache_key, $latest_time, self::CACHE_TTL);
+
+        return $latest_time;
     }
 
     public function getOverviewBySymbol($symbol) {

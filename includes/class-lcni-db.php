@@ -509,11 +509,19 @@ class LCNI_DB {
         global $wpdb;
 
         $table = $wpdb->prefix . 'lcni_ohlc';
-        $index_name = 'idx_symbol_index';
-        $index_exists = $wpdb->get_var($wpdb->prepare("SHOW INDEX FROM {$table} WHERE Key_name = %s", $index_name));
+        $required_indexes = [
+            'idx_symbol_index' => '(symbol, trading_index)',
+            'idx_timeframe_event_time' => '(timeframe, event_time)',
+            'idx_timeframe_event_value' => '(timeframe, event_time, value_traded)',
+        ];
 
-        if ($index_exists === null) {
-            $wpdb->query("CREATE INDEX {$index_name} ON {$table} (symbol, trading_index)");
+        foreach ($required_indexes as $index_name => $definition) {
+            $index_exists = $wpdb->get_var($wpdb->prepare("SHOW INDEX FROM {$table} WHERE Key_name = %s", $index_name));
+            if ($index_exists !== null) {
+                continue;
+            }
+
+            $wpdb->query("CREATE INDEX {$index_name} ON {$table} {$definition}");
         }
     }
 
