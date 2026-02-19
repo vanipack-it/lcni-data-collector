@@ -280,16 +280,34 @@ class LCNI_Rest_API {
 
     private function resolve_user_package($user_id) {
         $package = strtolower((string) get_user_meta($user_id, 'lcni_user_package', true));
+        if ($package === 'pro') {
+            $package = 'premium';
+        }
         $package = in_array($package, ['free', 'premium'], true) ? $package : 'free';
 
-        return [
-            'package' => $package,
-            'features' => [
+        $package_settings = get_option('lcni_saas_package_features', []);
+        $default_by_package = [
+            'free' => [
                 'dashboard' => true,
                 'screener' => true,
                 'stock_detail' => true,
-                'watchlist' => $package === 'premium',
+                'watchlist' => false,
             ],
+            'premium' => [
+                'dashboard' => true,
+                'screener' => true,
+                'stock_detail' => true,
+                'watchlist' => true,
+            ],
+        ];
+        $default_features = $default_by_package[$package] ?? $default_by_package['free'];
+        $features = isset($package_settings[$package]) && is_array($package_settings[$package])
+            ? wp_parse_args(array_map('rest_sanitize_boolean', $package_settings[$package]), $default_features)
+            : $default_features;
+
+        return [
+            'package' => $package,
+            'features' => $features,
         ];
     }
 
@@ -309,7 +327,7 @@ class LCNI_Rest_API {
         $allowed = isset($settings['allowed_fields']) && is_array($settings['allowed_fields']) ? array_values(array_map('sanitize_key', $settings['allowed_fields'])) : [];
 
         if (empty($allowed)) {
-            $allowed = ['symbol', 'close_price', 'pct_t_1', 'volume', 'value_traded', 'rsi', 'macd', 'macd_signal', 'event_time'];
+            $allowed = ['symbol', 'exchange', 'icb2_name', 'close_price', 'pct_t_1', 'volume', 'value_traded', 'xay_nen', 'xay_nen_count_30', 'nen_type', 'pha_nen', 'tang_gia_kem_vol', 'smart_money', 'rs_exchange_status', 'rs_exchange_recommend', 'rsi', 'macd', 'macd_signal', 'event_time'];
         }
 
         return $allowed;
@@ -324,10 +342,18 @@ class LCNI_Rest_API {
     private function get_watchlist_labels(array $allowed_fields) {
         $labels = [
             'symbol' => 'Mã CK',
+            'exchange' => 'Sàn',
+            'icb2_name' => 'Ngành ICB 2',
             'close_price' => 'Giá đóng cửa gần nhất',
             'pct_t_1' => '% T-1',
             'volume' => 'Khối lượng',
             'value_traded' => 'Giá trị giao dịch',
+            'xay_nen' => 'Nền giá',
+            'xay_nen_count_30' => 'Số phiên đi nền trong 30 phiên',
+            'nen_type' => 'Dạng nền',
+            'pha_nen' => 'Tín hiệu phá nền',
+            'tang_gia_kem_vol' => 'Tăng giá kèm Vol',
+            'smart_money' => 'Tín hiệu smart',
             'rs_exchange_status' => 'Trạng thái RS',
             'rs_exchange_recommend' => 'Khuyến nghị RS',
             'rsi' => 'RSI',

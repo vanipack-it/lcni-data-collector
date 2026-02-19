@@ -8,6 +8,7 @@ class LCNI_Watchlist_Shortcodes {
     public function __construct() {
         add_action('init', [$this, 'register_shortcodes']);
         add_action('wp_enqueue_scripts', [$this, 'register_assets']);
+        add_action('wp_enqueue_scripts', [$this, 'enqueue_global_watchlist_assets']);
     }
 
     public function register_shortcodes() {
@@ -22,6 +23,25 @@ class LCNI_Watchlist_Shortcodes {
 
         wp_register_script('lcni-watchlist', LCNI_URL . 'assets/js/lcni-watchlist.js', [], $version, true);
         wp_register_style('lcni-watchlist', LCNI_URL . 'assets/css/lcni-watchlist.css', [], file_exists($style_path) ? (string) filemtime($style_path) : $version);
+    }
+
+
+
+    public function enqueue_global_watchlist_assets() {
+        if (!is_user_logged_in()) {
+            return;
+        }
+
+        wp_enqueue_script('lcni-watchlist');
+        wp_enqueue_style('lcni-watchlist');
+
+        add_action('wp_footer', function () {
+            printf(
+                '<script>document.body.dataset.lcniWatchlistApi=%s;document.body.dataset.lcniWatchlistNonce=%s;</script>',
+                wp_json_encode(esc_url_raw(rest_url('lcni/v1/watchlist'))),
+                wp_json_encode(wp_create_nonce('wp_rest'))
+            );
+        }, 20);
     }
 
     public function render_watchlist($atts) {
