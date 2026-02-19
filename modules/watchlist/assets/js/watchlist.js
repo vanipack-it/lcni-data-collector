@@ -10,7 +10,22 @@
       },
       body: options && options.body ? JSON.stringify(options.body) : undefined,
       credentials: 'same-origin',
-    }).then((r) => r.json());
+    }).then(async (response) => {
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw payload;
+      }
+      return payload;
+    });
+  }
+
+  function escapeHtml(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   }
 
   function showToast(msg) {
@@ -31,56 +46,117 @@
     host.style.padding = '8px';
   }
 
+  function setHostLoading(host, isLoading) {
+    const overlay = host.querySelector('[data-watchlist-overlay]');
+    if (!overlay) return;
+    overlay.hidden = !isLoading;
+    overlay.style.pointerEvents = isLoading ? 'auto' : 'none';
+  }
+
+  function renderSymbolCell(symbol) {
+    const safeSymbol = escapeHtml(symbol);
+    return `<span class="lcni-watchlist-symbol">${safeSymbol}</span><button type="button" class="lcni-watchlist-add" data-lcni-watchlist-add data-symbol="${safeSymbol}" aria-label="Add to watchlist"><i class="fa-solid fa-heart-circle-plus" aria-hidden="true"></i></button>`;
+  }
+
   function renderTable(host, data) {
     applyStyles(host);
-    const columns = data.columns || [];
-    const items = data.items || [];
+    const allowedColumns = Array.isArray(data.allowed_columns) ? data.allowed_columns : [];
+    const columns = Array.isArray(data.columns) ? data.columns : [];
+    const items = Array.isArray(data.items) ? data.items : [];
 
-    const toggles = columns.map((c) => `<label><input type="checkbox" data-col-toggle value="${c}" checked> ${c}</label>`).join('');
+    const toggles = allowedColumns.map((c) => `<label><input type="checkbox" data-col-toggle value="${escapeHtml(c)}" ${columns.includes(c) ? 'checked' : ''}> ${escapeHtml(c)}</label>`).join('');
 
     host.innerHTML = `
-      <div class="lcni-watchlist-controls">${toggles}</div>
-      <table class="lcni-watchlist-table"><thead><tr>${columns.map((c) => `<th>${c}</th>`).join('')}</tr></thead>
-      <tbody>${items.map((row) => `<tr data-row-symbol="${row.symbol || ''}">${columns.map((c) => `<td>${row[c] == null ? '' : row[c]}</td>`).join('')}</tr>`).join('')}</tbody></table>
+      <div class="lcni-watchlist-header"><strong>Watchlist</strong><button type="button" class="lcni-watchlist-settings-btn" data-watchlist-settings>⚙</button></div>
+      <div class="lcni-watchlist-controls" data-watchlist-settings-panel hidden>${toggles}<button type="button" data-watchlist-save>Lưu</button></div>
+      <div class="lcni-watchlist-table-wrap">
+        <table class="lcni-watchlist-table"><thead><tr>${columns.map((c) => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead>
+        <tbody>${items.map((row) => {
+          const rowSymbol = row.symbol || '';
+          return `<tr data-row-symbol="${escapeHtml(rowSymbol)}">${columns.map((c) => {
+            if (c === 'symbol') {
+              return `<td>${renderSymbolCell(rowSymbol)}</td>`;
+            }
+            return `<td>${escapeHtml(row[c])}</td>`;
+          }).join('')}</tr>`;
+        }).join('')}</tbody></table>
+        <div class="lcni-watchlist-overlay" data-watchlist-overlay hidden>Loading...</div>
+      </div>
       <div class="lcni-watchlist-popup" hidden></div>
     `;
 
-    host.querySelectorAll('[data-col-toggle]').forEach((input) => {
-      input.addEventListener('change', () => {
-        const name = input.value;
-        const index = columns.indexOf(name);
-        host.querySelectorAll(`th:nth-child(${index + 1}), td:nth-child(${index + 1})`).forEach((el) => {
-          el.style.display = input.checked ? '' : 'none';
-        });
-      });
+    const panel = host.querySelector('[data-watchlist-settings-panel]');
+    const settingsBtn = host.querySelector('[data-watchlist-settings]');
+    const saveBtn = host.querySelector('[data-watchlist-save]');
+
+    settingsBtn.addEventListener('click', () => {
+      panel.hidden = !panel.hidden;
     });
 
-    host.querySelectorAll('tbody tr').forEach((row) => {
-      row.addEventListener('click', () => {
-        const symbol = row.getAttribute('data-row-symbol');
-        openPopup(host, symbol);
-      });
+    saveBtn.addEventListener('click', async () => {
+      const selected = Array.from(host.querySelectorAll('[data-col-toggle]:checked')).map((input) => input.value);
+      setHostLoading(host, true);
+      try {
+        await api('/settings', { method: 'POST', body: { columns: selected } });
+        const refreshed = await api('/list?columns[]=' + selected.map(encodeURIComponent).join('&columns[]='));
+        renderTable(host, refreshed);
+        bindAddButtons(host);
+      } catch (error) {
+        showToast((error && error.message) || 'Không thể lưu cài đặt.');
+      } finally {
+        setHostLoading(host, false);
+      }
     });
+
+    if (!host._watchlistRowDelegated) {
+      host.addEventListener('click', (event) => {
+        const row = event.target.closest('tbody tr[data-row-symbol]');
+        if (!row || !host.contains(row)) {
+          return;
+        }
+
+        if (event.target.closest('[data-lcni-watchlist-add]')) {
+          return;
+        }
+
+        openPopup(host, row.getAttribute('data-row-symbol'));
+      });
+      host._watchlistRowDelegated = true;
+    }
   }
 
   function openPopup(host, symbol) {
     const popup = host.querySelector('.lcni-watchlist-popup');
     popup.hidden = false;
-    popup.innerHTML = `<div class="lcni-watchlist-popup-content"><button data-close>x</button><h3>${symbol}</h3><p>Loading...</p></div>`;
-    popup.querySelector('[data-close]').addEventListener('click', () => (popup.hidden = true));
+    popup.innerHTML = `<div class="lcni-watchlist-popup-content"><button data-close>x</button><h3>${escapeHtml(symbol)}</h3><p>Loading...</p></div>`;
+    popup.querySelector('[data-close]').addEventListener('click', () => {
+      popup.hidden = true;
+      popup.innerHTML = '';
+    });
 
-    fetch((cfg.stockApiBase || '') + encodeURIComponent(symbol), { credentials: 'same-origin' })
-      .then((r) => r.json())
-      .then((data) => {
-        popup.innerHTML = `<div class="lcni-watchlist-popup-content">
+    Promise.all([
+      fetch((cfg.overviewApiBase || '') + '?symbol=' + encodeURIComponent(symbol), { credentials: 'same-origin' }).then((r) => r.json()),
+      fetch((cfg.stockApiBase || '') + encodeURIComponent(symbol), { credentials: 'same-origin' }).then((r) => r.json()),
+      fetch((cfg.signalApiBase || '') + '?symbol=' + encodeURIComponent(symbol), { credentials: 'same-origin' }).then((r) => r.json()),
+    ]).then(([overview, stock, signal]) => {
+      popup.innerHTML = `<div class="lcni-watchlist-popup-content">
           <button data-close>x</button>
-          <h3>${symbol}</h3>
-          <h4>Overview</h4><pre>${JSON.stringify(data.data || data, null, 2)}</pre>
-          <h4>Lightweight chart</h4><div>${renderSparkline((data.data && data.data.ohlc) || [])}</div>
-          <h4>LCNI signal</h4><pre>${JSON.stringify((data.data && data.data.indicators) || {}, null, 2)}</pre>
+          <h3>${escapeHtml(symbol)}</h3>
+          <h4>Overview module</h4><pre>${escapeHtml(JSON.stringify(overview, null, 2))}</pre>
+          <h4>Lightweight chart</h4><div>${renderSparkline((stock && stock.ohlc) || [])}</div>
+          <h4>LCNI signal</h4><pre>${escapeHtml(JSON.stringify(signal, null, 2))}</pre>
         </div>`;
-        popup.querySelector('[data-close]').addEventListener('click', () => (popup.hidden = true));
+      popup.querySelector('[data-close]').addEventListener('click', () => {
+        popup.hidden = true;
+        popup.innerHTML = '';
       });
+    }).catch(() => {
+      popup.innerHTML = `<div class="lcni-watchlist-popup-content"><button data-close>x</button><p>Không thể tải popup.</p></div>`;
+      popup.querySelector('[data-close]').addEventListener('click', () => {
+        popup.hidden = true;
+        popup.innerHTML = '';
+      });
+    });
   }
 
   function renderSparkline(ohlc) {
@@ -88,12 +164,15 @@
     if (!closes.length) return 'No chart data';
     const min = Math.min.apply(null, closes);
     const max = Math.max.apply(null, closes);
-    const points = closes.map((v, i) => `${(i / (closes.length - 1)) * 180},${40 - ((v - min) / (max - min || 1)) * 30}`).join(' ');
+    const points = closes.map((v, i) => `${(i / (closes.length - 1 || 1)) * 180},${40 - ((v - min) / (max - min || 1)) * 30}`).join(' ');
     return `<svg width="180" height="40" viewBox="0 0 180 40"><polyline fill="none" stroke="#2563eb" stroke-width="2" points="${points}" /></svg>`;
   }
 
-  function bindAddButtons() {
-    document.querySelectorAll('[data-lcni-watchlist-add]').forEach((btn) => {
+  function bindAddButtons(scope) {
+    (scope || document).querySelectorAll('[data-lcni-watchlist-add]').forEach((btn) => {
+      if (btn.dataset.boundWatchlist === '1') return;
+      btn.dataset.boundWatchlist = '1';
+
       btn.addEventListener('click', () => {
         if (!cfg.isLoggedIn) {
           document.dispatchEvent(new CustomEvent('lcni:watchlist:require-login'));
@@ -104,17 +183,26 @@
         const symbol = btn.getAttribute('data-symbol');
         const icon = btn.querySelector('i');
         btn.disabled = true;
+        btn.classList.remove('is-success', 'is-error');
         btn.classList.add('is-loading');
+        if (icon) {
+          icon.className = 'fa-solid fa-spinner fa-spin';
+        }
 
         api('/add', { method: 'POST', body: { symbol } })
-          .then((res) => {
-            if (res && !res.code) {
+          .then(() => {
+            btn.classList.add('is-success');
+            if (icon) {
               icon.className = 'fa-solid fa-check';
-            } else {
-              showToast((res && res.message) || 'Không thể thêm vào watchlist');
             }
           })
-          .catch(() => showToast('Không thể thêm vào watchlist'))
+          .catch((error) => {
+            btn.classList.add('is-error');
+            if (icon) {
+              icon.className = 'fa-solid fa-heart-circle-plus';
+            }
+            showToast((error && error.message) || 'Không thể thêm vào watchlist');
+          })
           .finally(() => {
             btn.classList.remove('is-loading');
             btn.disabled = false;
@@ -130,13 +218,16 @@
         return;
       }
       api('/list')
-        .then((data) => renderTable(host, data))
+        .then((data) => {
+          renderTable(host, data);
+          bindAddButtons(host);
+        })
         .catch(() => {
           host.innerHTML = '<p>Không thể tải watchlist</p>';
         });
     });
 
-    bindAddButtons();
+    bindAddButtons(document);
   }
 
   if (document.readyState === 'loading') {

@@ -73,3 +73,14 @@ function lcni_get_watchlist_add_button($symbol) {
 
     return do_shortcode(sprintf('[lcni_watchlist_add symbol="%s"]', esc_attr($symbol)));
 }
+
+function lcni_render_symbol($symbol) {
+    $normalized = strtoupper(sanitize_text_field((string) $symbol));
+    if ($normalized === '') {
+        return '';
+    }
+
+    $base_html = sprintf('<span class="lcni-symbol">%s</span>', esc_html($normalized));
+
+    return (string) apply_filters('lcni_render_symbol', $base_html, $normalized);
+}
