@@ -206,7 +206,7 @@ class LCNI_Data_StockRepository {
     public function getLatestSignalsBySymbol($symbol) {
         global $wpdb;
 
-        $table = $wpdb->prefix . 'lcni_ohlc';
+        $table = $wpdb->prefix . 'lcni_ohlc_latest';
 
         $row = $wpdb->get_row(
             $wpdb->prepare(
@@ -223,7 +223,6 @@ class LCNI_Data_StockRepository {
                         rs_recommend_status
                  FROM {$table}
                  WHERE symbol = %s AND timeframe = '1D'
-                 ORDER BY event_time DESC
                  LIMIT 1",
                 $symbol
             ),

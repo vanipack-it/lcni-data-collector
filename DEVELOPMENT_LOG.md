@@ -1,5 +1,8 @@
 # Development Log
 
+## 2026-02-19
+- Tối ưu module LCNi Signals: chuyển truy vấn lấy dữ liệu mới nhất từ `wp_lcni_ohlc` sang `wp_lcni_ohlc_latest` để tránh `ORDER BY event_time DESC LIMIT 1` trên bảng lịch sử lớn, giúp giảm tải DB và tăng tốc độ tải trang.
+
 ## 2026-02-18
 - Bổ sung module shortcodes `lcni_stock_overview` và `lcni_stock_overview_query` để hiển thị bộ chỉ số cơ bản từ `wp_lcni_symbol_tongquan` (kèm Sàn + ICB2), có nút setting góc phải cho phép user tùy chỉnh field hiển thị và lưu cá nhân theo `user_meta`.
 - Thêm REST endpoint `GET /wp-json/lcni/v1/stock-overview?symbol=XXX` và `GET/POST /wp-json/lcni/v1/stock-overview/settings` để phục vụ module overview + lưu cấu hình cá nhân.
