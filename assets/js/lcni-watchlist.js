@@ -2,6 +2,7 @@
   const spinnerIcon = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>';
   const heartIcon = '<i class="fa-solid fa-heart-circle-plus" aria-hidden="true"></i>';
   const successIcon = '<i class="fa-solid fa-circle-check" aria-hidden="true"></i>';
+  const enhanceSelector = '[data-lcni-stock-symbol], [data-symbol], .lcni-stock-symbol, .symbol';
 
   const jsonFetch = async (url, options = {}) => {
     const response = await fetch(url, {
@@ -193,13 +194,44 @@
         button.classList.add('is-added');
         if (iconNode) iconNode.innerHTML = successIcon;
         if (labelNode) labelNode.textContent = 'Đã thêm';
-      } catch (_err) {
+      } catch (err) {
         button.classList.remove('is-loading');
         button.classList.add('is-error');
         button.disabled = false;
         if (iconNode) iconNode.innerHTML = heartIcon;
-        if (labelNode) labelNode.textContent = 'Thêm thất bại';
+        if (labelNode) labelNode.textContent = err?.message || 'Thêm thất bại';
       }
+    });
+  };
+
+
+  const createQuickAddButton = (symbol, watchlistApi, restNonce) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'lcni-watchlist-add-btn lcni-watchlist-inline-icon-btn';
+    button.dataset.lcniWatchlistAdd = '1';
+    button.dataset.symbol = symbol;
+    button.dataset.watchlistApi = watchlistApi;
+    button.dataset.restNonce = restNonce;
+    button.innerHTML = `<span class="lcni-watchlist-add-icon">${heartIcon}</span><span class="lcni-watchlist-add-label">Thêm</span>`;
+    bindAddButton(button);
+    return button;
+  };
+
+  const enhanceSymbolNodes = () => {
+    const restNonce = document.body?.dataset?.lcniWatchlistNonce || '';
+    const watchlistApi = document.body?.dataset?.lcniWatchlistApi || '';
+    if (!restNonce || !watchlistApi) return;
+
+    document.querySelectorAll(enhanceSelector).forEach((node) => {
+      if (node.matches('[data-lcni-watchlist-add="1"]')) return;
+      if (node.dataset.lcniWatchlistEnhanced === '1') return;
+      const symbolRaw = node.getAttribute('data-lcni-stock-symbol') || node.getAttribute('data-symbol') || node.textContent || '';
+      const symbol = String(symbolRaw).trim().toUpperCase();
+      if (!/^[A-Z0-9._-]{1,15}$/.test(symbol)) return;
+
+      node.dataset.lcniWatchlistEnhanced = '1';
+      node.insertAdjacentElement('afterend', createQuickAddButton(symbol, watchlistApi, restNonce));
     });
   };
 
@@ -212,4 +244,8 @@
   document.querySelectorAll('[data-lcni-watchlist-add="1"]').forEach((button) => {
     bindAddButton(button);
   });
+
+  enhanceSymbolNodes();
+  const observer = new MutationObserver(() => enhanceSymbolNodes());
+  observer.observe(document.body, { childList: true, subtree: true });
 })();

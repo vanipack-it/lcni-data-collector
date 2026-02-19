@@ -36,6 +36,7 @@ class LCNI_Settings {
         register_setting('lcni_settings_group', 'lcni_frontend_settings_signals', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_frontend_module_settings'], 'default' => []]);
         register_setting('lcni_settings_group', 'lcni_frontend_settings_overview', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_frontend_module_settings'], 'default' => []]);
         register_setting('lcni_settings_group', 'lcni_frontend_settings_watchlist', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_frontend_module_settings'], 'default' => []]);
+        register_setting('lcni_settings_group', 'lcni_saas_package_features', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_saas_package_features'], 'default' => $this->get_default_saas_package_features()]);
     }
 
     public function sanitize_timeframe($value) {
@@ -248,6 +249,10 @@ class LCNI_Settings {
                 update_option('lcni_frontend_settings_' . $module, $this->sanitize_frontend_module_settings($input));
                 $this->set_notice('success', 'Đã lưu Frontend Settings cho module ' . $module . '.');
             }
+        } elseif ($action === 'save_saas_package_features') {
+            $raw_features = isset($_POST['lcni_saas_feature']) ? (array) wp_unslash($_POST['lcni_saas_feature']) : [];
+            update_option('lcni_saas_package_features', $this->sanitize_saas_package_features($raw_features));
+            $this->set_notice('success', 'Đã lưu cấu hình gói SaaS.');
         }
 
         $redirect_tab = isset($_POST['lcni_redirect_tab']) ? sanitize_key(wp_unslash($_POST['lcni_redirect_tab'])) : '';
@@ -255,7 +260,7 @@ class LCNI_Settings {
         $redirect_page = in_array($redirect_page, ['lcni-settings', 'lcni-data-viewer'], true) ? $redirect_page : 'lcni-settings';
         $redirect_url = admin_url('admin.php?page=' . $redirect_page);
 
-        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange', 'lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-watchlist'], true)) {
+        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange', 'lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-watchlist', 'saas_packages'], true)) {
             $redirect_url = add_query_arg('tab', $redirect_tab, $redirect_url);
         }
 
@@ -492,7 +497,7 @@ class LCNI_Settings {
             $active_tab = 'frontend_settings';
         }
 
-        if (!in_array($active_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'change_logs'], true)) {
+        if (!in_array($active_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'saas_packages', 'change_logs'], true)) {
             $active_tab = 'general';
         }
 
@@ -523,6 +528,7 @@ class LCNI_Settings {
                 <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=update_data')); ?>" class="nav-tab <?php echo $active_tab === 'update_data' ? 'nav-tab-active' : ''; ?>">Update Data</a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=rule_settings')); ?>" class="nav-tab <?php echo $active_tab === 'rule_settings' ? 'nav-tab-active' : ''; ?>">Rule Setting</a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=frontend_settings')); ?>" class="nav-tab <?php echo $active_tab === 'frontend_settings' ? 'nav-tab-active' : ''; ?>">Frontend Setting</a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=saas_packages')); ?>" class="nav-tab <?php echo $active_tab === 'saas_packages' ? 'nav-tab-active' : ''; ?>">Gói SaaS</a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=change_logs')); ?>" class="nav-tab <?php echo $active_tab === 'change_logs' ? 'nav-tab-active' : ''; ?>">Change Logs</a>
             </h2>
 
@@ -731,6 +737,8 @@ class LCNI_Settings {
                 <?php $this->render_rule_settings_section($rule_settings, 'lcni-settings'); ?>
             <?php elseif ($active_tab === 'frontend_settings') : ?>
                 <?php $this->render_frontend_settings_section(); ?>
+            <?php elseif ($active_tab === 'saas_packages') : ?>
+                <?php $this->render_saas_package_settings_section(); ?>
             <?php else : ?>
                 <h2>Change Logs</h2>
                 <?php if (!empty($logs)) : ?>
@@ -1095,6 +1103,82 @@ class LCNI_Settings {
         ];
     }
 
+    private function get_default_saas_package_features() {
+        return [
+            'free' => [
+                'dashboard' => true,
+                'screener' => true,
+                'stock_detail' => true,
+                'watchlist' => false,
+            ],
+            'premium' => [
+                'dashboard' => true,
+                'screener' => true,
+                'stock_detail' => true,
+                'watchlist' => true,
+            ],
+        ];
+    }
+
+    private function sanitize_saas_package_features($value) {
+        $default = $this->get_default_saas_package_features();
+        $allowed_features = ['dashboard', 'screener', 'stock_detail', 'watchlist'];
+        $sanitized = [];
+
+        foreach ($default as $package => $defaults) {
+            $source = isset($value[$package]) && is_array($value[$package]) ? $value[$package] : [];
+            $sanitized[$package] = [];
+            foreach ($allowed_features as $feature) {
+                $sanitized[$package][$feature] = !empty($source[$feature]);
+            }
+        }
+
+        return $sanitized;
+    }
+
+    private function render_saas_package_settings_section() {
+        $saved = get_option('lcni_saas_package_features', []);
+        $settings = $this->sanitize_saas_package_features(is_array($saved) ? $saved : []);
+        $feature_labels = [
+            'dashboard' => 'Dashboard',
+            'screener' => 'Screener',
+            'stock_detail' => 'Stock Detail API',
+            'watchlist' => 'Watchlist',
+        ];
+        ?>
+        <style>
+            .lcni-saas-table { border-collapse: collapse; width: 100%; max-width: 760px; background:#fff; }
+            .lcni-saas-table th, .lcni-saas-table td { border: 1px solid #dcdcde; padding: 8px 12px; text-align: center; }
+            .lcni-saas-table th:first-child, .lcni-saas-table td:first-child { text-align: left; width: 40%; }
+        </style>
+        <p>Tùy chỉnh quyền theo gói Free/Premium để áp dụng tương đương quyền user đã gán trong hồ sơ.</p>
+        <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>">
+            <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+            <input type="hidden" name="lcni_redirect_tab" value="saas_packages">
+            <input type="hidden" name="lcni_admin_action" value="save_saas_package_features">
+            <table class="lcni-saas-table" role="presentation">
+                <thead>
+                    <tr>
+                        <th>Tính năng</th>
+                        <th>Free</th>
+                        <th>Premium</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($feature_labels as $feature_key => $feature_label) : ?>
+                        <tr>
+                            <td><?php echo esc_html($feature_label); ?></td>
+                            <td><input type="checkbox" name="lcni_saas_feature[free][<?php echo esc_attr($feature_key); ?>]" value="1" <?php checked(!empty($settings['free'][$feature_key])); ?>></td>
+                            <td><input type="checkbox" name="lcni_saas_feature[premium][<?php echo esc_attr($feature_key); ?>]" value="1" <?php checked(!empty($settings['premium'][$feature_key])); ?>></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php submit_button('Lưu cấu hình gói SaaS'); ?>
+        </form>
+        <?php
+    }
+
     private function sanitize_frontend_font_size($size, $fallback) {
         $value = (int) $size;
 
@@ -1133,10 +1217,18 @@ class LCNI_Settings {
         $overview = $this->sanitize_frontend_module_settings(get_option('lcni_frontend_settings_overview', ['allowed_fields' => array_keys($overview_labels)]));
         $watchlist_labels = [
             'symbol' => 'Mã CK',
+            'exchange' => 'Sàn',
+            'icb2_name' => 'Ngành ICB 2',
             'close_price' => 'Giá đóng cửa gần nhất',
             'pct_t_1' => '% T-1',
             'volume' => 'Khối lượng',
             'value_traded' => 'Giá trị giao dịch',
+            'xay_nen' => 'Nền giá',
+            'xay_nen_count_30' => 'Số phiên đi nền trong 30 phiên',
+            'nen_type' => 'Dạng nền',
+            'pha_nen' => 'Tín hiệu phá nền',
+            'tang_gia_kem_vol' => 'Tăng giá kèm Vol',
+            'smart_money' => 'Tín hiệu smart',
             'rs_exchange_status' => 'Trạng thái RS',
             'rs_exchange_recommend' => 'Khuyến nghị RS',
             'rsi' => 'RSI',
