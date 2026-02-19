@@ -66,10 +66,28 @@ class LCNI_Rest_API {
                 },
             ],
         ]);
+
         register_rest_route('lcni/v1', '/watchlist/settings', [
             'methods' => 'GET',
             'callback' => [$this, 'get_watchlist_settings'],
             'permission_callback' => '__return_true',
+        ]);
+
+        register_rest_route('lcni/v1', '/watchlist/preferences', [
+            [
+                'methods' => 'GET',
+                'callback' => [$this, 'get_watchlist_preferences'],
+                'permission_callback' => static function () {
+                    return is_user_logged_in();
+                },
+            ],
+            [
+                'methods' => 'POST',
+                'callback' => [$this, 'save_watchlist_preferences'],
+                'permission_callback' => static function () {
+                    return is_user_logged_in();
+                },
+            ],
         ]);
     }
 
@@ -157,37 +175,75 @@ class LCNI_Rest_API {
     }
 
     public function get_user_package() {
-        $user_id = get_current_user_id();
-        $package = strtolower((string) get_user_meta($user_id, 'lcni_user_package', true));
-        $package = in_array($package, ['free', 'premium'], true) ? $package : 'free';
-
-        return rest_ensure_response([
-            'package' => $package,
-            'features' => [
-                'dashboard' => true,
-                'screener' => true,
-                'stock_detail' => true,
-                'watchlist' => $package === 'premium',
-            ],
-        ]);
+        return rest_ensure_response($this->resolve_user_package(get_current_user_id()));
     }
 
     public function get_watchlist_settings() {
-        $settings = get_option('lcni_frontend_settings_watchlist', []);
+        $allowed_fields = $this->get_watchlist_allowed_fields();
 
         return rest_ensure_response([
-            'allowed_fields' => isset($settings['allowed_fields']) && is_array($settings['allowed_fields']) ? array_values($settings['allowed_fields']) : [],
-            'styles' => isset($settings['styles']) && is_array($settings['styles']) ? $settings['styles'] : [],
+            'allowed_fields' => $allowed_fields,
+            'labels' => $this->get_watchlist_labels($allowed_fields),
+            'styles' => $this->get_watchlist_styles(),
+        ]);
+    }
+
+    public function get_watchlist_preferences() {
+        $user_id = get_current_user_id();
+        $allowed_fields = $this->get_watchlist_allowed_fields();
+        $saved = get_user_meta($user_id, 'lcni_watchlist_preferences', true);
+        $selected_fields = is_array($saved) && isset($saved['selected_fields']) && is_array($saved['selected_fields'])
+            ? array_values(array_intersect($allowed_fields, array_map('sanitize_key', $saved['selected_fields'])))
+            : [];
+
+        if (empty($selected_fields)) {
+            $selected_fields = $allowed_fields;
+        }
+
+        return rest_ensure_response([
+            'selected_fields' => $selected_fields,
+            'allowed_fields' => $allowed_fields,
+        ]);
+    }
+
+    public function save_watchlist_preferences(WP_REST_Request $request) {
+        $allowed_fields = $this->get_watchlist_allowed_fields();
+        $selected_fields = $request->get_param('selected_fields');
+        $selected_fields = is_array($selected_fields) ? array_values(array_intersect($allowed_fields, array_map('sanitize_key', $selected_fields))) : [];
+
+        if (empty($selected_fields)) {
+            $selected_fields = $allowed_fields;
+        }
+
+        update_user_meta(get_current_user_id(), 'lcni_watchlist_preferences', [
+            'selected_fields' => $selected_fields,
+        ]);
+
+        return rest_ensure_response([
+            'selected_fields' => $selected_fields,
         ]);
     }
 
     public function get_watchlist() {
+        $package = $this->resolve_user_package(get_current_user_id());
+        if (empty($package['features']['watchlist'])) {
+            return new WP_Error('watchlist_requires_premium', 'Tính năng Watchlist chỉ dành cho gói Premium.', ['status' => 403]);
+        }
+
+        $symbols = $this->read_watchlist();
+
         return rest_ensure_response([
-            'symbols' => $this->read_watchlist(),
+            'symbols' => $symbols,
+            'items' => $this->build_watchlist_rows($symbols),
         ]);
     }
 
     public function add_watchlist_symbol(WP_REST_Request $request) {
+        $package = $this->resolve_user_package(get_current_user_id());
+        if (empty($package['features']['watchlist'])) {
+            return new WP_Error('watchlist_requires_premium', 'Tính năng Watchlist chỉ dành cho gói Premium.', ['status' => 403]);
+        }
+
         $symbol = strtoupper(sanitize_text_field((string) $request->get_param('symbol')));
         if ($symbol === '') {
             return new WP_Error('invalid_symbol', 'Symbol không hợp lệ.', ['status' => 400]);
@@ -204,6 +260,11 @@ class LCNI_Rest_API {
     }
 
     public function remove_watchlist_symbol(WP_REST_Request $request) {
+        $package = $this->resolve_user_package(get_current_user_id());
+        if (empty($package['features']['watchlist'])) {
+            return new WP_Error('watchlist_requires_premium', 'Tính năng Watchlist chỉ dành cho gói Premium.', ['status' => 403]);
+        }
+
         $symbol = strtoupper(sanitize_text_field((string) $request->get_param('symbol')));
         $watchlist = array_values(array_filter(
             $this->read_watchlist(),
@@ -217,6 +278,21 @@ class LCNI_Rest_API {
         return rest_ensure_response(['symbols' => $watchlist]);
     }
 
+    private function resolve_user_package($user_id) {
+        $package = strtolower((string) get_user_meta($user_id, 'lcni_user_package', true));
+        $package = in_array($package, ['free', 'premium'], true) ? $package : 'free';
+
+        return [
+            'package' => $package,
+            'features' => [
+                'dashboard' => true,
+                'screener' => true,
+                'stock_detail' => true,
+                'watchlist' => $package === 'premium',
+            ],
+        ];
+    }
+
     private function read_watchlist() {
         $user_id = get_current_user_id();
         $watchlist = get_user_meta($user_id, 'lcni_watchlist', true);
@@ -226,5 +302,84 @@ class LCNI_Rest_API {
 
     private function save_watchlist($watchlist) {
         update_user_meta(get_current_user_id(), 'lcni_watchlist', array_values(array_unique($watchlist)));
+    }
+
+    private function get_watchlist_allowed_fields() {
+        $settings = get_option('lcni_frontend_settings_watchlist', []);
+        $allowed = isset($settings['allowed_fields']) && is_array($settings['allowed_fields']) ? array_values(array_map('sanitize_key', $settings['allowed_fields'])) : [];
+
+        if (empty($allowed)) {
+            $allowed = ['symbol', 'close_price', 'pct_t_1', 'volume', 'value_traded', 'rsi', 'macd', 'macd_signal', 'event_time'];
+        }
+
+        return $allowed;
+    }
+
+    private function get_watchlist_styles() {
+        $settings = get_option('lcni_frontend_settings_watchlist', []);
+
+        return isset($settings['styles']) && is_array($settings['styles']) ? $settings['styles'] : [];
+    }
+
+    private function get_watchlist_labels(array $allowed_fields) {
+        $labels = [
+            'symbol' => 'Mã CK',
+            'close_price' => 'Giá đóng cửa gần nhất',
+            'pct_t_1' => '% T-1',
+            'volume' => 'Khối lượng',
+            'value_traded' => 'Giá trị giao dịch',
+            'rs_exchange_status' => 'Trạng thái RS',
+            'rs_exchange_recommend' => 'Khuyến nghị RS',
+            'rsi' => 'RSI',
+            'macd' => 'MACD',
+            'macd_signal' => 'MACD Signal',
+            'event_time' => 'Ngày dữ liệu gần nhất',
+        ];
+
+        $resolved = [];
+        foreach ($allowed_fields as $field) {
+            $resolved[$field] = $labels[$field] ?? strtoupper($field);
+        }
+
+        return $resolved;
+    }
+
+    private function build_watchlist_rows(array $symbols) {
+        if (empty($symbols)) {
+            return [];
+        }
+
+        global $wpdb;
+
+        $placeholders = implode(',', array_fill(0, count($symbols), '%s'));
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $latest_event_time = (int) $wpdb->get_var("SELECT MAX(event_time) FROM {$ohlc_table} WHERE timeframe='1D'");
+
+        if ($latest_event_time <= 0) {
+            return array_map(static function ($symbol) {
+                return ['symbol' => $symbol];
+            }, $symbols);
+        }
+
+        $query = $wpdb->prepare(
+            "SELECT symbol, close_price, pct_t_1, volume, value_traded, rs_exchange_status, rs_exchange_recommend, rsi, macd, macd_signal, event_time
+            FROM {$ohlc_table}
+            WHERE timeframe='1D' AND event_time=%d AND symbol IN ({$placeholders})",
+            array_merge([$latest_event_time], $symbols)
+        );
+
+        $rows = $wpdb->get_results($query, ARRAY_A);
+        $indexed = [];
+        foreach ($rows as $row) {
+            $indexed[strtoupper((string) $row['symbol'])] = $row;
+        }
+
+        $output = [];
+        foreach ($symbols as $symbol) {
+            $key = strtoupper($symbol);
+            $output[] = isset($indexed[$key]) ? $indexed[$key] : ['symbol' => $key];
+        }
+
+        return $output;
     }
 }

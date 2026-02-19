@@ -17,8 +17,11 @@ class LCNI_Watchlist_Shortcodes {
 
     public function register_assets() {
         $script_path = LCNI_PATH . 'assets/js/lcni-watchlist.js';
-        $version = file_exists($script_path) ? (string) filemtime($script_path) : '1.8.0';
+        $style_path = LCNI_PATH . 'assets/css/lcni-watchlist.css';
+        $version = file_exists($script_path) ? (string) filemtime($script_path) : '1.9.0';
+
         wp_register_script('lcni-watchlist', LCNI_URL . 'assets/js/lcni-watchlist.js', [], $version, true);
+        wp_register_style('lcni-watchlist', LCNI_URL . 'assets/css/lcni-watchlist.css', [], file_exists($style_path) ? (string) filemtime($style_path) : $version);
     }
 
     public function render_watchlist($atts) {
@@ -42,12 +45,16 @@ class LCNI_Watchlist_Shortcodes {
         }
 
         wp_enqueue_script('lcni-watchlist');
+        wp_enqueue_style('lcni-watchlist');
 
         return sprintf(
-            '<div data-lcni-watchlist data-watchlist-api="%1$s" data-stock-api="%2$s" data-empty-message="%3$s"></div>',
+            '<div data-lcni-watchlist data-watchlist-api="%1$s" data-watchlist-settings-api="%2$s" data-watchlist-preferences-api="%3$s" data-stock-api="%4$s" data-empty-message="%5$s" data-rest-nonce="%6$s"></div>',
             esc_url(rest_url('lcni/v1/watchlist')),
+            esc_url(rest_url('lcni/v1/watchlist/settings')),
+            esc_url(rest_url('lcni/v1/watchlist/preferences')),
             esc_url(rest_url('lcni/v1/stock')),
-            esc_attr($atts['empty_message'])
+            esc_attr($atts['empty_message']),
+            esc_attr(wp_create_nonce('wp_rest'))
         );
     }
 
@@ -76,12 +83,14 @@ class LCNI_Watchlist_Shortcodes {
         }
 
         wp_enqueue_script('lcni-watchlist');
+        wp_enqueue_style('lcni-watchlist');
 
         return sprintf(
-            '<button type="button" class="lcni-watchlist-add-btn %1$s" data-lcni-watchlist-add="1" data-symbol="%2$s" data-watchlist-api="%3$s">%4$s %5$s</button>',
+            '<button type="button" class="lcni-watchlist-add-btn %1$s" data-lcni-watchlist-add="1" data-symbol="%2$s" data-watchlist-api="%3$s" data-rest-nonce="%4$s"><span class="lcni-watchlist-add-icon">%5$s</span> <span class="lcni-watchlist-add-label">%6$s</span></button>',
             esc_attr((string) $atts['class']),
             esc_attr($symbol),
             esc_url(rest_url('lcni/v1/watchlist')),
+            esc_attr(wp_create_nonce('wp_rest')),
             wp_kses_post((string) $atts['icon']),
             esc_html((string) $atts['label'])
         );

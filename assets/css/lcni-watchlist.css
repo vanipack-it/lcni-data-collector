@@ -1,0 +1,63 @@
+.lcni-watchlist-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.lcni-watchlist-add-btn.is-loading {
+  opacity: 0.85;
+}
+
+.lcni-watchlist-add-btn.is-added {
+  color: #16a34a;
+}
+
+.lcni-watchlist-add-btn.is-error {
+  color: #dc2626;
+}
+
+.lcni-watchlist-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.lcni-watchlist-add-form {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.lcni-watchlist-add-form input {
+  min-width: 200px;
+}
+
+.lcni-watchlist-column-panel {
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 10px;
+  margin-bottom: 12px;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.lcni-watchlist-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.lcni-watchlist-table th,
+.lcni-watchlist-table td {
+  border: 1px solid #e5e7eb;
+  padding: 8px;
+  text-align: left;
+}
+
+.lcni-watchlist-empty {
+  display: grid;
+  gap: 8px;
+}
