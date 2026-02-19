@@ -68,6 +68,7 @@ class LCNI_DB {
         self::ensure_symbol_market_icb_columns();
         self::ensure_symbol_tongquan_columns();
         self::ensure_ohlc_indexes();
+        self::ensure_ohlc_latest_snapshot_infrastructure();
         self::normalize_ohlc_numeric_columns();
         self::sync_symbol_market_icb_mapping();
         self::sync_symbol_tongquan_with_symbols();
@@ -87,6 +88,7 @@ class LCNI_DB {
         self::backfill_ohlc_rs_exchange_signals();
         self::backfill_ohlc_rs_recommend_status();
         self::ensure_ohlc_indexes();
+        self::ensure_ohlc_latest_snapshot_infrastructure();
     }
 
     public static function create_tables() {
@@ -317,11 +319,167 @@ class LCNI_DB {
         self::ensure_symbol_market_icb_columns();
         self::ensure_symbol_tongquan_columns();
         self::ensure_ohlc_indexes();
+        self::ensure_ohlc_latest_snapshot_infrastructure();
         self::normalize_ohlc_numeric_columns();
         self::normalize_legacy_ratio_columns();
         self::sync_symbol_tongquan_with_symbols();
 
         self::log_change('activation', 'Created/updated OHLC, lcni_symbols, lcni_symbol_tongquan, seed task, market, icb2, sym_icb_market and change log tables.');
+    }
+
+    public static function ensure_ohlc_latest_snapshot_infrastructure($enabled = null, $interval_minutes = null) {
+        global $wpdb;
+
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $latest_table = $wpdb->prefix . 'lcni_ohlc_latest';
+        $event_name = $wpdb->prefix . 'ev_sync_ohlc_latest';
+        $sync_proc_name = $wpdb->prefix . 'sync_ohlc_latest_structure';
+        $refresh_proc_name = $wpdb->prefix . 'refresh_ohlc_latest';
+
+        $ohlc_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $ohlc_table));
+        if ($ohlc_exists !== $ohlc_table) {
+            return;
+        }
+
+        $latest_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $latest_table));
+        if ($latest_exists !== $latest_table) {
+            $wpdb->query("CREATE TABLE {$latest_table} LIKE {$ohlc_table}");
+        }
+
+        $id_column = $wpdb->get_row("SHOW COLUMNS FROM {$latest_table} LIKE 'id'", ARRAY_A);
+        if (is_array($id_column) && isset($id_column['Extra']) && strpos((string) $id_column['Extra'], 'auto_increment') !== false) {
+            $wpdb->query("ALTER TABLE {$latest_table} MODIFY COLUMN id BIGINT UNSIGNED DEFAULT NULL");
+        }
+
+        $primary_key = $wpdb->get_row($wpdb->prepare("SHOW INDEX FROM {$latest_table} WHERE Key_name = %s", 'PRIMARY'), ARRAY_A);
+        if (is_array($primary_key) && isset($primary_key['Column_name']) && $primary_key['Column_name'] !== 'symbol') {
+            $wpdb->query("ALTER TABLE {$latest_table} DROP PRIMARY KEY");
+        }
+
+        $symbol_primary_key = $wpdb->get_row($wpdb->prepare("SHOW INDEX FROM {$latest_table} WHERE Key_name = %s", 'PRIMARY'), ARRAY_A);
+        if (!is_array($symbol_primary_key)) {
+            $wpdb->query("ALTER TABLE {$latest_table} ADD PRIMARY KEY (symbol)");
+        }
+
+        $wpdb->query("DROP PROCEDURE IF EXISTS {$sync_proc_name}");
+        $wpdb->query(
+            "CREATE PROCEDURE {$sync_proc_name}()
+            BEGIN
+                DECLARE done INT DEFAULT FALSE;
+                DECLARE col_name VARCHAR(100);
+                DECLARE col_type TEXT;
+
+                DECLARE cur CURSOR FOR
+                    SELECT column_name, column_type
+                    FROM information_schema.columns
+                    WHERE table_name = '{$wpdb->prefix}lcni_ohlc'
+                        AND table_schema = DATABASE()
+                        AND column_name NOT IN (
+                            SELECT column_name
+                            FROM information_schema.columns
+                            WHERE table_name = '{$wpdb->prefix}lcni_ohlc_latest'
+                                AND table_schema = DATABASE()
+                        );
+
+                DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
+
+                OPEN cur;
+                read_loop: LOOP
+                    FETCH cur INTO col_name, col_type;
+                    IF done THEN
+                        LEAVE read_loop;
+                    END IF;
+
+                    SET @sql = CONCAT('ALTER TABLE {$latest_table} ADD COLUMN `', REPLACE(col_name, '`', '``'), '` ', col_type);
+                    PREPARE stmt FROM @sql;
+                    EXECUTE stmt;
+                    DEALLOCATE PREPARE stmt;
+                END LOOP;
+                CLOSE cur;
+            END"
+        );
+
+        $wpdb->query("DROP PROCEDURE IF EXISTS {$refresh_proc_name}");
+        $wpdb->query(
+            "CREATE PROCEDURE {$refresh_proc_name}()
+            BEGIN
+                REPLACE INTO {$latest_table}
+                SELECT t.*
+                FROM {$ohlc_table} t
+                JOIN (
+                    SELECT symbol, MAX(event_time) AS max_time
+                    FROM {$ohlc_table}
+                    GROUP BY symbol
+                ) m ON t.symbol = m.symbol AND t.event_time = m.max_time;
+            END"
+        );
+
+        $should_enable = is_null($enabled) ? !empty(get_option('lcni_ohlc_latest_enabled', false)) : (bool) $enabled;
+        $interval = is_null($interval_minutes) ? (int) get_option('lcni_ohlc_latest_interval_minutes', 5) : (int) $interval_minutes;
+        $interval = max(1, $interval);
+
+        $wpdb->query("DROP EVENT IF EXISTS {$event_name}");
+        if ($should_enable) {
+            $wpdb->query('SET GLOBAL event_scheduler = ON');
+            $wpdb->query(
+                "CREATE EVENT {$event_name}
+                ON SCHEDULE EVERY {$interval} MINUTE
+                DO
+                BEGIN
+                    CALL {$sync_proc_name}();
+                    CALL {$refresh_proc_name}();
+                END"
+            );
+        }
+    }
+
+    public static function refresh_ohlc_latest_snapshot() {
+        global $wpdb;
+
+        self::ensure_ohlc_latest_snapshot_infrastructure();
+
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $latest_table = $wpdb->prefix . 'lcni_ohlc_latest';
+        $missing_columns = $wpdb->get_results(
+            "SELECT column_name, column_type
+            FROM information_schema.columns
+            WHERE table_name = '{$wpdb->prefix}lcni_ohlc'
+                AND table_schema = DATABASE()
+                AND column_name NOT IN (
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = '{$wpdb->prefix}lcni_ohlc_latest'
+                        AND table_schema = DATABASE()
+                )",
+            ARRAY_A
+        );
+
+        foreach ((array) $missing_columns as $column) {
+            $column_name = isset($column['column_name']) ? str_replace('`', '``', (string) $column['column_name']) : '';
+            $column_type = isset($column['column_type']) ? (string) $column['column_type'] : '';
+            if ($column_name === '' || $column_type === '') {
+                continue;
+            }
+
+            $wpdb->query("ALTER TABLE {$latest_table} ADD COLUMN `{$column_name}` {$column_type}");
+        }
+
+        $result = $wpdb->query(
+            "REPLACE INTO {$latest_table}
+            SELECT t.*
+            FROM {$ohlc_table} t
+            JOIN (
+                SELECT symbol, MAX(event_time) AS max_time
+                FROM {$ohlc_table}
+                GROUP BY symbol
+            ) m ON t.symbol = m.symbol AND t.event_time = m.max_time"
+        );
+
+        return [
+            'success' => $result !== false,
+            'rows_affected' => (int) $result,
+            'error' => $result === false ? $wpdb->last_error : '',
+        ];
     }
 
     private static function ensure_ohlc_indicator_columns() {

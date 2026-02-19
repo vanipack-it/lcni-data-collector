@@ -33,6 +33,7 @@ class LCNI_Settings {
         register_setting('lcni_settings_group', 'lcni_access_token', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_api_credential'], 'default' => '']);
         register_setting('lcni_settings_group', 'lcni_secdef_url', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_secdef_url'], 'default' => LCNI_API::SECDEF_URL]);
         register_setting('lcni_settings_group', 'lcni_update_interval_minutes', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_update_interval'], 'default' => 5]);
+        register_setting('lcni_settings_group', 'lcni_ohlc_latest_interval_minutes', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_update_interval'], 'default' => 5]);
         register_setting('lcni_settings_group', 'lcni_frontend_settings_signals', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_frontend_module_settings'], 'default' => []]);
         register_setting('lcni_settings_group', 'lcni_frontend_settings_overview', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_frontend_module_settings'], 'default' => []]);
         register_setting('lcni_settings_group', 'lcni_frontend_settings_chart', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_frontend_chart_settings'], 'default' => []]);
@@ -223,6 +224,18 @@ class LCNI_Settings {
             } else {
                 $this->set_notice('success', 'Đã chạy cập nhật thủ công.');
             }
+        } elseif ($action === 'save_ohlc_latest_settings') {
+            $enabled = !empty($_POST['lcni_ohlc_latest_enabled']);
+            $interval = isset($_POST['lcni_ohlc_latest_interval_minutes']) ? $this->sanitize_update_interval(wp_unslash($_POST['lcni_ohlc_latest_interval_minutes'])) : 5;
+            LCNI_OHLC_Latest_Manager::save_settings($enabled, $interval);
+            $this->set_notice('success', 'Đã lưu cài đặt OHLC Latest Snapshot.');
+        } elseif ($action === 'run_manual_ohlc_latest_sync') {
+            $status = LCNI_OHLC_Latest_Manager::trigger_manual_sync();
+            if (!empty($status['error'])) {
+                $this->set_notice('error', 'Đồng bộ thủ công OHLC latest thất bại: ' . $status['error']);
+            } else {
+                $this->set_notice('success', 'Đã đồng bộ thủ công OHLC latest.');
+            }
         } elseif ($action === 'save_frontend_settings') {
             $module = isset($_POST['lcni_frontend_module']) ? sanitize_key(wp_unslash($_POST['lcni_frontend_module'])) : '';
             $allowed_modules = ['signals', 'overview', 'chart'];
@@ -280,7 +293,7 @@ class LCNI_Settings {
         $redirect_page = in_array($redirect_page, ['lcni-settings', 'lcni-data-viewer'], true) ? $redirect_page : 'lcni-settings';
         $redirect_url = admin_url('admin.php?page=' . $redirect_page);
 
-        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange', 'lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart'], true)) {
+        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange', 'lcni-tab-update-runtime', 'lcni-tab-update-ohlc-latest', 'lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart'], true)) {
             $redirect_url = add_query_arg('tab', $redirect_tab, $redirect_url);
         }
 
@@ -510,11 +523,15 @@ class LCNI_Settings {
         $active_tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'general';
         $rule_sub_tabs = ['lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange'];
         $frontend_sub_tabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart'];
+        $update_data_sub_tabs = ['lcni-tab-update-runtime', 'lcni-tab-update-ohlc-latest'];
         if (in_array($active_tab, $rule_sub_tabs, true)) {
             $active_tab = 'rule_settings';
         }
         if (in_array($active_tab, $frontend_sub_tabs, true)) {
             $active_tab = 'frontend_settings';
+        }
+        if (in_array($active_tab, $update_data_sub_tabs, true)) {
+            $active_tab = 'update_data';
         }
 
         if (!in_array($active_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'change_logs'], true)) {
@@ -708,49 +725,125 @@ class LCNI_Settings {
                 </script>
 
             <?php elseif ($active_tab === 'update_data') : ?>
-                <?php $update_settings = LCNI_Update_Manager::get_settings(); ?>
-                <?php $update_status = LCNI_Update_Manager::get_status(); ?>
-                <h2>Update Data Runtime (wp_lcni_ohlc)</h2>
-                <p>Chỉ cập nhật dữ liệu trong ngày giao dịch hiện tại. Dữ liệu các ngày trước sẽ giữ nguyên.</p>
-                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="margin-bottom:12px;">
-                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
-                    <input type="hidden" name="lcni_redirect_tab" value="update_data">
-                    <input type="hidden" name="lcni_admin_action" value="save_update_data_settings">
-                    <table class="form-table" role="presentation">
-                        <tr>
-                            <th>Bật tự động cập nhật</th>
-                            <td><label><input type="checkbox" name="lcni_update_enabled" value="1" <?php checked(!empty($update_settings['enabled'])); ?>> Kích hoạt</label></td>
-                        </tr>
-                        <tr>
-                            <th>Chu kỳ (phút)</th>
-                            <td><input type="number" min="1" name="lcni_update_interval_minutes" value="<?php echo esc_attr((string) ($update_settings['interval_minutes'] ?? 5)); ?>"></td>
-                        </tr>
+                <?php
+                $update_settings = LCNI_Update_Manager::get_settings();
+                $update_status = LCNI_Update_Manager::get_status();
+                $ohlc_latest_settings = LCNI_OHLC_Latest_Manager::get_settings();
+                $ohlc_latest_status = LCNI_OHLC_Latest_Manager::get_status();
+                $requested_update_sub_tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'lcni-tab-update-runtime';
+                $active_update_sub_tab = in_array($requested_update_sub_tab, ['lcni-tab-update-runtime', 'lcni-tab-update-ohlc-latest'], true) ? $requested_update_sub_tab : 'lcni-tab-update-runtime';
+                ?>
+                <h2>Update Data</h2>
+                <div class="lcni-sub-tab-nav" id="lcni-update-sub-tabs">
+                    <button type="button" data-sub-tab="lcni-tab-update-runtime">Update Data Runtime (wp_lcni_ohlc)</button>
+                    <button type="button" data-sub-tab="lcni-tab-update-ohlc-latest">OHLC Latest Snapshot (wp_lcni_ohlc_latest)</button>
+                </div>
+
+                <div id="lcni-tab-update-runtime" class="lcni-sub-tab-content">
+                    <h3>Update Data Runtime (wp_lcni_ohlc)</h3>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="max-width:720px;margin-bottom:16px;">
+                        <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                        <input type="hidden" name="lcni_redirect_tab" value="lcni-tab-update-runtime">
+                        <input type="hidden" name="lcni_admin_action" value="save_update_data_settings">
+                        <table class="form-table" role="presentation">
+                            <tr>
+                                <th>Bật tự động cập nhật</th>
+                                <td><label><input type="checkbox" name="lcni_update_enabled" value="1" <?php checked(!empty($update_settings['enabled'])); ?>> Kích hoạt</label></td>
+                            </tr>
+                            <tr>
+                                <th>Chu kỳ (phút)</th>
+                                <td><input type="number" min="1" name="lcni_update_interval_minutes" value="<?php echo esc_attr((string) ($update_settings['interval_minutes'] ?? 5)); ?>"></td>
+                            </tr>
+                        </table>
+                        <?php submit_button('Lưu & Thực thi tự động', 'primary', 'submit', false); ?>
+                    </form>
+
+                    <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="margin-bottom:16px;display:inline-block;">
+                        <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                        <input type="hidden" name="lcni_redirect_tab" value="lcni-tab-update-runtime">
+                        <input type="hidden" name="lcni_admin_action" value="run_manual_update_data">
+                        <?php submit_button('Cập nhật thủ công ngay', 'secondary', 'submit', false); ?>
+                    </form>
+
+                    <h3>Trạng thái cập nhật</h3>
+                    <table class="widefat striped" style="max-width:980px;">
+                        <tbody>
+                            <tr><th>Đang chạy</th><td><?php echo !empty($update_status['running']) ? 'Đang chạy' : 'Đã dừng'; ?></td></tr>
+                            <tr><th>Số symbol đã cập nhật</th><td><?php echo esc_html((string) ($update_status['processed_symbols'] ?? 0)); ?></td></tr>
+                            <tr><th>Số symbol chờ cập nhật</th><td><?php echo esc_html((string) ($update_status['pending_symbols'] ?? 0)); ?></td></tr>
+                            <tr><th>Số symbol thay đổi giá</th><td><?php echo esc_html((string) ($update_status['changed_symbols'] ?? 0)); ?></td></tr>
+                            <tr><th>Cột tính toán hoàn tất</th><td><?php echo !empty($update_status['indicators_done']) ? 'Đã xong' : 'Chưa xong'; ?></td></tr>
+                            <tr><th>Thời gian bắt đầu</th><td><?php echo esc_html((string) ($update_status['started_at'] ?? '-')); ?></td></tr>
+                            <tr><th>Thời gian kết thúc</th><td><?php echo esc_html((string) ($update_status['ended_at'] ?? '-')); ?></td></tr>
+                            <tr><th>Dự kiến phiên cập nhật tiếp theo</th><td><?php echo !empty($update_status['next_run_ts']) ? esc_html(wp_date('Y-m-d H:i:s', (int) $update_status['next_run_ts'])) : '-'; ?></td></tr>
+                            <tr><th>Thông báo</th><td><?php echo esc_html((string) ($update_status['message'] ?? '-')); ?></td></tr>
+                            <tr><th>Lỗi</th><td><?php echo esc_html((string) ($update_status['error'] ?? '')); ?></td></tr>
+                        </tbody>
                     </table>
-                    <?php submit_button('Lưu & Thực thi tự động', 'primary', 'submit', false); ?>
-                </form>
+                </div>
 
-                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="margin-bottom:16px;display:inline-block;">
-                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
-                    <input type="hidden" name="lcni_redirect_tab" value="update_data">
-                    <input type="hidden" name="lcni_admin_action" value="run_manual_update_data">
-                    <?php submit_button('Cập nhật thủ công ngay', 'secondary', 'submit', false); ?>
-                </form>
+                <div id="lcni-tab-update-ohlc-latest" class="lcni-sub-tab-content">
+                    <h3>OHLC Latest Snapshot (wp_lcni_ohlc_latest)</h3>
+                    <p>Tự động sync cấu trúc + dữ liệu bằng MySQL Event + Stored Procedure.</p>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="max-width:720px;margin-bottom:16px;">
+                        <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                        <input type="hidden" name="lcni_redirect_tab" value="lcni-tab-update-ohlc-latest">
+                        <input type="hidden" name="lcni_admin_action" value="save_ohlc_latest_settings">
+                        <table class="form-table" role="presentation">
+                            <tr>
+                                <th>Bật event tự động</th>
+                                <td><label><input type="checkbox" name="lcni_ohlc_latest_enabled" value="1" <?php checked(!empty($ohlc_latest_settings['enabled'])); ?>> Kích hoạt</label></td>
+                            </tr>
+                            <tr>
+                                <th>Chu kỳ Event (phút)</th>
+                                <td><input type="number" min="1" name="lcni_ohlc_latest_interval_minutes" value="<?php echo esc_attr((string) ($ohlc_latest_settings['interval_minutes'] ?? 5)); ?>"></td>
+                            </tr>
+                        </table>
+                        <?php submit_button('Lưu cài đặt Snapshot', 'primary', 'submit', false); ?>
+                    </form>
 
-                <h3>Trạng thái cập nhật</h3>
-                <table class="widefat striped" style="max-width:980px;">
-                    <tbody>
-                        <tr><th>Đang chạy</th><td><?php echo !empty($update_status['running']) ? 'Đang chạy' : 'Đã dừng'; ?></td></tr>
-                        <tr><th>Số symbol đã cập nhật</th><td><?php echo esc_html((string) ($update_status['processed_symbols'] ?? 0)); ?></td></tr>
-                        <tr><th>Số symbol chờ cập nhật</th><td><?php echo esc_html((string) ($update_status['pending_symbols'] ?? 0)); ?></td></tr>
-                        <tr><th>Số symbol thay đổi giá</th><td><?php echo esc_html((string) ($update_status['changed_symbols'] ?? 0)); ?></td></tr>
-                        <tr><th>Cột tính toán hoàn tất</th><td><?php echo !empty($update_status['indicators_done']) ? 'Đã xong' : 'Chưa xong'; ?></td></tr>
-                        <tr><th>Thời gian bắt đầu</th><td><?php echo esc_html((string) ($update_status['started_at'] ?? '-')); ?></td></tr>
-                        <tr><th>Thời gian kết thúc</th><td><?php echo esc_html((string) ($update_status['ended_at'] ?? '-')); ?></td></tr>
-                        <tr><th>Dự kiến phiên cập nhật tiếp theo</th><td><?php echo !empty($update_status['next_run_ts']) ? esc_html(wp_date('Y-m-d H:i:s', (int) $update_status['next_run_ts'])) : '-'; ?></td></tr>
-                        <tr><th>Thông báo</th><td><?php echo esc_html((string) ($update_status['message'] ?? '-')); ?></td></tr>
-                        <tr><th>Lỗi</th><td><?php echo esc_html((string) ($update_status['error'] ?? '')); ?></td></tr>
-                    </tbody>
-                </table>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="margin-bottom:16px;display:inline-block;">
+                        <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                        <input type="hidden" name="lcni_redirect_tab" value="lcni-tab-update-ohlc-latest">
+                        <input type="hidden" name="lcni_admin_action" value="run_manual_ohlc_latest_sync">
+                        <?php submit_button('Sync Snapshot thủ công ngay', 'secondary', 'submit', false); ?>
+                    </form>
+
+                    <h3>Trạng thái snapshot</h3>
+                    <table class="widefat striped" style="max-width:980px;">
+                        <tbody>
+                            <tr><th>Đang chạy</th><td><?php echo !empty($ohlc_latest_status['running']) ? 'Đang chạy' : 'Đã dừng'; ?></td></tr>
+                            <tr><th>Rows affected lần chạy cuối</th><td><?php echo esc_html((string) ($ohlc_latest_status['rows_affected'] ?? 0)); ?></td></tr>
+                            <tr><th>Thời gian bắt đầu</th><td><?php echo esc_html((string) ($ohlc_latest_status['started_at'] ?? '-')); ?></td></tr>
+                            <tr><th>Thời gian kết thúc</th><td><?php echo esc_html((string) ($ohlc_latest_status['ended_at'] ?? '-')); ?></td></tr>
+                            <tr><th>Thông báo</th><td><?php echo esc_html((string) ($ohlc_latest_status['message'] ?? '-')); ?></td></tr>
+                            <tr><th>Lỗi</th><td><?php echo esc_html((string) ($ohlc_latest_status['error'] ?? '')); ?></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <script>
+                    (function() {
+                        const nav = document.getElementById('lcni-update-sub-tabs');
+                        if (!nav) {
+                            return;
+                        }
+                        const buttons = nav.querySelectorAll('button[data-sub-tab]');
+                        const panes = document.querySelectorAll('#lcni-tab-update-runtime, #lcni-tab-update-ohlc-latest');
+                        const active = '<?php echo esc_js($active_update_sub_tab); ?>';
+
+                        const activate = function(tabId) {
+                            buttons.forEach((btn) => btn.classList.toggle('active', btn.getAttribute('data-sub-tab') === tabId));
+                            panes.forEach((pane) => pane.classList.toggle('active', pane.id === tabId));
+                        };
+
+                        buttons.forEach((btn) => {
+                            btn.addEventListener('click', () => activate(btn.getAttribute('data-sub-tab')));
+                        });
+
+                        activate(active);
+                    })();
+                </script>
 
             <?php elseif ($active_tab === 'rule_settings') : ?>
                 <?php $this->render_rule_settings_section($rule_settings, 'lcni-settings'); ?>
