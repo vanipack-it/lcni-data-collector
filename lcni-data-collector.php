@@ -36,6 +36,11 @@ require_once LCNI_PATH . 'includes/lcni-stock-functions.php';
 require_once LCNI_PATH . 'includes/class-lcni-chart-shortcodes.php';
 require_once LCNI_PATH . 'includes/class-lcni-stock-overview-shortcodes.php';
 require_once LCNI_PATH . 'includes/class-lcni-stock-signals-shortcodes.php';
+require_once LCNI_PATH . 'modules/watchlist/WatchlistRepository.php';
+require_once LCNI_PATH . 'modules/watchlist/WatchlistService.php';
+require_once LCNI_PATH . 'modules/watchlist/WatchlistController.php';
+require_once LCNI_PATH . 'modules/watchlist/WatchlistShortcode.php';
+require_once LCNI_PATH . 'modules/watchlist/class-lcni-watchlist-module.php';
 
 function lcni_register_custom_cron_schedules($schedules) {
     if (!isset($schedules['lcni_every_minute'])) {
@@ -138,6 +143,7 @@ new LCNI_Settings();
 new LCNI_Chart_Shortcodes();
 new LCNI_Stock_Overview_Shortcodes();
 new LCNI_Stock_Signals_Shortcodes();
+new LCNI_Watchlist_Module();
 LCNI_Update_Manager::init();
 LCNI_OHLC_Latest_Manager::init();
 new LCNI_Rest_API();

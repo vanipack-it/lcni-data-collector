@@ -64,3 +64,12 @@ function lcni_get_lightweight_chart_series($symbol, $limit = 120, $timeframe = '
 
     return $series;
 }
+
+function lcni_get_watchlist_add_button($symbol) {
+    $symbol = strtoupper(sanitize_text_field((string) $symbol));
+    if ($symbol === '') {
+        return '';
+    }
+
+    return do_shortcode(sprintf('[lcni_watchlist_add symbol="%s"]', esc_attr($symbol)));
+}
