@@ -260,6 +260,8 @@ class LCNI_Settings {
                             'label_color' => isset($_POST['lcni_frontend_style_label_color']) ? wp_unslash($_POST['lcni_frontend_style_label_color']) : '',
                             'value_color' => isset($_POST['lcni_frontend_style_value_color']) ? wp_unslash($_POST['lcni_frontend_style_value_color']) : '',
                             'item_background' => isset($_POST['lcni_frontend_style_item_background']) ? wp_unslash($_POST['lcni_frontend_style_item_background']) : '',
+                            'container_background' => isset($_POST['lcni_frontend_style_container_background']) ? wp_unslash($_POST['lcni_frontend_style_container_background']) : '',
+                            'container_border' => isset($_POST['lcni_frontend_style_container_border']) ? wp_unslash($_POST['lcni_frontend_style_container_border']) : '',
                             'item_height' => isset($_POST['lcni_frontend_style_item_height']) ? wp_unslash($_POST['lcni_frontend_style_item_height']) : '',
                             'label_font_size' => isset($_POST['lcni_frontend_style_label_font_size']) ? wp_unslash($_POST['lcni_frontend_style_label_font_size']) : '',
                             'value_font_size' => isset($_POST['lcni_frontend_style_value_font_size']) ? wp_unslash($_POST['lcni_frontend_style_value_font_size']) : '',
@@ -1112,6 +1114,8 @@ class LCNI_Settings {
                 'label_color' => sanitize_hex_color((string) ($styles['label_color'] ?? $default['styles']['label_color'])) ?: $default['styles']['label_color'],
                 'value_color' => sanitize_hex_color((string) ($styles['value_color'] ?? $default['styles']['value_color'])) ?: $default['styles']['value_color'],
                 'item_background' => sanitize_hex_color((string) ($styles['item_background'] ?? $default['styles']['item_background'])) ?: $default['styles']['item_background'],
+                'container_background' => sanitize_hex_color((string) ($styles['container_background'] ?? $default['styles']['container_background'])) ?: $default['styles']['container_background'],
+                'container_border' => sanitize_hex_color((string) ($styles['container_border'] ?? $default['styles']['container_border'])) ?: $default['styles']['container_border'],
                 'item_height' => $this->sanitize_frontend_item_height($styles['item_height'] ?? $default['styles']['item_height'], $default['styles']['item_height']),
                 'label_font_size' => $this->sanitize_frontend_font_size($styles['label_font_size'] ?? $default['styles']['label_font_size'], $default['styles']['label_font_size']),
                 'value_font_size' => $this->sanitize_frontend_font_size($styles['value_font_size'] ?? $default['styles']['value_font_size'], $default['styles']['value_font_size']),
@@ -1215,6 +1219,8 @@ class LCNI_Settings {
                 'label_color' => '#4b5563',
                 'value_color' => '#111827',
                 'item_background' => '#f9fafb',
+                'container_background' => '#ffffff',
+                'container_border' => '#e5e7eb',
                 'item_height' => 56,
                 'label_font_size' => 12,
                 'value_font_size' => 14,
@@ -1304,6 +1310,8 @@ class LCNI_Settings {
                     <tr><th>Màu label</th><td><input type="color" name="lcni_frontend_style_label_color" value="<?php echo esc_attr((string) ($settings['styles']['label_color'] ?? '#4b5563')); ?>"></td></tr>
                     <tr><th>Màu value</th><td><input type="color" name="lcni_frontend_style_value_color" value="<?php echo esc_attr((string) ($settings['styles']['value_color'] ?? '#111827')); ?>"></td></tr>
                     <tr><th>Màu nền item</th><td><input type="color" name="lcni_frontend_style_item_background" value="<?php echo esc_attr((string) ($settings['styles']['item_background'] ?? '#f9fafb')); ?>"></td></tr>
+                    <tr><th>Màu nền box lớn</th><td><input type="color" name="lcni_frontend_style_container_background" value="<?php echo esc_attr((string) ($settings['styles']['container_background'] ?? '#ffffff')); ?>"></td></tr>
+                    <tr><th>Màu viền box lớn</th><td><input type="color" name="lcni_frontend_style_container_border" value="<?php echo esc_attr((string) ($settings['styles']['container_border'] ?? '#e5e7eb')); ?>"></td></tr>
                     <tr><th>Chiều cao box</th><td><input type="number" min="40" max="300" name="lcni_frontend_style_item_height" value="<?php echo esc_attr((string) ($settings['styles']['item_height'] ?? 56)); ?>"> px</td></tr>
                     <tr><th>Cỡ chữ label</th><td><input type="number" min="10" max="40" name="lcni_frontend_style_label_font_size" value="<?php echo esc_attr((string) ($settings['styles']['label_font_size'] ?? 12)); ?>"> px</td></tr>
                     <tr><th>Cỡ chữ value</th><td><input type="number" min="10" max="40" name="lcni_frontend_style_value_font_size" value="<?php echo esc_attr((string) ($settings['styles']['value_font_size'] ?? 14)); ?>"> px</td></tr>
