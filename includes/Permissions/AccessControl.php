@@ -7,7 +7,7 @@ if (!defined('ABSPATH')) {
 class LCNI_AccessControl {
 
     const PACKAGE_FREE = 'free';
-    const PACKAGE_PRO = 'pro';
+    const PACKAGE_PREMIUM = 'premium';
 
     public function canAccessStocks() {
         return true;
@@ -18,13 +18,21 @@ class LCNI_AccessControl {
             return self::PACKAGE_FREE;
         }
 
-        $package = strtolower((string) get_user_meta(get_current_user_id(), 'lcni_user_package', true));
+        return $this->normalizePackage(get_user_meta(get_current_user_id(), 'lcni_user_package', true));
+    }
 
-        return $package === self::PACKAGE_PRO ? self::PACKAGE_PRO : self::PACKAGE_FREE;
+    public function normalizePackage($package) {
+        $normalized = strtolower(trim((string) $package));
+
+        if (in_array($normalized, ['premium', 'pro'], true)) {
+            return self::PACKAGE_PREMIUM;
+        }
+
+        return self::PACKAGE_FREE;
     }
 
     public function getHistoryLimit($package) {
-        if ($package === self::PACKAGE_PRO) {
+        if ($package === self::PACKAGE_PREMIUM) {
             return 1000;
         }
 
@@ -32,7 +40,7 @@ class LCNI_AccessControl {
     }
 
     public function getIndicatorWhitelist($package) {
-        if ($package === self::PACKAGE_PRO) {
+        if ($package === self::PACKAGE_PREMIUM) {
             return ['ma10', 'ma20', 'ma50', 'ma100', 'ma200'];
         }
 
