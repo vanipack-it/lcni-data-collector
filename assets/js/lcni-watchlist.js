@@ -123,7 +123,7 @@
     const [state, settings, preferences] = await Promise.all([
       jsonFetch(watchlistApi),
       jsonFetch(watchlistSettingsApi),
-      jsonFetch(watchlistPreferencesApi, { headers: { 'X-WP-Nonce': restNonce } }),
+      jsonFetch(watchlistPreferencesApi),
     ]);
 
     const symbols = Array.isArray(state.symbols) ? state.symbols : [];

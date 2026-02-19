@@ -90,15 +90,15 @@ class LCNI_Watchlist_Shortcodes {
             'class' => '',
         ], $atts, 'lcni_watchlist_add');
 
-        $symbol = strtoupper(sanitize_text_field((string) $atts['symbol']));
+        $symbol = $this->normalize_symbol((string) $atts['symbol']);
         if ($symbol === '') {
             $param = sanitize_key((string) $atts['param']);
             if ($param !== '' && isset($_GET[$param])) {
-                $symbol = strtoupper(sanitize_text_field((string) wp_unslash($_GET[$param])));
+                $symbol = $this->normalize_symbol((string) wp_unslash($_GET[$param]));
             }
         }
 
-        if ($symbol !== '' && !preg_match('/^[A-Z0-9._-]{1,15}$/', $symbol)) {
+        if ($symbol === '' && ((string) $atts['symbol'] !== '' || (isset($param) && $param !== '' && isset($_GET[$param])))) {
             return '<span class="lcni-watchlist-invalid-symbol">Symbol không hợp lệ.</span>';
         }
 
@@ -126,5 +126,22 @@ class LCNI_Watchlist_Shortcodes {
             wp_kses_post((string) $atts['icon']),
             esc_html((string) $atts['label'])
         );
+    }
+
+    private function normalize_symbol($raw_symbol) {
+        $symbol = strtoupper(sanitize_text_field((string) $raw_symbol));
+        if ($symbol === '') {
+            return '';
+        }
+
+        if (preg_match('/^[A-Z0-9._-]{1,15}$/', $symbol) === 1) {
+            return $symbol;
+        }
+
+        if (preg_match('/[A-Z0-9._-]{1,15}/', $symbol, $matches) === 1) {
+            return $matches[0];
+        }
+
+        return '';
     }
 }
