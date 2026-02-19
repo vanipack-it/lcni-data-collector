@@ -84,13 +84,21 @@ class LCNI_Watchlist_Shortcodes {
     public function render_add_button($atts) {
         $atts = shortcode_atts([
             'symbol' => '',
+            'param' => 'symbol',
             'label' => 'Thêm vào Watchlist',
             'icon' => '<i class="fa-solid fa-heart-circle-plus" aria-hidden="true"></i>',
             'class' => '',
         ], $atts, 'lcni_watchlist_add');
 
         $symbol = strtoupper(sanitize_text_field((string) $atts['symbol']));
-        if (!preg_match('/^[A-Z0-9._-]{1,15}$/', $symbol)) {
+        if ($symbol === '') {
+            $param = sanitize_key((string) $atts['param']);
+            if ($param !== '' && isset($_GET[$param])) {
+                $symbol = strtoupper(sanitize_text_field((string) wp_unslash($_GET[$param])));
+            }
+        }
+
+        if ($symbol !== '' && !preg_match('/^[A-Z0-9._-]{1,15}$/', $symbol)) {
             return '<span class="lcni-watchlist-invalid-symbol">Symbol không hợp lệ.</span>';
         }
 
