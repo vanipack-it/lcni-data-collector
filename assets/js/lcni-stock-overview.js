@@ -121,11 +121,15 @@ document.addEventListener("DOMContentLoaded", () => {
       return "-";
     }
 
-    if (typeof value === "number") {
+    const normalizedNumber = typeof value === "number"
+      ? value
+      : (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value)) ? Number(value) : null);
+
+    if (normalizedNumber !== null) {
       if (key.includes("pct") || ["roe", "de_ratio", "pe_ratio", "pb_ratio", "ev_ebitda"].includes(key)) {
-        return value.toLocaleString("vi-VN", { maximumFractionDigits: 2 });
+        return normalizedNumber.toLocaleString("vi-VN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       }
-      return value.toLocaleString("vi-VN", { maximumFractionDigits: 2 });
+      return normalizedNumber.toLocaleString("vi-VN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
     return String(value);
@@ -198,7 +202,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
         container.innerHTML = "";
         const wrap = document.createElement("div");
-        wrap.style.border = "1px solid #e5e7eb";
+        wrap.style.border = styles.container_border || "1px solid #e5e7eb";
+        wrap.style.background = styles.container_background || "transparent";
         wrap.style.padding = "10px";
         wrap.style.borderRadius = "8px";
 
@@ -207,7 +212,7 @@ document.addEventListener("DOMContentLoaded", () => {
         header.style.justifyContent = "space-between";
 
         const title = document.createElement("strong");
-        title.textContent = `${payload.symbol} · v${container.dataset.version || "1.0.0"}`;
+        title.textContent = `${payload.symbol}`;
 
         const settingBtn = document.createElement("button");
         settingBtn.type = "button";
@@ -299,23 +304,9 @@ document.addEventListener("DOMContentLoaded", () => {
           grid.appendChild(item);
         });
 
-        const historyTitle = document.createElement("div");
-        historyTitle.style.marginTop = "8px";
-        historyTitle.innerHTML = "<small>Lịch sử đổi symbol (session)</small>";
-
-        const historyList = document.createElement("ul");
-        historyList.style.margin = "4px 0 0 16px";
-        stockSync.getHistory().slice(-5).reverse().forEach((row) => {
-          const li = document.createElement("li");
-          li.textContent = `${row.symbol} (${row.source})`;
-          historyList.appendChild(li);
-        });
-
         wrap.appendChild(header);
         wrap.appendChild(panel);
         wrap.appendChild(grid);
-        wrap.appendChild(historyTitle);
-        wrap.appendChild(historyList);
         container.appendChild(wrap);
       } catch (error) {
         container.textContent = "NO DATA";

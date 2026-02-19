@@ -212,7 +212,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
         container.innerHTML = "";
         const wrap = document.createElement("div");
-        wrap.style.border = "1px solid #e5e7eb";
+        wrap.style.border = styles.container_border || "1px solid #e5e7eb";
+        wrap.style.background = styles.container_background || "transparent";
         wrap.style.padding = "10px";
         wrap.style.borderRadius = "8px";
 
@@ -223,7 +224,7 @@ document.addEventListener("DOMContentLoaded", () => {
         header.style.gap = "8px";
 
         const title = document.createElement("strong");
-        title.textContent = `${payload.symbol} · LCNi Signals v${container.dataset.version || "1.0.0"}`;
+        title.textContent = `${payload.symbol} · LCNi Signals`;
 
         const settingBtn = document.createElement("button");
         settingBtn.type = "button";
@@ -281,10 +282,6 @@ document.addEventListener("DOMContentLoaded", () => {
         header.appendChild(title);
         header.appendChild(settingBtn);
 
-        const meta = document.createElement("div");
-        meta.style.marginTop = "6px";
-        meta.innerHTML = `<small>event_time gần nhất: ${formatValue(payload.event_time)} (${formatValue(payload.event_date)})</small>`;
-
         const grid = document.createElement("div");
         grid.style.display = "flex";
         grid.style.flexWrap = "wrap";
@@ -298,7 +295,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
         wrap.appendChild(header);
         wrap.appendChild(panel);
-        wrap.appendChild(meta);
         wrap.appendChild(grid);
         container.appendChild(wrap);
       } catch (error) {
