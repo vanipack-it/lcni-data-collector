@@ -40,6 +40,7 @@ class LCNI_Stock_Overview_Shortcodes {
         'label_color' => '#4b5563',
         'value_color' => '#111827',
         'item_background' => '#f9fafb',
+        'item_height' => 56,
         'label_font_size' => 12,
         'value_font_size' => 14,
     ];
@@ -192,6 +193,7 @@ class LCNI_Stock_Overview_Shortcodes {
                 'label_color' => $this->sanitize_hex_color($styles['label_color'] ?? $this->default_styles['label_color'], $this->default_styles['label_color']),
                 'value_color' => $this->sanitize_hex_color($styles['value_color'] ?? $this->default_styles['value_color'], $this->default_styles['value_color']),
                 'item_background' => $this->sanitize_hex_color($styles['item_background'] ?? $this->default_styles['item_background'], $this->default_styles['item_background']),
+                'item_height' => $this->sanitize_item_height($styles['item_height'] ?? $this->default_styles['item_height'], $this->default_styles['item_height']),
                 'label_font_size' => $this->sanitize_font_size($styles['label_font_size'] ?? $this->default_styles['label_font_size'], $this->default_styles['label_font_size']),
                 'value_font_size' => $this->sanitize_font_size($styles['value_font_size'] ?? $this->default_styles['value_font_size'], $this->default_styles['value_font_size']),
                 'value_rules' => $this->sanitize_value_rules($styles['value_rules'] ?? [], $this->default_fields),
@@ -250,6 +252,12 @@ class LCNI_Stock_Overview_Shortcodes {
         $value = (int) $size;
 
         return $value >= 10 && $value <= 40 ? $value : (int) $fallback;
+    }
+
+    private function sanitize_item_height($height, $fallback) {
+        $value = (int) $height;
+
+        return $value >= 40 && $value <= 300 ? $value : (int) $fallback;
     }
 
     private function sanitize_symbol($symbol) {
