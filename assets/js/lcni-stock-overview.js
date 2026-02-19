@@ -263,17 +263,24 @@ document.addEventListener("DOMContentLoaded", () => {
         header.appendChild(settingBtn);
 
         const grid = document.createElement("div");
-        grid.style.display = "grid";
-        grid.style.gridTemplateColumns = "repeat(auto-fit,minmax(180px,1fr))";
+        grid.style.display = "flex";
+        grid.style.flexWrap = "wrap";
+        grid.style.alignItems = "stretch";
         grid.style.gap = "8px";
         grid.style.marginTop = "8px";
 
         selectedFields.forEach((field) => {
           const item = document.createElement("div");
           item.style.padding = "8px 10px";
-          item.style.minHeight = "56px";
+          item.style.minHeight = `${styles.item_height || 56}px`;
           item.style.background = styles.item_background || "#f9fafb";
           item.style.borderRadius = "6px";
+          item.style.display = "inline-flex";
+          item.style.flexDirection = "column";
+          item.style.justifyContent = "space-between";
+          item.style.flex = "0 1 auto";
+          item.style.width = "fit-content";
+          item.style.maxWidth = "100%";
 
           const labelEl = document.createElement("small");
           labelEl.textContent = labels[field];
