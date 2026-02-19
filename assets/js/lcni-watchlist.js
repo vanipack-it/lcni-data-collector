@@ -4,6 +4,8 @@
   const successIcon = '<i class="fa-solid fa-circle-check" aria-hidden="true"></i>';
   const enhanceSelector = '[data-lcni-stock-symbol], [data-symbol], .lcni-stock-symbol, .symbol';
 
+  const isValidSymbol = (value) => /^[A-Z0-9._-]{1,15}$/.test(String(value || '').trim().toUpperCase());
+
   const jsonFetch = async (url, options = {}) => {
     const response = await fetch(url, {
       credentials: 'same-origin',
@@ -66,7 +68,10 @@
       const button = form.querySelector('button[type="submit"]');
       const input = form.querySelector('input[name="symbol"]');
       const symbol = (input && input.value ? input.value : '').trim().toUpperCase();
-      if (!symbol) return;
+      if (!symbol || !isValidSymbol(symbol)) {
+        window.alert('Symbol không hợp lệ. Vui lòng kiểm tra lại.');
+        return;
+      }
 
       button.disabled = true;
       button.innerHTML = `${spinnerIcon} Đang thêm...`;
@@ -173,10 +178,14 @@
       const symbol = button.getAttribute('data-symbol') || '';
       const watchlistApi = button.getAttribute('data-watchlist-api') || '';
       const restNonce = button.getAttribute('data-rest-nonce') || '';
-      if (!symbol || !watchlistApi) return;
-
       const iconNode = button.querySelector('.lcni-watchlist-add-icon');
       const labelNode = button.querySelector('.lcni-watchlist-add-label');
+      if (!symbol || !watchlistApi) return;
+      if (!isValidSymbol(symbol)) {
+        if (labelNode) labelNode.textContent = 'Symbol không hợp lệ';
+        button.classList.add('is-error');
+        return;
+      }
 
       button.disabled = true;
       button.classList.remove('is-error');
@@ -228,7 +237,7 @@
       if (node.dataset.lcniWatchlistEnhanced === '1') return;
       const symbolRaw = node.getAttribute('data-lcni-stock-symbol') || node.getAttribute('data-symbol') || node.textContent || '';
       const symbol = String(symbolRaw).trim().toUpperCase();
-      if (!/^[A-Z0-9._-]{1,15}$/.test(symbol)) return;
+      if (!isValidSymbol(symbol)) return;
 
       node.dataset.lcniWatchlistEnhanced = '1';
       node.insertAdjacentElement('afterend', createQuickAddButton(symbol, watchlistApi, restNonce));

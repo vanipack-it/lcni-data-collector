@@ -245,7 +245,7 @@ class LCNI_Rest_API {
         }
 
         $symbol = strtoupper(sanitize_text_field((string) $request->get_param('symbol')));
-        if ($symbol === '') {
+        if (!preg_match('/^[A-Z0-9._-]{1,15}$/', $symbol)) {
             return new WP_Error('invalid_symbol', 'Symbol không hợp lệ.', ['status' => 400]);
         }
 
@@ -266,6 +266,10 @@ class LCNI_Rest_API {
         }
 
         $symbol = strtoupper(sanitize_text_field((string) $request->get_param('symbol')));
+        if (!preg_match('/^[A-Z0-9._-]{1,15}$/', $symbol)) {
+            return new WP_Error('invalid_symbol', 'Symbol không hợp lệ.', ['status' => 400]);
+        }
+
         $watchlist = array_values(array_filter(
             $this->read_watchlist(),
             static function ($item) use ($symbol) {

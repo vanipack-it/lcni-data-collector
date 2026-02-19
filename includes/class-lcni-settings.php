@@ -1120,10 +1120,14 @@ class LCNI_Settings {
         ];
     }
 
-    private function sanitize_saas_package_features($value) {
+    public function sanitize_saas_package_features($value) {
         $default = $this->get_default_saas_package_features();
         $allowed_features = ['dashboard', 'screener', 'stock_detail', 'watchlist'];
         $sanitized = [];
+
+        if (!is_array($value)) {
+            $value = [];
+        }
 
         foreach ($default as $package => $defaults) {
             $source = isset($value[$package]) && is_array($value[$package]) ? $value[$package] : [];
@@ -1151,7 +1155,7 @@ class LCNI_Settings {
             .lcni-saas-table th, .lcni-saas-table td { border: 1px solid #dcdcde; padding: 8px 12px; text-align: center; }
             .lcni-saas-table th:first-child, .lcni-saas-table td:first-child { text-align: left; width: 40%; }
         </style>
-        <p>Tùy chỉnh quyền theo gói Free/Premium để áp dụng tương đương quyền user đã gán trong hồ sơ.</p>
+        <p>Tùy chỉnh checkbox quyền truy cập module theo từng gói Free/Premium để dễ quản lý.</p>
         <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>">
             <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
             <input type="hidden" name="lcni_redirect_tab" value="saas_packages">
