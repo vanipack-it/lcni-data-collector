@@ -40,7 +40,9 @@ function lcni_register_custom_cron_schedules($schedules) {
     if (!isset($schedules['lcni_every_minute'])) {
         $schedules['lcni_every_minute'] = [
             'interval' => MINUTE_IN_SECONDS,
-            'display' => __('Every Minute (LCNI)', 'lcni-data-collector'),
+            // Keep this as a plain string so cron registration never triggers
+            // just-in-time translation loading before init.
+            'display' => 'Every Minute (LCNI)',
         ];
     }
 
