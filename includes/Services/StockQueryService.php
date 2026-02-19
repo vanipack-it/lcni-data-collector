@@ -43,6 +43,7 @@ class LCNI_StockQueryService {
 
                 return [
                     'symbol' => $row['symbol'],
+                    'symbol_rendered' => function_exists('lcni_render_symbol') ? lcni_render_symbol($row['symbol']) : $row['symbol'],
                     'price' => (float) $row['close_price'],
                     'change' => $row['pct_t_1'] !== null ? (float) $row['pct_t_1'] : null,
                     'volume' => (int) $row['volume'],
@@ -184,6 +185,7 @@ class LCNI_StockQueryService {
 
                 return [
                     'symbol' => $row['symbol'],
+                    'symbol_rendered' => function_exists('lcni_render_symbol') ? lcni_render_symbol($row['symbol']) : $row['symbol'],
                     'event_time' => isset($row['event_time']) ? (int) $row['event_time'] : null,
                     'event_date' => isset($row['event_time']) ? gmdate('Y-m-d', (int) $row['event_time']) : null,
                     'xay_nen' => $row['xay_nen'] ?? null,
@@ -210,7 +212,16 @@ class LCNI_StockQueryService {
         return $this->cache->remember(
             'stock_overview:' . $normalized_symbol,
             function () use ($normalized_symbol) {
-                return $this->repository->getOverviewBySymbol($normalized_symbol);
+                $overview = $this->repository->getOverviewBySymbol($normalized_symbol);
+                if (!is_array($overview)) {
+                    return $overview;
+                }
+
+                if (isset($overview['symbol'])) {
+                    $overview['symbol_rendered'] = function_exists('lcni_render_symbol') ? lcni_render_symbol($overview['symbol']) : $overview['symbol'];
+                }
+
+                return $overview;
             },
             120
         );

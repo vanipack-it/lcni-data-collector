@@ -18,6 +18,7 @@ class LCNI_WatchlistShortcode {
         add_action('wp_enqueue_scripts', [$this, 'register_assets']);
         add_action('admin_menu', [$this, 'register_admin_menu']);
         add_action('admin_init', [$this, 'register_settings']);
+        add_filter('lcni_render_symbol', [$this, 'inject_global_watchlist_button'], 10, 2);
     }
 
     public function register_shortcodes() {
@@ -67,6 +68,19 @@ class LCNI_WatchlistShortcode {
             esc_attr($symbol),
             esc_attr($style),
             esc_attr($icon_class)
+        );
+    }
+
+    public function inject_global_watchlist_button($symbol_html, $symbol) {
+        $symbol = strtoupper(sanitize_text_field((string) $symbol));
+        if ($symbol === '') {
+            return (string) $symbol_html;
+        }
+
+        return sprintf(
+            '<span class="lcni-symbol-with-watchlist">%1$s %2$s</span>',
+            (string) $symbol_html,
+            $this->render_add_button(['symbol' => $symbol])
         );
     }
 
@@ -153,6 +167,8 @@ class LCNI_WatchlistShortcode {
             'isLoggedIn' => is_user_logged_in(),
             'loginUrl' => esc_url_raw(wp_login_url(get_permalink() ?: home_url('/'))),
             'stockApiBase' => esc_url_raw(rest_url('lcni/v1/stock/')),
+            'overviewApiBase' => esc_url_raw(rest_url('lcni/v1/stock-overview')),
+            'signalApiBase' => esc_url_raw(rest_url('lcni/v1/stock-signals')),
         ]);
     }
 
