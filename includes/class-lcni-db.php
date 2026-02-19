@@ -513,6 +513,7 @@ class LCNI_DB {
             'idx_symbol_index' => '(symbol, trading_index)',
             'idx_timeframe_event_time' => '(timeframe, event_time)',
             'idx_timeframe_event_value' => '(timeframe, event_time, value_traded)',
+            'idx_symbol_timeframe_event_time' => '(symbol, timeframe, event_time)',
         ];
 
         foreach ($required_indexes as $index_name => $definition) {

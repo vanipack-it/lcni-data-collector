@@ -9,6 +9,29 @@ class LCNI_Data_StockRepository {
     const CACHE_GROUP = 'lcni_stock_repository';
     const CACHE_TTL = 60;
 
+    private function remember($cache_key, callable $callback, $ttl = self::CACHE_TTL) {
+        $resolved_ttl = max(1, (int) $ttl);
+        $cache_hit = false;
+        $cached = wp_cache_get($cache_key, self::CACHE_GROUP, false, $cache_hit);
+
+        if ($cache_hit) {
+            return $cached;
+        }
+
+        $transient = get_transient($cache_key);
+        if ($transient !== false) {
+            wp_cache_set($cache_key, $transient, self::CACHE_GROUP, $resolved_ttl);
+
+            return $transient;
+        }
+
+        $value = $callback();
+        wp_cache_set($cache_key, $value, self::CACHE_GROUP, $resolved_ttl);
+        set_transient($cache_key, $value, $resolved_ttl);
+
+        return $value;
+    }
+
     private function toLightweightBusinessDay($event_time) {
         $timestamp = (int) $event_time;
         if ($timestamp <= 0) {
@@ -19,93 +42,111 @@ class LCNI_Data_StockRepository {
     }
 
     public function getLatestBySymbol($symbol) {
-        global $wpdb;
+        return $this->remember(
+            'latest:' . strtoupper((string) $symbol),
+            function () use ($symbol) {
+                global $wpdb;
 
-        $table = $wpdb->prefix . 'lcni_ohlc';
-        $row = $wpdb->get_row(
-            $wpdb->prepare(
-                "SELECT symbol, timeframe, event_time, open_price, high_price, low_price, close_price, volume,
-                        pct_t_1, ma10, ma20, ma50, ma100, ma200, rsi, xay_nen, pha_nen, tang_gia_kem_vol, smart_money,
-                        rs_exchange_status, rs_exchange_recommend
-                 FROM {$table}
-                 WHERE symbol = %s AND timeframe = '1D'
-                 ORDER BY event_time DESC
-                 LIMIT 1",
-                $symbol
-            ),
-            ARRAY_A
+                $table = $wpdb->prefix . 'lcni_ohlc';
+                $row = $wpdb->get_row(
+                    $wpdb->prepare(
+                        "SELECT symbol, timeframe, event_time, open_price, high_price, low_price, close_price, volume,
+                                pct_t_1, ma10, ma20, ma50, ma100, ma200, rsi, xay_nen, pha_nen, tang_gia_kem_vol, smart_money,
+                                rs_exchange_status, rs_exchange_recommend
+                         FROM {$table}
+                         WHERE symbol = %s AND timeframe = '1D'
+                         ORDER BY event_time DESC
+                         LIMIT 1",
+                        $symbol
+                    ),
+                    ARRAY_A
+                );
+
+                return $row ?: null;
+            }
         );
-
-        return $row ?: null;
     }
 
     public function getHistoryBySymbol($symbol, $limit) {
-        global $wpdb;
+        $safe_limit = max(1, min(500, (int) $limit));
 
-        $table = $wpdb->prefix . 'lcni_ohlc';
+        return $this->remember(
+            'history:' . strtoupper((string) $symbol) . ':' . $safe_limit,
+            function () use ($symbol, $safe_limit) {
+                global $wpdb;
 
-        $rows = $wpdb->get_results(
-            $wpdb->prepare(
-                "SELECT event_time, open_price, high_price, low_price, close_price, volume
-                 FROM {$table}
-                 WHERE symbol = %s AND timeframe = '1D'
-                 ORDER BY event_time DESC
-                 LIMIT %d",
-                $symbol,
-                (int) $limit
-            ),
-            ARRAY_A
+                $table = $wpdb->prefix . 'lcni_ohlc';
+
+                $rows = $wpdb->get_results(
+                    $wpdb->prepare(
+                        "SELECT event_time, open_price, high_price, low_price, close_price, volume
+                         FROM {$table}
+                         WHERE symbol = %s AND timeframe = '1D'
+                         ORDER BY event_time DESC
+                         LIMIT %d",
+                        $symbol,
+                        $safe_limit
+                    ),
+                    ARRAY_A
+                );
+
+                return is_array($rows) ? $rows : [];
+            }
         );
-
-        return is_array($rows) ? $rows : [];
     }
 
     public function getCandlesBySymbol($symbol, $limit = 200) {
-        global $wpdb;
-
-        $table = $wpdb->prefix . 'lcni_ohlc';
         $safe_limit = max(1, min(500, (int) $limit));
 
-        $rows = $wpdb->get_results(
-            $wpdb->prepare(
-                "SELECT DATE(FROM_UNIXTIME(t.event_time)) AS trading_date,
-                        t.event_time,
-                        t.open_price,
-                        t.high_price,
-                        t.low_price,
-                        t.close_price,
-                        t.volume,
-                        t.macd,
-                        t.macd_signal,
-                        t.rsi,
-                        t.rs_1w_by_exchange,
-                        t.rs_1m_by_exchange,
-                        t.rs_3m_by_exchange
-                 FROM (
-                    SELECT event_time,
-                           open_price,
-                           high_price,
-                           low_price,
-                           close_price,
-                           volume,
-                           macd,
-                           macd_signal,
-                           rsi,
-                           rs_1w_by_exchange,
-                           rs_1m_by_exchange,
-                           rs_3m_by_exchange
-                    FROM {$table}
-                    WHERE symbol = %s AND timeframe = '1D'
-                    ORDER BY event_time DESC
-                    LIMIT %d
-                 ) AS t
-                 ORDER BY t.event_time ASC",
-                $symbol,
-                $safe_limit
-            )
-        );
+        return $this->remember(
+            'candles:' . strtoupper((string) $symbol) . ':' . $safe_limit,
+            function () use ($symbol, $safe_limit) {
+                global $wpdb;
 
-        return is_array($rows) ? $rows : [];
+                $table = $wpdb->prefix . 'lcni_ohlc';
+
+                $rows = $wpdb->get_results(
+                    $wpdb->prepare(
+                        "SELECT DATE(FROM_UNIXTIME(t.event_time)) AS trading_date,
+                                t.event_time,
+                                t.open_price,
+                                t.high_price,
+                                t.low_price,
+                                t.close_price,
+                                t.volume,
+                                t.macd,
+                                t.macd_signal,
+                                t.rsi,
+                                t.rs_1w_by_exchange,
+                                t.rs_1m_by_exchange,
+                                t.rs_3m_by_exchange
+                         FROM (
+                            SELECT event_time,
+                                   open_price,
+                                   high_price,
+                                   low_price,
+                                   close_price,
+                                   volume,
+                                   macd,
+                                   macd_signal,
+                                   rsi,
+                                   rs_1w_by_exchange,
+                                   rs_1m_by_exchange,
+                                   rs_3m_by_exchange
+                            FROM {$table}
+                            WHERE symbol = %s AND timeframe = '1D'
+                            ORDER BY event_time DESC
+                            LIMIT %d
+                         ) AS t
+                         ORDER BY t.event_time ASC",
+                        $symbol,
+                        $safe_limit
+                    )
+                );
+
+                return is_array($rows) ? $rows : [];
+            }
+        );
     }
 
 
@@ -207,33 +248,38 @@ class LCNI_Data_StockRepository {
     }
 
     public function getLatestSignalsBySymbol($symbol) {
-        global $wpdb;
+        return $this->remember(
+            'signals:' . strtoupper((string) $symbol),
+            function () use ($symbol) {
+                global $wpdb;
 
-        $table = $wpdb->prefix . 'lcni_ohlc';
+                $table = $wpdb->prefix . 'lcni_ohlc';
 
-        $row = $wpdb->get_row(
-            $wpdb->prepare(
-                "SELECT symbol,
-                        event_time,
-                        xay_nen,
-                        xay_nen_count_30,
-                        nen_type,
-                        pha_nen,
-                        tang_gia_kem_vol,
-                        smart_money,
-                        rs_exchange_status,
-                        rs_exchange_recommend,
-                        rs_recommend_status
-                 FROM {$table}
-                 WHERE symbol = %s AND timeframe = '1D'
-                 ORDER BY event_time DESC
-                 LIMIT 1",
-                $symbol
-            ),
-            ARRAY_A
+                $row = $wpdb->get_row(
+                    $wpdb->prepare(
+                        "SELECT symbol,
+                                event_time,
+                                xay_nen,
+                                xay_nen_count_30,
+                                nen_type,
+                                pha_nen,
+                                tang_gia_kem_vol,
+                                smart_money,
+                                rs_exchange_status,
+                                rs_exchange_recommend,
+                                rs_recommend_status
+                         FROM {$table}
+                         WHERE symbol = %s AND timeframe = '1D'
+                         ORDER BY event_time DESC
+                         LIMIT 1",
+                        $symbol
+                    ),
+                    ARRAY_A
+                );
+
+                return $row ?: null;
+            }
         );
-
-        return $row ?: null;
     }
 
     public function getStocks($page, $per_page) {
@@ -309,52 +355,58 @@ class LCNI_Data_StockRepository {
     }
 
     public function getOverviewBySymbol($symbol) {
-        global $wpdb;
+        return $this->remember(
+            'overview:' . strtoupper((string) $symbol),
+            function () use ($symbol) {
+                global $wpdb;
 
-        $tongquan_table = $wpdb->prefix . 'lcni_symbol_tongquan';
-        $symbols_table = $wpdb->prefix . 'lcni_symbols';
-        $mapping_table = $wpdb->prefix . 'lcni_sym_icb_market';
-        $market_table = $wpdb->prefix . 'lcni_marketid';
-        $icb2_table = $wpdb->prefix . 'lcni_icb2';
+                $tongquan_table = $wpdb->prefix . 'lcni_symbol_tongquan';
+                $symbols_table = $wpdb->prefix . 'lcni_symbols';
+                $mapping_table = $wpdb->prefix . 'lcni_sym_icb_market';
+                $market_table = $wpdb->prefix . 'lcni_marketid';
+                $icb2_table = $wpdb->prefix . 'lcni_icb2';
 
-        $row = $wpdb->get_row(
-            $wpdb->prepare(
-                "SELECT t.symbol,
-                        UPPER(TRIM(COALESCE(map.exchange, m.exchange, ''))) AS exchange,
-                        i.name_icb2 AS icb2_name,
-                        t.eps,
-                        t.eps_1y_pct,
-                        t.dt_1y_pct,
-                        t.bien_ln_gop,
-                        t.bien_ln_rong,
-                        t.roe,
-                        t.de_ratio,
-                        t.pe_ratio,
-                        t.pb_ratio,
-                        t.ev_ebitda,
-                        t.tcbs_khuyen_nghi,
-                        t.co_tuc_pct,
-                        t.tc_rating,
-                        t.so_huu_nn_pct,
-                        t.tien_mat_rong_von_hoa,
-                        t.tien_mat_rong_tong_tai_san,
-                        t.loi_nhuan_4_quy_gan_nhat,
-                        t.tang_truong_dt_quy_gan_nhat,
-                        t.tang_truong_dt_quy_gan_nhi,
-                        t.tang_truong_ln_quy_gan_nhat,
-                        t.tang_truong_ln_quy_gan_nhi
-                 FROM {$tongquan_table} t
-                 LEFT JOIN {$symbols_table} s ON s.symbol = t.symbol
-                 LEFT JOIN {$mapping_table} map ON map.symbol = t.symbol
-                 LEFT JOIN {$market_table} m ON m.market_id = s.market_id
-                 LEFT JOIN {$icb2_table} i ON i.id_icb2 = COALESCE(map.id_icb2, s.id_icb2)
-                 WHERE t.symbol = %s
-                 LIMIT 1",
-                $symbol
-            ),
-            ARRAY_A
+                $row = $wpdb->get_row(
+                    $wpdb->prepare(
+                        "SELECT t.symbol,
+                                UPPER(TRIM(COALESCE(map.exchange, m.exchange, ''))) AS exchange,
+                                i.name_icb2 AS icb2_name,
+                                t.eps,
+                                t.eps_1y_pct,
+                                t.dt_1y_pct,
+                                t.bien_ln_gop,
+                                t.bien_ln_rong,
+                                t.roe,
+                                t.de_ratio,
+                                t.pe_ratio,
+                                t.pb_ratio,
+                                t.ev_ebitda,
+                                t.tcbs_khuyen_nghi,
+                                t.co_tuc_pct,
+                                t.tc_rating,
+                                t.so_huu_nn_pct,
+                                t.tien_mat_rong_von_hoa,
+                                t.tien_mat_rong_tong_tai_san,
+                                t.loi_nhuan_4_quy_gan_nhat,
+                                t.tang_truong_dt_quy_gan_nhat,
+                                t.tang_truong_dt_quy_gan_nhi,
+                                t.tang_truong_ln_quy_gan_nhat,
+                                t.tang_truong_ln_quy_gan_nhi
+                         FROM {$tongquan_table} t
+                         LEFT JOIN {$symbols_table} s ON s.symbol = t.symbol
+                         LEFT JOIN {$mapping_table} map ON map.symbol = t.symbol
+                         LEFT JOIN {$market_table} m ON m.market_id = s.market_id
+                         LEFT JOIN {$icb2_table} i ON i.id_icb2 = COALESCE(map.id_icb2, s.id_icb2)
+                         WHERE t.symbol = %s
+                         LIMIT 1",
+                        $symbol
+                    ),
+                    ARRAY_A
+                );
+
+                return $row ?: null;
+            },
+            120
         );
-
-        return $row ?: null;
     }
 }

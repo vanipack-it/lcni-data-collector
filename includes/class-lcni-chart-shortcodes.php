@@ -6,6 +6,8 @@ if (!defined('ABSPATH')) {
 
 class LCNI_Chart_Shortcodes {
 
+    private $stock_service = null;
+
     public function __construct() {
         add_action('init', [$this, 'register_shortcodes']);
         add_action('wp_enqueue_scripts', [$this, 'register_assets']);
@@ -139,6 +141,33 @@ class LCNI_Chart_Shortcodes {
         return (string) ob_get_clean();
     }
 
+
+    private function get_stock_service() {
+        if ($this->stock_service instanceof LCNI_StockQueryService) {
+            return $this->stock_service;
+        }
+
+        $access_control = new LCNI_AccessControl();
+        $repository = new LCNI_Data_StockRepository();
+        $indicator_service = new LCNI_IndicatorService();
+        $cache = new LCNI_CacheService('lcni_rest_api', 60);
+
+        $this->stock_service = new LCNI_StockQueryService($repository, $indicator_service, $access_control, $cache);
+
+        return $this->stock_service;
+    }
+
+    private function get_initial_candles($symbol, $limit) {
+        if ($symbol === '') {
+            return [];
+        }
+
+        $service = $this->get_stock_service();
+        $candles = $service->getCandles($symbol, $limit);
+
+        return is_array($candles) ? $candles : [];
+    }
+
     private function render_chart_container($args) {
         wp_enqueue_script('lcni-chart');
 
@@ -149,15 +178,19 @@ class LCNI_Chart_Shortcodes {
         $height = max(260, min(1000, (int) ($args['height'] ?? 420)));
 
         $api_base = rest_url('lcni/v1/candles');
+        $active_symbol = $symbol !== '' ? $symbol : $fallback_symbol;
+        $initial_candles = $this->get_initial_candles($active_symbol, $limit);
 
         return sprintf(
-            '<div data-lcni-chart data-api-base="%1$s" data-symbol="%2$s" data-fallback-symbol="%3$s" data-query-param="%4$s" data-limit="%5$d" data-main-height="%6$d"></div>',
+            '<div data-lcni-chart data-api-base="%1$s" data-symbol="%2$s" data-fallback-symbol="%3$s" data-query-param="%4$s" data-limit="%5$d" data-main-height="%6$d" data-initial-symbol="%7$s" data-initial-candles="%8$s"></div>',
             esc_url($api_base),
             esc_attr($symbol),
             esc_attr($fallback_symbol),
             esc_attr($query_param),
             $limit,
-            $height
+            $height,
+            esc_attr($active_symbol),
+            esc_attr(wp_json_encode($initial_candles))
         );
     }
 
