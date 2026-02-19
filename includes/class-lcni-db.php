@@ -54,6 +54,7 @@ class LCNI_DB {
             $wpdb->prefix . 'lcni_marketid',
             $wpdb->prefix . 'lcni_icb2',
             $wpdb->prefix . 'lcni_sym_icb_market',
+            $wpdb->prefix . 'lcni_watchlist',
         ];
 
         foreach ($required_tables as $table) {
@@ -104,6 +105,7 @@ class LCNI_DB {
         $market_table = $wpdb->prefix . 'lcni_marketid';
         $icb2_table = $wpdb->prefix . 'lcni_icb2';
         $symbol_market_icb_table = $wpdb->prefix . 'lcni_sym_icb_market';
+        $watchlist_table = $wpdb->prefix . 'lcni_watchlist';
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
@@ -302,6 +304,17 @@ class LCNI_DB {
             KEY idx_created_at (created_at)
         ) {$charset_collate};";
 
+        $sql_watchlist = "CREATE TABLE {$watchlist_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            user_id BIGINT UNSIGNED NOT NULL,
+            symbol VARCHAR(20) NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            UNIQUE KEY uniq_user_symbol (user_id, symbol),
+            KEY idx_user_id (user_id),
+            KEY idx_symbol (symbol)
+        ) {$charset_collate};";
+
         dbDelta($sql_ohlc);
         dbDelta($sql_security_definition);
         dbDelta($sql_symbols);
@@ -311,6 +324,7 @@ class LCNI_DB {
         dbDelta($sql_icb2);
         dbDelta($sql_symbol_market_icb);
         dbDelta($sql_symbol_tongquan);
+        dbDelta($sql_watchlist);
 
         self::seed_market_reference_data($market_table);
         self::seed_icb2_reference_data($icb2_table);
