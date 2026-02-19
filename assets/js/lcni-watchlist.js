@@ -5,6 +5,14 @@
   const enhanceSelector = '[data-lcni-stock-symbol], [data-symbol], .lcni-stock-symbol, .symbol';
 
   const isValidSymbol = (value) => /^[A-Z0-9._-]{1,15}$/.test(String(value || '').trim().toUpperCase());
+  const normalizeSymbol = (value) => {
+    const raw = String(value || '').trim().toUpperCase();
+    if (!raw) return '';
+    if (isValidSymbol(raw)) return raw;
+
+    const matched = raw.match(/[A-Z0-9._-]{1,15}/);
+    return matched && isValidSymbol(matched[0]) ? matched[0] : '';
+  };
 
   const jsonFetch = async (url, options = {}) => {
     const response = await fetch(url, {
@@ -175,7 +183,7 @@
     if (button.dataset.bound === '1') return;
     button.dataset.bound = '1';
     button.addEventListener('click', async () => {
-      const symbol = button.getAttribute('data-symbol') || '';
+      const symbol = normalizeSymbol(button.getAttribute('data-symbol'));
       const watchlistApi = button.getAttribute('data-watchlist-api') || '';
       const restNonce = button.getAttribute('data-rest-nonce') || '';
       const iconNode = button.querySelector('.lcni-watchlist-add-icon');
@@ -236,8 +244,8 @@
       if (node.matches('[data-lcni-watchlist-add="1"]')) return;
       if (node.dataset.lcniWatchlistEnhanced === '1') return;
       const symbolRaw = node.getAttribute('data-lcni-stock-symbol') || node.getAttribute('data-symbol') || node.textContent || '';
-      const symbol = String(symbolRaw).trim().toUpperCase();
-      if (!isValidSymbol(symbol)) return;
+      const symbol = normalizeSymbol(symbolRaw);
+      if (!symbol) return;
 
       node.dataset.lcniWatchlistEnhanced = '1';
       node.insertAdjacentElement('afterend', createQuickAddButton(symbol, watchlistApi, restNonce));
