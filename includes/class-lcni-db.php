@@ -2828,23 +2828,59 @@ class LCNI_DB {
 
         self::ensure_symbol_market_icb_columns();
 
-        $wpdb->query(
-            "INSERT INTO {$mapping_table} (symbol, market_id, id_icb2, exchange)
-            SELECT s.symbol, s.market_id, s.id_icb2, UPPER(TRIM(COALESCE(m.exchange, '')))
-            FROM {$symbols_table} s
-            LEFT JOIN {$market_table} m ON m.market_id = s.market_id
-            ON DUPLICATE KEY UPDATE
-                market_id = CASE
-                    WHEN VALUES(market_id) IS NULL OR VALUES(market_id) = '' THEN {$mapping_table}.market_id
-                    ELSE VALUES(market_id)
-                END,
-                id_icb2 = COALESCE(VALUES(id_icb2), {$mapping_table}.id_icb2),
-                exchange = CASE
-                    WHEN VALUES(exchange) IS NULL OR VALUES(exchange) = '' THEN {$mapping_table}.exchange
-                    ELSE VALUES(exchange)
-                END,
-                updated_at = CURRENT_TIMESTAMP"
-        );
+        $batch_size = 500;
+        $max_attempts = 3;
+
+        while (true) {
+            $query = $wpdb->prepare(
+                "INSERT INTO {$mapping_table} (symbol, market_id, id_icb2, exchange)
+                SELECT s.symbol, s.market_id, s.id_icb2, UPPER(TRIM(COALESCE(m.exchange, '')))
+                FROM {$symbols_table} s
+                LEFT JOIN {$market_table} m ON m.market_id = s.market_id
+                LEFT JOIN {$mapping_table} map ON map.symbol = s.symbol
+                WHERE map.symbol IS NULL
+                    OR COALESCE(s.market_id, '') <> COALESCE(map.market_id, '')
+                    OR COALESCE(s.id_icb2, 0) <> COALESCE(map.id_icb2, 0)
+                    OR UPPER(TRIM(COALESCE(m.exchange, ''))) <> COALESCE(map.exchange, '')
+                ORDER BY s.symbol ASC
+                LIMIT %d
+                ON DUPLICATE KEY UPDATE
+                    market_id = CASE
+                        WHEN VALUES(market_id) IS NULL OR VALUES(market_id) = '' THEN {$mapping_table}.market_id
+                        ELSE VALUES(market_id)
+                    END,
+                    id_icb2 = COALESCE(VALUES(id_icb2), {$mapping_table}.id_icb2),
+                    exchange = CASE
+                        WHEN VALUES(exchange) IS NULL OR VALUES(exchange) = '' THEN {$mapping_table}.exchange
+                        ELSE VALUES(exchange)
+                    END,
+                    updated_at = CURRENT_TIMESTAMP",
+                $batch_size
+            );
+
+            $attempt = 0;
+            $affected = false;
+
+            while ($attempt < $max_attempts) {
+                $affected = $wpdb->query($query);
+
+                if ($affected !== false) {
+                    break;
+                }
+
+                $attempt++;
+
+                if (stripos((string) $wpdb->last_error, 'Lock wait timeout exceeded') === false || $attempt >= $max_attempts) {
+                    break;
+                }
+
+                usleep(200000);
+            }
+
+            if ($affected === false || $affected === 0) {
+                break;
+            }
+        }
 
         self::$symbol_exchange_cache = [];
     }
