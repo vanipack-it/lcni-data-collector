@@ -1577,7 +1577,7 @@ class LCNI_DB {
             SELECT s.symbol
             FROM {$symbols_table} s
             WHERE s.symbol <> ''
-            ON DUPLICATE KEY UPDATE updated_at = updated_at"
+            ON DUPLICATE KEY UPDATE {$tongquan_table}.updated_at = {$tongquan_table}.updated_at"
         );
 
         self::refresh_symbol_tongquan_rankings();
@@ -2834,16 +2834,16 @@ class LCNI_DB {
             FROM {$symbols_table} s
             LEFT JOIN {$market_table} m ON m.market_id = s.market_id
             ON DUPLICATE KEY UPDATE
-                market_id = CASE
-                    WHEN VALUES(market_id) IS NULL OR VALUES(market_id) = '' THEN market_id
+                {$mapping_table}.market_id = CASE
+                    WHEN VALUES(market_id) IS NULL OR VALUES(market_id) = '' THEN {$mapping_table}.market_id
                     ELSE VALUES(market_id)
                 END,
-                id_icb2 = COALESCE(VALUES(id_icb2), id_icb2),
-                exchange = CASE
-                    WHEN VALUES(exchange) IS NULL OR VALUES(exchange) = '' THEN exchange
+                {$mapping_table}.id_icb2 = COALESCE(VALUES(id_icb2), {$mapping_table}.id_icb2),
+                {$mapping_table}.exchange = CASE
+                    WHEN VALUES(exchange) IS NULL OR VALUES(exchange) = '' THEN {$mapping_table}.exchange
                     ELSE VALUES(exchange)
                 END,
-                updated_at = CURRENT_TIMESTAMP"
+                {$mapping_table}.updated_at = CURRENT_TIMESTAMP"
         );
 
         self::$symbol_exchange_cache = [];
