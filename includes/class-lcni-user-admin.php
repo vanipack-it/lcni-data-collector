@@ -13,6 +13,9 @@ class LCNI_User_Admin {
         add_action('user_register', [$this, 'save_user_package']);
         add_action('personal_options_update', [$this, 'save_user_package']);
         add_action('edit_user_profile_update', [$this, 'save_user_package']);
+
+        add_action('user_register', [$this, 'send_new_account_email'], 20);
+        add_action('after_password_reset', [$this, 'send_password_updated_email'], 10, 2);
     }
 
     public function render_user_package_field($user) {
@@ -45,11 +48,46 @@ class LCNI_User_Admin {
             return;
         }
 
-        $package = isset($_POST['lcni_user_package']) ? sanitize_key(wp_unslash($_POST['lcni_user_package'])) : '';
+        if (!isset($_POST['lcni_user_package'])) {
+            return;
+        }
+
+        $package = sanitize_key(wp_unslash($_POST['lcni_user_package']));
         if (!in_array($package, ['free', 'premium'], true)) {
             $package = 'free';
         }
 
         update_user_meta($user_id, 'lcni_user_package', $package);
+    }
+
+    public function send_new_account_email($user_id) {
+        $user = get_userdata($user_id);
+        if (!$user || empty($user->user_email)) {
+            return;
+        }
+
+        $subject = sprintf('[%s] Tài khoản của bạn đã được tạo', wp_specialchars_decode(get_bloginfo('name'), ENT_QUOTES));
+        $message = sprintf(
+            "Xin chào %s,\n\nTài khoản của bạn đã được tạo thành công trên %s.\nBạn có thể đăng nhập tại: %s\n\nNếu bạn chưa đặt mật khẩu, vui lòng dùng tính năng quên mật khẩu để thiết lập mật khẩu mới.",
+            $user->display_name ?: $user->user_login,
+            home_url('/'),
+            wp_login_url()
+        );
+
+        wp_mail($user->user_email, $subject, $message);
+    }
+
+    public function send_password_updated_email($user) {
+        if (!$user instanceof WP_User || empty($user->user_email)) {
+            return;
+        }
+
+        $subject = sprintf('[%s] Mật khẩu đã được cập nhật', wp_specialchars_decode(get_bloginfo('name'), ENT_QUOTES));
+        $message = sprintf(
+            "Xin chào %s,\n\nMật khẩu tài khoản của bạn vừa được cập nhật thành công.\nNếu bạn không thực hiện thay đổi này, vui lòng liên hệ quản trị viên ngay.",
+            $user->display_name ?: $user->user_login
+        );
+
+        wp_mail($user->user_email, $subject, $message);
     }
 }
