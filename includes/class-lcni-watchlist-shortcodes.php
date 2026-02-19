@@ -23,6 +23,7 @@ class LCNI_Watchlist_Shortcodes {
 
         wp_register_script('lcni-watchlist', LCNI_URL . 'assets/js/lcni-watchlist.js', [], $version, true);
         wp_register_style('lcni-watchlist', LCNI_URL . 'assets/css/lcni-watchlist.css', [], file_exists($style_path) ? (string) filemtime($style_path) : $version);
+        wp_register_style('lcni-fontawesome', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css', [], '6.5.2');
     }
 
 
@@ -34,6 +35,7 @@ class LCNI_Watchlist_Shortcodes {
 
         wp_enqueue_script('lcni-watchlist');
         wp_enqueue_style('lcni-watchlist');
+        wp_enqueue_style('lcni-fontawesome');
 
         add_action('wp_footer', function () {
             printf(
@@ -66,6 +68,7 @@ class LCNI_Watchlist_Shortcodes {
 
         wp_enqueue_script('lcni-watchlist');
         wp_enqueue_style('lcni-watchlist');
+        wp_enqueue_style('lcni-fontawesome');
 
         return sprintf(
             '<div data-lcni-watchlist data-watchlist-api="%1$s" data-watchlist-settings-api="%2$s" data-watchlist-preferences-api="%3$s" data-stock-api="%4$s" data-empty-message="%5$s" data-rest-nonce="%6$s"></div>',
@@ -87,8 +90,8 @@ class LCNI_Watchlist_Shortcodes {
         ], $atts, 'lcni_watchlist_add');
 
         $symbol = strtoupper(sanitize_text_field((string) $atts['symbol']));
-        if ($symbol === '') {
-            return '';
+        if (!preg_match('/^[A-Z0-9._-]{1,15}$/', $symbol)) {
+            return '<span class="lcni-watchlist-invalid-symbol">Symbol không hợp lệ.</span>';
         }
 
         if (!is_user_logged_in()) {
@@ -104,6 +107,7 @@ class LCNI_Watchlist_Shortcodes {
 
         wp_enqueue_script('lcni-watchlist');
         wp_enqueue_style('lcni-watchlist');
+        wp_enqueue_style('lcni-fontawesome');
 
         return sprintf(
             '<button type="button" class="lcni-watchlist-add-btn %1$s" data-lcni-watchlist-add="1" data-symbol="%2$s" data-watchlist-api="%3$s" data-rest-nonce="%4$s"><span class="lcni-watchlist-add-icon">%5$s</span> <span class="lcni-watchlist-add-label">%6$s</span></button>',

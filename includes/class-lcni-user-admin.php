@@ -77,7 +77,7 @@ class LCNI_User_Admin {
         wp_mail($user->user_email, $subject, $message);
     }
 
-    public function send_password_updated_email($user) {
+    public function send_password_updated_email($user, $new_password = '') {
         if (!$user instanceof WP_User || empty($user->user_email)) {
             return;
         }
