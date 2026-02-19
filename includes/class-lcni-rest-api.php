@@ -7,9 +7,11 @@ if (!defined('ABSPATH')) {
 class LCNI_Rest_API {
 
     private $stock_controller;
+    private $access_control;
 
     public function __construct() {
         $access_control = new LCNI_AccessControl();
+        $this->access_control = $access_control;
         $repository = new LCNI_Data_StockRepository();
         $indicator_service = new LCNI_IndicatorService();
         $cache = new LCNI_CacheService('lcni_rest_api', 60);
@@ -166,28 +168,83 @@ class LCNI_Rest_API {
         ]);
     }
 
-    public function get_user_package() {
-        $user_id = get_current_user_id();
-        $package = get_user_meta($user_id, 'lcni_user_package', true);
-
-        return rest_ensure_response([
-            'package' => $package ?: 'free',
-            'features' => [
+    private function get_feature_matrix() {
+        $defaults = [
+            'free' => [
                 'dashboard' => true,
                 'screener' => true,
                 'stock_detail' => true,
-                'watchlist' => $package !== 'free',
+                'chart' => true,
+                'watchlist' => false,
+                'shortcode_add_watchlist' => false,
+                'history_extended' => false,
             ],
+            'premium' => [
+                'dashboard' => true,
+                'screener' => true,
+                'stock_detail' => true,
+                'chart' => true,
+                'watchlist' => true,
+                'shortcode_add_watchlist' => true,
+                'history_extended' => true,
+            ],
+        ];
+
+        $saved = get_option('lcni_saas_feature_matrix', []);
+        if (!is_array($saved)) {
+            return $defaults;
+        }
+
+        foreach (['free', 'premium'] as $package) {
+            if (!isset($saved[$package]) || !is_array($saved[$package])) {
+                $saved[$package] = [];
+            }
+
+            foreach ($defaults[$package] as $feature => $value) {
+                $saved[$package][$feature] = array_key_exists($feature, $saved[$package]) ? !empty($saved[$package][$feature]) : $value;
+            }
+        }
+
+        return $saved;
+    }
+
+    private function get_effective_user_features() {
+        $package = $this->access_control->resolvePackage();
+        $matrix = $this->get_feature_matrix();
+        $features = $matrix[$package] ?? $matrix['free'];
+
+        return [
+            'package' => $package,
+            'features' => $features,
+        ];
+    }
+
+    public function get_user_package() {
+        $data = $this->get_effective_user_features();
+
+        return rest_ensure_response([
+            'package' => $data['package'],
+            'features' => $data['features'],
         ]);
     }
 
     public function get_watchlist() {
+        $user_features = $this->get_effective_user_features();
+        if (empty($user_features['features']['watchlist'])) {
+            return new WP_Error('forbidden_watchlist', 'Gói hiện tại chưa có quyền Watchlist.', ['status' => 403]);
+        }
+
         return rest_ensure_response([
             'symbols' => $this->read_watchlist(),
         ]);
     }
 
     public function add_watchlist_symbol(WP_REST_Request $request) {
+        $user_features = $this->get_effective_user_features();
+        if (empty($user_features['features']['watchlist']) || empty($user_features['features']['shortcode_add_watchlist'])) {
+            return new WP_Error('forbidden_watchlist', 'Gói hiện tại chưa có quyền thêm Watchlist.', ['status' => 403]);
+        }
+
         $symbol = strtoupper(sanitize_text_field((string) $request->get_param('symbol')));
         if ($symbol === '') {
             return new WP_Error('invalid_symbol', 'Symbol không hợp lệ.', ['status' => 400]);
@@ -204,6 +261,11 @@ class LCNI_Rest_API {
     }
 
     public function remove_watchlist_symbol(WP_REST_Request $request) {
+        $user_features = $this->get_effective_user_features();
+        if (empty($user_features['features']['watchlist'])) {
+            return new WP_Error('forbidden_watchlist', 'Gói hiện tại chưa có quyền Watchlist.', ['status' => 403]);
+        }
+
         $symbol = strtoupper(sanitize_text_field((string) $request->get_param('symbol')));
         $watchlist = array_values(array_filter(
             $this->read_watchlist(),

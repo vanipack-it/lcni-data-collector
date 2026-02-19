@@ -33,6 +33,7 @@ class LCNI_Settings {
         register_setting('lcni_settings_group', 'lcni_access_token', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_api_credential'], 'default' => '']);
         register_setting('lcni_settings_group', 'lcni_secdef_url', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_secdef_url'], 'default' => LCNI_API::SECDEF_URL]);
         register_setting('lcni_settings_group', 'lcni_update_interval_minutes', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_update_interval'], 'default' => 5]);
+        register_setting('lcni_settings_group', 'lcni_saas_feature_matrix', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_saas_feature_matrix'], 'default' => $this->get_default_saas_feature_matrix()]);
     }
 
     public function sanitize_timeframe($value) {
@@ -89,6 +90,66 @@ class LCNI_Settings {
 
     public function sanitize_update_interval($value) {
         return max(1, (int) $value);
+    }
+
+    public function get_feature_labels() {
+        return [
+            'dashboard' => 'Dashboard',
+            'screener' => 'Screener',
+            'stock_detail' => 'Stock Detail',
+            'chart' => 'Biểu đồ (chart/candles)',
+            'watchlist' => 'Watchlist',
+            'shortcode_add_watchlist' => 'Nút shortcode thêm vào watchlist',
+            'history_extended' => 'Xem lịch sử mở rộng',
+        ];
+    }
+
+    public function get_default_saas_feature_matrix() {
+        return [
+            'free' => [
+                'dashboard' => true,
+                'screener' => true,
+                'stock_detail' => true,
+                'chart' => true,
+                'watchlist' => false,
+                'shortcode_add_watchlist' => false,
+                'history_extended' => false,
+            ],
+            'premium' => [
+                'dashboard' => true,
+                'screener' => true,
+                'stock_detail' => true,
+                'chart' => true,
+                'watchlist' => true,
+                'shortcode_add_watchlist' => true,
+                'history_extended' => true,
+            ],
+        ];
+    }
+
+    public function sanitize_saas_feature_matrix($value) {
+        $matrix = is_array($value) ? $value : [];
+        $defaults = $this->get_default_saas_feature_matrix();
+        $features = array_keys($this->get_feature_labels());
+
+        $sanitized = [];
+        foreach (['free', 'premium'] as $package) {
+            $package_data = isset($matrix[$package]) && is_array($matrix[$package]) ? $matrix[$package] : [];
+            $sanitized[$package] = [];
+
+            foreach ($features as $feature) {
+                $default_value = !empty($defaults[$package][$feature]);
+                $sanitized[$package][$feature] = array_key_exists($feature, $package_data) ? !empty($package_data[$feature]) : $default_value;
+            }
+        }
+
+        return $sanitized;
+    }
+
+    public function get_saas_feature_matrix() {
+        $saved = get_option('lcni_saas_feature_matrix', []);
+
+        return $this->sanitize_saas_feature_matrix($saved);
     }
 
     public function handle_admin_actions() {
@@ -220,6 +281,11 @@ class LCNI_Settings {
             } else {
                 $this->set_notice('success', 'Đã chạy cập nhật thủ công.');
             }
+        } elseif ($action === 'save_saas_settings') {
+            $raw_matrix = isset($_POST['lcni_saas_feature_matrix']) ? (array) wp_unslash($_POST['lcni_saas_feature_matrix']) : [];
+            $matrix = $this->sanitize_saas_feature_matrix($raw_matrix);
+            update_option('lcni_saas_feature_matrix', $matrix);
+            $this->set_notice('success', 'Đã lưu cấu hình SaaS cho gói Free/Premium.');
         }
 
         $redirect_tab = isset($_POST['lcni_redirect_tab']) ? sanitize_key(wp_unslash($_POST['lcni_redirect_tab'])) : '';
@@ -227,7 +293,7 @@ class LCNI_Settings {
         $redirect_page = in_array($redirect_page, ['lcni-settings', 'lcni-data-viewer'], true) ? $redirect_page : 'lcni-settings';
         $redirect_url = admin_url('admin.php?page=' . $redirect_page);
 
-        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol'], true)) {
+        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'saas_packages', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol'], true)) {
             $redirect_url = add_query_arg('tab', $redirect_tab, $redirect_url);
         }
 
@@ -460,7 +526,7 @@ class LCNI_Settings {
             $active_tab = 'rule_settings';
         }
 
-        if (!in_array($active_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'change_logs'], true)) {
+        if (!in_array($active_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'saas_packages', 'change_logs'], true)) {
             $active_tab = 'general';
         }
 
@@ -471,6 +537,8 @@ class LCNI_Settings {
         $notice = get_transient('lcni_settings_notice');
         $csv_import_targets = LCNI_DB::get_csv_import_targets();
         $csv_import_draft = get_transient($this->get_csv_import_draft_key());
+        $saas_matrix = $this->get_saas_feature_matrix();
+        $feature_labels = $this->get_feature_labels();
 
         if ($notice) {
             delete_transient('lcni_settings_notice');
@@ -490,6 +558,7 @@ class LCNI_Settings {
                 <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=seed_dashboard')); ?>" class="nav-tab <?php echo $active_tab === 'seed_dashboard' ? 'nav-tab-active' : ''; ?>">Seed Dashboard</a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=update_data')); ?>" class="nav-tab <?php echo $active_tab === 'update_data' ? 'nav-tab-active' : ''; ?>">Update Data</a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=rule_settings')); ?>" class="nav-tab <?php echo $active_tab === 'rule_settings' ? 'nav-tab-active' : ''; ?>">Rule Setting</a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=saas_packages')); ?>" class="nav-tab <?php echo $active_tab === 'saas_packages' ? 'nav-tab-active' : ''; ?>">Gói SaaS</a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=change_logs')); ?>" class="nav-tab <?php echo $active_tab === 'change_logs' ? 'nav-tab-active' : ''; ?>">Change Logs</a>
             </h2>
 
@@ -696,6 +765,37 @@ class LCNI_Settings {
 
             <?php elseif ($active_tab === 'rule_settings') : ?>
                 <?php $this->render_rule_settings_section($rule_settings, 'lcni-settings'); ?>
+            <?php elseif ($active_tab === 'saas_packages') : ?>
+                <h2>Quản lý Gói SaaS</h2>
+                <p>Tùy chỉnh quyền cho gói <strong>Free</strong> và <strong>Premium</strong> bằng checkbox theo từng tính năng.</p>
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>">
+                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                    <input type="hidden" name="lcni_redirect_tab" value="saas_packages">
+                    <input type="hidden" name="lcni_admin_action" value="save_saas_settings">
+                    <table class="widefat striped" style="max-width:860px;">
+                        <thead>
+                            <tr>
+                                <th style="width:52%;">Tính năng</th>
+                                <th style="width:24%;text-align:center;">Free</th>
+                                <th style="width:24%;text-align:center;">Premium</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($feature_labels as $feature_key => $feature_label) : ?>
+                                <tr>
+                                    <td><?php echo esc_html($feature_label); ?></td>
+                                    <td style="text-align:center;">
+                                        <input type="checkbox" name="lcni_saas_feature_matrix[free][<?php echo esc_attr($feature_key); ?>]" value="1" <?php checked(!empty($saas_matrix['free'][$feature_key])); ?>>
+                                    </td>
+                                    <td style="text-align:center;">
+                                        <input type="checkbox" name="lcni_saas_feature_matrix[premium][<?php echo esc_attr($feature_key); ?>]" value="1" <?php checked(!empty($saas_matrix['premium'][$feature_key])); ?>>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                    <?php submit_button('Lưu cấu hình gói SaaS'); ?>
+                </form>
             <?php else : ?>
                 <h2>Change Logs</h2>
                 <?php if (!empty($logs)) : ?>
