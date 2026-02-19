@@ -54,15 +54,30 @@
       </table>
     `;
 
-  const renderEmptyState = (node, emptyMessage) => {
+  const renderEmptyState = (node, emptyMessage, fields, labels) => {
     node.innerHTML = `
-      <div class="lcni-watchlist-empty">
-        <p>${emptyMessage}</p>
+      <div class="lcni-watchlist-toolbar">
         <form class="lcni-watchlist-add-form" data-watchlist-add-form="1">
           <input type="text" name="symbol" placeholder="Nhập mã cổ phiếu (VD: FPT)" maxlength="20" required>
           <button type="submit">${heartIcon} Thêm vào</button>
         </form>
       </div>
+      <div class="lcni-watchlist-empty">
+        <p>${emptyMessage}</p>
+      </div>
+      <table class="lcni-watchlist-table">
+        <thead>
+          <tr>
+            ${fields.map((field) => `<th>${labels[field] || field}</th>`).join('')}
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="lcni-watchlist-empty-row">
+            <td colspan="${fields.length + 1}">Chưa có dữ liệu.</td>
+          </tr>
+        </tbody>
+      </table>
     `;
   };
 
@@ -121,7 +136,7 @@
     const fields = selectedFields.length ? selectedFields : allowedFields;
 
     if (!symbols.length) {
-      renderEmptyState(node, emptyMessage);
+      renderEmptyState(node, emptyMessage, fields, labels);
       bindInlineAddForm(node, watchlistApi, restNonce, async () => renderWatchlistNode(node));
       return;
     }
