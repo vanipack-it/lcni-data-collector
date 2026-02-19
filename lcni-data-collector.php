@@ -40,9 +40,14 @@ require_once LCNI_PATH . 'includes/class-lcni-user-admin.php';
 
 function lcni_register_custom_cron_schedules($schedules) {
     if (!isset($schedules['lcni_every_minute'])) {
+        $schedule_display = 'Every Minute (LCNI)';
+        if (did_action('init')) {
+            $schedule_display = __('Every Minute (LCNI)', 'lcni-data-collector');
+        }
+
         $schedules['lcni_every_minute'] = [
             'interval' => MINUTE_IN_SECONDS,
-            'display' => __('Every Minute (LCNI)', 'lcni-data-collector'),
+            'display' => $schedule_display,
         ];
     }
 
