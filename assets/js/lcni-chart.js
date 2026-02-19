@@ -36,6 +36,17 @@ document.addEventListener("DOMContentLoaded", async () => {
     const queryParam = container.dataset.queryParam;
     const fixedSymbol = sanitizeSymbol(container.dataset.symbol);
     const fallbackSymbol = sanitizeSymbol(container.dataset.fallbackSymbol);
+    const initialSymbol = sanitizeSymbol(container.dataset.initialSymbol);
+
+    let initialCandles = [];
+    if (container.dataset.initialCandles) {
+      try {
+        const parsedInitialCandles = JSON.parse(container.dataset.initialCandles);
+        initialCandles = Array.isArray(parsedInitialCandles) ? parsedInitialCandles : [];
+      } catch (error) {
+        initialCandles = [];
+      }
+    }
 
     stockSync.configureQueryParam(queryParam || "symbol");
 
@@ -116,7 +127,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       .filter((item) => typeof item[key] === "number" && Number.isFinite(item[key]))
       .map((item) => ({ time: item.time, value: item[key] }));
 
-    const fetchAndRender = async (symbol) => {
+    const fetchAndRender = async (symbol, seededCandles = null) => {
       if (!apiBase || !symbol) {
         container.textContent = "NO DATA";
         return;
@@ -125,13 +136,17 @@ document.addEventListener("DOMContentLoaded", async () => {
       const apiUrl = `${apiBase}?symbol=${encodeURIComponent(symbol)}&limit=${Number.isFinite(limit) ? limit : 200}`;
 
       try {
-        const response = await fetch(apiUrl, { credentials: "same-origin" });
-        if (!response.ok) {
-          throw new Error(`LCNI: request failed (${response.status})`);
-        }
+        const candles = Array.isArray(seededCandles) && seededCandles.length
+          ? seededCandles
+          : await (async () => {
+            const response = await fetch(apiUrl, { credentials: "same-origin" });
+            if (!response.ok) {
+              throw new Error(`LCNI: request failed (${response.status})`);
+            }
 
-        const payload = await response.json();
-        const candles = Array.isArray(payload) ? payload : payload?.candles;
+            const payload = await response.json();
+            return Array.isArray(payload) ? payload : payload?.candles;
+          })();
         if (!Array.isArray(candles) || !candles.length) {
           container.textContent = "NO DATA";
           return;
@@ -246,8 +261,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     };
 
-    const initialSymbol = resolveSymbol();
-    await fetchAndRender(initialSymbol);
+    const resolvedInitialSymbol = resolveSymbol();
+    const shouldUseSeededCandles = initialSymbol !== "" && resolvedInitialSymbol === initialSymbol && initialCandles.length > 0;
+    await fetchAndRender(resolvedInitialSymbol, shouldUseSeededCandles ? initialCandles : null);
 
     stockSync.subscribe(async (nextSymbol) => {
       if (fixedSymbol || !nextSymbol) {
