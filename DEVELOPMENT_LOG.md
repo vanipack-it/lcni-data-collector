@@ -94,3 +94,9 @@
 - Cập nhật UX Watchlist column selector: panel mặc định ẩn, mở/đóng bằng nút settings, click outside để tự đóng; panel dùng `position: absolute` nên không đẩy layout bảng.
 - Fix đồng bộ zoom/scroll cho lightweight-charts bằng `subscribeVisibleLogicalRangeChange` với cờ `isSyncingRange`, đồng bộ visible range giữa chart chính và toàn bộ chart phụ (volume/macd/rsi/rs).
 - Bổ sung cấu hình tiêu đề module frontend (`overview_title`, `chart_title`, `signal_title`) trong Frontend Setting; frontend render theo title cấu hình, fallback về tiêu đề mặc định khi chưa khai báo.
+
+## 2026-02-20
+- Cập nhật `lcni-chart.js` để luôn `fitContent()` sau mỗi lần `setData()`, sau đó áp dụng `setVisibleLogicalRange()` theo cấu hình `default_visible_bars`; đồng thời reset viewport khi đổi symbol và bổ sung cờ bật/tắt sync zoom/scroll theo `subscribeVisibleLogicalRangeChange` với `isSyncingRange` tránh loop.
+- Mở rộng Frontend Settings → Stock Chart thêm tùy chọn admin `chart_sync_enabled` (bật/tắt đồng bộ zoom/scroll giữa các panel).
+- Nâng cấp Frontend Settings → Watchlist: thêm nút “Thêm rule” cho phần màu theo điều kiện (mặc định hiển thị 5 dòng), thêm cấu hình kích thước nút `[lcni_watchlist_add_button]` và thêm cấu hình style/icon cho nút submit của `[lcni_watchlist_add_form]`.
+- Cập nhật shortcode Watchlist + assets để áp dụng style admin cho nút add/add-form, thêm hiệu ứng AJAX spinner → check-circle khi add thành công từ form, và chỉnh kích thước nút add để đồng nhất hiển thị.

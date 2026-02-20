@@ -51,8 +51,18 @@ class LCNI_WatchlistShortcode {
 
     public function render_add_form() {
         $this->enqueue_watchlist_assets();
+        $settings = $this->get_settings();
+        $form_button = isset($settings['add_form_button']) && is_array($settings['add_form_button']) ? $settings['add_form_button'] : [];
+        $icon_class = isset($form_button['icon']) ? sanitize_text_field($form_button['icon']) : 'fa-solid fa-heart-circle-plus';
+        $style = sprintf(
+            'background:%s;color:%s;font-size:%dpx;height:%dpx;',
+            esc_attr($form_button['background'] ?? '#2563eb'),
+            esc_attr($form_button['text_color'] ?? '#ffffff'),
+            (int) ($form_button['font_size'] ?? 14),
+            (int) ($form_button['height'] ?? 34)
+        );
 
-        return '<form class="lcni-watchlist-add-form" data-lcni-watchlist-add-form><input type="text" data-watchlist-symbol-input placeholder="Nhập mã cổ phiếu" autocomplete="off" /><button type="submit">Thêm</button></form>';
+        return sprintf('<form class="lcni-watchlist-add-form" data-lcni-watchlist-add-form><input type="text" data-watchlist-symbol-input placeholder="Nhập mã cổ phiếu" autocomplete="off" /><button type="submit" style="%1$s"><i class="%2$s" aria-hidden="true"></i><span>Thêm</span></button></form>', esc_attr($style), esc_attr($icon_class));
     }
 
     public function render_add_button($atts = []) {
@@ -75,6 +85,7 @@ class LCNI_WatchlistShortcode {
             esc_attr($button_styles['text_color'] ?? '#ffffff'),
             (int) ($button_styles['font_size'] ?? 14)
         );
+        $style .= sprintf('width:%dpx;height:%dpx;', (int) ($button_styles['size'] ?? 26), (int) ($button_styles['size'] ?? 26));
 
         return sprintf(
             '<button type="button" class="lcni-watchlist-add" data-lcni-watchlist-add data-symbol="%1$s" style="%2$s" aria-label="Add to watchlist"><i class="%3$s" aria-hidden="true"></i></button>',
@@ -158,6 +169,14 @@ class LCNI_WatchlistShortcode {
                 'background' => '#dc2626',
                 'text_color' => '#ffffff',
                 'font_size' => 14,
+                'size' => 26,
+            ],
+            'add_form_button' => [
+                'icon' => 'fa-solid fa-heart-circle-plus',
+                'background' => '#2563eb',
+                'text_color' => '#ffffff',
+                'font_size' => 14,
+                'height' => 34,
             ],
         ];
 
