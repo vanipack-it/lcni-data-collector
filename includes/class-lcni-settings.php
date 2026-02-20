@@ -253,6 +253,7 @@ class LCNI_Settings {
                         'allowed_panels' => isset($_POST['lcni_frontend_allowed_panels']) ? (array) wp_unslash($_POST['lcni_frontend_allowed_panels']) : [],
                         'default_mode' => isset($_POST['lcni_frontend_default_mode']) ? wp_unslash($_POST['lcni_frontend_default_mode']) : '',
                         'compact_mode' => isset($_POST['lcni_frontend_compact_mode']) ? wp_unslash($_POST['lcni_frontend_compact_mode']) : '',
+                        'default_visible_bars' => isset($_POST['lcni_frontend_default_visible_bars']) ? wp_unslash($_POST['lcni_frontend_default_visible_bars']) : 120,
                     ];
                     update_option('lcni_frontend_settings_chart', $this->sanitize_frontend_chart_settings($input));
                     update_option('lcni_frontend_chart_title', $this->sanitize_module_title(isset($_POST['lcni_frontend_module_title']) ? wp_unslash($_POST['lcni_frontend_module_title']) : '', 'Stock Chart'));
@@ -270,7 +271,14 @@ class LCNI_Settings {
                             'background' => isset($_POST['lcni_frontend_watchlist_style_background']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_background']) : '',
                             'border' => isset($_POST['lcni_frontend_watchlist_style_border']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_border']) : '',
                             'border_radius' => isset($_POST['lcni_frontend_watchlist_style_border_radius']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_border_radius']) : 8,
+                            'label_font_size' => isset($_POST['lcni_frontend_watchlist_style_label_font_size']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_label_font_size']) : 12,
+                            'row_font_size' => isset($_POST['lcni_frontend_watchlist_style_row_font_size']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_row_font_size']) : 13,
                         ],
+                        'value_color_rule_columns' => isset($_POST['lcni_watchlist_value_color_rule_column']) ? (array) wp_unslash($_POST['lcni_watchlist_value_color_rule_column']) : [],
+                        'value_color_rule_operators' => isset($_POST['lcni_watchlist_value_color_rule_operator']) ? (array) wp_unslash($_POST['lcni_watchlist_value_color_rule_operator']) : [],
+                        'value_color_rule_values' => isset($_POST['lcni_watchlist_value_color_rule_value']) ? (array) wp_unslash($_POST['lcni_watchlist_value_color_rule_value']) : [],
+                        'value_color_rule_bg_colors' => isset($_POST['lcni_watchlist_value_color_rule_bg_color']) ? (array) wp_unslash($_POST['lcni_watchlist_value_color_rule_bg_color']) : [],
+                        'value_color_rule_text_colors' => isset($_POST['lcni_watchlist_value_color_rule_text_color']) ? (array) wp_unslash($_POST['lcni_watchlist_value_color_rule_text_color']) : [],
                         'add_button' => [
                             'icon' => isset($_POST['lcni_frontend_watchlist_btn_icon']) ? wp_unslash($_POST['lcni_frontend_watchlist_btn_icon']) : '',
                             'background' => isset($_POST['lcni_frontend_watchlist_btn_background']) ? wp_unslash($_POST['lcni_frontend_watchlist_btn_background']) : '',
@@ -1262,6 +1270,7 @@ class LCNI_Settings {
             'default_mode' => 'line',
             'allowed_panels' => ['volume', 'macd', 'rsi', 'rs'],
             'compact_mode' => true,
+            'default_visible_bars' => 120,
         ];
 
         $allowed_panels = isset($value['allowed_panels']) && is_array($value['allowed_panels'])
@@ -1279,15 +1288,17 @@ class LCNI_Settings {
 
         $compact_raw = $value['compact_mode'] ?? $default['compact_mode'];
         $compact_mode = in_array($compact_raw, [1, '1', true, 'true', 'yes', 'on'], true);
+        $default_visible_bars = max(20, min(1000, (int) ($value['default_visible_bars'] ?? $default['default_visible_bars'])));
 
         return [
             'default_mode' => $mode,
             'allowed_panels' => $allowed_panels,
             'compact_mode' => $compact_mode,
+            'default_visible_bars' => $default_visible_bars,
         ];
     }
 
-    private function sanitize_module_title($value, $fallback) {
+private function sanitize_module_title($value, $fallback) {
         $title = sanitize_text_field((string) $value);
 
         return $title !== '' ? $title : $fallback;
@@ -1456,8 +1467,15 @@ class LCNI_Settings {
         $button = isset($input['add_button']) && is_array($input['add_button']) ? $input['add_button'] : [];
         $label_keys = isset($input['column_label_keys']) && is_array($input['column_label_keys']) ? $input['column_label_keys'] : [];
         $label_values = isset($input['column_label_values']) && is_array($input['column_label_values']) ? $input['column_label_values'] : [];
+        $rule_columns = isset($input['value_color_rule_columns']) && is_array($input['value_color_rule_columns']) ? $input['value_color_rule_columns'] : [];
+        $rule_operators = isset($input['value_color_rule_operators']) && is_array($input['value_color_rule_operators']) ? $input['value_color_rule_operators'] : [];
+        $rule_values = isset($input['value_color_rule_values']) && is_array($input['value_color_rule_values']) ? $input['value_color_rule_values'] : [];
+        $rule_bg_colors = isset($input['value_color_rule_bg_colors']) && is_array($input['value_color_rule_bg_colors']) ? $input['value_color_rule_bg_colors'] : [];
+        $rule_text_colors = isset($input['value_color_rule_text_colors']) && is_array($input['value_color_rule_text_colors']) ? $input['value_color_rule_text_colors'] : [];
         $column_labels = [];
+        $value_color_rules = [];
         $label_count = max(count($label_keys), count($label_values));
+        $allowed_operators = ['>', '>=', '<', '<=', '=', '!='];
 
         for ($index = 0; $index < $label_count; $index++) {
             $key = sanitize_key($label_keys[$index] ?? '');
@@ -1475,6 +1493,28 @@ class LCNI_Settings {
                 'label' => $label,
             ];
         }
+
+        $rule_count = max(count($rule_columns), count($rule_operators), count($rule_values), count($rule_bg_colors), count($rule_text_colors));
+        for ($index = 0; $index < $rule_count; $index++) {
+            $column = sanitize_key($rule_columns[$index] ?? '');
+            $operator = sanitize_text_field((string) ($rule_operators[$index] ?? ''));
+            $value = trim(sanitize_text_field((string) ($rule_values[$index] ?? '')));
+            $bg_color = sanitize_hex_color((string) ($rule_bg_colors[$index] ?? ''));
+            $text_color = sanitize_hex_color((string) ($rule_text_colors[$index] ?? ''));
+
+            if ($column === '' || !in_array($column, $all_columns, true) || !in_array($operator, $allowed_operators, true) || $value === '' || !$bg_color || !$text_color) {
+                continue;
+            }
+
+            $value_color_rules[] = [
+                'column' => $column,
+                'operator' => $operator,
+                'value' => is_numeric($value) ? (float) $value : $value,
+                'bg_color' => $bg_color,
+                'text_color' => $text_color,
+            ];
+        }
+
         $stock_detail_page_id = absint($input['stock_detail_page_id'] ?? get_option('lcni_frontend_stock_detail_page', 0));
         $stock_detail_page_slug = '';
         if ($stock_detail_page_id > 0) {
@@ -1497,7 +1537,10 @@ class LCNI_Settings {
                 'background' => sanitize_hex_color($styles['background'] ?? '#ffffff') ?: '#ffffff',
                 'border' => sanitize_text_field($styles['border'] ?? '1px solid #e5e7eb'),
                 'border_radius' => max(0, min(24, (int) ($styles['border_radius'] ?? 8))),
+                'label_font_size' => max(10, min(30, (int) ($styles['label_font_size'] ?? 12))),
+                'row_font_size' => max(10, min(30, (int) ($styles['row_font_size'] ?? 13))),
             ],
+            'value_color_rules' => array_slice($value_color_rules, 0, 100),
             'add_button' => [
                 'icon' => sanitize_text_field($button['icon'] ?? 'fa-solid fa-heart-circle-plus'),
                 'background' => sanitize_hex_color($button['background'] ?? '#dc2626') ?: '#dc2626',
@@ -1507,7 +1550,7 @@ class LCNI_Settings {
         ];
     }
 
-    private function render_frontend_watchlist_form($module, $tab_id, $settings) {
+private function render_frontend_watchlist_form($module, $tab_id, $settings) {
         $service = new LCNI_WatchlistService(new LCNI_WatchlistRepository());
         $all_columns = $service->get_all_columns();
         $pages = get_pages(['sort_column' => 'post_title', 'sort_order' => 'asc']);
@@ -1583,6 +1626,42 @@ class LCNI_Settings {
                 <p><label>Background <input type="color" name="lcni_frontend_watchlist_style_background" value="<?php echo esc_attr((string) ($settings['styles']['background'] ?? '#ffffff')); ?>"></label></p>
                 <p><label>Border <input type="text" name="lcni_frontend_watchlist_style_border" value="<?php echo esc_attr((string) ($settings['styles']['border'] ?? '1px solid #e5e7eb')); ?>"></label></p>
                 <p><label>Border radius <input type="number" min="0" max="24" name="lcni_frontend_watchlist_style_border_radius" value="<?php echo esc_attr((string) ($settings['styles']['border_radius'] ?? 8)); ?>"></label></p>
+                <p><label>Header label font size <input type="number" min="10" max="30" name="lcni_frontend_watchlist_style_label_font_size" value="<?php echo esc_attr((string) ($settings['styles']['label_font_size'] ?? 12)); ?>"> px</label></p>
+                <p><label>Row font size <input type="number" min="10" max="30" name="lcni_frontend_watchlist_style_row_font_size" value="<?php echo esc_attr((string) ($settings['styles']['row_font_size'] ?? 13)); ?>"> px</label></p>
+
+                <h3>Màu giá trị theo điều kiện</h3>
+                <?php $watchlist_rules = isset($settings['value_color_rules']) && is_array($settings['value_color_rules']) ? $settings['value_color_rules'] : []; ?>
+                <table class="form-table" role="presentation"><tbody>
+                    <?php for ($i = 0; $i < max(5, count($watchlist_rules) + 1); $i++) :
+                        $rule = $watchlist_rules[$i] ?? [];
+                        $rule_column = (string) ($rule['column'] ?? '');
+                        $rule_operator = (string) ($rule['operator'] ?? '>');
+                        $rule_value = (string) ($rule['value'] ?? '');
+                        $rule_bg = (string) ($rule['bg_color'] ?? '#16a34a');
+                        $rule_text = (string) ($rule['text_color'] ?? '#ffffff');
+                        ?>
+                        <tr>
+                            <td>
+                                <select name="lcni_watchlist_value_color_rule_column[]">
+                                    <option value="">-- Column --</option>
+                                    <?php foreach ($all_columns as $column) : ?>
+                                        <option value="<?php echo esc_attr($column); ?>" <?php selected($rule_column, $column); ?>><?php echo esc_html($column); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </td>
+                            <td>
+                                <select name="lcni_watchlist_value_color_rule_operator[]">
+                                    <?php foreach (['>', '>=', '<', '<=', '=', '!='] as $operator) : ?>
+                                        <option value="<?php echo esc_attr($operator); ?>" <?php selected($rule_operator, $operator); ?>><?php echo esc_html($operator); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </td>
+                            <td><input type="text" name="lcni_watchlist_value_color_rule_value[]" value="<?php echo esc_attr($rule_value); ?>" placeholder="70"></td>
+                            <td><input type="color" name="lcni_watchlist_value_color_rule_bg_color[]" value="<?php echo esc_attr($rule_bg); ?>"></td>
+                            <td><input type="color" name="lcni_watchlist_value_color_rule_text_color[]" value="<?php echo esc_attr($rule_text); ?>"></td>
+                        </tr>
+                    <?php endfor; ?>
+                </tbody></table>
 
                 <h3>Nút add to watchlist</h3>
                 <p><label>FontAwesome icon <input type="text" name="lcni_frontend_watchlist_btn_icon" value="<?php echo esc_attr((string) ($settings['add_button']['icon'] ?? 'fa-solid fa-heart-circle-plus')); ?>"></label></p>
@@ -1717,6 +1796,10 @@ class LCNI_Settings {
                     <tr>
                         <th>Compact mode</th>
                         <td><label><input type="checkbox" name="lcni_frontend_compact_mode" value="1" <?php checked($compact_mode); ?>> Bật chế độ gọn (đưa controls vào vùng chart)</label></td>
+                    </tr>
+                    <tr>
+                        <th>Mặc định số nến hiển thị</th>
+                        <td><input type="number" min="20" max="1000" name="lcni_frontend_default_visible_bars" value="<?php echo esc_attr((string) ($settings['default_visible_bars'] ?? 120)); ?>"> bars</td>
                     </tr>
                 </tbody></table>
                 <?php submit_button('Lưu Frontend Settings'); ?>

@@ -91,11 +91,40 @@
     return slug && encoded ? `/${slug}/?symbol=${encoded}` : '';
   }
 
+  function resolveOperatorMatch(rawValue, operator, expected) {
+    const numericRaw = Number(rawValue);
+    const numericExpected = Number(expected);
+    const bothNumeric = Number.isFinite(numericRaw) && Number.isFinite(numericExpected);
+    const left = bothNumeric ? numericRaw : String(rawValue);
+    const right = bothNumeric ? numericExpected : String(expected);
+
+    if (operator === '>') return left > right;
+    if (operator === '>=') return left >= right;
+    if (operator === '<') return left < right;
+    if (operator === '<=') return left <= right;
+    if (operator === '=') return left === right;
+    if (operator === '!=') return left !== right;
+    return false;
+  }
+
+  function resolveCellStyle(column, value, rules) {
+    for (let i = 0; i < rules.length; i += 1) {
+      const rule = rules[i] || {};
+      if (rule.column !== column) continue;
+      if (!resolveOperatorMatch(value, rule.operator, rule.value)) continue;
+      return `background:${esc(rule.bg_color || '')};color:${esc(rule.text_color || '')};`;
+    }
+
+    return '';
+  }
+
   function renderTable(host, data) {
     const allowed = Array.isArray(data.allowed_columns) ? data.allowed_columns : [];
     const columns = Array.isArray(data.columns) ? data.columns : [];
     const labels = data.column_labels || {};
     const items = Array.isArray(data.items) ? data.items : [];
+    const settings = data.settings || cfg.settingsOption || {};
+    const valueColorRules = Array.isArray(settings.value_color_rules) ? settings.value_color_rules : [];
 
     host.innerHTML = `
       <div class="lcni-watchlist-header"><strong>Watchlist</strong>
@@ -109,7 +138,8 @@
           if (c === 'symbol') {
             return `<td${cls}><span class="lcni-watchlist-symbol">${esc(symbol)}</span><button type="button" class="lcni-watchlist-add is-active" data-lcni-watchlist-add data-symbol="${esc(symbol)}"><i class="fa-solid fa-trash" aria-hidden="true"></i></button></td>`;
           }
-          return `<td${cls}>${esc(row[c])}</td>`;
+          const valueStyle = resolveCellStyle(c, row[c], valueColorRules);
+          return `<td${cls}${valueStyle ? ` style="${valueStyle}"` : ''}>${esc(row[c])}</td>`;
         }).join('')}</tr>`;
       }).join('')}</tbody></table><div class="lcni-watchlist-overlay" data-watchlist-overlay hidden>Loading...</div></div>`;
   }
@@ -171,6 +201,7 @@
       const addBtn = event.target.closest('[data-lcni-watchlist-add]');
       if (addBtn) {
         event.preventDefault();
+        event.stopPropagation();
         if (!cfg.isLoggedIn) {
           if (cfg.loginUrl) window.location.href = cfg.loginUrl;
           return;
@@ -202,6 +233,8 @@
 
       const settingsBtn = event.target.closest('[data-watchlist-settings]');
       if (settingsBtn) {
+        event.preventDefault();
+        event.stopPropagation();
         const host = settingsBtn.closest('[data-lcni-watchlist]');
         const dropdown = host && host.querySelector('.lcni-watchlist-dropdown');
         const expanded = settingsBtn.getAttribute('aria-expanded') === 'true';
@@ -211,6 +244,8 @@
 
       const saveBtn = event.target.closest('[data-watchlist-save]');
       if (saveBtn) {
+        event.preventDefault();
+        event.stopPropagation();
         const host = saveBtn.closest('[data-lcni-watchlist]');
         if (!host) return;
         const device = getDevice();

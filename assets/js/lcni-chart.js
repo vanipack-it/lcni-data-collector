@@ -81,6 +81,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const allowedPanels = Array.isArray(adminConfig.allowed_panels) && adminConfig.allowed_panels.length
       ? adminConfig.allowed_panels.filter((panel) => allPanels.includes(panel))
       : allPanels;
+    const defaultVisibleBars = Math.max(20, Math.min(1000, Number(adminConfig.default_visible_bars || 120)));
 
     stockSync.configureQueryParam(queryParam || "symbol");
 
@@ -244,6 +245,15 @@ document.addEventListener("DOMContentLoaded", async () => {
           resizeTargets.forEach(resizeChartToContainer);
         };
 
+        const applyInitialVisibleRange = () => {
+          const bars = Math.max(20, Math.min(candles.length, defaultVisibleBars));
+          const to = candles.length;
+          const from = Math.max(0, to - bars);
+          charts.forEach((chart) => {
+            chart.timeScale().setVisibleLogicalRange({ from, to });
+          });
+        };
+
         const setUserNavigating = () => {
           isUserNavigating = true;
           window.clearTimeout(userNavigationTimer);
@@ -346,6 +356,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         rsChart.timeScale().fitContent();
 
         mainChart.timeScale().fitContent();
+        applyInitialVisibleRange();
         refreshVisibility();
 
         let resizeRaf = 0;
