@@ -39,7 +39,14 @@ class LCNI_WatchlistShortcode {
     public function render_watchlist() {
         $this->enqueue_watchlist_assets();
 
-        return '<div class="lcni-watchlist" data-lcni-watchlist></div>';
+        $styles = (array) ($this->get_settings()['styles'] ?? []);
+        $style_attr = sprintf(
+            '--lcni-watchlist-label-font-size:%1$dpx;--lcni-watchlist-row-font-size:%2$dpx;',
+            max(10, min(30, (int) ($styles['label_font_size'] ?? 12))),
+            max(10, min(30, (int) ($styles['row_font_size'] ?? 13)))
+        );
+
+        return sprintf('<div class="lcni-watchlist" data-lcni-watchlist style="%s"></div>', esc_attr($style_attr));
     }
 
     public function render_add_form() {
@@ -142,7 +149,10 @@ class LCNI_WatchlistShortcode {
                 'background' => '#ffffff',
                 'border' => '1px solid #e5e7eb',
                 'border_radius' => 8,
+                'label_font_size' => 12,
+                'row_font_size' => 13,
             ],
+            'value_color_rules' => [],
             'add_button' => [
                 'icon' => 'fa-solid fa-heart-circle-plus',
                 'background' => '#dc2626',

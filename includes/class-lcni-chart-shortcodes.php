@@ -192,7 +192,7 @@ class LCNI_Chart_Shortcodes {
     }
 
     private function get_admin_config() {
-        $default = ['default_mode' => 'line', 'allowed_panels' => ['volume', 'macd', 'rsi', 'rs'], 'compact_mode' => true, 'title' => 'Stock Chart'];
+        $default = ['default_mode' => 'line', 'allowed_panels' => ['volume', 'macd', 'rsi', 'rs'], 'compact_mode' => true, 'default_visible_bars' => 120, 'title' => 'Stock Chart'];
         $saved = get_option('lcni_frontend_settings_chart', []);
         if (!is_array($saved)) {
             return $default;
@@ -214,6 +214,7 @@ class LCNI_Chart_Shortcodes {
             'default_mode' => $mode,
             'allowed_panels' => $allowed_panels,
             'compact_mode' => isset($saved['compact_mode']) ? (bool) $saved['compact_mode'] : $default['compact_mode'],
+            'default_visible_bars' => max(20, min(1000, (int) ($saved['default_visible_bars'] ?? $default['default_visible_bars']))),
             'title' => sanitize_text_field((string) get_option('lcni_frontend_chart_title', $default['title'])),
         ];
     }

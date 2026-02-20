@@ -69,6 +69,7 @@ class LCNI_WatchlistController {
             'column_labels' => $data['column_labels'],
             'items' => $data['items'],
             'symbols' => $data['symbols'],
+            'settings' => $this->service->get_settings(),
         ]);
     }
 
@@ -110,6 +111,7 @@ class LCNI_WatchlistController {
         return rest_ensure_response([
             'allowed_columns' => $this->service->get_allowed_columns(),
             'columns' => $this->service->get_user_columns($user_id, $request->get_param('device') === 'mobile' ? 'mobile' : 'desktop'),
+            'settings' => $this->service->get_settings(),
         ]);
     }
 
