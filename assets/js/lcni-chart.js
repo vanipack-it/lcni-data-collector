@@ -82,6 +82,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       ? adminConfig.allowed_panels.filter((panel) => allPanels.includes(panel))
       : allPanels;
     const defaultVisibleBars = Math.max(20, Math.min(1000, Number(adminConfig.default_visible_bars || 120)));
+    const enableChartSync = adminConfig.chart_sync_enabled !== false;
 
     stockSync.configureQueryParam(queryParam || "symbol");
 
@@ -207,12 +208,15 @@ document.addEventListener("DOMContentLoaded", async () => {
         const rsiChart = LightweightCharts.createChart(rsiWrap, commonOptions);
         const rsChart = LightweightCharts.createChart(rsWrap, commonOptions);
 
+        const setSeriesData = (chart, series, data) => {
+          series.setData(data);
+          chart.timeScale().fitContent();
+        };
+
         const candleSeries = mainChart.addCandlestickSeries();
         const lineSeries = mainChart.addLineSeries({ color: "#2563eb", lineWidth: 2 });
-        candleSeries.setData(candles);
-        mainChart.timeScale().fitContent();
-        lineSeries.setData(candles.map((item) => ({ time: item.time, value: item.close })));
-        mainChart.timeScale().fitContent();
+        setSeriesData(mainChart, candleSeries, candles);
+        setSeriesData(mainChart, lineSeries, candles.map((item) => ({ time: item.time, value: item.close })));
 
         const visibility = {
           volume: state.panels.includes("volume"),
@@ -230,8 +234,6 @@ document.addEventListener("DOMContentLoaded", async () => {
           { chart: rsChart, wrap: rsWrap }
         ];
         let isSyncingRange = false;
-        let isUserNavigating = false;
-        let userNavigationTimer = null;
 
         const resizeChartToContainer = ({ chart, wrap }) => {
           const width = Math.floor(wrap.clientWidth || 0);
@@ -250,38 +252,29 @@ document.addEventListener("DOMContentLoaded", async () => {
           const to = candles.length;
           const from = Math.max(0, to - bars);
           charts.forEach((chart) => {
+            chart.timeScale().fitContent();
             chart.timeScale().setVisibleLogicalRange({ from, to });
           });
         };
 
-        const setUserNavigating = () => {
-          isUserNavigating = true;
-          window.clearTimeout(userNavigationTimer);
-          userNavigationTimer = window.setTimeout(() => {
-            isUserNavigating = false;
-          }, 150);
-        };
-
-        ["wheel", "mousedown", "touchstart", "pointerdown"].forEach((eventName) => {
-          root.addEventListener(eventName, setUserNavigating, { passive: true });
-        });
-
-        charts.forEach((sourceChart) => {
-          sourceChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-            if (!range || isSyncingRange || !isUserNavigating) {
-              return;
-            }
-
-            isSyncingRange = true;
-            charts.forEach((targetChart) => {
-              if (targetChart === sourceChart) {
+        if (enableChartSync) {
+          charts.forEach((sourceChart) => {
+            sourceChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+              if (!range || isSyncingRange) {
                 return;
               }
-              targetChart.timeScale().setVisibleLogicalRange(range);
+
+              isSyncingRange = true;
+              charts.forEach((targetChart) => {
+                if (targetChart === sourceChart) {
+                  return;
+                }
+                targetChart.timeScale().setVisibleLogicalRange(range);
+              });
+              isSyncingRange = false;
             });
-            isSyncingRange = false;
           });
-        });
+        }
 
         const refreshVisibility = () => {
           candleSeries.applyOptions({ visible: state.mode === "candlestick" });
@@ -333,29 +326,24 @@ document.addEventListener("DOMContentLoaded", async () => {
         container.appendChild(root);
 
         const volumeSeries = volumeChart.addHistogramSeries({ priceFormat: { type: "volume" }, priceScaleId: "" });
-        volumeSeries.setData(candles.map((item) => ({ time: item.time, value: Number(item.volume || 0), color: item.close >= item.open ? "#16a34a" : "#dc2626" })));
-        volumeChart.timeScale().fitContent();
+        setSeriesData(volumeChart, volumeSeries, candles.map((item) => ({ time: item.time, value: Number(item.volume || 0), color: item.close >= item.open ? "#16a34a" : "#dc2626" })));
 
         const seriesDataFilter = (key) => candles.filter((item) => Number.isFinite(Number(item[key]))).map((item) => ({ time: item.time, value: Number(item[key]) }));
         const macdLineSeries = macdChart.addLineSeries({ color: "#1d4ed8", lineWidth: 2 });
-        macdLineSeries.setData(seriesDataFilter("macd"));
+        setSeriesData(macdChart, macdLineSeries, seriesDataFilter("macd"));
         const macdSignalSeries = macdChart.addLineSeries({ color: "#f59e0b", lineWidth: 2 });
-        macdSignalSeries.setData(seriesDataFilter("macd_signal"));
-        macdChart.timeScale().fitContent();
+        setSeriesData(macdChart, macdSignalSeries, seriesDataFilter("macd_signal"));
 
         const rsiSeries = rsiChart.addLineSeries({ color: "#7c3aed", lineWidth: 2 });
-        rsiSeries.setData(seriesDataFilter("rsi"));
-        rsiChart.timeScale().fitContent();
+        setSeriesData(rsiChart, rsiSeries, seriesDataFilter("rsi"));
 
         const rsSeries1w = rsChart.addLineSeries({ color: "#0ea5e9", lineWidth: 2 });
-        rsSeries1w.setData(seriesDataFilter("rs_1w_by_exchange"));
+        setSeriesData(rsChart, rsSeries1w, seriesDataFilter("rs_1w_by_exchange"));
         const rsSeries1m = rsChart.addLineSeries({ color: "#f59e0b", lineWidth: 2 });
-        rsSeries1m.setData(seriesDataFilter("rs_1m_by_exchange"));
+        setSeriesData(rsChart, rsSeries1m, seriesDataFilter("rs_1m_by_exchange"));
         const rsSeries3m = rsChart.addLineSeries({ color: "#ef4444", lineWidth: 2 });
-        rsSeries3m.setData(seriesDataFilter("rs_3m_by_exchange"));
-        rsChart.timeScale().fitContent();
+        setSeriesData(rsChart, rsSeries3m, seriesDataFilter("rs_3m_by_exchange"));
 
-        mainChart.timeScale().fitContent();
         applyInitialVisibleRange();
         refreshVisibility();
 
@@ -416,7 +404,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         window.setTimeout(scheduleResize, 0);
 
         cleanupActiveChart = () => {
-          window.clearTimeout(userNavigationTimer);
           window.removeEventListener("resize", handleWindowResize);
           if (resizeObserver) resizeObserver.disconnect();
           if (visibilityObserver) visibilityObserver.disconnect();

@@ -254,6 +254,7 @@ class LCNI_Settings {
                         'default_mode' => isset($_POST['lcni_frontend_default_mode']) ? wp_unslash($_POST['lcni_frontend_default_mode']) : '',
                         'compact_mode' => isset($_POST['lcni_frontend_compact_mode']) ? wp_unslash($_POST['lcni_frontend_compact_mode']) : '',
                         'default_visible_bars' => isset($_POST['lcni_frontend_default_visible_bars']) ? wp_unslash($_POST['lcni_frontend_default_visible_bars']) : 120,
+                        'chart_sync_enabled' => isset($_POST['lcni_frontend_chart_sync_enabled']) ? wp_unslash($_POST['lcni_frontend_chart_sync_enabled']) : '',
                     ];
                     update_option('lcni_frontend_settings_chart', $this->sanitize_frontend_chart_settings($input));
                     update_option('lcni_frontend_chart_title', $this->sanitize_module_title(isset($_POST['lcni_frontend_module_title']) ? wp_unslash($_POST['lcni_frontend_module_title']) : '', 'Stock Chart'));
@@ -284,6 +285,14 @@ class LCNI_Settings {
                             'background' => isset($_POST['lcni_frontend_watchlist_btn_background']) ? wp_unslash($_POST['lcni_frontend_watchlist_btn_background']) : '',
                             'text_color' => isset($_POST['lcni_frontend_watchlist_btn_text_color']) ? wp_unslash($_POST['lcni_frontend_watchlist_btn_text_color']) : '',
                             'font_size' => isset($_POST['lcni_frontend_watchlist_btn_font_size']) ? wp_unslash($_POST['lcni_frontend_watchlist_btn_font_size']) : 14,
+                            'size' => isset($_POST['lcni_frontend_watchlist_btn_size']) ? wp_unslash($_POST['lcni_frontend_watchlist_btn_size']) : 26,
+                        ],
+                        'add_form_button' => [
+                            'background' => isset($_POST['lcni_frontend_watchlist_form_btn_background']) ? wp_unslash($_POST['lcni_frontend_watchlist_form_btn_background']) : '',
+                            'text_color' => isset($_POST['lcni_frontend_watchlist_form_btn_text_color']) ? wp_unslash($_POST['lcni_frontend_watchlist_form_btn_text_color']) : '',
+                            'font_size' => isset($_POST['lcni_frontend_watchlist_form_btn_font_size']) ? wp_unslash($_POST['lcni_frontend_watchlist_form_btn_font_size']) : 14,
+                            'height' => isset($_POST['lcni_frontend_watchlist_form_btn_height']) ? wp_unslash($_POST['lcni_frontend_watchlist_form_btn_height']) : 34,
+                            'icon' => isset($_POST['lcni_frontend_watchlist_form_btn_icon']) ? wp_unslash($_POST['lcni_frontend_watchlist_form_btn_icon']) : '',
                         ],
                     ];
                     $watchlist_settings = $this->sanitize_watchlist_settings($input);
@@ -1271,6 +1280,7 @@ class LCNI_Settings {
             'allowed_panels' => ['volume', 'macd', 'rsi', 'rs'],
             'compact_mode' => true,
             'default_visible_bars' => 120,
+            'chart_sync_enabled' => true,
         ];
 
         $allowed_panels = isset($value['allowed_panels']) && is_array($value['allowed_panels'])
@@ -1288,6 +1298,8 @@ class LCNI_Settings {
 
         $compact_raw = $value['compact_mode'] ?? $default['compact_mode'];
         $compact_mode = in_array($compact_raw, [1, '1', true, 'true', 'yes', 'on'], true);
+        $sync_raw = $value['chart_sync_enabled'] ?? $default['chart_sync_enabled'];
+        $chart_sync_enabled = in_array($sync_raw, [1, '1', true, 'true', 'yes', 'on'], true);
         $default_visible_bars = max(20, min(1000, (int) ($value['default_visible_bars'] ?? $default['default_visible_bars'])));
 
         return [
@@ -1295,6 +1307,7 @@ class LCNI_Settings {
             'allowed_panels' => $allowed_panels,
             'compact_mode' => $compact_mode,
             'default_visible_bars' => $default_visible_bars,
+            'chart_sync_enabled' => $chart_sync_enabled,
         ];
     }
 
@@ -1465,6 +1478,7 @@ private function sanitize_module_title($value, $fallback) {
 
         $styles = isset($input['styles']) && is_array($input['styles']) ? $input['styles'] : [];
         $button = isset($input['add_button']) && is_array($input['add_button']) ? $input['add_button'] : [];
+        $add_form_button = isset($input['add_form_button']) && is_array($input['add_form_button']) ? $input['add_form_button'] : [];
         $label_keys = isset($input['column_label_keys']) && is_array($input['column_label_keys']) ? $input['column_label_keys'] : [];
         $label_values = isset($input['column_label_values']) && is_array($input['column_label_values']) ? $input['column_label_values'] : [];
         $rule_columns = isset($input['value_color_rule_columns']) && is_array($input['value_color_rule_columns']) ? $input['value_color_rule_columns'] : [];
@@ -1546,6 +1560,14 @@ private function sanitize_module_title($value, $fallback) {
                 'background' => sanitize_hex_color($button['background'] ?? '#dc2626') ?: '#dc2626',
                 'text_color' => sanitize_hex_color($button['text_color'] ?? '#ffffff') ?: '#ffffff',
                 'font_size' => max(10, min(24, (int) ($button['font_size'] ?? 14))),
+                'size' => max(20, min(48, (int) ($button['size'] ?? 26))),
+            ],
+            'add_form_button' => [
+                'icon' => sanitize_text_field($add_form_button['icon'] ?? 'fa-solid fa-heart-circle-plus'),
+                'background' => sanitize_hex_color($add_form_button['background'] ?? '#2563eb') ?: '#2563eb',
+                'text_color' => sanitize_hex_color($add_form_button['text_color'] ?? '#ffffff') ?: '#ffffff',
+                'font_size' => max(10, min(24, (int) ($add_form_button['font_size'] ?? 14))),
+                'height' => max(28, min(56, (int) ($add_form_button['height'] ?? 34))),
             ],
         ];
     }
@@ -1631,8 +1653,9 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
 
                 <h3>Màu giá trị theo điều kiện</h3>
                 <?php $watchlist_rules = isset($settings['value_color_rules']) && is_array($settings['value_color_rules']) ? $settings['value_color_rules'] : []; ?>
-                <table class="form-table" role="presentation"><tbody>
-                    <?php for ($i = 0; $i < max(5, count($watchlist_rules) + 1); $i++) :
+                <p class="description">Mặc định hiển thị 5 rule. Nếu cần thêm, bấm nút "Thêm rule".</p>
+                <table class="form-table" role="presentation"><tbody id="lcni-watchlist-rule-rows">
+                    <?php for ($i = 0; $i < max(5, count($watchlist_rules)); $i++) :
                         $rule = $watchlist_rules[$i] ?? [];
                         $rule_column = (string) ($rule['column'] ?? '');
                         $rule_operator = (string) ($rule['operator'] ?? '>');
@@ -1662,12 +1685,56 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
                         </tr>
                     <?php endfor; ?>
                 </tbody></table>
+                <p><button type="button" class="button" id="lcni-add-watchlist-rule">Thêm rule</button></p>
+
+                <template id="lcni-watchlist-rule-template">
+                    <tr>
+                        <td>
+                            <select name="lcni_watchlist_value_color_rule_column[]">
+                                <option value="">-- Column --</option>
+                                <?php foreach ($all_columns as $column) : ?>
+                                    <option value="<?php echo esc_attr($column); ?>"><?php echo esc_html($column); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </td>
+                        <td>
+                            <select name="lcni_watchlist_value_color_rule_operator[]">
+                                <?php foreach (['>', '>=', '<', '<=', '=', '!='] as $operator) : ?>
+                                    <option value="<?php echo esc_attr($operator); ?>"><?php echo esc_html($operator); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </td>
+                        <td><input type="text" name="lcni_watchlist_value_color_rule_value[]" value="" placeholder="70"></td>
+                        <td><input type="color" name="lcni_watchlist_value_color_rule_bg_color[]" value="#16a34a"></td>
+                        <td><input type="color" name="lcni_watchlist_value_color_rule_text_color[]" value="#ffffff"></td>
+                    </tr>
+                </template>
 
                 <h3>Nút add to watchlist</h3>
                 <p><label>FontAwesome icon <input type="text" name="lcni_frontend_watchlist_btn_icon" value="<?php echo esc_attr((string) ($settings['add_button']['icon'] ?? 'fa-solid fa-heart-circle-plus')); ?>"></label></p>
                 <p><label>Background <input type="color" name="lcni_frontend_watchlist_btn_background" value="<?php echo esc_attr((string) ($settings['add_button']['background'] ?? '#dc2626')); ?>"></label></p>
                 <p><label>Text color <input type="color" name="lcni_frontend_watchlist_btn_text_color" value="<?php echo esc_attr((string) ($settings['add_button']['text_color'] ?? '#ffffff')); ?>"></label></p>
                 <p><label>Font size <input type="number" min="10" max="24" name="lcni_frontend_watchlist_btn_font_size" value="<?php echo esc_attr((string) ($settings['add_button']['font_size'] ?? 14)); ?>"></label></p>
+                <p><label>Kích thước nút <input type="number" min="20" max="48" name="lcni_frontend_watchlist_btn_size" value="<?php echo esc_attr((string) ($settings['add_button']['size'] ?? 26)); ?>"> px</label></p>
+
+                <h3>Nút add trong shortcode [lcni_watchlist_add_form]</h3>
+                <p><label>Icon <input type="text" name="lcni_frontend_watchlist_form_btn_icon" value="<?php echo esc_attr((string) ($settings['add_form_button']['icon'] ?? 'fa-solid fa-heart-circle-plus')); ?>"></label></p>
+                <p><label>Background <input type="color" name="lcni_frontend_watchlist_form_btn_background" value="<?php echo esc_attr((string) ($settings['add_form_button']['background'] ?? '#2563eb')); ?>"></label></p>
+                <p><label>Text color <input type="color" name="lcni_frontend_watchlist_form_btn_text_color" value="<?php echo esc_attr((string) ($settings['add_form_button']['text_color'] ?? '#ffffff')); ?>"></label></p>
+                <p><label>Font size <input type="number" min="10" max="24" name="lcni_frontend_watchlist_form_btn_font_size" value="<?php echo esc_attr((string) ($settings['add_form_button']['font_size'] ?? 14)); ?>"></label></p>
+                <p><label>Chiều cao nút <input type="number" min="28" max="56" name="lcni_frontend_watchlist_form_btn_height" value="<?php echo esc_attr((string) ($settings['add_form_button']['height'] ?? 34)); ?>"> px</label></p>
+
+                <script>
+                    (function () {
+                        const addRuleBtn = document.getElementById('lcni-add-watchlist-rule');
+                        const rows = document.getElementById('lcni-watchlist-rule-rows');
+                        const template = document.getElementById('lcni-watchlist-rule-template');
+                        if (!addRuleBtn || !rows || !template) return;
+                        addRuleBtn.addEventListener('click', function () {
+                            rows.insertAdjacentHTML('beforeend', template.innerHTML);
+                        });
+                    })();
+                </script>
 
                 <?php submit_button('Lưu Frontend Settings'); ?>
             </form>
@@ -1762,6 +1829,7 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
         $allowed_panels = (array) ($settings['allowed_panels'] ?? []);
         $default_mode = (string) ($settings['default_mode'] ?? 'line');
         $compact_mode = !empty($settings['compact_mode']);
+        $chart_sync_enabled = !array_key_exists('chart_sync_enabled', $settings) || !empty($settings['chart_sync_enabled']);
         $panel_labels = [
             'volume' => 'Volume',
             'macd' => 'MACD',
@@ -1800,6 +1868,10 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
                     <tr>
                         <th>Mặc định số nến hiển thị</th>
                         <td><input type="number" min="20" max="1000" name="lcni_frontend_default_visible_bars" value="<?php echo esc_attr((string) ($settings['default_visible_bars'] ?? 120)); ?>"> bars</td>
+                    </tr>
+                    <tr>
+                        <th>Đồng bộ zoom/scroll giữa các panel</th>
+                        <td><label><input type="checkbox" name="lcni_frontend_chart_sync_enabled" value="1" <?php checked($chart_sync_enabled); ?>> Bật sync visible range</label></td>
                     </tr>
                 </tbody></table>
                 <?php submit_button('Lưu Frontend Settings'); ?>

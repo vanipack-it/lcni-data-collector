@@ -185,15 +185,26 @@
       }
 
       const input = form.querySelector('[data-watchlist-symbol-input]');
+      const submitBtn = form.querySelector('button[type="submit"]');
+      const submitIcon = submitBtn ? submitBtn.querySelector('i') : null;
       const symbol = String((input && input.value) || '').trim().toUpperCase();
       if (!symbol) return;
 
       try {
+        if (submitBtn) submitBtn.disabled = true;
+        if (submitIcon) submitIcon.className = 'fa-solid fa-spinner fa-spin';
         await toggleSymbol(symbol, 'add');
         if (input) input.value = '';
+        if (submitIcon) submitIcon.className = 'fa-solid fa-check-circle';
+        window.setTimeout(() => {
+          if (submitIcon) submitIcon.className = 'fa-solid fa-heart-circle-plus';
+        }, 1200);
         document.querySelectorAll('[data-lcni-watchlist]').forEach((host) => refreshTable(host).catch(() => {}));
       } catch (error) {
+        if (submitIcon) submitIcon.className = 'fa-solid fa-exclamation-circle';
         showToast((error && error.message) || 'Không thể thêm vào watchlist');
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
       }
     });
 
