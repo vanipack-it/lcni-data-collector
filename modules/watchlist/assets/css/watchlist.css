@@ -1,7 +1,8 @@
 .lcni-watchlist-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .lcni-watchlist-dropdown { position: relative; }
 .lcni-watchlist-settings-btn { border: none; background: transparent; cursor: pointer; font-size: 18px; line-height: 1; }
-.lcni-watchlist-controls { position: absolute; top: 28px; right: 0; z-index: 30; min-width: 420px; max-width: min(90vw, 680px); background: #fff; border: 1px solid #d1d5db; border-radius: 8px; box-shadow: 0 10px 25px rgba(17, 24, 39, 0.12); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.lcni-watchlist-controls { position: absolute; top: 28px; right: 0; z-index: 30; min-width: 420px; max-width: min(90vw, 680px); background: #fff; border: 1px solid #d1d5db; border-radius: 8px; box-shadow: 0 10px 25px rgba(17, 24, 39, 0.12); padding: 12px; display: none; flex-direction: column; gap: 10px; }
+.lcni-watchlist-dropdown.open .lcni-watchlist-controls { display: flex; }
 .lcni-watchlist-col-grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); max-height: 260px; overflow: auto; }
 .lcni-watchlist-col-item { font-size: 13px; display: flex; align-items: center; gap: 6px; }
 .lcni-watchlist-table-wrap { position: relative; overflow-x: auto; -webkit-overflow-scrolling: touch; scroll-behavior: smooth; }

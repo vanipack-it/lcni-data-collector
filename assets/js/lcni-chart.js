@@ -121,7 +121,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         controls.style.alignItems = "center";
 
         const title = document.createElement("strong");
-        title.textContent = symbol;
+        title.textContent = adminConfig.title || "Stock Chart";
 
         const settingsBtn = document.createElement("button");
         settingsBtn.type = "button";
@@ -197,6 +197,26 @@ document.addEventListener("DOMContentLoaded", async () => {
           rs: state.panels.includes("rs")
         };
 
+        const charts = [mainChart, volumeChart, macdChart, rsiChart, rsChart];
+        let isSyncingRange = false;
+
+        charts.forEach((sourceChart) => {
+          sourceChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+            if (!range || isSyncingRange) {
+              return;
+            }
+
+            isSyncingRange = true;
+            charts.forEach((targetChart) => {
+              if (targetChart === sourceChart) {
+                return;
+              }
+              targetChart.timeScale().setVisibleLogicalRange(range);
+            });
+            isSyncingRange = false;
+          });
+        });
+
         const refreshVisibility = () => {
           candleSeries.applyOptions({ visible: state.mode === "candlestick" });
           lineSeries.applyOptions({ visible: state.mode === "line" });
@@ -256,7 +276,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         rsChart.addLineSeries({ color: "#ef4444", lineWidth: 2 }).setData(seriesDataFilter("rs_3m_by_exchange"));
 
         refreshVisibility();
-        [mainChart, volumeChart, macdChart, rsiChart, rsChart].forEach((chart) => chart.timeScale().fitContent());
+        charts.forEach((chart) => chart.timeScale().fitContent());
       } catch (error) {
         container.textContent = "NO DATA";
       }

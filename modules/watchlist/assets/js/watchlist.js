@@ -67,8 +67,14 @@
   }
 
   function buildStockDetailUrl(symbol) {
-    const base = (cfg.stockDetailBase || '/stock/').replace(/\/?$/, '/');
-    return base + encodeURIComponent(symbol);
+    const pageSlug = String(cfg.stockDetailPageSlug || '').replace(/^\/+|\/+$/g, '');
+    const encodedSymbol = encodeURIComponent(String(symbol || '').trim());
+
+    if (!pageSlug || !encodedSymbol) {
+      return '';
+    }
+
+    return `/${pageSlug}/?symbol=${encodedSymbol}`;
   }
 
   function renderTable(host, data) {
@@ -83,7 +89,7 @@
         <strong>Watchlist</strong>
         <div class="lcni-watchlist-dropdown">
           <button type="button" class="lcni-watchlist-settings-btn" data-watchlist-settings aria-expanded="false">⚙</button>
-          <div class="lcni-watchlist-controls" data-watchlist-settings-panel hidden>
+          <div class="lcni-watchlist-controls" data-watchlist-settings-panel>
             <div class="lcni-watchlist-col-grid">${toggles}</div>
             <button type="button" data-watchlist-save>Lưu</button>
           </div>
@@ -112,10 +118,10 @@
     host.addEventListener('click', async (event) => {
       const settingsBtn = event.target.closest('[data-watchlist-settings]');
       if (settingsBtn) {
-        const panel = host.querySelector('[data-watchlist-settings-panel]');
+        const dropdown = host.querySelector('.lcni-watchlist-dropdown');
         const expanded = settingsBtn.getAttribute('aria-expanded') === 'true';
         settingsBtn.setAttribute('aria-expanded', String(!expanded));
-        if (panel) panel.hidden = expanded;
+        if (dropdown) dropdown.classList.toggle('open', !expanded);
         return;
       }
 
@@ -139,9 +145,16 @@
       }
 
       const row = event.target.closest('tbody tr[data-row-symbol]');
-      if (row && !event.target.closest('[data-lcni-watchlist-add]')) {
+      if (row) {
+        if (event.target.closest('[data-lcni-watchlist-add],button,a,i,svg,[role="button"]')) {
+          return;
+        }
+
         const symbol = row.getAttribute('data-row-symbol');
-        if (symbol) window.location.href = buildStockDetailUrl(symbol);
+        const targetUrl = buildStockDetailUrl(symbol);
+        if (targetUrl) {
+          window.location.href = targetUrl;
+        }
         return;
       }
 
@@ -175,6 +188,17 @@
           addBtn.disabled = false;
         });
     });
+    document.addEventListener('click', (event) => {
+      if (host.contains(event.target)) {
+        return;
+      }
+
+      const dropdown = host.querySelector('.lcni-watchlist-dropdown');
+      const settingsBtn = host.querySelector('[data-watchlist-settings]');
+      if (dropdown) dropdown.classList.remove('open');
+      if (settingsBtn) settingsBtn.setAttribute('aria-expanded', 'false');
+    });
+
   }
 
   async function bootHost(host) {
