@@ -4,9 +4,11 @@
 .lcni-watchlist-controls { position: absolute; top: 28px; right: 0; z-index: 30; min-width: 420px; max-width: min(90vw, 680px); background: #fff; border: 1px solid #d1d5db; border-radius: 8px; box-shadow: 0 10px 25px rgba(17, 24, 39, 0.12); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 .lcni-watchlist-col-grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); max-height: 260px; overflow: auto; }
 .lcni-watchlist-col-item { font-size: 13px; display: flex; align-items: center; gap: 6px; }
-.lcni-watchlist-table-wrap { position: relative; }
-.lcni-watchlist-table { width: 100%; border-collapse: collapse; }
-.lcni-watchlist-table th, .lcni-watchlist-table td { border: 1px solid #e5e7eb; padding: 8px; }
+.lcni-watchlist-table-wrap { position: relative; overflow-x: auto; -webkit-overflow-scrolling: touch; scroll-behavior: smooth; }
+.lcni-watchlist-table { width: 100%; min-width: 680px; border-collapse: collapse; table-layout: auto; }
+.lcni-watchlist-table th, .lcni-watchlist-table td { border: 1px solid #e5e7eb; padding: 8px; white-space: nowrap; background: #fff; }
+.lcni-watchlist-table .is-sticky-col { position: sticky; left: 0; z-index: 2; box-shadow: 2px 0 0 rgba(229, 231, 235, 0.7); }
+.lcni-watchlist-table thead .is-sticky-col { z-index: 3; }
 .lcni-watchlist-table tbody tr { cursor: pointer; transition: background-color .18s ease; }
 .lcni-watchlist-table tbody tr:hover { background: #f8fafc; }
 .lcni-watchlist-symbol { margin-right: 6px; font-weight: 600; }
@@ -17,6 +19,11 @@
 .lcni-watchlist-add.is-loading { opacity: 0.7; }
 .lcni-watchlist-add.is-success { transform: scale(1.06); }
 .lcni-watchlist-add.is-error { animation: lcni-watchlist-shake .3s linear 1; }
+
+@media (max-width: 767px) {
+  .lcni-watchlist-controls { min-width: 280px; width: min(92vw, 360px); }
+  .lcni-watchlist-table { min-width: 560px; }
+}
 
 @keyframes lcni-watchlist-shake {
   0%, 100% { transform: translateX(0); }

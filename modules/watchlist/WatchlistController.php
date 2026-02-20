@@ -55,12 +55,13 @@ class LCNI_WatchlistController {
         }
 
         $user_id = get_current_user_id();
+        $device = $request->get_param('device') === 'mobile' ? 'mobile' : 'desktop';
         $columns = $request->get_param('columns');
         if (!is_array($columns)) {
-            $columns = $this->service->get_user_columns($user_id);
+            $columns = $this->service->get_user_columns($user_id, $device);
         }
 
-        $data = $this->service->get_watchlist($user_id, $columns);
+        $data = $this->service->get_watchlist($user_id, $columns, $device);
 
         return rest_ensure_response([
             'allowed_columns' => $this->service->get_allowed_columns(),
@@ -98,7 +99,7 @@ class LCNI_WatchlistController {
 
         return rest_ensure_response([
             'allowed_columns' => $this->service->get_allowed_columns(),
-            'columns' => $this->service->get_user_columns($user_id),
+            'columns' => $this->service->get_user_columns($user_id, $request->get_param('device') === 'mobile' ? 'mobile' : 'desktop'),
         ]);
     }
 

@@ -6,26 +6,50 @@
       method: (options && options.method) || 'GET',
       headers: {
         'Content-Type': 'application/json',
-        'X-WP-Nonce': cfg.nonce || '',
+        'X-WP-Nonce': cfg.nonce || ''
       },
       body: options && options.body ? JSON.stringify(options.body) : undefined,
-      credentials: 'same-origin',
+      credentials: 'same-origin'
     }).then(async (response) => {
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw payload;
-      }
+      if (!response.ok) throw payload;
       return payload;
     });
   }
 
   function escapeHtml(value) {
     return String(value == null ? '' : value)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+  }
+
+  function isMobile() {
+    return window.matchMedia('(max-width: 767px)').matches;
+  }
+
+  function getDevice() {
+    return isMobile() ? 'mobile' : 'desktop';
+  }
+
+  function getStorageKey(device) {
+    return `${cfg.settingsStorageKey || 'lcni_watchlist_settings_v1'}:${device}`;
+  }
+
+  function loadCachedColumns(device) {
+    try {
+      const raw = window.localStorage.getItem(getStorageKey(device));
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed.columns) ? parsed.columns : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveCachedColumns(device, columns) {
+    try {
+      window.localStorage.setItem(getStorageKey(device), JSON.stringify({ columns, updatedAt: Date.now() }));
+    } catch (e) {}
   }
 
   function showToast(msg) {
@@ -36,26 +60,10 @@
     setTimeout(() => node.remove(), 2400);
   }
 
-  function applyStyles(host) {
-    const styles = (cfg.settingsOption && cfg.settingsOption.styles) || {};
-    host.style.fontFamily = styles.font || '';
-    host.style.color = styles.text_color || '';
-    host.style.background = styles.background || '';
-    host.style.border = styles.border || '';
-    host.style.borderRadius = ((styles.border_radius || 0) + 'px');
-    host.style.padding = '8px';
-  }
-
   function setHostLoading(host, isLoading) {
     const overlay = host.querySelector('[data-watchlist-overlay]');
     if (!overlay) return;
     overlay.hidden = !isLoading;
-    overlay.style.pointerEvents = isLoading ? 'auto' : 'none';
-  }
-
-  function renderSymbolCell(symbol) {
-    const safeSymbol = escapeHtml(symbol);
-    return `<span class="lcni-watchlist-symbol">${safeSymbol}</span><button type="button" class="lcni-watchlist-add" data-lcni-watchlist-add data-symbol="${safeSymbol}" aria-label="Add to watchlist"><i class="fa-solid fa-heart-circle-plus" aria-hidden="true"></i></button>`;
   }
 
   function buildStockDetailUrl(symbol) {
@@ -64,7 +72,6 @@
   }
 
   function renderTable(host, data) {
-    applyStyles(host);
     const allowedColumns = Array.isArray(data.allowed_columns) ? data.allowed_columns : [];
     const columns = Array.isArray(data.columns) ? data.columns : [];
     const items = Array.isArray(data.items) ? data.items : [];
@@ -83,126 +90,125 @@
         </div>
       </div>
       <div class="lcni-watchlist-table-wrap">
-        <table class="lcni-watchlist-table"><thead><tr>${columns.map((c) => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead>
+        <table class="lcni-watchlist-table"><thead><tr>${columns.map((c, idx) => `<th class="${idx === 0 && c === 'symbol' ? 'is-sticky-col' : ''}">${escapeHtml(c)}</th>`).join('')}</tr></thead>
         <tbody>${items.map((row) => {
           const rowSymbol = row.symbol || '';
-          return `<tr data-row-symbol="${escapeHtml(rowSymbol)}">${columns.map((c) => {
+          return `<tr data-row-symbol="${escapeHtml(rowSymbol)}">${columns.map((c, idx) => {
+            const cls = idx === 0 && c === 'symbol' ? ' class="is-sticky-col"' : '';
             if (c === 'symbol') {
-              return `<td>${renderSymbolCell(rowSymbol)}</td>`;
+              return `<td${cls}><span class="lcni-watchlist-symbol">${escapeHtml(rowSymbol)}</span><button type="button" class="lcni-watchlist-add" data-lcni-watchlist-add data-symbol="${escapeHtml(rowSymbol)}" aria-label="Add to watchlist"><i class="fa-solid fa-heart-circle-plus" aria-hidden="true"></i></button></td>`;
             }
-            return `<td>${escapeHtml(row[c])}</td>`;
+            return `<td${cls}>${escapeHtml(row[c])}</td>`;
           }).join('')}</tr>`;
         }).join('')}</tbody></table>
         <div class="lcni-watchlist-overlay" data-watchlist-overlay hidden>Loading...</div>
-      </div>
-    `;
-
-    const panel = host.querySelector('[data-watchlist-settings-panel]');
-    const settingsBtn = host.querySelector('[data-watchlist-settings]');
-    const saveBtn = host.querySelector('[data-watchlist-save]');
-
-    settingsBtn.addEventListener('click', () => {
-      const isExpanded = settingsBtn.getAttribute('aria-expanded') === 'true';
-      settingsBtn.setAttribute('aria-expanded', String(!isExpanded));
-      panel.hidden = isExpanded;
-    });
-
-    saveBtn.addEventListener('click', async () => {
-      const selected = Array.from(host.querySelectorAll('[data-col-toggle]:checked')).map((input) => input.value);
-      setHostLoading(host, true);
-      try {
-        await api('/settings', { method: 'POST', body: { columns: selected } });
-        const query = selected.map((value) => `columns[]=${encodeURIComponent(value)}`).join('&');
-        const refreshed = await api('/list' + (query ? '?' + query : ''));
-        renderTable(host, refreshed);
-        bindAddButtons(host);
-      } catch (error) {
-        showToast((error && error.message) || 'Không thể lưu cài đặt.');
-      } finally {
-        setHostLoading(host, false);
-      }
-    });
-
-    if (!host._watchlistRowDelegated) {
-      host.addEventListener('click', (event) => {
-        const row = event.target.closest('tbody tr[data-row-symbol]');
-        if (!row || !host.contains(row)) {
-          return;
-        }
-
-        if (event.target.closest('[data-lcni-watchlist-add]')) {
-          return;
-        }
-
-        const symbol = row.getAttribute('data-row-symbol');
-        if (symbol) {
-          window.location.href = buildStockDetailUrl(symbol);
-        }
-      });
-      host._watchlistRowDelegated = true;
-    }
+      </div>`;
   }
 
-  function bindAddButtons(scope) {
-    (scope || document).querySelectorAll('[data-lcni-watchlist-add]').forEach((btn) => {
-      if (btn.dataset.boundWatchlist === '1') return;
-      btn.dataset.boundWatchlist = '1';
+  function bindDelegation(host) {
+    if (host.dataset.boundWatchlist === '1') return;
+    host.dataset.boundWatchlist = '1';
 
-      btn.addEventListener('click', () => {
-        if (!cfg.isLoggedIn) {
-          document.dispatchEvent(new CustomEvent('lcni:watchlist:require-login'));
-          if (cfg.loginUrl) { window.location.href = cfg.loginUrl; }
-          return;
+    host.addEventListener('click', async (event) => {
+      const settingsBtn = event.target.closest('[data-watchlist-settings]');
+      if (settingsBtn) {
+        const panel = host.querySelector('[data-watchlist-settings-panel]');
+        const expanded = settingsBtn.getAttribute('aria-expanded') === 'true';
+        settingsBtn.setAttribute('aria-expanded', String(!expanded));
+        if (panel) panel.hidden = expanded;
+        return;
+      }
+
+      const saveBtn = event.target.closest('[data-watchlist-save]');
+      if (saveBtn) {
+        const selected = Array.from(host.querySelectorAll('[data-col-toggle]:checked')).map((input) => input.value);
+        const device = getDevice();
+        setHostLoading(host, true);
+        try {
+          saveCachedColumns(device, selected);
+          const payload = await api('/settings?device=' + encodeURIComponent(device), { method: 'POST', body: { columns: selected } });
+          const cols = Array.isArray(payload.columns) ? payload.columns : selected;
+          const refreshed = await api('/list?device=' + encodeURIComponent(device) + '&' + cols.map((value) => `columns[]=${encodeURIComponent(value)}`).join('&'));
+          renderTable(host, refreshed);
+        } catch (error) {
+          showToast((error && error.message) || 'Không thể lưu cài đặt.');
+        } finally {
+          setHostLoading(host, false);
         }
+        return;
+      }
 
-        const symbol = btn.getAttribute('data-symbol');
-        const icon = btn.querySelector('i');
-        btn.disabled = true;
-        btn.classList.remove('is-success', 'is-error');
-        btn.classList.add('is-loading');
-        if (icon) {
-          icon.className = 'fa-solid fa-spinner fa-spin';
-        }
+      const row = event.target.closest('tbody tr[data-row-symbol]');
+      if (row && !event.target.closest('[data-lcni-watchlist-add]')) {
+        const symbol = row.getAttribute('data-row-symbol');
+        if (symbol) window.location.href = buildStockDetailUrl(symbol);
+        return;
+      }
 
-        api('/add', { method: 'POST', body: { symbol } })
-          .then(() => {
-            btn.classList.add('is-success');
-            if (icon) {
-              icon.className = 'fa-solid fa-check';
-            }
-          })
-          .catch((error) => {
-            btn.classList.add('is-error');
-            if (icon) {
-              icon.className = 'fa-solid fa-heart-circle-plus';
-            }
-            showToast((error && error.message) || 'Không thể thêm vào watchlist');
-          })
-          .finally(() => {
-            btn.classList.remove('is-loading');
-            btn.disabled = false;
-          });
-      });
+      const addBtn = event.target.closest('[data-lcni-watchlist-add]');
+      if (!addBtn || !host.contains(addBtn)) return;
+      if (!cfg.isLoggedIn) {
+        document.dispatchEvent(new CustomEvent('lcni:watchlist:require-login'));
+        if (cfg.loginUrl) window.location.href = cfg.loginUrl;
+        return;
+      }
+
+      const symbol = addBtn.getAttribute('data-symbol');
+      const icon = addBtn.querySelector('i');
+      addBtn.disabled = true;
+      addBtn.classList.remove('is-success', 'is-error');
+      addBtn.classList.add('is-loading');
+      if (icon) icon.className = 'fa-solid fa-spinner fa-spin';
+
+      api('/add', { method: 'POST', body: { symbol } })
+        .then(() => {
+          addBtn.classList.add('is-success');
+          if (icon) icon.className = 'fa-solid fa-check';
+        })
+        .catch((error) => {
+          addBtn.classList.add('is-error');
+          if (icon) icon.className = 'fa-solid fa-heart-circle-plus';
+          showToast((error && error.message) || 'Không thể thêm vào watchlist');
+        })
+        .finally(() => {
+          addBtn.classList.remove('is-loading');
+          addBtn.disabled = false;
+        });
     });
+  }
+
+  async function bootHost(host) {
+    bindDelegation(host);
+
+    if (!cfg.isLoggedIn) {
+      host.innerHTML = '<a href="' + (cfg.loginUrl || '#') + '">Đăng nhập để xem watchlist</a>';
+      return;
+    }
+
+    const device = getDevice();
+    const defaults = device === 'mobile' ? (cfg.defaultColumnsMobile || []) : (cfg.defaultColumnsDesktop || []);
+    const cached = loadCachedColumns(device);
+    const selected = cached.length ? cached : defaults;
+
+    try {
+      const query = selected.length ? '&' + selected.map((value) => `columns[]=${encodeURIComponent(value)}`).join('&') : '';
+      const fastData = await api('/list?device=' + encodeURIComponent(device) + query);
+      renderTable(host, fastData);
+      saveCachedColumns(device, fastData.columns || []);
+      api('/settings?device=' + encodeURIComponent(device)).then((settings) => {
+        const serverColumns = Array.isArray(settings.columns) ? settings.columns : [];
+        if (!serverColumns.length) return;
+        saveCachedColumns(device, serverColumns);
+      }).catch(() => {});
+    } catch (error) {
+      host.innerHTML = '<p>Không thể tải watchlist</p>';
+    }
   }
 
   function boot() {
     document.querySelectorAll('[data-lcni-watchlist]').forEach((host) => {
-      if (!cfg.isLoggedIn) {
-        host.innerHTML = '<a href="' + (cfg.loginUrl || '#') + '">Đăng nhập để xem watchlist</a>';
-        return;
-      }
-      api('/list')
-        .then((data) => {
-          renderTable(host, data);
-          bindAddButtons(host);
-        })
-        .catch(() => {
-          host.innerHTML = '<p>Không thể tải watchlist</p>';
-        });
+      bootHost(host);
     });
-
-    bindAddButtons(document);
   }
 
   if (document.readyState === 'loading') {

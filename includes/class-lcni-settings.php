@@ -254,6 +254,8 @@ class LCNI_Settings {
                 } elseif ($module === 'watchlist') {
                     $input = [
                         'allowed_columns' => isset($_POST['lcni_frontend_watchlist_allowed_columns']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_allowed_columns']) : [],
+                        'default_columns_desktop' => isset($_POST['lcni_frontend_watchlist_default_columns_desktop']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_default_columns_desktop']) : [],
+                        'default_columns_mobile' => isset($_POST['lcni_frontend_watchlist_default_columns_mobile']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_default_columns_mobile']) : [],
                         'stock_detail_page_id' => isset($_POST['lcni_frontend_stock_detail_page']) ? wp_unslash($_POST['lcni_frontend_stock_detail_page']) : 0,
                         'styles' => [
                             'font' => isset($_POST['lcni_frontend_watchlist_style_font']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_font']) : '',
@@ -1419,12 +1421,28 @@ class LCNI_Settings {
             $allowed_columns = $default_columns;
         }
 
+        $default_columns_desktop = isset($input['default_columns_desktop']) && is_array($input['default_columns_desktop'])
+            ? array_values(array_intersect($allowed_columns, array_map('sanitize_key', $input['default_columns_desktop'])))
+            : [];
+        if (empty($default_columns_desktop)) {
+            $default_columns_desktop = array_slice($allowed_columns, 0, 6);
+        }
+
+        $default_columns_mobile = isset($input['default_columns_mobile']) && is_array($input['default_columns_mobile'])
+            ? array_values(array_intersect($allowed_columns, array_map('sanitize_key', $input['default_columns_mobile'])))
+            : [];
+        if (empty($default_columns_mobile)) {
+            $default_columns_mobile = array_slice($default_columns_desktop, 0, 4);
+        }
+
         $styles = isset($input['styles']) && is_array($input['styles']) ? $input['styles'] : [];
         $button = isset($input['add_button']) && is_array($input['add_button']) ? $input['add_button'] : [];
         $stock_detail_page_id = absint($input['stock_detail_page_id'] ?? get_option('lcni_frontend_stock_detail_page', 0));
 
         return [
             'allowed_columns' => $allowed_columns,
+            'default_columns_desktop' => $default_columns_desktop,
+            'default_columns_mobile' => $default_columns_mobile,
             'stock_detail_page_id' => $stock_detail_page_id,
             'styles' => [
                 'font' => sanitize_text_field($styles['font'] ?? 'inherit'),
@@ -1470,6 +1488,20 @@ class LCNI_Settings {
                         <?php endforeach; ?>
                     </select>
                 </p>
+
+                <h3>Cột mặc định cho user</h3>
+                <p><strong>Desktop</strong></p>
+                <div class="lcni-front-grid">
+                    <?php foreach ((array) ($settings['allowed_columns'] ?? []) as $column) : ?>
+                        <label><input type="checkbox" name="lcni_frontend_watchlist_default_columns_desktop[]" value="<?php echo esc_attr($column); ?>" <?php checked(in_array($column, (array) ($settings['default_columns_desktop'] ?? []), true)); ?>> <?php echo esc_html($column); ?></label>
+                    <?php endforeach; ?>
+                </div>
+                <p><strong>Mobile</strong></p>
+                <div class="lcni-front-grid">
+                    <?php foreach ((array) ($settings['allowed_columns'] ?? []) as $column) : ?>
+                        <label><input type="checkbox" name="lcni_frontend_watchlist_default_columns_mobile[]" value="<?php echo esc_attr($column); ?>" <?php checked(in_array($column, (array) ($settings['default_columns_mobile'] ?? []), true)); ?>> <?php echo esc_html($column); ?></label>
+                    <?php endforeach; ?>
+                </div>
 
                 <h3>Style config</h3>
                 <p><input type="text" name="lcni_frontend_watchlist_style_font" value="<?php echo esc_attr((string) ($settings['styles']['font'] ?? 'inherit')); ?>" placeholder="Font family"></p>
