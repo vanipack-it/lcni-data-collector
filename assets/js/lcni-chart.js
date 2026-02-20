@@ -92,10 +92,19 @@ document.addEventListener("DOMContentLoaded", async () => {
     };
 
     const state = loadLocalSettings(container, allowedPanels, adminConfig.default_mode === "candlestick" ? "candlestick" : "line");
+    let cleanupActiveChart = null;
     await syncServerSettings(container, state, "GET").catch(() => {});
+
+    const destroyActiveChart = () => {
+      if (typeof cleanupActiveChart === "function") {
+        cleanupActiveChart();
+      }
+      cleanupActiveChart = null;
+    };
 
     const fetchAndRender = async (symbol) => {
       if (!apiBase || !symbol) {
+        destroyActiveChart();
         container.textContent = "NO DATA";
         return;
       }
@@ -107,13 +116,16 @@ document.addEventListener("DOMContentLoaded", async () => {
         const payload = await response.json();
         const candles = Array.isArray(payload) ? payload : payload?.candles;
         if (!Array.isArray(candles) || !candles.length) {
+          destroyActiveChart();
           container.textContent = "NO DATA";
           return;
         }
 
+        destroyActiveChart();
         container.innerHTML = "";
         const root = document.createElement("div");
         root.className = "lcni-chart-root";
+        root.style.width = "100%";
 
         const controls = document.createElement("div");
         controls.style.display = "flex";
@@ -171,14 +183,23 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         const mainWrap = document.createElement("div");
         mainWrap.style.height = `${Number(container.dataset.mainHeight || 420)}px`;
+        mainWrap.style.minHeight = "280px";
+        mainWrap.style.width = "100%";
         const volumeWrap = document.createElement("div"); volumeWrap.style.height = "150px";
         const macdWrap = document.createElement("div"); macdWrap.style.height = "170px";
         const rsiWrap = document.createElement("div"); rsiWrap.style.height = "150px";
         const rsWrap = document.createElement("div"); rsWrap.style.height = "170px";
 
-        [volumeWrap, macdWrap, rsiWrap, rsWrap].forEach((item) => { item.style.marginTop = "8px"; });
+        [volumeWrap, macdWrap, rsiWrap, rsWrap].forEach((item) => {
+          item.style.marginTop = "8px";
+          item.style.width = "100%";
+          item.style.minHeight = "120px";
+        });
 
-        const commonOptions = { autoSize: true, layout: { background: { color: "#fff" }, textColor: "#333" }, grid: { vertLines: { color: "#efefef" }, horzLines: { color: "#efefef" } } };
+        const commonOptions = {
+          layout: { background: { color: "#fff" }, textColor: "#333" },
+          grid: { vertLines: { color: "#efefef" }, horzLines: { color: "#efefef" } }
+        };
         const mainChart = LightweightCharts.createChart(mainWrap, commonOptions);
         const volumeChart = LightweightCharts.createChart(volumeWrap, commonOptions);
         const macdChart = LightweightCharts.createChart(macdWrap, commonOptions);
@@ -188,7 +209,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         const candleSeries = mainChart.addCandlestickSeries();
         const lineSeries = mainChart.addLineSeries({ color: "#2563eb", lineWidth: 2 });
         candleSeries.setData(candles);
+        mainChart.timeScale().fitContent();
         lineSeries.setData(candles.map((item) => ({ time: item.time, value: item.close })));
+        mainChart.timeScale().fitContent();
 
         const visibility = {
           volume: state.panels.includes("volume"),
@@ -198,11 +221,44 @@ document.addEventListener("DOMContentLoaded", async () => {
         };
 
         const charts = [mainChart, volumeChart, macdChart, rsiChart, rsChart];
+        const resizeTargets = [
+          { chart: mainChart, wrap: mainWrap },
+          { chart: volumeChart, wrap: volumeWrap },
+          { chart: macdChart, wrap: macdWrap },
+          { chart: rsiChart, wrap: rsiWrap },
+          { chart: rsChart, wrap: rsWrap }
+        ];
         let isSyncingRange = false;
+        let isUserNavigating = false;
+        let userNavigationTimer = null;
+
+        const resizeChartToContainer = ({ chart, wrap }) => {
+          const width = Math.floor(wrap.clientWidth || 0);
+          const height = Math.floor(wrap.clientHeight || 0);
+          if (width > 0 && height > 0) {
+            chart.resize(width, height);
+          }
+        };
+
+        const resizeAllCharts = () => {
+          resizeTargets.forEach(resizeChartToContainer);
+        };
+
+        const setUserNavigating = () => {
+          isUserNavigating = true;
+          window.clearTimeout(userNavigationTimer);
+          userNavigationTimer = window.setTimeout(() => {
+            isUserNavigating = false;
+          }, 150);
+        };
+
+        ["wheel", "mousedown", "touchstart", "pointerdown"].forEach((eventName) => {
+          root.addEventListener(eventName, setUserNavigating, { passive: true });
+        });
 
         charts.forEach((sourceChart) => {
           sourceChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-            if (!range || isSyncingRange) {
+            if (!range || isSyncingRange || !isUserNavigating) {
               return;
             }
 
@@ -266,18 +322,99 @@ document.addEventListener("DOMContentLoaded", async () => {
         root.appendChild(rsWrap);
         container.appendChild(root);
 
-        volumeChart.addHistogramSeries({ priceFormat: { type: "volume" }, priceScaleId: "" }).setData(candles.map((item) => ({ time: item.time, value: Number(item.volume || 0), color: item.close >= item.open ? "#16a34a" : "#dc2626" })));
-        const seriesDataFilter = (key) => candles.filter((item) => Number.isFinite(Number(item[key]))).map((item) => ({ time: item.time, value: Number(item[key]) }));
-        macdChart.addLineSeries({ color: "#1d4ed8", lineWidth: 2 }).setData(seriesDataFilter("macd"));
-        macdChart.addLineSeries({ color: "#f59e0b", lineWidth: 2 }).setData(seriesDataFilter("macd_signal"));
-        rsiChart.addLineSeries({ color: "#7c3aed", lineWidth: 2 }).setData(seriesDataFilter("rsi"));
-        rsChart.addLineSeries({ color: "#0ea5e9", lineWidth: 2 }).setData(seriesDataFilter("rs_1w_by_exchange"));
-        rsChart.addLineSeries({ color: "#f59e0b", lineWidth: 2 }).setData(seriesDataFilter("rs_1m_by_exchange"));
-        rsChart.addLineSeries({ color: "#ef4444", lineWidth: 2 }).setData(seriesDataFilter("rs_3m_by_exchange"));
+        const volumeSeries = volumeChart.addHistogramSeries({ priceFormat: { type: "volume" }, priceScaleId: "" });
+        volumeSeries.setData(candles.map((item) => ({ time: item.time, value: Number(item.volume || 0), color: item.close >= item.open ? "#16a34a" : "#dc2626" })));
+        volumeChart.timeScale().fitContent();
 
+        const seriesDataFilter = (key) => candles.filter((item) => Number.isFinite(Number(item[key]))).map((item) => ({ time: item.time, value: Number(item[key]) }));
+        const macdLineSeries = macdChart.addLineSeries({ color: "#1d4ed8", lineWidth: 2 });
+        macdLineSeries.setData(seriesDataFilter("macd"));
+        const macdSignalSeries = macdChart.addLineSeries({ color: "#f59e0b", lineWidth: 2 });
+        macdSignalSeries.setData(seriesDataFilter("macd_signal"));
+        macdChart.timeScale().fitContent();
+
+        const rsiSeries = rsiChart.addLineSeries({ color: "#7c3aed", lineWidth: 2 });
+        rsiSeries.setData(seriesDataFilter("rsi"));
+        rsiChart.timeScale().fitContent();
+
+        const rsSeries1w = rsChart.addLineSeries({ color: "#0ea5e9", lineWidth: 2 });
+        rsSeries1w.setData(seriesDataFilter("rs_1w_by_exchange"));
+        const rsSeries1m = rsChart.addLineSeries({ color: "#f59e0b", lineWidth: 2 });
+        rsSeries1m.setData(seriesDataFilter("rs_1m_by_exchange"));
+        const rsSeries3m = rsChart.addLineSeries({ color: "#ef4444", lineWidth: 2 });
+        rsSeries3m.setData(seriesDataFilter("rs_3m_by_exchange"));
+        rsChart.timeScale().fitContent();
+
+        mainChart.timeScale().fitContent();
         refreshVisibility();
-        charts.forEach((chart) => chart.timeScale().fitContent());
+
+        let resizeRaf = 0;
+        const scheduleResize = () => {
+          if (resizeRaf) return;
+          resizeRaf = window.requestAnimationFrame(() => {
+            resizeRaf = 0;
+            resizeAllCharts();
+          });
+        };
+
+        const resizeObserver = typeof ResizeObserver !== "undefined"
+          ? new ResizeObserver(() => {
+            scheduleResize();
+          })
+          : null;
+
+        [container, root, mainWrap, volumeWrap, macdWrap, rsiWrap, rsWrap].forEach((node) => {
+          if (resizeObserver && node) {
+            resizeObserver.observe(node);
+          }
+        });
+
+        const handleWindowResize = () => {
+          scheduleResize();
+        };
+        window.addEventListener("resize", handleWindowResize);
+
+        const visibilityObserver = typeof IntersectionObserver !== "undefined"
+          ? new IntersectionObserver((entries) => {
+            entries.forEach((entry) => {
+              if (entry.isIntersecting) {
+                scheduleResize();
+              }
+            });
+          }, { threshold: 0.01 })
+          : null;
+
+        if (visibilityObserver) {
+          visibilityObserver.observe(root);
+        }
+
+        const mutationObserver = typeof MutationObserver !== "undefined"
+          ? new MutationObserver(() => {
+            scheduleResize();
+          })
+          : null;
+
+        if (mutationObserver) {
+          mutationObserver.observe(container, { attributes: true, attributeFilter: ["style", "class", "hidden"] });
+          if (container.parentElement) {
+            mutationObserver.observe(container.parentElement, { attributes: true, attributeFilter: ["style", "class", "hidden"] });
+          }
+        }
+
+        scheduleResize();
+        window.setTimeout(scheduleResize, 0);
+
+        cleanupActiveChart = () => {
+          window.clearTimeout(userNavigationTimer);
+          window.removeEventListener("resize", handleWindowResize);
+          if (resizeObserver) resizeObserver.disconnect();
+          if (visibilityObserver) visibilityObserver.disconnect();
+          if (mutationObserver) mutationObserver.disconnect();
+          if (resizeRaf) window.cancelAnimationFrame(resizeRaf);
+          charts.forEach((chart) => chart.remove());
+        };
       } catch (error) {
+        destroyActiveChart();
         container.textContent = "NO DATA";
       }
     };
