@@ -206,18 +206,20 @@ class LCNI_WatchlistService {
         $configured = isset($settings['column_labels']) && is_array($settings['column_labels']) ? $settings['column_labels'] : [];
         $label_map = [];
 
-        foreach ($configured as $item) {
-            if (!is_array($item)) {
+        foreach ($configured as $key => $item) {
+            if (is_array($item)) {
+                $data_key = sanitize_key($item['data_key'] ?? '');
+                $label = sanitize_text_field((string) ($item['label'] ?? ''));
+            } else {
+                $data_key = sanitize_key($key);
+                $label = sanitize_text_field((string) $item);
+            }
+
+            if ($data_key === '' || $label === '') {
                 continue;
             }
-            $data_key = sanitize_key($item['data_key'] ?? '');
-            if ($data_key === '') {
-                continue;
-            }
-            $label = sanitize_text_field((string) ($item['label'] ?? ''));
-            if ($label !== '') {
-                $label_map[$data_key] = $label;
-            }
+
+            $label_map[$data_key] = $label;
         }
 
         $result = [];

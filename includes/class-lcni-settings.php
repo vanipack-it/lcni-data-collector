@@ -261,14 +261,15 @@ class LCNI_Settings {
                     update_option('lcni_frontend_chart_title', $this->sanitize_module_title(isset($_POST['lcni_frontend_module_title']) ? wp_unslash($_POST['lcni_frontend_module_title']) : '', 'Stock Chart'));
                 } elseif ($module === 'watchlist') {
                     $existing_watchlist = $this->sanitize_watchlist_settings(get_option('lcni_watchlist_settings', []));
+                    $existing_label_pairs = $this->normalize_watchlist_column_label_pairs($existing_watchlist['column_labels'] ?? []);
                     $watchlist_section = isset($_POST['lcni_frontend_watchlist_section']) ? sanitize_key((string) wp_unslash($_POST['lcni_frontend_watchlist_section'])) : '';
                     $input = [
                         'allowed_columns' => $existing_watchlist['allowed_columns'] ?? [],
                         'default_columns_desktop' => $existing_watchlist['default_columns_desktop'] ?? [],
                         'default_columns_mobile' => $existing_watchlist['default_columns_mobile'] ?? [],
                         'stock_detail_page_id' => $existing_watchlist['stock_detail_page_id'] ?? 0,
-                        'column_label_keys' => array_map('sanitize_key', wp_list_pluck((array) ($existing_watchlist['column_labels'] ?? []), 'data_key')),
-                        'column_label_values' => array_map('sanitize_text_field', wp_list_pluck((array) ($existing_watchlist['column_labels'] ?? []), 'label')),
+                        'column_label_keys' => array_map('sanitize_key', wp_list_pluck($existing_label_pairs, 'data_key')),
+                        'column_label_values' => array_map('sanitize_text_field', wp_list_pluck($existing_label_pairs, 'label')),
                         'styles' => $existing_watchlist['styles'] ?? [],
                         'value_color_rule_columns' => array_map('sanitize_key', wp_list_pluck((array) ($existing_watchlist['value_color_rules'] ?? []), 'column')),
                         'value_color_rule_operators' => wp_list_pluck((array) ($existing_watchlist['value_color_rules'] ?? []), 'operator'),
@@ -1519,6 +1520,11 @@ private function sanitize_module_title($value, $fallback) {
         $rule_text_colors = isset($input['value_color_rule_text_colors']) && is_array($input['value_color_rule_text_colors']) ? $input['value_color_rule_text_colors'] : [];
         $column_labels = [];
         $value_color_rules = [];
+        if (empty($label_keys) && empty($label_values) && isset($input['column_labels'])) {
+            $legacy_label_pairs = $this->normalize_watchlist_column_label_pairs($input['column_labels']);
+            $label_keys = wp_list_pluck($legacy_label_pairs, 'data_key');
+            $label_values = wp_list_pluck($legacy_label_pairs, 'label');
+        }
         $label_count = max(count($label_keys), count($label_values));
         $allowed_operators = ['>', '>=', '<', '<=', '=', '!='];
 
@@ -1609,17 +1615,8 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
         $pages = get_pages(['sort_column' => 'post_title', 'sort_order' => 'asc']);
         $configured_labels = [];
 
-        foreach ((array) ($settings['column_labels'] ?? []) as $label_item) {
-            if (!is_array($label_item)) {
-                continue;
-            }
-
-            $configured_key = sanitize_key($label_item['data_key'] ?? '');
-            if ($configured_key === '') {
-                continue;
-            }
-
-            $configured_labels[$configured_key] = sanitize_text_field((string) ($label_item['label'] ?? ''));
+        foreach ($this->normalize_watchlist_column_label_pairs($settings['column_labels'] ?? []) as $label_item) {
+            $configured_labels[$label_item['data_key']] = $label_item['label'];
         }
 
         $watchlist_rules = isset($settings['value_color_rules']) && is_array($settings['value_color_rules']) ? $settings['value_color_rules'] : [];
@@ -1853,6 +1850,34 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
             </script>
         </div>
         <?php
+    }
+
+    private function normalize_watchlist_column_label_pairs($labels) {
+        if (!is_array($labels)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($labels as $key => $item) {
+            if (is_array($item)) {
+                $data_key = sanitize_key($item['data_key'] ?? '');
+                $label = sanitize_text_field((string) ($item['label'] ?? ''));
+            } else {
+                $data_key = sanitize_key($key);
+                $label = sanitize_text_field((string) $item);
+            }
+
+            if ($data_key === '' || $label === '') {
+                continue;
+            }
+
+            $normalized[] = [
+                'data_key' => $data_key,
+                'label' => $label,
+            ];
+        }
+
+        return $normalized;
     }
 
 
