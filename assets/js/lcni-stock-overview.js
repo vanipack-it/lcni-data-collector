@@ -212,7 +212,7 @@ document.addEventListener("DOMContentLoaded", () => {
         header.style.justifyContent = "space-between";
 
         const title = document.createElement("strong");
-        title.textContent = `${payload.symbol}`;
+        title.textContent = adminConfig?.title || "Stock Overview";
 
         const settingBtn = document.createElement("button");
         settingBtn.type = "button";

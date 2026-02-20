@@ -38,6 +38,10 @@ class LCNI_Settings {
         register_setting('lcni_settings_group', 'lcni_frontend_settings_overview', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_frontend_module_settings'], 'default' => []]);
         register_setting('lcni_settings_group', 'lcni_frontend_settings_chart', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_frontend_chart_settings'], 'default' => []]);
         register_setting('lcni_settings_group', 'lcni_frontend_stock_detail_page', ['type' => 'integer', 'sanitize_callback' => 'absint', 'default' => 0]);
+        register_setting('lcni_settings_group', 'lcni_watchlist_stock_page', ['type' => 'string', 'sanitize_callback' => 'sanitize_title', 'default' => '']);
+        register_setting('lcni_settings_group', 'lcni_frontend_overview_title', ['type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'default' => 'Stock Overview']);
+        register_setting('lcni_settings_group', 'lcni_frontend_chart_title', ['type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'default' => 'Stock Chart']);
+        register_setting('lcni_settings_group', 'lcni_frontend_signal_title', ['type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'default' => 'LCNi Signals']);
     }
 
     public function sanitize_timeframe($value) {
@@ -251,6 +255,7 @@ class LCNI_Settings {
                         'compact_mode' => isset($_POST['lcni_frontend_compact_mode']) ? wp_unslash($_POST['lcni_frontend_compact_mode']) : '',
                     ];
                     update_option('lcni_frontend_settings_chart', $this->sanitize_frontend_chart_settings($input));
+                    update_option('lcni_frontend_chart_title', $this->sanitize_module_title(isset($_POST['lcni_frontend_module_title']) ? wp_unslash($_POST['lcni_frontend_module_title']) : '', 'Stock Chart'));
                 } elseif ($module === 'watchlist') {
                     $input = [
                         'allowed_columns' => isset($_POST['lcni_frontend_watchlist_allowed_columns']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_allowed_columns']) : [],
@@ -274,6 +279,7 @@ class LCNI_Settings {
                     $watchlist_settings = $this->sanitize_watchlist_settings($input);
                     update_option('lcni_watchlist_settings', $watchlist_settings);
                     update_option('lcni_frontend_stock_detail_page', (int) $watchlist_settings['stock_detail_page_id']);
+                    update_option('lcni_watchlist_stock_page', sanitize_title((string) ($watchlist_settings['stock_detail_page_slug'] ?? '')));
                 } else {
                     $rule_fields = isset($_POST['lcni_frontend_rule_field']) ? (array) wp_unslash($_POST['lcni_frontend_rule_field']) : [];
                     $rule_operators = isset($_POST['lcni_frontend_rule_operator']) ? (array) wp_unslash($_POST['lcni_frontend_rule_operator']) : [];
@@ -307,6 +313,9 @@ class LCNI_Settings {
                     ];
 
                     update_option('lcni_frontend_settings_' . $module, $this->sanitize_frontend_module_settings($input));
+                    $title_option = $module === 'signals' ? 'lcni_frontend_signal_title' : 'lcni_frontend_overview_title';
+                    $title_fallback = $module === 'signals' ? 'LCNi Signals' : 'Stock Overview';
+                    update_option($title_option, $this->sanitize_module_title(isset($_POST['lcni_frontend_module_title']) ? wp_unslash($_POST['lcni_frontend_module_title']) : '', $title_fallback));
                 }
                 $this->set_notice('success', 'Đã lưu Frontend Settings cho module ' . $module . '.');
             }
@@ -1276,6 +1285,12 @@ class LCNI_Settings {
         ];
     }
 
+    private function sanitize_module_title($value, $fallback) {
+        $title = sanitize_text_field((string) $value);
+
+        return $title !== '' ? $title : $fallback;
+    }
+
     private function sanitize_frontend_font_size($size, $fallback) {
         $value = (int) $size;
 
@@ -1438,12 +1453,20 @@ class LCNI_Settings {
         $styles = isset($input['styles']) && is_array($input['styles']) ? $input['styles'] : [];
         $button = isset($input['add_button']) && is_array($input['add_button']) ? $input['add_button'] : [];
         $stock_detail_page_id = absint($input['stock_detail_page_id'] ?? get_option('lcni_frontend_stock_detail_page', 0));
+        $stock_detail_page_slug = '';
+        if ($stock_detail_page_id > 0) {
+            $selected_page = get_post($stock_detail_page_id);
+            if ($selected_page instanceof WP_Post && $selected_page->post_type === 'page') {
+                $stock_detail_page_slug = sanitize_title((string) $selected_page->post_name);
+            }
+        }
 
         return [
             'allowed_columns' => $allowed_columns,
             'default_columns_desktop' => $default_columns_desktop,
             'default_columns_mobile' => $default_columns_mobile,
             'stock_detail_page_id' => $stock_detail_page_id,
+            'stock_detail_page_slug' => $stock_detail_page_slug,
             'styles' => [
                 'font' => sanitize_text_field($styles['font'] ?? 'inherit'),
                 'text_color' => sanitize_hex_color($styles['text_color'] ?? '#111827') ?: '#111827',
@@ -1533,6 +1556,7 @@ class LCNI_Settings {
                 <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
                 <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
                 <h3><?php echo esc_html($module === 'signals' ? 'LCNi Signals' : 'Stock Overview'); ?></h3>
+                <p><label>Tên module <input type="text" name="lcni_frontend_module_title" value="<?php echo esc_attr((string) get_option($module === 'signals' ? 'lcni_frontend_signal_title' : 'lcni_frontend_overview_title', $module === 'signals' ? 'LCNi Signals' : 'Stock Overview')); ?>" class="regular-text"></label></p>
                 <p>Chọn chỉ báo được phép hiển thị để user frontend tùy chọn yêu thích.</p>
                 <div class="lcni-front-grid">
                     <?php foreach ($labels as $key => $label) : ?>
@@ -1622,6 +1646,7 @@ class LCNI_Settings {
                 <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
                 <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
                 <h3>Stock Chart</h3>
+                <p><label>Tên module <input type="text" name="lcni_frontend_module_title" value="<?php echo esc_attr((string) get_option('lcni_frontend_chart_title', 'Stock Chart')); ?>" class="regular-text"></label></p>
                 <p>Chọn panel cho phép user bật/tắt, kiểu chart mặc định và chế độ hiển thị gọn.</p>
                 <div class="lcni-front-grid">
                     <?php foreach ($panel_labels as $key => $label) : ?>

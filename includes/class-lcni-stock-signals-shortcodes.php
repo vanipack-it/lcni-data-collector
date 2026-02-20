@@ -176,6 +176,7 @@ class LCNI_Stock_Signals_Shortcodes {
 
         return [
             'allowed_fields' => $allowed_fields,
+            'title' => sanitize_text_field((string) get_option('lcni_frontend_signal_title', 'LCNi Signals')),
             'styles' => [
                 'label_color' => $this->sanitize_hex_color($styles['label_color'] ?? $default['styles']['label_color'], $default['styles']['label_color']),
                 'value_color' => $this->sanitize_hex_color($styles['value_color'] ?? $default['styles']['value_color'], $default['styles']['value_color']),

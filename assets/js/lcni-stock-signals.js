@@ -224,7 +224,7 @@ document.addEventListener("DOMContentLoaded", () => {
         header.style.gap = "8px";
 
         const title = document.createElement("strong");
-        title.textContent = `${payload.symbol} · LCNi Signals`;
+        title.textContent = adminConfig?.title || "LCNi Signals";
 
         const settingBtn = document.createElement("button");
         settingBtn.type = "button";

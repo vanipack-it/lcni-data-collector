@@ -191,6 +191,7 @@ class LCNI_Stock_Overview_Shortcodes {
 
         return [
             'allowed_fields' => $allowed_fields,
+            'title' => sanitize_text_field((string) get_option('lcni_frontend_overview_title', 'Stock Overview')),
             'styles' => [
                 'label_color' => $this->sanitize_hex_color($styles['label_color'] ?? $this->default_styles['label_color'], $this->default_styles['label_color']),
                 'value_color' => $this->sanitize_hex_color($styles['value_color'] ?? $this->default_styles['value_color'], $this->default_styles['value_color']),

@@ -86,13 +86,22 @@ class LCNI_WatchlistShortcode {
         wp_enqueue_script('lcni-watchlist');
         wp_enqueue_style('lcni-watchlist');
 
+        $settings = $this->get_settings();
+        $stock_page_slug = sanitize_title((string) get_option('lcni_watchlist_stock_page', (string) ($settings['stock_detail_page_slug'] ?? '')));
+        if ($stock_page_slug === '') {
+            $stock_page_id = absint(get_option('lcni_frontend_stock_detail_page', 0));
+            if ($stock_page_id > 0) {
+                $stock_page_slug = sanitize_title((string) get_post_field('post_name', $stock_page_id));
+            }
+        }
+
         wp_localize_script('lcni-watchlist', 'lcniWatchlistConfig', [
             'restBase' => esc_url_raw(rest_url('lcni/v1/watchlist')),
-            'settingsOption' => $this->get_settings(),
+            'settingsOption' => $settings,
             'nonce' => wp_create_nonce('wp_rest'),
             'isLoggedIn' => is_user_logged_in(),
             'loginUrl' => esc_url_raw(wp_login_url(get_permalink() ?: home_url('/'))),
-            'stockDetailBase' => esc_url_raw(home_url('/stock/')),
+            'stockDetailPageSlug' => $stock_page_slug,
             'settingsStorageKey' => 'lcni_watchlist_settings_v1',
             'defaultColumnsDesktop' => $this->service->get_default_columns('desktop'),
             'defaultColumnsMobile' => $this->service->get_default_columns('mobile'),
@@ -105,6 +114,7 @@ class LCNI_WatchlistShortcode {
             'allowed_columns' => $this->service->get_default_columns('desktop'),
             'default_columns_desktop' => $this->service->get_default_columns('desktop'),
             'default_columns_mobile' => $this->service->get_default_columns('mobile'),
+            'stock_detail_page_slug' => sanitize_title((string) get_option('lcni_watchlist_stock_page', '')),
             'styles' => [
                 'font' => 'inherit',
                 'text_color' => '#111827',
