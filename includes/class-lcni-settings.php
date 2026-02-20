@@ -42,6 +42,8 @@ class LCNI_Settings {
         register_setting('lcni_settings_group', 'lcni_frontend_overview_title', ['type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'default' => 'Stock Overview']);
         register_setting('lcni_settings_group', 'lcni_frontend_chart_title', ['type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'default' => 'Stock Chart']);
         register_setting('lcni_settings_group', 'lcni_frontend_signal_title', ['type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'default' => 'LCNi Signals']);
+        register_setting('lcni_settings_group', 'lcni_filter_allowed_columns', ['type' => 'array', 'sanitize_callback' => ['LCNI_Filter_Admin_Settings', 'sanitize_allowed_columns'], 'default' => []]);
+        register_setting('lcni_settings_group', 'lcni_filter_default_conditions', ['type' => 'array', 'default' => []]);
     }
 
     public function sanitize_timeframe($value) {
@@ -243,7 +245,7 @@ class LCNI_Settings {
             }
         } elseif ($action === 'save_frontend_settings') {
             $module = isset($_POST['lcni_frontend_module']) ? sanitize_key(wp_unslash($_POST['lcni_frontend_module'])) : '';
-            $allowed_modules = ['signals', 'overview', 'chart', 'watchlist'];
+            $allowed_modules = ['signals', 'overview', 'chart', 'watchlist', 'filter'];
 
             if (!in_array($module, $allowed_modules, true)) {
                 $this->set_notice('error', 'Module frontend không hợp lệ.');
@@ -325,6 +327,12 @@ class LCNI_Settings {
                     update_option('lcni_watchlist_settings', $watchlist_settings);
                     update_option('lcni_frontend_stock_detail_page', (int) $watchlist_settings['stock_detail_page_id']);
                     update_option('lcni_watchlist_stock_page', sanitize_title((string) ($watchlist_settings['stock_detail_page_slug'] ?? '')));
+                } elseif ($module === 'filter') {
+                    $allowed_columns = LCNI_Filter_Admin_Settings::sanitize_allowed_columns(isset($_POST['lcni_filter_allowed_columns']) ? (array) wp_unslash($_POST['lcni_filter_allowed_columns']) : []);
+                    $default_conditions_raw = isset($_POST['lcni_filter_default_conditions']) ? wp_unslash($_POST['lcni_filter_default_conditions']) : '[]';
+                    $default_conditions = LCNI_Filter_Admin_Settings::sanitize_default_conditions($default_conditions_raw, $allowed_columns);
+                    update_option('lcni_filter_allowed_columns', $allowed_columns);
+                    update_option('lcni_filter_default_conditions', $default_conditions);
                 } else {
                     $rule_fields = isset($_POST['lcni_frontend_rule_field']) ? (array) wp_unslash($_POST['lcni_frontend_rule_field']) : [];
                     $rule_operators = isset($_POST['lcni_frontend_rule_operator']) ? (array) wp_unslash($_POST['lcni_frontend_rule_operator']) : [];
@@ -1454,11 +1462,13 @@ private function sanitize_module_title($value, $fallback) {
             <button type="button" data-sub-tab="lcni-tab-frontend-overview">Stock Overview</button>
             <button type="button" data-sub-tab="lcni-tab-frontend-chart">Stock Chart</button>
             <button type="button" data-sub-tab="lcni-tab-frontend-watchlist">Watchlist</button>
+            <button type="button" data-sub-tab="lcni-tab-frontend-filter">Filter</button>
         </div>
         <?php $this->render_frontend_module_form('signals', 'lcni-tab-frontend-signals', $signals_labels, $signals); ?>
         <?php $this->render_frontend_module_form('overview', 'lcni-tab-frontend-overview', $overview_labels, $overview); ?>
         <?php $this->render_frontend_chart_form('chart', 'lcni-tab-frontend-chart', $chart); ?>
         <?php $this->render_frontend_watchlist_form('watchlist', 'lcni-tab-frontend-watchlist', $watchlist); ?>
+        <?php LCNI_Filter_Admin_Settings::render_filter_form('lcni-tab-frontend-filter'); ?>
         <script>
             (function() {
                 const nav = document.getElementById('lcni-front-sub-tabs');

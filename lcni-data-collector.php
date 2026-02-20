@@ -42,6 +42,11 @@ require_once LCNI_PATH . 'modules/watchlist/WatchlistService.php';
 require_once LCNI_PATH . 'modules/watchlist/WatchlistController.php';
 require_once LCNI_PATH . 'modules/watchlist/WatchlistShortcode.php';
 require_once LCNI_PATH . 'modules/watchlist/class-lcni-watchlist-module.php';
+require_once LCNI_PATH . 'modules/filter/FilterTable.php';
+require_once LCNI_PATH . 'modules/filter/FilterController.php';
+require_once LCNI_PATH . 'modules/filter/FilterShortcode.php';
+require_once LCNI_PATH . 'modules/filter/filter-admin-settings.php';
+require_once LCNI_PATH . 'modules/filter/class-lcni-filter-module.php';
 
 function lcni_register_custom_cron_schedules($schedules) {
     if (!isset($schedules['lcni_every_minute'])) {
@@ -150,6 +155,7 @@ new LCNI_Stock_Overview_Shortcodes();
 new LCNI_Stock_Signals_Shortcodes();
 new LCNI_Stock_Detail_Router();
 new LCNI_Watchlist_Module();
+new LCNI_Filter_Module();
 LCNI_Update_Manager::init();
 LCNI_OHLC_Latest_Manager::init();
 new LCNI_Rest_API();

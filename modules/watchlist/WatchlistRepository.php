@@ -69,6 +69,45 @@ class LCNI_WatchlistRepository {
         return array_keys($this->get_column_map());
     }
 
+    public function get_all($columns, $limit = 50, $offset = 0, $filters = []) {
+        $select_columns = $this->build_select_columns($columns);
+        $limit = max(1, (int) $limit);
+        $offset = max(0, (int) $offset);
+        $params = [];
+        $where_sql = $this->build_filter_where_clause($filters, $params);
+
+        $query = "SELECT {$select_columns}
+            FROM {$this->ohlc_latest_table} o
+            LEFT JOIN {$this->tongquan_table} t ON t.symbol = o.symbol
+            LEFT JOIN {$this->market_table} m ON m.symbol = o.symbol
+            {$where_sql}
+            ORDER BY o.symbol ASC
+            LIMIT %d OFFSET %d";
+
+        $params[] = $limit;
+        $params[] = $offset;
+
+        $prepared = $this->wpdb->prepare($query, $params);
+        $rows = $this->wpdb->get_results($prepared, ARRAY_A);
+
+        return is_array($rows) ? $rows : [];
+    }
+
+    public function count_all($filters = []) {
+        $params = [];
+        $where_sql = $this->build_filter_where_clause($filters, $params);
+        $query = "SELECT COUNT(*)
+            FROM {$this->ohlc_latest_table} o
+            LEFT JOIN {$this->tongquan_table} t ON t.symbol = o.symbol
+            LEFT JOIN {$this->market_table} m ON m.symbol = o.symbol
+            {$where_sql}";
+
+        $prepared = empty($params) ? $query : $this->wpdb->prepare($query, $params);
+        $count = $this->wpdb->get_var($prepared);
+
+        return max(0, (int) $count);
+    }
+
     private function get_column_map() {
         if (is_array($this->column_map_cache)) {
             return $this->column_map_cache;
@@ -121,5 +160,56 @@ class LCNI_WatchlistRepository {
         }
 
         return implode(', ', $selected);
+    }
+
+    private function build_filter_where_clause($filters, &$params) {
+        $map = $this->get_column_map();
+        $clauses = [];
+        $allowed_operators = ['=', '>', '<', '>=', '<=', 'between', 'contains'];
+
+        foreach ((array) $filters as $filter) {
+            if (!is_array($filter)) {
+                continue;
+            }
+
+            $column = sanitize_key($filter['column'] ?? '');
+            $operator = sanitize_text_field((string) ($filter['operator'] ?? ''));
+            $value = $filter['value'] ?? '';
+
+            if (!isset($map[$column]) || !in_array($operator, $allowed_operators, true)) {
+                continue;
+            }
+
+            $field = $map[$column];
+            if ($operator === 'between') {
+                $range = is_array($value) ? array_values($value) : [];
+                if (count($range) < 2) {
+                    continue;
+                }
+                $clauses[] = "{$field} BETWEEN %s AND %s";
+                $params[] = sanitize_text_field((string) $range[0]);
+                $params[] = sanitize_text_field((string) $range[1]);
+            } elseif ($operator === 'contains') {
+                $needle = sanitize_text_field((string) $value);
+                if ($needle === '') {
+                    continue;
+                }
+                $clauses[] = "{$field} LIKE %s";
+                $params[] = '%' . $this->wpdb->esc_like($needle) . '%';
+            } else {
+                $compare = sanitize_text_field((string) $value);
+                if ($compare === '') {
+                    continue;
+                }
+                $clauses[] = "{$field} {$operator} %s";
+                $params[] = $compare;
+            }
+        }
+
+        if (empty($clauses)) {
+            return '';
+        }
+
+        return 'WHERE ' . implode(' AND ', $clauses);
     }
 }
