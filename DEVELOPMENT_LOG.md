@@ -100,3 +100,6 @@
 - Mở rộng Frontend Settings → Stock Chart thêm tùy chọn admin `chart_sync_enabled` (bật/tắt đồng bộ zoom/scroll giữa các panel).
 - Nâng cấp Frontend Settings → Watchlist: thêm nút “Thêm rule” cho phần màu theo điều kiện (mặc định hiển thị 5 dòng), thêm cấu hình kích thước nút `[lcni_watchlist_add_button]` và thêm cấu hình style/icon cho nút submit của `[lcni_watchlist_add_form]`.
 - Cập nhật shortcode Watchlist + assets để áp dụng style admin cho nút add/add-form, thêm hiệu ứng AJAX spinner → check-circle khi add thành công từ form, và chỉnh kích thước nút add để đồng nhất hiển thị.
+- Tạo module mới **LCNI Filter** (`modules/filter`) với shortcode `[lcni_stock_filter]`, data mode `all_symbols`, panel điều kiện lọc realtime (debounce + AJAX), pagination, cập nhật riêng `tbody` không reload trang và tích hợp nút `lcni_watchlist_add_button` trên từng dòng.
+- Mở rộng REST data provider để hỗ trợ truy vấn toàn bộ symbol + filter động từ frontend qua endpoint `POST /wp-json/lcni/v1/filter/list`.
+- Tái sử dụng kiến trúc bảng Watchlist (column config, column labels, style config, conditional color rules) cho Filter; thêm cài đặt admin Frontend Settings → Filter với options `lcni_filter_allowed_columns` và `lcni_filter_default_conditions`.
