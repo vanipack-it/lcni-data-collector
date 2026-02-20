@@ -2,6 +2,11 @@
 
 
 ## 2026-02-20
+- Watchlist: bổ sung cấu hình cột mặc định tách riêng desktop/mobile trong Admin Frontend Setting; user setting lưu JSON trong `user_meta`, có cache `localStorage` + sync AJAX để render nhanh không reload.
+- Watchlist mobile UX: bật scroll ngang mượt, sticky cột `symbol`, giữ layout ổn định trên màn hình nhỏ, panel setting mặc định ẩn và chỉ mở khi click nút ⚙ (event delegation).
+- Stock detail router: tăng độ ổn định rewrite `stock/([^/]+)`, set đồng thời query vars `symbol` + `lcni_stock_symbol`, chuẩn hóa flags query để tránh trạng thái 404/empty content và ưu tiên load đúng page template admin đã chọn.
+- Stock chart: chuyển options vào panel setting ẩn mặc định, lưu cấu hình per-user (`user_meta`) + cache localStorage, đồng bộ qua REST AJAX có verify nonce.
+
 - Refactor Watchlist frontend: panel chọn cột dạng dropdown chỉ mở khi click icon setting, lưu cấu hình cột theo `user_meta` và giữ nguyên sau reload.
 - Nâng cấp UI bảng Watchlist: thêm hover row, con trỏ pointer và click row để điều hướng sang URL động `/stock/{symbol}`.
 - Mở rộng nguồn cột Watchlist cho admin từ toàn bộ cột khả dụng trong `wp_lcni_ohlc_latest`, `wp_lcni_symbol_tongquan`, `wp_lcni_sym_icb_market`; user chỉ chọn trong danh sách admin cho phép.

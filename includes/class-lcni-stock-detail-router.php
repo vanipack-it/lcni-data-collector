@@ -15,7 +15,7 @@ class LCNI_Stock_Detail_Router {
     }
 
     public function register_rewrite_rule() {
-        add_rewrite_rule('^stock/([^/]+)/?$', 'index.php?' . self::STOCK_QUERY_VAR . '=$matches[1]', 'top');
+        add_rewrite_rule('^stock/([^/]+)/?$', 'index.php?symbol=$matches[1]&' . self::STOCK_QUERY_VAR . '=$matches[1]', 'top');
     }
 
     public function register_query_vars($vars) {
@@ -43,8 +43,13 @@ class LCNI_Stock_Detail_Router {
 
         global $wp_query, $post;
 
+        status_header(200);
         $wp_query->is_404 = false;
+        $wp_query->is_home = false;
+        $wp_query->is_archive = false;
+        $wp_query->is_search = false;
         $wp_query->is_page = true;
+        $wp_query->is_single = false;
         $wp_query->is_singular = true;
         $wp_query->queried_object = $page;
         $wp_query->queried_object_id = $page->ID;
@@ -64,7 +69,17 @@ class LCNI_Stock_Detail_Router {
 
         add_filter('the_content', [$this, 'inject_symbol_to_shortcodes'], 20);
 
-        return get_page_template();
+        $template_slug = get_page_template_slug($page->ID);
+        if (is_string($template_slug) && $template_slug !== '') {
+            $located = locate_template($template_slug);
+            if (is_string($located) && $located !== '') {
+                return $located;
+            }
+        }
+
+        $fallback_template = get_page_template();
+
+        return is_string($fallback_template) && $fallback_template !== '' ? $fallback_template : $template;
     }
 
     public function inject_symbol_to_shortcodes($content) {

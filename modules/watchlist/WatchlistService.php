@@ -41,11 +41,11 @@ class LCNI_WatchlistService {
         return ['symbol' => $symbol, 'success' => true];
     }
 
-    public function get_watchlist($user_id, $columns) {
+    public function get_watchlist($user_id, $columns, $device = 'desktop') {
         $allowed_columns = $this->get_allowed_columns();
         $effective_columns = array_values(array_intersect($allowed_columns, $columns));
         if (empty($effective_columns)) {
-            $effective_columns = $this->get_default_columns();
+            $effective_columns = $this->get_default_columns($device);
         }
 
         $cache_key = 'watchlist:' . $user_id . ':' . $this->get_cache_version($user_id) . ':' . md5(wp_json_encode($effective_columns));
@@ -66,17 +66,24 @@ class LCNI_WatchlistService {
         ];
     }
 
-    public function get_user_columns($user_id) {
+    public function get_user_columns($user_id, $device = 'desktop') {
         $allowed_columns = $this->get_allowed_columns();
         $saved = get_user_meta($user_id, self::USER_SETTINGS_META_KEY, true);
 
+        if (is_string($saved) && $saved !== '') {
+            $decoded = json_decode($saved, true);
+            if (is_array($decoded)) {
+                $saved = isset($decoded['columns']) && is_array($decoded['columns']) ? $decoded['columns'] : $decoded;
+            }
+        }
+
         if (!is_array($saved) || empty($saved)) {
-            return $this->get_default_columns();
+            return $this->get_default_columns($device);
         }
 
         $columns = array_values(array_intersect($allowed_columns, array_map('sanitize_key', $saved)));
 
-        return !empty($columns) ? $columns : $this->get_default_columns();
+        return !empty($columns) ? $columns : $this->get_default_columns($device);
     }
 
     public function save_user_columns($user_id, $columns) {
@@ -87,7 +94,10 @@ class LCNI_WatchlistService {
             $normalized = $this->get_default_columns();
         }
 
-        update_user_meta($user_id, self::USER_SETTINGS_META_KEY, $normalized);
+        update_user_meta($user_id, self::USER_SETTINGS_META_KEY, wp_json_encode([
+            'columns' => $normalized,
+            'updated_at' => current_time('mysql'),
+        ]));
         $this->clear_user_cache($user_id);
 
         return $normalized;
@@ -108,7 +118,18 @@ class LCNI_WatchlistService {
         return $this->repository->get_available_columns();
     }
 
-    public function get_default_columns() {
+    public function get_default_columns($device = 'desktop') {
+        $settings = get_option('lcni_watchlist_settings', []);
+        $allowed_columns = $this->get_allowed_columns();
+        $key = $device === 'mobile' ? 'default_columns_mobile' : 'default_columns_desktop';
+        $configured = isset($settings[$key]) && is_array($settings[$key])
+            ? array_values(array_intersect($allowed_columns, array_map('sanitize_key', $settings[$key])))
+            : [];
+
+        if (!empty($configured)) {
+            return $configured;
+        }
+
         $all_columns = $this->get_all_columns();
         $defaults = array_values(array_intersect($all_columns, $this->preferred_default_columns));
 
@@ -116,7 +137,13 @@ class LCNI_WatchlistService {
             return $defaults;
         }
 
-        return array_slice($all_columns, 0, 6);
+        $fallback = array_slice($all_columns, 0, 6);
+
+        if ($device === 'mobile') {
+            return array_slice($fallback, 0, 4);
+        }
+
+        return $fallback;
     }
 
     private function sanitize_symbol($symbol) {

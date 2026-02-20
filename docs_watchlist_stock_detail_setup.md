@@ -40,3 +40,18 @@ Plugin đã tự đăng ký:
 ## 6) Lưu ý vận hành
 - Sau khi deploy bản mới, vào **Settings → Permalinks** và bấm **Save** nếu server cache rewrite cũ.
 - Khi plugin activate/deactivate, rewrite rules cũng được flush tự động.
+
+## 7) Watchlist mobile + cài đặt theo thiết bị
+1. Trong **Frontend Setting → Watchlist**, admin chọn:
+   - `allowed_columns` (cột được phép hiển thị)
+   - `default_columns_desktop`
+   - `default_columns_mobile`
+2. Frontend tự nhận diện mobile/desktop và nạp bộ cột mặc định tương ứng ngay khi render.
+3. User đổi cột bằng panel ⚙ (mặc định ẩn), bấm **Lưu** để ghi `user_meta` dạng JSON.
+4. UI cache cục bộ qua `localStorage` để lần tải sau hiển thị ngay, sau đó đồng bộ lại với `user_meta` qua AJAX REST.
+
+## 8) Stock Chart user setting
+1. Module chart có panel ⚙ ở góc phải, mặc định ẩn.
+2. User chọn kiểu chart + panel indicator (Volume/MACD/RSI/RS), bấm **Lưu**.
+3. Cấu hình được lưu theo user (`user_meta`) + cache localStorage, reload vẫn giữ nguyên.
+4. REST setting endpoint bắt buộc `X-WP-Nonce` hợp lệ.

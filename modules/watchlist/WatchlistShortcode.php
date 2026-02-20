@@ -93,13 +93,18 @@ class LCNI_WatchlistShortcode {
             'isLoggedIn' => is_user_logged_in(),
             'loginUrl' => esc_url_raw(wp_login_url(get_permalink() ?: home_url('/'))),
             'stockDetailBase' => esc_url_raw(home_url('/stock/')),
+            'settingsStorageKey' => 'lcni_watchlist_settings_v1',
+            'defaultColumnsDesktop' => $this->service->get_default_columns('desktop'),
+            'defaultColumnsMobile' => $this->service->get_default_columns('mobile'),
         ]);
     }
 
     private function get_settings() {
         $saved = get_option(self::OPTION_KEY, []);
         $defaults = [
-            'allowed_columns' => $this->service->get_default_columns(),
+            'allowed_columns' => $this->service->get_default_columns('desktop'),
+            'default_columns_desktop' => $this->service->get_default_columns('desktop'),
+            'default_columns_mobile' => $this->service->get_default_columns('mobile'),
             'styles' => [
                 'font' => 'inherit',
                 'text_color' => '#111827',
