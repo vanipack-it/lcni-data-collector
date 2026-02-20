@@ -95,7 +95,7 @@ class LCNI_Stock_Overview_Shortcodes {
             'version' => self::VERSION,
         ], $atts, 'lcni_stock_overview');
 
-        $symbol = $this->sanitize_symbol($atts['symbol']);
+        $symbol = $this->resolve_symbol($atts['symbol']);
         if ($symbol === '') {
             return '';
         }
@@ -246,6 +246,20 @@ class LCNI_Stock_Overview_Shortcodes {
         return array_slice($normalized, 0, 50);
     }
 
+
+    private function resolve_symbol($symbol) {
+        $normalized = $this->sanitize_symbol($symbol);
+        if ($normalized !== '') {
+            return $normalized;
+        }
+
+        $query_symbol = get_query_var('symbol');
+        if (!is_string($query_symbol) || $query_symbol === '') {
+            $query_symbol = get_query_var('lcni_stock_symbol');
+        }
+
+        return $this->sanitize_symbol((string) $query_symbol);
+    }
     private function sanitize_hex_color($color, $fallback) {
         $sanitized = sanitize_hex_color((string) $color);
 

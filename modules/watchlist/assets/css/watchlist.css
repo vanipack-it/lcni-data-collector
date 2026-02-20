@@ -1,15 +1,17 @@
 .lcni-watchlist-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.lcni-watchlist-settings-btn { border: none; background: transparent; cursor: pointer; }
-.lcni-watchlist-controls { margin-bottom: 8px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.lcni-watchlist-dropdown { position: relative; }
+.lcni-watchlist-settings-btn { border: none; background: transparent; cursor: pointer; font-size: 18px; line-height: 1; }
+.lcni-watchlist-controls { position: absolute; top: 28px; right: 0; z-index: 30; min-width: 420px; max-width: min(90vw, 680px); background: #fff; border: 1px solid #d1d5db; border-radius: 8px; box-shadow: 0 10px 25px rgba(17, 24, 39, 0.12); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.lcni-watchlist-col-grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); max-height: 260px; overflow: auto; }
+.lcni-watchlist-col-item { font-size: 13px; display: flex; align-items: center; gap: 6px; }
 .lcni-watchlist-table-wrap { position: relative; }
 .lcni-watchlist-table { width: 100%; border-collapse: collapse; }
 .lcni-watchlist-table th, .lcni-watchlist-table td { border: 1px solid #e5e7eb; padding: 8px; }
-.lcni-watchlist-table tbody tr { cursor: pointer; }
+.lcni-watchlist-table tbody tr { cursor: pointer; transition: background-color .18s ease; }
+.lcni-watchlist-table tbody tr:hover { background: #f8fafc; }
 .lcni-watchlist-symbol { margin-right: 6px; font-weight: 600; }
 .lcni-watchlist-overlay { position: absolute; inset: 0; background: rgba(255,255,255,.65); display: flex; align-items: center; justify-content: center; z-index: 20; pointer-events: auto; }
-.lcni-watchlist-popup[hidden], .lcni-watchlist-overlay[hidden] { display: none; pointer-events: none; }
-.lcni-watchlist-popup { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 99999; }
-.lcni-watchlist-popup-content { background: #fff; width: min(90vw, 800px); max-height: 80vh; overflow: auto; border-radius: 8px; padding: 16px; }
+.lcni-watchlist-overlay[hidden] { display: none; pointer-events: none; }
 .lcni-watchlist-toast { position: fixed; right: 16px; bottom: 16px; background: #111827; color: #fff; padding: 10px 14px; border-radius: 6px; z-index: 999999; }
 .lcni-watchlist-add { border: 0; border-radius: 999px; width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; transition: transform .2s ease, opacity .2s ease; }
 .lcni-watchlist-add.is-loading { opacity: 0.7; }

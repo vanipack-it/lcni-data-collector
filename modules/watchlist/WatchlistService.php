@@ -11,7 +11,7 @@ class LCNI_WatchlistService {
     const CACHE_TTL = 120;
 
     private $repository;
-    private $default_columns = ['symbol', 'close_price', 'pct_t_1', 'volume', 'exchange'];
+    private $preferred_default_columns = ['symbol', 'close_price', 'pct_t_1', 'volume', 'value_traded', 'exchange'];
 
     public function __construct(LCNI_WatchlistRepository $repository) {
         $this->repository = $repository;
@@ -45,7 +45,7 @@ class LCNI_WatchlistService {
         $allowed_columns = $this->get_allowed_columns();
         $effective_columns = array_values(array_intersect($allowed_columns, $columns));
         if (empty($effective_columns)) {
-            $effective_columns = $this->default_columns;
+            $effective_columns = $this->get_default_columns();
         }
 
         $cache_key = 'watchlist:' . $user_id . ':' . $this->get_cache_version($user_id) . ':' . md5(wp_json_encode($effective_columns));
@@ -71,12 +71,12 @@ class LCNI_WatchlistService {
         $saved = get_user_meta($user_id, self::USER_SETTINGS_META_KEY, true);
 
         if (!is_array($saved) || empty($saved)) {
-            return $this->default_columns;
+            return $this->get_default_columns();
         }
 
         $columns = array_values(array_intersect($allowed_columns, array_map('sanitize_key', $saved)));
 
-        return !empty($columns) ? $columns : $this->default_columns;
+        return !empty($columns) ? $columns : $this->get_default_columns();
     }
 
     public function save_user_columns($user_id, $columns) {
@@ -84,7 +84,7 @@ class LCNI_WatchlistService {
         $normalized = array_values(array_intersect($allowed_columns, array_map('sanitize_key', (array) $columns)));
 
         if (empty($normalized)) {
-            $normalized = $this->default_columns;
+            $normalized = $this->get_default_columns();
         }
 
         update_user_meta($user_id, self::USER_SETTINGS_META_KEY, $normalized);
@@ -101,11 +101,22 @@ class LCNI_WatchlistService {
 
         $normalized = array_values(array_intersect($this->get_all_columns(), $allowed));
 
-        return !empty($normalized) ? $normalized : $this->default_columns;
+        return !empty($normalized) ? $normalized : $this->get_default_columns();
     }
 
     public function get_all_columns() {
-        return ['symbol', 'close_price', 'pct_t_1', 'volume', 'value_traded', 'exchange', 'market_id', 'eps', 'roe', 'pe_ratio', 'pb_ratio', 'tc_rating', 'xep_hang', 'created_at'];
+        return $this->repository->get_available_columns();
+    }
+
+    public function get_default_columns() {
+        $all_columns = $this->get_all_columns();
+        $defaults = array_values(array_intersect($all_columns, $this->preferred_default_columns));
+
+        if (!empty($defaults)) {
+            return $defaults;
+        }
+
+        return array_slice($all_columns, 0, 6);
     }
 
     private function sanitize_symbol($symbol) {

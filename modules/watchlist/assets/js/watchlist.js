@@ -58,17 +58,30 @@
     return `<span class="lcni-watchlist-symbol">${safeSymbol}</span><button type="button" class="lcni-watchlist-add" data-lcni-watchlist-add data-symbol="${safeSymbol}" aria-label="Add to watchlist"><i class="fa-solid fa-heart-circle-plus" aria-hidden="true"></i></button>`;
   }
 
+  function buildStockDetailUrl(symbol) {
+    const base = (cfg.stockDetailBase || '/stock/').replace(/\/?$/, '/');
+    return base + encodeURIComponent(symbol);
+  }
+
   function renderTable(host, data) {
     applyStyles(host);
     const allowedColumns = Array.isArray(data.allowed_columns) ? data.allowed_columns : [];
     const columns = Array.isArray(data.columns) ? data.columns : [];
     const items = Array.isArray(data.items) ? data.items : [];
 
-    const toggles = allowedColumns.map((c) => `<label><input type="checkbox" data-col-toggle value="${escapeHtml(c)}" ${columns.includes(c) ? 'checked' : ''}> ${escapeHtml(c)}</label>`).join('');
+    const toggles = allowedColumns.map((c) => `<label class="lcni-watchlist-col-item"><input type="checkbox" data-col-toggle value="${escapeHtml(c)}" ${columns.includes(c) ? 'checked' : ''}> ${escapeHtml(c)}</label>`).join('');
 
     host.innerHTML = `
-      <div class="lcni-watchlist-header"><strong>Watchlist</strong><button type="button" class="lcni-watchlist-settings-btn" data-watchlist-settings>⚙</button></div>
-      <div class="lcni-watchlist-controls" data-watchlist-settings-panel hidden>${toggles}<button type="button" data-watchlist-save>Lưu</button></div>
+      <div class="lcni-watchlist-header">
+        <strong>Watchlist</strong>
+        <div class="lcni-watchlist-dropdown">
+          <button type="button" class="lcni-watchlist-settings-btn" data-watchlist-settings aria-expanded="false">⚙</button>
+          <div class="lcni-watchlist-controls" data-watchlist-settings-panel hidden>
+            <div class="lcni-watchlist-col-grid">${toggles}</div>
+            <button type="button" data-watchlist-save>Lưu</button>
+          </div>
+        </div>
+      </div>
       <div class="lcni-watchlist-table-wrap">
         <table class="lcni-watchlist-table"><thead><tr>${columns.map((c) => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead>
         <tbody>${items.map((row) => {
@@ -82,7 +95,6 @@
         }).join('')}</tbody></table>
         <div class="lcni-watchlist-overlay" data-watchlist-overlay hidden>Loading...</div>
       </div>
-      <div class="lcni-watchlist-popup" hidden></div>
     `;
 
     const panel = host.querySelector('[data-watchlist-settings-panel]');
@@ -90,7 +102,9 @@
     const saveBtn = host.querySelector('[data-watchlist-save]');
 
     settingsBtn.addEventListener('click', () => {
-      panel.hidden = !panel.hidden;
+      const isExpanded = settingsBtn.getAttribute('aria-expanded') === 'true';
+      settingsBtn.setAttribute('aria-expanded', String(!isExpanded));
+      panel.hidden = isExpanded;
     });
 
     saveBtn.addEventListener('click', async () => {
@@ -98,7 +112,8 @@
       setHostLoading(host, true);
       try {
         await api('/settings', { method: 'POST', body: { columns: selected } });
-        const refreshed = await api('/list?columns[]=' + selected.map(encodeURIComponent).join('&columns[]='));
+        const query = selected.map((value) => `columns[]=${encodeURIComponent(value)}`).join('&');
+        const refreshed = await api('/list' + (query ? '?' + query : ''));
         renderTable(host, refreshed);
         bindAddButtons(host);
       } catch (error) {
@@ -119,53 +134,13 @@
           return;
         }
 
-        openPopup(host, row.getAttribute('data-row-symbol'));
+        const symbol = row.getAttribute('data-row-symbol');
+        if (symbol) {
+          window.location.href = buildStockDetailUrl(symbol);
+        }
       });
       host._watchlistRowDelegated = true;
     }
-  }
-
-  function openPopup(host, symbol) {
-    const popup = host.querySelector('.lcni-watchlist-popup');
-    popup.hidden = false;
-    popup.innerHTML = `<div class="lcni-watchlist-popup-content"><button data-close>x</button><h3>${escapeHtml(symbol)}</h3><p>Loading...</p></div>`;
-    popup.querySelector('[data-close]').addEventListener('click', () => {
-      popup.hidden = true;
-      popup.innerHTML = '';
-    });
-
-    Promise.all([
-      fetch((cfg.overviewApiBase || '') + '?symbol=' + encodeURIComponent(symbol), { credentials: 'same-origin' }).then((r) => r.json()),
-      fetch((cfg.stockApiBase || '') + encodeURIComponent(symbol), { credentials: 'same-origin' }).then((r) => r.json()),
-      fetch((cfg.signalApiBase || '') + '?symbol=' + encodeURIComponent(symbol), { credentials: 'same-origin' }).then((r) => r.json()),
-    ]).then(([overview, stock, signal]) => {
-      popup.innerHTML = `<div class="lcni-watchlist-popup-content">
-          <button data-close>x</button>
-          <h3>${escapeHtml(symbol)}</h3>
-          <h4>Overview module</h4><pre>${escapeHtml(JSON.stringify(overview, null, 2))}</pre>
-          <h4>Lightweight chart</h4><div>${renderSparkline((stock && stock.ohlc) || [])}</div>
-          <h4>LCNI signal</h4><pre>${escapeHtml(JSON.stringify(signal, null, 2))}</pre>
-        </div>`;
-      popup.querySelector('[data-close]').addEventListener('click', () => {
-        popup.hidden = true;
-        popup.innerHTML = '';
-      });
-    }).catch(() => {
-      popup.innerHTML = `<div class="lcni-watchlist-popup-content"><button data-close>x</button><p>Không thể tải popup.</p></div>`;
-      popup.querySelector('[data-close]').addEventListener('click', () => {
-        popup.hidden = true;
-        popup.innerHTML = '';
-      });
-    });
-  }
-
-  function renderSparkline(ohlc) {
-    const closes = Array.isArray(ohlc) ? ohlc.map((i) => Number(i.close_price || i.close || 0)).filter(Boolean) : [];
-    if (!closes.length) return 'No chart data';
-    const min = Math.min.apply(null, closes);
-    const max = Math.max.apply(null, closes);
-    const points = closes.map((v, i) => `${(i / (closes.length - 1 || 1)) * 180},${40 - ((v - min) / (max - min || 1)) * 30}`).join(' ');
-    return `<svg width="180" height="40" viewBox="0 0 180 40"><polyline fill="none" stroke="#2563eb" stroke-width="2" points="${points}" /></svg>`;
   }
 
   function bindAddButtons(scope) {
