@@ -83,6 +83,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       : allPanels;
     const defaultVisibleBars = Math.max(20, Math.min(1000, Number(adminConfig.default_visible_bars || 120)));
     const enableChartSync = adminConfig.chart_sync_enabled !== false;
+    const fitToScreenOnLoad = adminConfig.fit_to_screen_on_load !== false;
 
     stockSync.configureQueryParam(queryParam || "symbol");
 
@@ -208,15 +209,14 @@ document.addEventListener("DOMContentLoaded", async () => {
         const rsiChart = LightweightCharts.createChart(rsiWrap, commonOptions);
         const rsChart = LightweightCharts.createChart(rsWrap, commonOptions);
 
-        const setSeriesData = (chart, series, data) => {
+        const setSeriesData = (series, data) => {
           series.setData(data);
-          chart.timeScale().fitContent();
         };
 
         const candleSeries = mainChart.addCandlestickSeries();
         const lineSeries = mainChart.addLineSeries({ color: "#2563eb", lineWidth: 2 });
-        setSeriesData(mainChart, candleSeries, candles);
-        setSeriesData(mainChart, lineSeries, candles.map((item) => ({ time: item.time, value: item.close })));
+        setSeriesData(candleSeries, candles);
+        setSeriesData(lineSeries, candles.map((item) => ({ time: item.time, value: item.close })));
 
         const visibility = {
           volume: state.panels.includes("volume"),
@@ -248,11 +248,20 @@ document.addEventListener("DOMContentLoaded", async () => {
         };
 
         const applyInitialVisibleRange = () => {
-          const bars = Math.max(20, Math.min(candles.length, defaultVisibleBars));
-          const to = candles.length;
-          const from = Math.max(0, to - bars);
           charts.forEach((chart) => {
             chart.timeScale().fitContent();
+          });
+
+          if (fitToScreenOnLoad) {
+            return;
+          }
+
+          const bars = Math.max(20, Math.min(candles.length, defaultVisibleBars));
+          const total = candles.length;
+          const to = total;
+          const from = Math.max(0, total - bars);
+
+          charts.forEach((chart) => {
             chart.timeScale().setVisibleLogicalRange({ from, to });
           });
         };
@@ -326,23 +335,23 @@ document.addEventListener("DOMContentLoaded", async () => {
         container.appendChild(root);
 
         const volumeSeries = volumeChart.addHistogramSeries({ priceFormat: { type: "volume" }, priceScaleId: "" });
-        setSeriesData(volumeChart, volumeSeries, candles.map((item) => ({ time: item.time, value: Number(item.volume || 0), color: item.close >= item.open ? "#16a34a" : "#dc2626" })));
+        setSeriesData(volumeSeries, candles.map((item) => ({ time: item.time, value: Number(item.volume || 0), color: item.close >= item.open ? "#16a34a" : "#dc2626" })));
 
         const seriesDataFilter = (key) => candles.filter((item) => Number.isFinite(Number(item[key]))).map((item) => ({ time: item.time, value: Number(item[key]) }));
         const macdLineSeries = macdChart.addLineSeries({ color: "#1d4ed8", lineWidth: 2 });
-        setSeriesData(macdChart, macdLineSeries, seriesDataFilter("macd"));
+        setSeriesData(macdLineSeries, seriesDataFilter("macd"));
         const macdSignalSeries = macdChart.addLineSeries({ color: "#f59e0b", lineWidth: 2 });
-        setSeriesData(macdChart, macdSignalSeries, seriesDataFilter("macd_signal"));
+        setSeriesData(macdSignalSeries, seriesDataFilter("macd_signal"));
 
         const rsiSeries = rsiChart.addLineSeries({ color: "#7c3aed", lineWidth: 2 });
-        setSeriesData(rsiChart, rsiSeries, seriesDataFilter("rsi"));
+        setSeriesData(rsiSeries, seriesDataFilter("rsi"));
 
         const rsSeries1w = rsChart.addLineSeries({ color: "#0ea5e9", lineWidth: 2 });
-        setSeriesData(rsChart, rsSeries1w, seriesDataFilter("rs_1w_by_exchange"));
+        setSeriesData(rsSeries1w, seriesDataFilter("rs_1w_by_exchange"));
         const rsSeries1m = rsChart.addLineSeries({ color: "#f59e0b", lineWidth: 2 });
-        setSeriesData(rsChart, rsSeries1m, seriesDataFilter("rs_1m_by_exchange"));
+        setSeriesData(rsSeries1m, seriesDataFilter("rs_1m_by_exchange"));
         const rsSeries3m = rsChart.addLineSeries({ color: "#ef4444", lineWidth: 2 });
-        setSeriesData(rsChart, rsSeries3m, seriesDataFilter("rs_3m_by_exchange"));
+        setSeriesData(rsSeries3m, seriesDataFilter("rs_3m_by_exchange"));
 
         applyInitialVisibleRange();
         refreshVisibility();
