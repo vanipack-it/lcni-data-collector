@@ -1,0 +1,108 @@
+<?php
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+class LCNI_FilterAdmin {
+
+    public static function sanitize_columns($columns) {
+        $service = new LCNI_WatchlistService(new LCNI_WatchlistRepository());
+        $all = $service->get_all_columns();
+        $columns = is_array($columns) ? array_map('sanitize_key', $columns) : [];
+
+        return array_values(array_intersect($all, $columns));
+    }
+
+    public static function sanitize_style($input) {
+        $input = is_array($input) ? $input : [];
+
+        return [
+            'font_size' => max(10, min(24, (int) ($input['font_size'] ?? 13))),
+            'text_color' => sanitize_hex_color((string) ($input['text_color'] ?? '#111827')) ?: '#111827',
+            'background_color' => sanitize_hex_color((string) ($input['background_color'] ?? '#ffffff')) ?: '#ffffff',
+            'row_height' => max(24, min(64, (int) ($input['row_height'] ?? 36))),
+        ];
+    }
+
+    public static function render_filter_form($tab_id) {
+        $service = new LCNI_WatchlistService(new LCNI_WatchlistRepository());
+        $all_columns = $service->get_all_columns();
+        $criteria = self::sanitize_columns(get_option('lcni_filter_criteria_columns', []));
+        $table_columns = self::sanitize_columns(get_option('lcni_filter_table_columns', []));
+        $style = self::sanitize_style(get_option('lcni_filter_style', []));
+        ?>
+        <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
+            <div class="lcni-sub-tab-nav" id="lcni-filter-sub-tabs">
+                <button type="button" data-filter-sub-tab="criteria">Filter Criteria</button>
+                <button type="button" data-filter-sub-tab="table_columns">Table Columns</button>
+                <button type="button" data-filter-sub-tab="style">Style</button>
+            </div>
+
+            <div data-filter-sub-pane="criteria">
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                    <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                    <input type="hidden" name="lcni_frontend_module" value="filter">
+                    <input type="hidden" name="lcni_filter_section" value="criteria">
+                    <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                    <h3>Filter Criteria</h3>
+                    <div class="lcni-front-grid">
+                        <?php foreach ($all_columns as $column) : ?>
+                            <label><input type="checkbox" name="lcni_filter_criteria_columns[]" value="<?php echo esc_attr($column); ?>" <?php checked(in_array($column, $criteria, true)); ?>> <?php echo esc_html($column); ?></label>
+                        <?php endforeach; ?>
+                    </div>
+                    <?php submit_button('Save'); ?>
+                </form>
+            </div>
+
+            <div data-filter-sub-pane="table_columns" style="display:none">
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                    <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                    <input type="hidden" name="lcni_frontend_module" value="filter">
+                    <input type="hidden" name="lcni_filter_section" value="table_columns">
+                    <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                    <h3>Table Columns</h3>
+                    <div class="lcni-front-grid">
+                        <?php foreach ($all_columns as $column) : ?>
+                            <label><input type="checkbox" name="lcni_filter_table_columns[]" value="<?php echo esc_attr($column); ?>" <?php checked(in_array($column, $table_columns, true)); ?>> <?php echo esc_html($column); ?></label>
+                        <?php endforeach; ?>
+                    </div>
+                    <?php submit_button('Save'); ?>
+                </form>
+            </div>
+
+            <div data-filter-sub-pane="style" style="display:none">
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                    <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                    <input type="hidden" name="lcni_frontend_module" value="filter">
+                    <input type="hidden" name="lcni_filter_section" value="style">
+                    <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                    <h3>Style</h3>
+                    <p><label>Font size <input type="number" name="lcni_filter_style[font_size]" value="<?php echo esc_attr((string) $style['font_size']); ?>"></label></p>
+                    <p><label>Text color <input type="color" name="lcni_filter_style[text_color]" value="<?php echo esc_attr((string) $style['text_color']); ?>"></label></p>
+                    <p><label>Background color <input type="color" name="lcni_filter_style[background_color]" value="<?php echo esc_attr((string) $style['background_color']); ?>"></label></p>
+                    <p><label>Row height <input type="number" name="lcni_filter_style[row_height]" value="<?php echo esc_attr((string) $style['row_height']); ?>"></label></p>
+                    <?php submit_button('Save'); ?>
+                </form>
+            </div>
+        </div>
+        <script>
+            (function () {
+                const root = document.getElementById('lcni-filter-sub-tabs');
+                if (!root) return;
+                const buttons = root.querySelectorAll('[data-filter-sub-tab]');
+                const panes = document.querySelectorAll('[data-filter-sub-pane]');
+                const show = (name) => {
+                    buttons.forEach((btn) => btn.classList.toggle('active', btn.getAttribute('data-filter-sub-tab') === name));
+                    panes.forEach((pane) => { pane.style.display = pane.getAttribute('data-filter-sub-pane') === name ? '' : 'none'; });
+                };
+                buttons.forEach((btn) => btn.addEventListener('click', () => show(btn.getAttribute('data-filter-sub-tab'))));
+                show('criteria');
+            })();
+        </script>
+        <?php
+    }
+}

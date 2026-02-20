@@ -72,7 +72,7 @@
     button.classList.toggle('is-active', inWatchlist);
     button.setAttribute('aria-label', inWatchlist ? 'Remove from watchlist' : 'Add to watchlist');
     if (icon && !button.classList.contains('is-loading')) {
-      icon.className = inWatchlist ? 'fa-solid fa-trash' : 'fa-solid fa-heart-circle-plus';
+      icon.className = inWatchlist ? 'fas fa-trash' : 'fas fa-heart';
     }
   }
 
@@ -136,7 +136,7 @@
         return `<tr data-row-symbol="${esc(symbol)}">${columns.map((c, idx) => {
           const cls = idx === 0 && c === 'symbol' ? ' class="is-sticky-col"' : '';
           if (c === 'symbol') {
-            return `<td${cls}><span class="lcni-watchlist-symbol">${esc(symbol)}</span><button type="button" class="lcni-watchlist-add is-active" data-lcni-watchlist-add data-symbol="${esc(symbol)}"><i class="fa-solid fa-trash" aria-hidden="true"></i></button></td>`;
+            return `<td${cls}><span class="lcni-watchlist-symbol">${esc(symbol)}</span><button type="button" class="lcni-watchlist-add is-active" data-lcni-watchlist-add data-symbol="${esc(symbol)}"><i class="fas fa-trash" aria-hidden="true"></i></button></td>`;
           }
           const valueStyle = resolveCellStyle(c, row[c], valueColorRules);
           return `<td${cls}${valueStyle ? ` style="${valueStyle}"` : ''}>${esc(row[c])}</td>`;
@@ -192,16 +192,16 @@
 
       try {
         if (submitBtn) submitBtn.disabled = true;
-        if (submitIcon) submitIcon.className = 'fa-solid fa-spinner fa-spin';
+        if (submitIcon) submitIcon.className = 'fas fa-spinner fa-spin';
         await toggleSymbol(symbol, 'add');
         if (input) input.value = '';
-        if (submitIcon) submitIcon.className = 'fa-solid fa-check-circle';
+        if (submitIcon) submitIcon.className = 'fas fa-check-circle';
         window.setTimeout(() => {
-          if (submitIcon) submitIcon.className = 'fa-solid fa-heart-circle-plus';
+          if (submitIcon) submitIcon.className = 'fas fa-heart';
         }, 1200);
         document.querySelectorAll('[data-lcni-watchlist]').forEach((host) => refreshTable(host).catch(() => {}));
       } catch (error) {
-        if (submitIcon) submitIcon.className = 'fa-solid fa-exclamation-circle';
+        if (submitIcon) submitIcon.className = 'fas fa-exclamation-circle';
         showToast((error && error.message) || 'Không thể thêm vào watchlist');
       } finally {
         if (submitBtn) submitBtn.disabled = false;
@@ -222,7 +222,7 @@
         const icon = addBtn.querySelector('i');
         addBtn.disabled = true;
         addBtn.classList.add('is-loading');
-        if (icon) icon.className = 'fa-solid fa-spinner fa-spin';
+        if (icon) icon.className = 'fas fa-spinner fa-spin';
 
         try {
           const removeFromTable = addBtn.closest('[data-lcni-watchlist]') && WatchlistStore.has(symbol);

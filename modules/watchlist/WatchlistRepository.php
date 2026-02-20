@@ -10,6 +10,7 @@ class LCNI_WatchlistRepository {
     private $ohlc_latest_table;
     private $tongquan_table;
     private $market_table;
+    private $icb2_table;
     private $column_map_cache = null;
 
     public function __construct($db = null) {
@@ -19,6 +20,7 @@ class LCNI_WatchlistRepository {
         $this->ohlc_latest_table = $this->wpdb->prefix . 'lcni_ohlc_latest';
         $this->tongquan_table = $this->wpdb->prefix . 'lcni_symbol_tongquan';
         $this->market_table = $this->wpdb->prefix . 'lcni_sym_icb_market';
+        $this->icb2_table = $this->wpdb->prefix . 'lcni_icb2';
     }
 
     public function get_by_symbols($symbols, $columns) {
@@ -37,6 +39,7 @@ class LCNI_WatchlistRepository {
             FROM {$this->ohlc_latest_table} o
             LEFT JOIN {$this->tongquan_table} t ON t.symbol = o.symbol
             LEFT JOIN {$this->market_table} m ON m.symbol = o.symbol
+            LEFT JOIN {$this->icb2_table} i ON i.id_icb2 = m.id_icb2
             WHERE o.symbol IN ({$placeholders})",
             $normalized_symbols
         );
@@ -80,6 +83,7 @@ class LCNI_WatchlistRepository {
             FROM {$this->ohlc_latest_table} o
             LEFT JOIN {$this->tongquan_table} t ON t.symbol = o.symbol
             LEFT JOIN {$this->market_table} m ON m.symbol = o.symbol
+            LEFT JOIN {$this->icb2_table} i ON i.id_icb2 = m.id_icb2
             {$where_sql}
             ORDER BY o.symbol ASC
             LIMIT %d OFFSET %d";
@@ -100,12 +104,45 @@ class LCNI_WatchlistRepository {
             FROM {$this->ohlc_latest_table} o
             LEFT JOIN {$this->tongquan_table} t ON t.symbol = o.symbol
             LEFT JOIN {$this->market_table} m ON m.symbol = o.symbol
+            LEFT JOIN {$this->icb2_table} i ON i.id_icb2 = m.id_icb2
             {$where_sql}";
 
         $prepared = empty($params) ? $query : $this->wpdb->prepare($query, $params);
         $count = $this->wpdb->get_var($prepared);
 
         return max(0, (int) $count);
+    }
+
+    public function get_distinct_values($column, $filters = [], $limit = 150) {
+        $map = $this->get_column_map();
+        if (!isset($map[$column])) {
+            return [];
+        }
+
+        $params = [];
+        $where_sql = $this->build_filter_where_clause($filters, $params);
+        $field = $map[$column];
+        if ($where_sql === '') {
+            $where_sql = 'WHERE';
+        } else {
+            $where_sql .= ' AND';
+        }
+
+        $sql = "SELECT DISTINCT {$field} AS value
+            FROM {$this->ohlc_latest_table} o
+            LEFT JOIN {$this->tongquan_table} t ON t.symbol = o.symbol
+            LEFT JOIN {$this->market_table} m ON m.symbol = o.symbol
+            LEFT JOIN {$this->icb2_table} i ON i.id_icb2 = m.id_icb2
+            {$where_sql} {$field} IS NOT NULL
+            AND {$field} <> ''
+            ORDER BY value ASC
+            LIMIT %d";
+
+        $params[] = max(10, min(500, (int) $limit));
+        $prepared = $this->wpdb->prepare($sql, $params);
+        $values = $this->wpdb->get_col($prepared);
+
+        return is_array($values) ? array_values($values) : [];
     }
 
     private function get_column_map() {
@@ -121,6 +158,7 @@ class LCNI_WatchlistRepository {
             'o' => $this->ohlc_latest_table,
             't' => $this->tongquan_table,
             'm' => $this->market_table,
+            'i' => $this->icb2_table,
         ];
 
         foreach ($sources as $alias => $table_name) {
@@ -165,7 +203,7 @@ class LCNI_WatchlistRepository {
     private function build_filter_where_clause($filters, &$params) {
         $map = $this->get_column_map();
         $clauses = [];
-        $allowed_operators = ['=', '>', '<', '>=', '<=', 'between', 'contains'];
+        $allowed_operators = ['=', '>', '<', '>=', '<=', 'between', 'contains', 'in'];
 
         foreach ((array) $filters as $filter) {
             if (!is_array($filter)) {
@@ -196,6 +234,16 @@ class LCNI_WatchlistRepository {
                 }
                 $clauses[] = "{$field} LIKE %s";
                 $params[] = '%' . $this->wpdb->esc_like($needle) . '%';
+            } elseif ($operator === 'in') {
+                $items = is_array($value) ? array_filter(array_map('sanitize_text_field', $value)) : [];
+                if (empty($items)) {
+                    continue;
+                }
+                $ph = implode(',', array_fill(0, count($items), '%s'));
+                $clauses[] = "{$field} IN ({$ph})";
+                foreach ($items as $item) {
+                    $params[] = $item;
+                }
             } else {
                 $compare = sanitize_text_field((string) $value);
                 if ($compare === '') {

@@ -202,8 +202,12 @@ class LCNI_WatchlistService {
     }
 
     public function get_column_labels($columns) {
-        $settings = get_option('lcni_watchlist_settings', []);
-        $configured = isset($settings['column_labels']) && is_array($settings['column_labels']) ? $settings['column_labels'] : [];
+        $global = get_option('lcni_column_labels', []);
+        $configured = is_array($global) ? $global : [];
+        if (empty($configured)) {
+            $settings = get_option('lcni_watchlist_settings', []);
+            $configured = isset($settings['column_labels']) && is_array($settings['column_labels']) ? $settings['column_labels'] : [];
+        }
         $label_map = [];
 
         foreach ($configured as $key => $item) {
