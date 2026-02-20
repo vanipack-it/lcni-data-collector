@@ -14,51 +14,61 @@ class LCNI_FilterTable {
     }
 
     public function get_settings() {
-        $watchlist_settings = $this->watchlist_service->get_settings();
-        $watchlist_allowed_columns = $this->watchlist_service->get_allowed_columns();
-        $saved_columns = get_option('lcni_filter_allowed_columns', []);
-        $saved_columns = is_array($saved_columns) ? array_map('sanitize_key', $saved_columns) : [];
-
-        $allowed_columns = array_values(array_intersect($watchlist_allowed_columns, $saved_columns));
-        if (empty($allowed_columns)) {
-            $allowed_columns = $watchlist_allowed_columns;
+        $all_columns = $this->watchlist_service->get_all_columns();
+        $criteria = $this->normalize_columns(get_option('lcni_filter_criteria_columns', []), $all_columns);
+        $table_columns = $this->normalize_columns(get_option('lcni_filter_table_columns', []), $all_columns);
+        if (empty($criteria)) {
+            $criteria = array_slice($all_columns, 0, 8);
+        }
+        if (empty($table_columns)) {
+            $table_columns = $this->watchlist_service->get_default_columns('desktop');
+        }
+        if (!in_array('symbol', $table_columns, true)) {
+            array_unshift($table_columns, 'symbol');
         }
 
+        $style = get_option('lcni_filter_style', []);
+        $style = is_array($style) ? $style : [];
+
         return [
-            'allowed_columns' => $allowed_columns,
-            'column_labels' => $this->watchlist_service->get_column_labels($allowed_columns),
-            'styles' => $watchlist_settings['styles'] ?? [],
-            'value_color_rules' => $watchlist_settings['value_color_rules'] ?? [],
-            'default_conditions' => $this->get_default_conditions($allowed_columns),
+            'criteria_columns' => $criteria,
+            'table_columns' => $table_columns,
+            'column_labels' => $this->watchlist_service->get_column_labels($all_columns),
+            'style' => [
+                'font_size' => max(10, min(24, (int) ($style['font_size'] ?? 13))),
+                'text_color' => sanitize_hex_color((string) ($style['text_color'] ?? '#111827')) ?: '#111827',
+                'background_color' => sanitize_hex_color((string) ($style['background_color'] ?? '#ffffff')) ?: '#ffffff',
+                'row_height' => max(24, min(64, (int) ($style['row_height'] ?? 36))),
+            ],
             'add_button' => $this->get_add_button_styles(),
         ];
     }
 
     public function query($args = []) {
         $settings = $this->get_settings();
-        $allowed_columns = $settings['allowed_columns'];
-        $columns = isset($args['columns']) && is_array($args['columns']) ? array_values(array_intersect($allowed_columns, array_map('sanitize_key', $args['columns']))) : [];
+        $all_columns = $this->watchlist_service->get_all_columns();
+        $requested = isset($args['visible_columns']) && is_array($args['visible_columns']) ? $args['visible_columns'] : $settings['table_columns'];
+        $columns = $this->normalize_columns($requested, $all_columns);
         if (empty($columns)) {
-            $columns = array_slice($allowed_columns, 0, 8);
+            $columns = $settings['table_columns'];
         }
         if (!in_array('symbol', $columns, true)) {
             array_unshift($columns, 'symbol');
         }
 
+        $filters = $this->sanitize_filters(isset($args['filters']) ? $args['filters'] : [], $settings['criteria_columns']);
         $page = max(1, (int) ($args['page'] ?? 1));
         $limit = max(10, min(200, (int) ($args['limit'] ?? 50)));
         $offset = ($page - 1) * $limit;
-        $filters = $this->sanitize_filters(isset($args['filters']) && is_array($args['filters']) ? $args['filters'] : [], $allowed_columns);
 
         $items = $this->repository->get_all($columns, $limit, $offset, $filters);
         $total = $this->repository->count_all($filters);
 
         return [
-            'mode' => 'all_symbols',
+            'mode' => 'filter',
             'columns' => $columns,
             'column_labels' => $this->watchlist_service->get_column_labels($columns),
             'items' => $items,
-            'filters' => $filters,
             'page' => $page,
             'limit' => $limit,
             'total' => $total,
@@ -66,9 +76,37 @@ class LCNI_FilterTable {
         ];
     }
 
+    public function get_criteria_definitions() {
+        $settings = $this->get_settings();
+        $defs = [];
+
+        foreach ($settings['criteria_columns'] as $column) {
+            $values = $this->repository->get_distinct_values($column, [], 120);
+            $is_number = $this->is_numeric_column($values);
+
+            $definition = [
+                'column' => $column,
+                'label' => $settings['column_labels'][$column] ?? $column,
+                'type' => $is_number ? 'number' : 'text',
+            ];
+
+            if ($is_number) {
+                $numeric = array_map('floatval', array_filter($values, 'is_numeric'));
+                sort($numeric);
+                $definition['min'] = (float) ($numeric[0] ?? 0);
+                $definition['max'] = (float) ($numeric[count($numeric) - 1] ?? 0);
+            } else {
+                $definition['values'] = array_slice(array_values(array_unique(array_map('strval', $values))), 0, 120);
+            }
+
+            $defs[] = $definition;
+        }
+
+        return $defs;
+    }
+
     public function sanitize_filters($filters, $allowed_columns) {
         $normalized = [];
-        $allowed_operators = ['=', '>', '<', '>=', '<=', 'between', 'contains'];
 
         foreach ((array) $filters as $filter) {
             if (!is_array($filter)) {
@@ -79,16 +117,29 @@ class LCNI_FilterTable {
             $operator = sanitize_text_field((string) ($filter['operator'] ?? ''));
             $value = $filter['value'] ?? '';
 
-            if ($column === '' || !in_array($column, $allowed_columns, true) || !in_array($operator, $allowed_operators, true)) {
+            if ($column === '' || !in_array($column, $allowed_columns, true)) {
                 continue;
             }
 
             if ($operator === 'between') {
-                $range = is_array($value) ? array_values($value) : preg_split('/\s*,\s*/', (string) $value);
+                $range = is_array($value) ? array_values($value) : [];
                 if (count($range) < 2) {
                     continue;
                 }
-                $normalized[] = ['column' => $column, 'operator' => $operator, 'value' => [sanitize_text_field((string) $range[0]), sanitize_text_field((string) $range[1])]];
+                $normalized[] = ['column' => $column, 'operator' => 'between', 'value' => [sanitize_text_field((string) $range[0]), sanitize_text_field((string) $range[1])]];
+                continue;
+            }
+
+            if ($operator === 'in') {
+                $items = is_array($value) ? array_filter(array_map('sanitize_text_field', $value)) : [];
+                if (empty($items)) {
+                    continue;
+                }
+                $normalized[] = ['column' => $column, 'operator' => 'in', 'value' => array_values($items)];
+                continue;
+            }
+
+            if (!in_array($operator, ['=', 'contains', '>', '>=', '<', '<='], true)) {
                 continue;
             }
 
@@ -103,10 +154,27 @@ class LCNI_FilterTable {
         return $normalized;
     }
 
-    private function get_default_conditions($allowed_columns) {
-        $conditions = get_option('lcni_filter_default_conditions', []);
+    private function normalize_columns($columns, $all_columns) {
+        $columns = is_array($columns) ? array_map('sanitize_key', $columns) : [];
 
-        return $this->sanitize_filters(is_array($conditions) ? $conditions : [], $allowed_columns);
+        return array_values(array_intersect($all_columns, $columns));
+    }
+
+    private function is_numeric_column($values) {
+        $sample = array_slice(array_values(array_filter((array) $values, static function ($v) {
+            return $v !== null && $v !== '';
+        })), 0, 20);
+        if (empty($sample)) {
+            return false;
+        }
+
+        foreach ($sample as $value) {
+            if (!is_numeric($value)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function get_add_button_styles() {
@@ -114,7 +182,7 @@ class LCNI_FilterTable {
         $button = isset($watchlist_settings['add_button']) && is_array($watchlist_settings['add_button']) ? $watchlist_settings['add_button'] : [];
 
         return [
-            'icon' => sanitize_text_field((string) ($button['icon'] ?? 'fa-solid fa-heart-circle-plus')),
+            'icon' => sanitize_text_field((string) ($button['icon'] ?? 'fas fa-heart')),
             'background' => sanitize_hex_color((string) ($button['background'] ?? '#dc2626')) ?: '#dc2626',
             'text_color' => sanitize_hex_color((string) ($button['text_color'] ?? '#ffffff')) ?: '#ffffff',
             'font_size' => max(10, min(24, (int) ($button['font_size'] ?? 14))),

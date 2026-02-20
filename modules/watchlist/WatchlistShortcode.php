@@ -53,7 +53,7 @@ class LCNI_WatchlistShortcode {
         $this->enqueue_watchlist_assets();
         $settings = $this->get_settings();
         $form_button = isset($settings['add_form_button']) && is_array($settings['add_form_button']) ? $settings['add_form_button'] : [];
-        $icon_class = isset($form_button['icon']) ? sanitize_text_field($form_button['icon']) : 'fa-solid fa-heart-circle-plus';
+        $icon_class = isset($form_button['icon']) ? sanitize_text_field($form_button['icon']) : 'fas fa-heart';
         $style = sprintf(
             'background:%s;color:%s;font-size:%dpx;height:%dpx;',
             esc_attr($form_button['background'] ?? '#2563eb'),
@@ -77,7 +77,7 @@ class LCNI_WatchlistShortcode {
 
         $settings = $this->get_settings();
         $button_styles = isset($settings['add_button']) && is_array($settings['add_button']) ? $settings['add_button'] : [];
-        $icon_class = isset($button_styles['icon']) ? sanitize_text_field($button_styles['icon']) : 'fa-solid fa-heart-circle-plus';
+        $icon_class = isset($button_styles['icon']) ? sanitize_text_field($button_styles['icon']) : 'fas fa-heart';
 
         $style = sprintf(
             'background:%s;color:%s;font-size:%dpx;',
@@ -165,14 +165,14 @@ class LCNI_WatchlistShortcode {
             ],
             'value_color_rules' => [],
             'add_button' => [
-                'icon' => 'fa-solid fa-heart-circle-plus',
+                'icon' => 'fas fa-heart',
                 'background' => '#dc2626',
                 'text_color' => '#ffffff',
                 'font_size' => 14,
                 'size' => 26,
             ],
             'add_form_button' => [
-                'icon' => 'fa-solid fa-heart-circle-plus',
+                'icon' => 'fas fa-heart',
                 'background' => '#2563eb',
                 'text_color' => '#ffffff',
                 'font_size' => 14,

@@ -42,8 +42,10 @@ class LCNI_Settings {
         register_setting('lcni_settings_group', 'lcni_frontend_overview_title', ['type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'default' => 'Stock Overview']);
         register_setting('lcni_settings_group', 'lcni_frontend_chart_title', ['type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'default' => 'Stock Chart']);
         register_setting('lcni_settings_group', 'lcni_frontend_signal_title', ['type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'default' => 'LCNi Signals']);
-        register_setting('lcni_settings_group', 'lcni_filter_allowed_columns', ['type' => 'array', 'sanitize_callback' => ['LCNI_Filter_Admin_Settings', 'sanitize_allowed_columns'], 'default' => []]);
-        register_setting('lcni_settings_group', 'lcni_filter_default_conditions', ['type' => 'array', 'default' => []]);
+        register_setting('lcni_settings_group', 'lcni_filter_criteria_columns', ['type' => 'array', 'sanitize_callback' => ['LCNI_FilterAdmin', 'sanitize_columns'], 'default' => []]);
+        register_setting('lcni_settings_group', 'lcni_filter_table_columns', ['type' => 'array', 'sanitize_callback' => ['LCNI_FilterAdmin', 'sanitize_columns'], 'default' => []]);
+        register_setting('lcni_settings_group', 'lcni_filter_style', ['type' => 'array', 'sanitize_callback' => ['LCNI_FilterAdmin', 'sanitize_style'], 'default' => []]);
+        register_setting('lcni_settings_group', 'lcni_column_labels', ['type' => 'array', 'default' => []]);
     }
 
     public function sanitize_timeframe($value) {
@@ -245,7 +247,7 @@ class LCNI_Settings {
             }
         } elseif ($action === 'save_frontend_settings') {
             $module = isset($_POST['lcni_frontend_module']) ? sanitize_key(wp_unslash($_POST['lcni_frontend_module'])) : '';
-            $allowed_modules = ['signals', 'overview', 'chart', 'watchlist', 'filter'];
+            $allowed_modules = ['signals', 'overview', 'chart', 'watchlist', 'filter', 'column_labels'];
 
             if (!in_array($module, $allowed_modules, true)) {
                 $this->set_notice('error', 'Module frontend không hợp lệ.');
@@ -292,6 +294,16 @@ class LCNI_Settings {
                     } elseif ($watchlist_section === 'column_labels') {
                         $input['column_label_keys'] = isset($_POST['lcni_frontend_watchlist_column_label_key']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_column_label_key']) : [];
                         $input['column_label_values'] = isset($_POST['lcni_frontend_watchlist_column_label']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_column_label']) : [];
+                        $pairs = [];
+                        $count = max(count($input['column_label_keys']), count($input['column_label_values']));
+                        for ($i = 0; $i < $count; $i++) {
+                            $k = sanitize_key($input['column_label_keys'][$i] ?? '');
+                            $v = sanitize_text_field((string) ($input['column_label_values'][$i] ?? ''));
+                            if ($k !== '' && $v !== '') {
+                                $pairs[] = ['data_key' => $k, 'label' => $v];
+                            }
+                        }
+                        update_option('lcni_column_labels', $pairs);
                     } elseif ($watchlist_section === 'style_config') {
                         $input['styles'] = [
                             'font' => isset($_POST['lcni_frontend_watchlist_style_font']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_font']) : '',
@@ -328,11 +340,28 @@ class LCNI_Settings {
                     update_option('lcni_frontend_stock_detail_page', (int) $watchlist_settings['stock_detail_page_id']);
                     update_option('lcni_watchlist_stock_page', sanitize_title((string) ($watchlist_settings['stock_detail_page_slug'] ?? '')));
                 } elseif ($module === 'filter') {
-                    $allowed_columns = LCNI_Filter_Admin_Settings::sanitize_allowed_columns(isset($_POST['lcni_filter_allowed_columns']) ? (array) wp_unslash($_POST['lcni_filter_allowed_columns']) : []);
-                    $default_conditions_raw = isset($_POST['lcni_filter_default_conditions']) ? wp_unslash($_POST['lcni_filter_default_conditions']) : '[]';
-                    $default_conditions = LCNI_Filter_Admin_Settings::sanitize_default_conditions($default_conditions_raw, $allowed_columns);
-                    update_option('lcni_filter_allowed_columns', $allowed_columns);
-                    update_option('lcni_filter_default_conditions', $default_conditions);
+                    $section = isset($_POST['lcni_filter_section']) ? sanitize_key((string) wp_unslash($_POST['lcni_filter_section'])) : '';
+                    if ($section === 'criteria') {
+                        update_option('lcni_filter_criteria_columns', LCNI_FilterAdmin::sanitize_columns(isset($_POST['lcni_filter_criteria_columns']) ? (array) wp_unslash($_POST['lcni_filter_criteria_columns']) : []));
+                    } elseif ($section === 'table_columns') {
+                        update_option('lcni_filter_table_columns', LCNI_FilterAdmin::sanitize_columns(isset($_POST['lcni_filter_table_columns']) ? (array) wp_unslash($_POST['lcni_filter_table_columns']) : []));
+                    } elseif ($section === 'style') {
+                        update_option('lcni_filter_style', LCNI_FilterAdmin::sanitize_style(isset($_POST['lcni_filter_style']) ? (array) wp_unslash($_POST['lcni_filter_style']) : []));
+                    }
+                } elseif ($module === 'column_labels') {
+                    $keys = isset($_POST['lcni_global_column_label_key']) ? (array) wp_unslash($_POST['lcni_global_column_label_key']) : [];
+                    $values = isset($_POST['lcni_global_column_label']) ? (array) wp_unslash($_POST['lcni_global_column_label']) : [];
+                    $pairs = [];
+                    $count = max(count($keys), count($values));
+                    for ($i = 0; $i < $count; $i++) {
+                        $key = sanitize_key($keys[$i] ?? '');
+                        $label = sanitize_text_field((string) ($values[$i] ?? ''));
+                        if ($key === '' || $label === '') {
+                            continue;
+                        }
+                        $pairs[] = ['data_key' => $key, 'label' => $label];
+                    }
+                    update_option('lcni_column_labels', $pairs);
                 } else {
                     $rule_fields = isset($_POST['lcni_frontend_rule_field']) ? (array) wp_unslash($_POST['lcni_frontend_rule_field']) : [];
                     $rule_operators = isset($_POST['lcni_frontend_rule_operator']) ? (array) wp_unslash($_POST['lcni_frontend_rule_operator']) : [];
@@ -379,7 +408,7 @@ class LCNI_Settings {
         $redirect_page = in_array($redirect_page, ['lcni-settings', 'lcni-data-viewer'], true) ? $redirect_page : 'lcni-settings';
         $redirect_url = admin_url('admin.php?page=' . $redirect_page);
 
-        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange', 'lcni-tab-update-runtime', 'lcni-tab-update-ohlc-latest', 'lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-watchlist'], true)) {
+        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange', 'lcni-tab-update-runtime', 'lcni-tab-update-ohlc-latest', 'lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-column-label'], true)) {
             $redirect_url = add_query_arg('tab', $redirect_tab, $redirect_url);
         }
 
@@ -608,7 +637,7 @@ class LCNI_Settings {
 
         $active_tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'general';
         $rule_sub_tabs = ['lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange'];
-        $frontend_sub_tabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-watchlist'];
+        $frontend_sub_tabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-column-label'];
         $update_data_sub_tabs = ['lcni-tab-update-runtime', 'lcni-tab-update-ohlc-latest'];
         if (in_array($active_tab, $rule_sub_tabs, true)) {
             $active_tab = 'rule_settings';
@@ -1463,12 +1492,14 @@ private function sanitize_module_title($value, $fallback) {
             <button type="button" data-sub-tab="lcni-tab-frontend-chart">Stock Chart</button>
             <button type="button" data-sub-tab="lcni-tab-frontend-watchlist">Watchlist</button>
             <button type="button" data-sub-tab="lcni-tab-frontend-filter">Filter</button>
+            <button type="button" data-sub-tab="lcni-tab-frontend-column-label">Column Label</button>
         </div>
         <?php $this->render_frontend_module_form('signals', 'lcni-tab-frontend-signals', $signals_labels, $signals); ?>
         <?php $this->render_frontend_module_form('overview', 'lcni-tab-frontend-overview', $overview_labels, $overview); ?>
         <?php $this->render_frontend_chart_form('chart', 'lcni-tab-frontend-chart', $chart); ?>
         <?php $this->render_frontend_watchlist_form('watchlist', 'lcni-tab-frontend-watchlist', $watchlist); ?>
-        <?php LCNI_Filter_Admin_Settings::render_filter_form('lcni-tab-frontend-filter'); ?>
+        <?php LCNI_FilterAdmin::render_filter_form('lcni-tab-frontend-filter'); ?>
+        <?php $this->render_global_column_label_form('column_labels', 'lcni-tab-frontend-column-label', $watchlist); ?>
         <script>
             (function() {
                 const nav = document.getElementById('lcni-front-sub-tabs');
@@ -1479,16 +1510,59 @@ private function sanitize_module_title($value, $fallback) {
                 const activate = function(tabId){
                     buttons.forEach((btn) => btn.classList.toggle('active', btn.getAttribute('data-sub-tab') === tabId));
                     panes.forEach((pane) => {
-                        if (pane.id === 'lcni-tab-frontend-signals' || pane.id === 'lcni-tab-frontend-overview' || pane.id === 'lcni-tab-frontend-chart' || pane.id === 'lcni-tab-frontend-watchlist') {
+                        if (pane.id === 'lcni-tab-frontend-signals' || pane.id === 'lcni-tab-frontend-overview' || pane.id === 'lcni-tab-frontend-chart' || pane.id === 'lcni-tab-frontend-watchlist' || pane.id === 'lcni-tab-frontend-filter' || pane.id === 'lcni-tab-frontend-column-label') {
                             pane.classList.toggle('active', pane.id === tabId);
                         }
                     });
                 };
                 buttons.forEach((btn) => btn.addEventListener('click', () => activate(btn.getAttribute('data-sub-tab'))));
-                const validTabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-watchlist'];
+                const validTabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-column-label'];
                 activate(validTabs.includes(current) ? current : 'lcni-tab-frontend-signals');
             })();
         </script>
+        <?php
+    }
+
+
+    private function render_global_column_label_form($module, $tab_id, $watchlist_settings) {
+        $service = new LCNI_WatchlistService(new LCNI_WatchlistRepository());
+        $all_columns = $service->get_all_columns();
+        $configured = get_option('lcni_column_labels', $watchlist_settings['column_labels'] ?? []);
+        $map = [];
+        foreach ((array) $configured as $key => $item) {
+            if (is_array($item)) {
+                $data_key = sanitize_key($item['data_key'] ?? '');
+                $label = sanitize_text_field((string) ($item['label'] ?? ''));
+            } else {
+                $data_key = sanitize_key($key);
+                $label = sanitize_text_field((string) $item);
+            }
+            if ($data_key !== '' && $label !== '') {
+                $map[$data_key] = $label;
+            }
+        }
+        ?>
+        <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
+                <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                <h3>Global Column Label</h3>
+                <table class="form-table" role="presentation"><tbody>
+                <?php foreach ($all_columns as $column) : ?>
+                    <tr>
+                        <th><?php echo esc_html($column); ?></th>
+                        <td>
+                            <input type="hidden" name="lcni_global_column_label_key[]" value="<?php echo esc_attr($column); ?>">
+                            <input type="text" name="lcni_global_column_label[]" value="<?php echo esc_attr((string) ($map[$column] ?? '')); ?>" class="regular-text" placeholder="<?php echo esc_attr($column); ?>">
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody></table>
+                <?php submit_button('Save'); ?>
+            </form>
+        </div>
         <?php
     }
 
@@ -1636,7 +1710,6 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
                 <button type="button" data-watchlist-sub-tab="lcni-watchlist-columns">Columns</button>
                 <button type="button" data-watchlist-sub-tab="lcni-watchlist-stock-detail-page">Stock Detail Page</button>
                 <button type="button" data-watchlist-sub-tab="lcni-watchlist-default-columns">Default Columns for User</button>
-                <button type="button" data-watchlist-sub-tab="lcni-watchlist-column-labels">Column Labels</button>
                 <button type="button" data-watchlist-sub-tab="lcni-watchlist-style-config">Style Config</button>
             </div>
 
@@ -1838,7 +1911,7 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
                     const panes = document.querySelectorAll('.lcni-watchlist-pane');
                     const url = new URL(window.location.href);
                     const current = url.searchParams.get('watchlist_tab') || 'lcni-watchlist-columns';
-                    const validTabs = ['lcni-watchlist-columns', 'lcni-watchlist-stock-detail-page', 'lcni-watchlist-default-columns', 'lcni-watchlist-column-labels', 'lcni-watchlist-style-config'];
+                    const validTabs = ['lcni-watchlist-columns', 'lcni-watchlist-stock-detail-page', 'lcni-watchlist-default-columns', 'lcni-watchlist-style-config'];
 
                     const activate = function (tabId) {
                         const resolvedTab = validTabs.includes(tabId) ? tabId : 'lcni-watchlist-columns';

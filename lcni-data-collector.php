@@ -43,9 +43,9 @@ require_once LCNI_PATH . 'modules/watchlist/WatchlistController.php';
 require_once LCNI_PATH . 'modules/watchlist/WatchlistShortcode.php';
 require_once LCNI_PATH . 'modules/watchlist/class-lcni-watchlist-module.php';
 require_once LCNI_PATH . 'modules/filter/FilterTable.php';
-require_once LCNI_PATH . 'modules/filter/FilterController.php';
+require_once LCNI_PATH . 'modules/filter/FilterAjax.php';
+require_once LCNI_PATH . 'modules/filter/FilterAdmin.php';
 require_once LCNI_PATH . 'modules/filter/FilterShortcode.php';
-require_once LCNI_PATH . 'modules/filter/filter-admin-settings.php';
 require_once LCNI_PATH . 'modules/filter/class-lcni-filter-module.php';
 
 function lcni_register_custom_cron_schedules($schedules) {
