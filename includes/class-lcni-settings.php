@@ -255,18 +255,42 @@ class LCNI_Settings {
                         'compact_mode' => isset($_POST['lcni_frontend_compact_mode']) ? wp_unslash($_POST['lcni_frontend_compact_mode']) : '',
                         'default_visible_bars' => isset($_POST['lcni_frontend_default_visible_bars']) ? wp_unslash($_POST['lcni_frontend_default_visible_bars']) : 120,
                         'chart_sync_enabled' => isset($_POST['lcni_frontend_chart_sync_enabled']) ? wp_unslash($_POST['lcni_frontend_chart_sync_enabled']) : '',
+                        'fit_to_screen_on_load' => isset($_POST['lcni_frontend_fit_to_screen_on_load']) ? wp_unslash($_POST['lcni_frontend_fit_to_screen_on_load']) : '',
                     ];
                     update_option('lcni_frontend_settings_chart', $this->sanitize_frontend_chart_settings($input));
                     update_option('lcni_frontend_chart_title', $this->sanitize_module_title(isset($_POST['lcni_frontend_module_title']) ? wp_unslash($_POST['lcni_frontend_module_title']) : '', 'Stock Chart'));
                 } elseif ($module === 'watchlist') {
+                    $existing_watchlist = $this->sanitize_watchlist_settings(get_option('lcni_watchlist_settings', []));
+                    $watchlist_section = isset($_POST['lcni_frontend_watchlist_section']) ? sanitize_key((string) wp_unslash($_POST['lcni_frontend_watchlist_section'])) : '';
                     $input = [
-                        'allowed_columns' => isset($_POST['lcni_frontend_watchlist_allowed_columns']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_allowed_columns']) : [],
-                        'default_columns_desktop' => isset($_POST['lcni_frontend_watchlist_default_columns_desktop']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_default_columns_desktop']) : [],
-                        'default_columns_mobile' => isset($_POST['lcni_frontend_watchlist_default_columns_mobile']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_default_columns_mobile']) : [],
-                        'stock_detail_page_id' => isset($_POST['lcni_frontend_stock_detail_page']) ? wp_unslash($_POST['lcni_frontend_stock_detail_page']) : 0,
-                        'column_label_keys' => isset($_POST['lcni_frontend_watchlist_column_label_key']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_column_label_key']) : [],
-                        'column_label_values' => isset($_POST['lcni_frontend_watchlist_column_label']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_column_label']) : [],
-                        'styles' => [
+                        'allowed_columns' => $existing_watchlist['allowed_columns'] ?? [],
+                        'default_columns_desktop' => $existing_watchlist['default_columns_desktop'] ?? [],
+                        'default_columns_mobile' => $existing_watchlist['default_columns_mobile'] ?? [],
+                        'stock_detail_page_id' => $existing_watchlist['stock_detail_page_id'] ?? 0,
+                        'column_label_keys' => array_map('sanitize_key', wp_list_pluck((array) ($existing_watchlist['column_labels'] ?? []), 'data_key')),
+                        'column_label_values' => array_map('sanitize_text_field', wp_list_pluck((array) ($existing_watchlist['column_labels'] ?? []), 'label')),
+                        'styles' => $existing_watchlist['styles'] ?? [],
+                        'value_color_rule_columns' => array_map('sanitize_key', wp_list_pluck((array) ($existing_watchlist['value_color_rules'] ?? []), 'column')),
+                        'value_color_rule_operators' => wp_list_pluck((array) ($existing_watchlist['value_color_rules'] ?? []), 'operator'),
+                        'value_color_rule_values' => wp_list_pluck((array) ($existing_watchlist['value_color_rules'] ?? []), 'value'),
+                        'value_color_rule_bg_colors' => wp_list_pluck((array) ($existing_watchlist['value_color_rules'] ?? []), 'bg_color'),
+                        'value_color_rule_text_colors' => wp_list_pluck((array) ($existing_watchlist['value_color_rules'] ?? []), 'text_color'),
+                        'add_button' => $existing_watchlist['add_button'] ?? [],
+                        'add_form_button' => $existing_watchlist['add_form_button'] ?? [],
+                    ];
+
+                    if ($watchlist_section === 'columns') {
+                        $input['allowed_columns'] = isset($_POST['lcni_frontend_watchlist_allowed_columns']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_allowed_columns']) : [];
+                    } elseif ($watchlist_section === 'stock_detail_page') {
+                        $input['stock_detail_page_id'] = isset($_POST['lcni_frontend_stock_detail_page']) ? wp_unslash($_POST['lcni_frontend_stock_detail_page']) : 0;
+                    } elseif ($watchlist_section === 'default_columns') {
+                        $input['default_columns_desktop'] = isset($_POST['lcni_frontend_watchlist_default_columns_desktop']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_default_columns_desktop']) : [];
+                        $input['default_columns_mobile'] = isset($_POST['lcni_frontend_watchlist_default_columns_mobile']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_default_columns_mobile']) : [];
+                    } elseif ($watchlist_section === 'column_labels') {
+                        $input['column_label_keys'] = isset($_POST['lcni_frontend_watchlist_column_label_key']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_column_label_key']) : [];
+                        $input['column_label_values'] = isset($_POST['lcni_frontend_watchlist_column_label']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_column_label']) : [];
+                    } elseif ($watchlist_section === 'style_config') {
+                        $input['styles'] = [
                             'font' => isset($_POST['lcni_frontend_watchlist_style_font']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_font']) : '',
                             'text_color' => isset($_POST['lcni_frontend_watchlist_style_text_color']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_text_color']) : '',
                             'background' => isset($_POST['lcni_frontend_watchlist_style_background']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_background']) : '',
@@ -274,27 +298,28 @@ class LCNI_Settings {
                             'border_radius' => isset($_POST['lcni_frontend_watchlist_style_border_radius']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_border_radius']) : 8,
                             'label_font_size' => isset($_POST['lcni_frontend_watchlist_style_label_font_size']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_label_font_size']) : 12,
                             'row_font_size' => isset($_POST['lcni_frontend_watchlist_style_row_font_size']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_row_font_size']) : 13,
-                        ],
-                        'value_color_rule_columns' => isset($_POST['lcni_watchlist_value_color_rule_column']) ? (array) wp_unslash($_POST['lcni_watchlist_value_color_rule_column']) : [],
-                        'value_color_rule_operators' => isset($_POST['lcni_watchlist_value_color_rule_operator']) ? (array) wp_unslash($_POST['lcni_watchlist_value_color_rule_operator']) : [],
-                        'value_color_rule_values' => isset($_POST['lcni_watchlist_value_color_rule_value']) ? (array) wp_unslash($_POST['lcni_watchlist_value_color_rule_value']) : [],
-                        'value_color_rule_bg_colors' => isset($_POST['lcni_watchlist_value_color_rule_bg_color']) ? (array) wp_unslash($_POST['lcni_watchlist_value_color_rule_bg_color']) : [],
-                        'value_color_rule_text_colors' => isset($_POST['lcni_watchlist_value_color_rule_text_color']) ? (array) wp_unslash($_POST['lcni_watchlist_value_color_rule_text_color']) : [],
-                        'add_button' => [
+                        ];
+                        $input['value_color_rule_columns'] = isset($_POST['lcni_watchlist_value_color_rule_column']) ? (array) wp_unslash($_POST['lcni_watchlist_value_color_rule_column']) : [];
+                        $input['value_color_rule_operators'] = isset($_POST['lcni_watchlist_value_color_rule_operator']) ? (array) wp_unslash($_POST['lcni_watchlist_value_color_rule_operator']) : [];
+                        $input['value_color_rule_values'] = isset($_POST['lcni_watchlist_value_color_rule_value']) ? (array) wp_unslash($_POST['lcni_watchlist_value_color_rule_value']) : [];
+                        $input['value_color_rule_bg_colors'] = isset($_POST['lcni_watchlist_value_color_rule_bg_color']) ? (array) wp_unslash($_POST['lcni_watchlist_value_color_rule_bg_color']) : [];
+                        $input['value_color_rule_text_colors'] = isset($_POST['lcni_watchlist_value_color_rule_text_color']) ? (array) wp_unslash($_POST['lcni_watchlist_value_color_rule_text_color']) : [];
+                        $input['add_button'] = [
                             'icon' => isset($_POST['lcni_frontend_watchlist_btn_icon']) ? wp_unslash($_POST['lcni_frontend_watchlist_btn_icon']) : '',
                             'background' => isset($_POST['lcni_frontend_watchlist_btn_background']) ? wp_unslash($_POST['lcni_frontend_watchlist_btn_background']) : '',
                             'text_color' => isset($_POST['lcni_frontend_watchlist_btn_text_color']) ? wp_unslash($_POST['lcni_frontend_watchlist_btn_text_color']) : '',
                             'font_size' => isset($_POST['lcni_frontend_watchlist_btn_font_size']) ? wp_unslash($_POST['lcni_frontend_watchlist_btn_font_size']) : 14,
                             'size' => isset($_POST['lcni_frontend_watchlist_btn_size']) ? wp_unslash($_POST['lcni_frontend_watchlist_btn_size']) : 26,
-                        ],
-                        'add_form_button' => [
+                        ];
+                        $input['add_form_button'] = [
                             'background' => isset($_POST['lcni_frontend_watchlist_form_btn_background']) ? wp_unslash($_POST['lcni_frontend_watchlist_form_btn_background']) : '',
                             'text_color' => isset($_POST['lcni_frontend_watchlist_form_btn_text_color']) ? wp_unslash($_POST['lcni_frontend_watchlist_form_btn_text_color']) : '',
                             'font_size' => isset($_POST['lcni_frontend_watchlist_form_btn_font_size']) ? wp_unslash($_POST['lcni_frontend_watchlist_form_btn_font_size']) : 14,
                             'height' => isset($_POST['lcni_frontend_watchlist_form_btn_height']) ? wp_unslash($_POST['lcni_frontend_watchlist_form_btn_height']) : 34,
                             'icon' => isset($_POST['lcni_frontend_watchlist_form_btn_icon']) ? wp_unslash($_POST['lcni_frontend_watchlist_form_btn_icon']) : '',
-                        ],
-                    ];
+                        ];
+                    }
+
                     $watchlist_settings = $this->sanitize_watchlist_settings($input);
                     update_option('lcni_watchlist_settings', $watchlist_settings);
                     update_option('lcni_frontend_stock_detail_page', (int) $watchlist_settings['stock_detail_page_id']);
@@ -1281,6 +1306,7 @@ class LCNI_Settings {
             'compact_mode' => true,
             'default_visible_bars' => 120,
             'chart_sync_enabled' => true,
+            'fit_to_screen_on_load' => true,
         ];
 
         $allowed_panels = isset($value['allowed_panels']) && is_array($value['allowed_panels'])
@@ -1300,6 +1326,8 @@ class LCNI_Settings {
         $compact_mode = in_array($compact_raw, [1, '1', true, 'true', 'yes', 'on'], true);
         $sync_raw = $value['chart_sync_enabled'] ?? $default['chart_sync_enabled'];
         $chart_sync_enabled = in_array($sync_raw, [1, '1', true, 'true', 'yes', 'on'], true);
+        $fit_to_screen_raw = $value['fit_to_screen_on_load'] ?? $default['fit_to_screen_on_load'];
+        $fit_to_screen_on_load = in_array($fit_to_screen_raw, [1, '1', true, 'true', 'yes', 'on'], true);
         $default_visible_bars = max(20, min(1000, (int) ($value['default_visible_bars'] ?? $default['default_visible_bars'])));
 
         return [
@@ -1308,6 +1336,7 @@ class LCNI_Settings {
             'compact_mode' => $compact_mode,
             'default_visible_bars' => $default_visible_bars,
             'chart_sync_enabled' => $chart_sync_enabled,
+            'fit_to_screen_on_load' => $fit_to_screen_on_load,
         ];
     }
 
@@ -1415,6 +1444,8 @@ private function sanitize_module_title($value, $fallback) {
             .lcni-sub-tab-content.active { display: block; }
             .lcni-front-form { max-width: 980px; background:#fff; border:1px solid #dcdcde; padding:12px; }
             .lcni-front-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px,1fr)); gap:8px 16px; margin:12px 0;}
+            .lcni-watchlist-pane { display: none; }
+            .lcni-watchlist-pane.active { display: block; }
         </style>
         <p>Cấu hình hiển thị frontend cho từng shortcode module.</p>
         <div class="lcni-sub-tab-nav" id="lcni-front-sub-tabs">
@@ -1576,171 +1607,254 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
         $service = new LCNI_WatchlistService(new LCNI_WatchlistRepository());
         $all_columns = $service->get_all_columns();
         $pages = get_pages(['sort_column' => 'post_title', 'sort_order' => 'asc']);
+        $configured_labels = [];
+
+        foreach ((array) ($settings['column_labels'] ?? []) as $label_item) {
+            if (!is_array($label_item)) {
+                continue;
+            }
+
+            $configured_key = sanitize_key($label_item['data_key'] ?? '');
+            if ($configured_key === '') {
+                continue;
+            }
+
+            $configured_labels[$configured_key] = sanitize_text_field((string) ($label_item['label'] ?? ''));
+        }
+
+        $watchlist_rules = isset($settings['value_color_rules']) && is_array($settings['value_color_rules']) ? $settings['value_color_rules'] : [];
         ?>
         <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
-            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
-                <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
-                <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
-                <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
-                <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+            <div class="lcni-sub-tab-nav" id="lcni-watchlist-sub-tabs">
+                <button type="button" data-watchlist-sub-tab="lcni-watchlist-columns">Columns</button>
+                <button type="button" data-watchlist-sub-tab="lcni-watchlist-stock-detail-page">Stock Detail Page</button>
+                <button type="button" data-watchlist-sub-tab="lcni-watchlist-default-columns">Default Columns for User</button>
+                <button type="button" data-watchlist-sub-tab="lcni-watchlist-column-labels">Column Labels</button>
+                <button type="button" data-watchlist-sub-tab="lcni-watchlist-style-config">Style Config</button>
+            </div>
 
-                <h3>Watchlist: danh sách cột cho phép user chọn</h3>
-                <div class="lcni-front-grid">
-                    <?php foreach ($all_columns as $column) : ?>
-                        <label><input type="checkbox" name="lcni_frontend_watchlist_allowed_columns[]" value="<?php echo esc_attr($column); ?>" <?php checked(in_array($column, (array) ($settings['allowed_columns'] ?? []), true)); ?>> <?php echo esc_html($column); ?></label>
-                    <?php endforeach; ?>
-                </div>
-
-                <h3>Stock Detail Page</h3>
-                <p>
-                    <select name="lcni_frontend_stock_detail_page">
-                        <option value="0">-- Chọn page template --</option>
-                        <?php foreach ($pages as $page) : ?>
-                            <option value="<?php echo esc_attr((string) $page->ID); ?>" <?php selected((int) ($settings['stock_detail_page_id'] ?? 0), (int) $page->ID); ?>><?php echo esc_html($page->post_title . ' (#' . $page->ID . ')'); ?></option>
+            <div id="lcni-watchlist-columns" class="lcni-watchlist-pane">
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                    <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                    <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
+                    <input type="hidden" name="lcni_frontend_watchlist_section" value="columns">
+                    <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                    <h3>Watchlist: danh sách cột cho phép user chọn</h3>
+                    <div class="lcni-front-grid">
+                        <?php foreach ($all_columns as $column) : ?>
+                            <label><input type="checkbox" name="lcni_frontend_watchlist_allowed_columns[]" value="<?php echo esc_attr($column); ?>" <?php checked(in_array($column, (array) ($settings['allowed_columns'] ?? []), true)); ?>> <?php echo esc_html($column); ?></label>
                         <?php endforeach; ?>
-                    </select>
-                </p>
+                    </div>
+                    <?php submit_button('Save'); ?>
+                </form>
+            </div>
 
-                <h3>Cột mặc định cho user</h3>
-                <p><strong>Desktop</strong></p>
-                <div class="lcni-front-grid">
-                    <?php foreach ((array) ($settings['allowed_columns'] ?? []) as $column) : ?>
-                        <label><input type="checkbox" name="lcni_frontend_watchlist_default_columns_desktop[]" value="<?php echo esc_attr($column); ?>" <?php checked(in_array($column, (array) ($settings['default_columns_desktop'] ?? []), true)); ?>> <?php echo esc_html($column); ?></label>
-                    <?php endforeach; ?>
-                </div>
-                <p><strong>Mobile</strong></p>
-                <div class="lcni-front-grid">
-                    <?php foreach ((array) ($settings['allowed_columns'] ?? []) as $column) : ?>
-                        <label><input type="checkbox" name="lcni_frontend_watchlist_default_columns_mobile[]" value="<?php echo esc_attr($column); ?>" <?php checked(in_array($column, (array) ($settings['default_columns_mobile'] ?? []), true)); ?>> <?php echo esc_html($column); ?></label>
-                    <?php endforeach; ?>
-                </div>
+            <div id="lcni-watchlist-stock-detail-page" class="lcni-watchlist-pane">
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                    <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                    <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
+                    <input type="hidden" name="lcni_frontend_watchlist_section" value="stock_detail_page">
+                    <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                    <h3>Stock Detail Page</h3>
+                    <p>
+                        <select name="lcni_frontend_stock_detail_page">
+                            <option value="0">-- Chọn page template --</option>
+                            <?php foreach ($pages as $page) : ?>
+                                <option value="<?php echo esc_attr((string) $page->ID); ?>" <?php selected((int) ($settings['stock_detail_page_id'] ?? 0), (int) $page->ID); ?>><?php echo esc_html($page->post_title . ' (#' . $page->ID . ')'); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </p>
+                    <?php submit_button('Save'); ?>
+                </form>
+            </div>
 
-                <h3>Column labels</h3>
-                <p>Admin có thể đặt label hiển thị cho từng cột (để trống sẽ dùng tên mặc định).</p>
-                <table class="form-table" role="presentation"><tbody>
-                    <?php
-                    $configured_labels = [];
-                    foreach ((array) ($settings['column_labels'] ?? []) as $label_item) {
-                        if (!is_array($label_item)) {
-                            continue;
-                        }
-                        $configured_key = sanitize_key($label_item['data_key'] ?? '');
-                        if ($configured_key === '') {
-                            continue;
-                        }
-                        $configured_labels[$configured_key] = sanitize_text_field((string) ($label_item['label'] ?? ''));
-                    }
-                    ?>
-                    <?php foreach ($all_columns as $column) : ?>
-                        <tr>
-                            <th><?php echo esc_html($column); ?></th>
-                            <td>
-                                <input type="hidden" name="lcni_frontend_watchlist_column_label_key[]" value="<?php echo esc_attr($column); ?>">
-                                <input type="text" name="lcni_frontend_watchlist_column_label[]" value="<?php echo esc_attr((string) ($configured_labels[$column] ?? '')); ?>" class="regular-text" placeholder="<?php echo esc_attr($column); ?>">
-                            </td>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody></table>
+            <div id="lcni-watchlist-default-columns" class="lcni-watchlist-pane">
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                    <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                    <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
+                    <input type="hidden" name="lcni_frontend_watchlist_section" value="default_columns">
+                    <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                    <h3>Default Columns for User</h3>
+                    <p class="description">Global default (admin) ở đây; user override được lưu riêng qua API /watchlist/settings.</p>
+                    <p><strong>Desktop (global default)</strong></p>
+                    <div class="lcni-front-grid">
+                        <?php foreach ((array) ($settings['allowed_columns'] ?? []) as $column) : ?>
+                            <label><input type="checkbox" name="lcni_frontend_watchlist_default_columns_desktop[]" value="<?php echo esc_attr($column); ?>" <?php checked(in_array($column, (array) ($settings['default_columns_desktop'] ?? []), true)); ?>> <?php echo esc_html($column); ?></label>
+                        <?php endforeach; ?>
+                    </div>
+                    <p><strong>Mobile (global default)</strong></p>
+                    <div class="lcni-front-grid">
+                        <?php foreach ((array) ($settings['allowed_columns'] ?? []) as $column) : ?>
+                            <label><input type="checkbox" name="lcni_frontend_watchlist_default_columns_mobile[]" value="<?php echo esc_attr($column); ?>" <?php checked(in_array($column, (array) ($settings['default_columns_mobile'] ?? []), true)); ?>> <?php echo esc_html($column); ?></label>
+                        <?php endforeach; ?>
+                    </div>
+                    <?php submit_button('Save'); ?>
+                </form>
+            </div>
 
-                <h3>Style config</h3>
-                <p><input type="text" name="lcni_frontend_watchlist_style_font" value="<?php echo esc_attr((string) ($settings['styles']['font'] ?? 'inherit')); ?>" placeholder="Font family"></p>
-                <p><label>Text color <input type="color" name="lcni_frontend_watchlist_style_text_color" value="<?php echo esc_attr((string) ($settings['styles']['text_color'] ?? '#111827')); ?>"></label></p>
-                <p><label>Background <input type="color" name="lcni_frontend_watchlist_style_background" value="<?php echo esc_attr((string) ($settings['styles']['background'] ?? '#ffffff')); ?>"></label></p>
-                <p><label>Border <input type="text" name="lcni_frontend_watchlist_style_border" value="<?php echo esc_attr((string) ($settings['styles']['border'] ?? '1px solid #e5e7eb')); ?>"></label></p>
-                <p><label>Border radius <input type="number" min="0" max="24" name="lcni_frontend_watchlist_style_border_radius" value="<?php echo esc_attr((string) ($settings['styles']['border_radius'] ?? 8)); ?>"></label></p>
-                <p><label>Header label font size <input type="number" min="10" max="30" name="lcni_frontend_watchlist_style_label_font_size" value="<?php echo esc_attr((string) ($settings['styles']['label_font_size'] ?? 12)); ?>"> px</label></p>
-                <p><label>Row font size <input type="number" min="10" max="30" name="lcni_frontend_watchlist_style_row_font_size" value="<?php echo esc_attr((string) ($settings['styles']['row_font_size'] ?? 13)); ?>"> px</label></p>
+            <div id="lcni-watchlist-column-labels" class="lcni-watchlist-pane">
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                    <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                    <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
+                    <input type="hidden" name="lcni_frontend_watchlist_section" value="column_labels">
+                    <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                    <h3>Column Labels</h3>
+                    <p>Admin có thể đặt label hiển thị cho từng cột (để trống sẽ dùng tên mặc định).</p>
+                    <table class="form-table" role="presentation"><tbody>
+                        <?php foreach ($all_columns as $column) : ?>
+                            <tr>
+                                <th><?php echo esc_html($column); ?></th>
+                                <td>
+                                    <input type="hidden" name="lcni_frontend_watchlist_column_label_key[]" value="<?php echo esc_attr($column); ?>">
+                                    <input type="text" name="lcni_frontend_watchlist_column_label[]" value="<?php echo esc_attr((string) ($configured_labels[$column] ?? '')); ?>" class="regular-text" placeholder="<?php echo esc_attr($column); ?>">
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody></table>
+                    <?php submit_button('Save'); ?>
+                </form>
+            </div>
 
-                <h3>Màu giá trị theo điều kiện</h3>
-                <?php $watchlist_rules = isset($settings['value_color_rules']) && is_array($settings['value_color_rules']) ? $settings['value_color_rules'] : []; ?>
-                <p class="description">Mặc định hiển thị 5 rule. Nếu cần thêm, bấm nút "Thêm rule".</p>
-                <table class="form-table" role="presentation"><tbody id="lcni-watchlist-rule-rows">
-                    <?php for ($i = 0; $i < max(5, count($watchlist_rules)); $i++) :
-                        $rule = $watchlist_rules[$i] ?? [];
-                        $rule_column = (string) ($rule['column'] ?? '');
-                        $rule_operator = (string) ($rule['operator'] ?? '>');
-                        $rule_value = (string) ($rule['value'] ?? '');
-                        $rule_bg = (string) ($rule['bg_color'] ?? '#16a34a');
-                        $rule_text = (string) ($rule['text_color'] ?? '#ffffff');
-                        ?>
+            <div id="lcni-watchlist-style-config" class="lcni-watchlist-pane">
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                    <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                    <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
+                    <input type="hidden" name="lcni_frontend_watchlist_section" value="style_config">
+                    <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+
+                    <h3>Style config</h3>
+                    <p><input type="text" name="lcni_frontend_watchlist_style_font" value="<?php echo esc_attr((string) ($settings['styles']['font'] ?? 'inherit')); ?>" placeholder="Font family"></p>
+                    <p><label>Text color <input type="color" name="lcni_frontend_watchlist_style_text_color" value="<?php echo esc_attr((string) ($settings['styles']['text_color'] ?? '#111827')); ?>"></label></p>
+                    <p><label>Background <input type="color" name="lcni_frontend_watchlist_style_background" value="<?php echo esc_attr((string) ($settings['styles']['background'] ?? '#ffffff')); ?>"></label></p>
+                    <p><label>Border <input type="text" name="lcni_frontend_watchlist_style_border" value="<?php echo esc_attr((string) ($settings['styles']['border'] ?? '1px solid #e5e7eb')); ?>"></label></p>
+                    <p><label>Border radius <input type="number" min="0" max="24" name="lcni_frontend_watchlist_style_border_radius" value="<?php echo esc_attr((string) ($settings['styles']['border_radius'] ?? 8)); ?>"></label></p>
+                    <p><label>Header label font size <input type="number" min="10" max="30" name="lcni_frontend_watchlist_style_label_font_size" value="<?php echo esc_attr((string) ($settings['styles']['label_font_size'] ?? 12)); ?>"> px</label></p>
+                    <p><label>Row font size <input type="number" min="10" max="30" name="lcni_frontend_watchlist_style_row_font_size" value="<?php echo esc_attr((string) ($settings['styles']['row_font_size'] ?? 13)); ?>"> px</label></p>
+
+                    <h3>Conditional value colors</h3>
+                    <p class="description">Mặc định hiển thị 5 rule. Nếu cần thêm, bấm nút "Thêm rule".</p>
+                    <table class="form-table" role="presentation"><tbody id="lcni-watchlist-rule-rows">
+                        <?php for ($i = 0; $i < max(5, count($watchlist_rules)); $i++) :
+                            $rule = $watchlist_rules[$i] ?? [];
+                            $rule_column = (string) ($rule['column'] ?? '');
+                            $rule_operator = (string) ($rule['operator'] ?? '>');
+                            $rule_value = (string) ($rule['value'] ?? '');
+                            $rule_bg = (string) ($rule['bg_color'] ?? '#16a34a');
+                            $rule_text = (string) ($rule['text_color'] ?? '#ffffff');
+                            ?>
+                            <tr>
+                                <td>
+                                    <select name="lcni_watchlist_value_color_rule_column[]">
+                                        <option value="">-- Column --</option>
+                                        <?php foreach ($all_columns as $column) : ?>
+                                            <option value="<?php echo esc_attr($column); ?>" <?php selected($rule_column, $column); ?>><?php echo esc_html($column); ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </td>
+                                <td>
+                                    <select name="lcni_watchlist_value_color_rule_operator[]">
+                                        <?php foreach (['>', '>=', '<', '<=', '=', '!='] as $operator) : ?>
+                                            <option value="<?php echo esc_attr($operator); ?>" <?php selected($rule_operator, $operator); ?>><?php echo esc_html($operator); ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </td>
+                                <td><input type="text" name="lcni_watchlist_value_color_rule_value[]" value="<?php echo esc_attr($rule_value); ?>" placeholder="70"></td>
+                                <td><input type="color" name="lcni_watchlist_value_color_rule_bg_color[]" value="<?php echo esc_attr($rule_bg); ?>"></td>
+                                <td><input type="color" name="lcni_watchlist_value_color_rule_text_color[]" value="<?php echo esc_attr($rule_text); ?>"></td>
+                            </tr>
+                        <?php endfor; ?>
+                    </tbody></table>
+                    <p><button type="button" class="button" id="lcni-add-watchlist-rule">Thêm rule</button></p>
+
+                    <template id="lcni-watchlist-rule-template">
                         <tr>
                             <td>
                                 <select name="lcni_watchlist_value_color_rule_column[]">
                                     <option value="">-- Column --</option>
                                     <?php foreach ($all_columns as $column) : ?>
-                                        <option value="<?php echo esc_attr($column); ?>" <?php selected($rule_column, $column); ?>><?php echo esc_html($column); ?></option>
+                                        <option value="<?php echo esc_attr($column); ?>"><?php echo esc_html($column); ?></option>
                                     <?php endforeach; ?>
                                 </select>
                             </td>
                             <td>
                                 <select name="lcni_watchlist_value_color_rule_operator[]">
                                     <?php foreach (['>', '>=', '<', '<=', '=', '!='] as $operator) : ?>
-                                        <option value="<?php echo esc_attr($operator); ?>" <?php selected($rule_operator, $operator); ?>><?php echo esc_html($operator); ?></option>
+                                        <option value="<?php echo esc_attr($operator); ?>"><?php echo esc_html($operator); ?></option>
                                     <?php endforeach; ?>
                                 </select>
                             </td>
-                            <td><input type="text" name="lcni_watchlist_value_color_rule_value[]" value="<?php echo esc_attr($rule_value); ?>" placeholder="70"></td>
-                            <td><input type="color" name="lcni_watchlist_value_color_rule_bg_color[]" value="<?php echo esc_attr($rule_bg); ?>"></td>
-                            <td><input type="color" name="lcni_watchlist_value_color_rule_text_color[]" value="<?php echo esc_attr($rule_text); ?>"></td>
+                            <td><input type="text" name="lcni_watchlist_value_color_rule_value[]" value="" placeholder="70"></td>
+                            <td><input type="color" name="lcni_watchlist_value_color_rule_bg_color[]" value="#16a34a"></td>
+                            <td><input type="color" name="lcni_watchlist_value_color_rule_text_color[]" value="#ffffff"></td>
                         </tr>
-                    <?php endfor; ?>
-                </tbody></table>
-                <p><button type="button" class="button" id="lcni-add-watchlist-rule">Thêm rule</button></p>
+                    </template>
 
-                <template id="lcni-watchlist-rule-template">
-                    <tr>
-                        <td>
-                            <select name="lcni_watchlist_value_color_rule_column[]">
-                                <option value="">-- Column --</option>
-                                <?php foreach ($all_columns as $column) : ?>
-                                    <option value="<?php echo esc_attr($column); ?>"><?php echo esc_html($column); ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </td>
-                        <td>
-                            <select name="lcni_watchlist_value_color_rule_operator[]">
-                                <?php foreach (['>', '>=', '<', '<=', '=', '!='] as $operator) : ?>
-                                    <option value="<?php echo esc_attr($operator); ?>"><?php echo esc_html($operator); ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </td>
-                        <td><input type="text" name="lcni_watchlist_value_color_rule_value[]" value="" placeholder="70"></td>
-                        <td><input type="color" name="lcni_watchlist_value_color_rule_bg_color[]" value="#16a34a"></td>
-                        <td><input type="color" name="lcni_watchlist_value_color_rule_text_color[]" value="#ffffff"></td>
-                    </tr>
-                </template>
+                    <h3>Add to watchlist button style</h3>
+                    <p><label>FontAwesome icon <input type="text" name="lcni_frontend_watchlist_btn_icon" value="<?php echo esc_attr((string) ($settings['add_button']['icon'] ?? 'fa-solid fa-heart-circle-plus')); ?>"></label></p>
+                    <p><label>Background <input type="color" name="lcni_frontend_watchlist_btn_background" value="<?php echo esc_attr((string) ($settings['add_button']['background'] ?? '#dc2626')); ?>"></label></p>
+                    <p><label>Text color <input type="color" name="lcni_frontend_watchlist_btn_text_color" value="<?php echo esc_attr((string) ($settings['add_button']['text_color'] ?? '#ffffff')); ?>"></label></p>
+                    <p><label>Font size <input type="number" min="10" max="24" name="lcni_frontend_watchlist_btn_font_size" value="<?php echo esc_attr((string) ($settings['add_button']['font_size'] ?? 14)); ?>"></label></p>
+                    <p><label>Kích thước nút <input type="number" min="20" max="48" name="lcni_frontend_watchlist_btn_size" value="<?php echo esc_attr((string) ($settings['add_button']['size'] ?? 26)); ?>"> px</label></p>
 
-                <h3>Nút add to watchlist</h3>
-                <p><label>FontAwesome icon <input type="text" name="lcni_frontend_watchlist_btn_icon" value="<?php echo esc_attr((string) ($settings['add_button']['icon'] ?? 'fa-solid fa-heart-circle-plus')); ?>"></label></p>
-                <p><label>Background <input type="color" name="lcni_frontend_watchlist_btn_background" value="<?php echo esc_attr((string) ($settings['add_button']['background'] ?? '#dc2626')); ?>"></label></p>
-                <p><label>Text color <input type="color" name="lcni_frontend_watchlist_btn_text_color" value="<?php echo esc_attr((string) ($settings['add_button']['text_color'] ?? '#ffffff')); ?>"></label></p>
-                <p><label>Font size <input type="number" min="10" max="24" name="lcni_frontend_watchlist_btn_font_size" value="<?php echo esc_attr((string) ($settings['add_button']['font_size'] ?? 14)); ?>"></label></p>
-                <p><label>Kích thước nút <input type="number" min="20" max="48" name="lcni_frontend_watchlist_btn_size" value="<?php echo esc_attr((string) ($settings['add_button']['size'] ?? 26)); ?>"> px</label></p>
+                    <h3>Shortcode button: [lcni_watchlist_add_form]</h3>
+                    <p><label>Icon <input type="text" name="lcni_frontend_watchlist_form_btn_icon" value="<?php echo esc_attr((string) ($settings['add_form_button']['icon'] ?? 'fa-solid fa-heart-circle-plus')); ?>"></label></p>
+                    <p><label>Background <input type="color" name="lcni_frontend_watchlist_form_btn_background" value="<?php echo esc_attr((string) ($settings['add_form_button']['background'] ?? '#2563eb')); ?>"></label></p>
+                    <p><label>Text color <input type="color" name="lcni_frontend_watchlist_form_btn_text_color" value="<?php echo esc_attr((string) ($settings['add_form_button']['text_color'] ?? '#ffffff')); ?>"></label></p>
+                    <p><label>Font size <input type="number" min="10" max="24" name="lcni_frontend_watchlist_form_btn_font_size" value="<?php echo esc_attr((string) ($settings['add_form_button']['font_size'] ?? 14)); ?>"></label></p>
+                    <p><label>Chiều cao nút <input type="number" min="28" max="56" name="lcni_frontend_watchlist_form_btn_height" value="<?php echo esc_attr((string) ($settings['add_form_button']['height'] ?? 34)); ?>"> px</label></p>
+                    <?php submit_button('Save'); ?>
+                </form>
+            </div>
 
-                <h3>Nút add trong shortcode [lcni_watchlist_add_form]</h3>
-                <p><label>Icon <input type="text" name="lcni_frontend_watchlist_form_btn_icon" value="<?php echo esc_attr((string) ($settings['add_form_button']['icon'] ?? 'fa-solid fa-heart-circle-plus')); ?>"></label></p>
-                <p><label>Background <input type="color" name="lcni_frontend_watchlist_form_btn_background" value="<?php echo esc_attr((string) ($settings['add_form_button']['background'] ?? '#2563eb')); ?>"></label></p>
-                <p><label>Text color <input type="color" name="lcni_frontend_watchlist_form_btn_text_color" value="<?php echo esc_attr((string) ($settings['add_form_button']['text_color'] ?? '#ffffff')); ?>"></label></p>
-                <p><label>Font size <input type="number" min="10" max="24" name="lcni_frontend_watchlist_form_btn_font_size" value="<?php echo esc_attr((string) ($settings['add_form_button']['font_size'] ?? 14)); ?>"></label></p>
-                <p><label>Chiều cao nút <input type="number" min="28" max="56" name="lcni_frontend_watchlist_form_btn_height" value="<?php echo esc_attr((string) ($settings['add_form_button']['height'] ?? 34)); ?>"> px</label></p>
-
-                <script>
-                    (function () {
-                        const addRuleBtn = document.getElementById('lcni-add-watchlist-rule');
-                        const rows = document.getElementById('lcni-watchlist-rule-rows');
-                        const template = document.getElementById('lcni-watchlist-rule-template');
-                        if (!addRuleBtn || !rows || !template) return;
+            <script>
+                (function () {
+                    const addRuleBtn = document.getElementById('lcni-add-watchlist-rule');
+                    const rows = document.getElementById('lcni-watchlist-rule-rows');
+                    const template = document.getElementById('lcni-watchlist-rule-template');
+                    if (addRuleBtn && rows && template) {
                         addRuleBtn.addEventListener('click', function () {
                             rows.insertAdjacentHTML('beforeend', template.innerHTML);
                         });
-                    })();
-                </script>
+                    }
 
-                <?php submit_button('Lưu Frontend Settings'); ?>
-            </form>
+                    const nav = document.getElementById('lcni-watchlist-sub-tabs');
+                    if (!nav) {
+                        return;
+                    }
+
+                    const buttons = nav.querySelectorAll('button[data-watchlist-sub-tab]');
+                    const panes = document.querySelectorAll('.lcni-watchlist-pane');
+                    const url = new URL(window.location.href);
+                    const current = url.searchParams.get('watchlist_tab') || 'lcni-watchlist-columns';
+                    const validTabs = ['lcni-watchlist-columns', 'lcni-watchlist-stock-detail-page', 'lcni-watchlist-default-columns', 'lcni-watchlist-column-labels', 'lcni-watchlist-style-config'];
+
+                    const activate = function (tabId) {
+                        const resolvedTab = validTabs.includes(tabId) ? tabId : 'lcni-watchlist-columns';
+                        buttons.forEach((btn) => btn.classList.toggle('active', btn.getAttribute('data-watchlist-sub-tab') === resolvedTab));
+                        panes.forEach((pane) => pane.classList.toggle('active', pane.id === resolvedTab));
+                        const nextUrl = new URL(window.location.href);
+                        nextUrl.searchParams.set('watchlist_tab', resolvedTab);
+                        window.history.replaceState({}, '', nextUrl.toString());
+                    };
+
+                    buttons.forEach((btn) => {
+                        btn.addEventListener('click', function () {
+                            activate(btn.getAttribute('data-watchlist-sub-tab'));
+                        });
+                    });
+
+                    activate(current);
+                })();
+            </script>
         </div>
         <?php
     }
+
 
     private function render_frontend_module_form($module, $tab_id, $labels, $settings) {
         $value_rules = isset($settings['styles']['value_rules']) && is_array($settings['styles']['value_rules']) ? $settings['styles']['value_rules'] : [];
@@ -1830,6 +1944,7 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
         $default_mode = (string) ($settings['default_mode'] ?? 'line');
         $compact_mode = !empty($settings['compact_mode']);
         $chart_sync_enabled = !array_key_exists('chart_sync_enabled', $settings) || !empty($settings['chart_sync_enabled']);
+        $fit_to_screen_on_load = !array_key_exists('fit_to_screen_on_load', $settings) || !empty($settings['fit_to_screen_on_load']);
         $panel_labels = [
             'volume' => 'Volume',
             'macd' => 'MACD',
@@ -1872,6 +1987,10 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
                     <tr>
                         <th>Đồng bộ zoom/scroll giữa các panel</th>
                         <td><label><input type="checkbox" name="lcni_frontend_chart_sync_enabled" value="1" <?php checked($chart_sync_enabled); ?>> Bật sync visible range</label></td>
+                    </tr>
+                    <tr>
+                        <th>Fit to screen on load</th>
+                        <td><label><input type="checkbox" name="lcni_frontend_fit_to_screen_on_load" value="1" <?php checked($fit_to_screen_on_load); ?>> Enable "Fit to screen on load"</label></td>
                     </tr>
                 </tbody></table>
                 <?php submit_button('Lưu Frontend Settings'); ?>
