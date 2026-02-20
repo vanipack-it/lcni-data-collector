@@ -62,7 +62,7 @@ class LCNI_Chart_Shortcodes {
             'height' => 420,
         ], $atts, 'lcni_stock_chart');
 
-        $symbol = $this->sanitize_symbol($atts['symbol']);
+        $symbol = $this->resolve_symbol($atts['symbol']);
         if ($symbol === '') {
             return '';
         }
@@ -141,6 +141,20 @@ class LCNI_Chart_Shortcodes {
         return (string) ob_get_clean();
     }
 
+
+    private function resolve_symbol($symbol) {
+        $normalized = $this->sanitize_symbol($symbol);
+        if ($normalized !== '') {
+            return $normalized;
+        }
+
+        $query_symbol = get_query_var('symbol');
+        if (!is_string($query_symbol) || $query_symbol === '') {
+            $query_symbol = get_query_var('lcni_stock_symbol');
+        }
+
+        return $this->sanitize_symbol((string) $query_symbol);
+    }
     private function render_chart_container($args) {
         wp_enqueue_script('lcni-chart');
 

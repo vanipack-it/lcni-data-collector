@@ -36,6 +36,7 @@ require_once LCNI_PATH . 'includes/lcni-stock-functions.php';
 require_once LCNI_PATH . 'includes/class-lcni-chart-shortcodes.php';
 require_once LCNI_PATH . 'includes/class-lcni-stock-overview-shortcodes.php';
 require_once LCNI_PATH . 'includes/class-lcni-stock-signals-shortcodes.php';
+require_once LCNI_PATH . 'includes/class-lcni-stock-detail-router.php';
 require_once LCNI_PATH . 'modules/watchlist/WatchlistRepository.php';
 require_once LCNI_PATH . 'modules/watchlist/WatchlistService.php';
 require_once LCNI_PATH . 'modules/watchlist/WatchlistController.php';
@@ -58,6 +59,8 @@ function lcni_activate_plugin() {
     LCNI_DB::create_tables();
     LCNI_DB::run_pending_migrations();
     lcni_ensure_cron_scheduled();
+    (new LCNI_Stock_Detail_Router())->register_rewrite_rule();
+    flush_rewrite_rules();
 }
 
 function lcni_ensure_plugin_tables() {
@@ -103,6 +106,8 @@ function lcni_deactivate_plugin() {
     if ($runtime_update_timestamp) {
         wp_unschedule_event($runtime_update_timestamp, LCNI_Update_Manager::CRON_HOOK);
     }
+
+    flush_rewrite_rules();
 }
 
 function lcni_run_cron_incremental_sync() {
@@ -143,6 +148,7 @@ new LCNI_Settings();
 new LCNI_Chart_Shortcodes();
 new LCNI_Stock_Overview_Shortcodes();
 new LCNI_Stock_Signals_Shortcodes();
+new LCNI_Stock_Detail_Router();
 new LCNI_Watchlist_Module();
 LCNI_Update_Manager::init();
 LCNI_OHLC_Latest_Manager::init();

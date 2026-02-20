@@ -11,6 +11,7 @@ class LCNI_WatchlistRepository {
     private $ohlc_latest_table;
     private $tongquan_table;
     private $market_table;
+    private $column_map_cache = null;
 
     public function __construct($db = null) {
         global $wpdb;
@@ -68,25 +69,51 @@ class LCNI_WatchlistRepository {
         return array_values(array_map('strtoupper', (array) $rows));
     }
 
-    private function build_select_columns($columns) {
+    public function get_available_columns() {
+        return array_keys($this->get_column_map());
+    }
+
+    private function get_column_map() {
+        if (is_array($this->column_map_cache)) {
+            return $this->column_map_cache;
+        }
+
         $map = [
             'symbol' => 'w.symbol',
             'created_at' => 'w.created_at',
-            'close_price' => 'o.close_price',
-            'pct_t_1' => 'o.pct_t_1',
-            'volume' => 'o.volume',
-            'value_traded' => 'o.value_traded',
-            'exchange' => 'm.exchange',
-            'market_id' => 'm.market_id',
-            'eps' => 't.eps',
-            'roe' => 't.roe',
-            'pe_ratio' => 't.pe_ratio',
-            'pb_ratio' => 't.pb_ratio',
-            'tc_rating' => 't.tc_rating',
-            'xep_hang' => 't.xep_hang',
         ];
 
+        $sources = [
+            'o' => $this->ohlc_latest_table,
+            't' => $this->tongquan_table,
+            'm' => $this->market_table,
+        ];
+
+        foreach ($sources as $alias => $table_name) {
+            $columns = $this->wpdb->get_col("SHOW COLUMNS FROM {$table_name}", 0);
+            if (!is_array($columns)) {
+                continue;
+            }
+
+            foreach ($columns as $column_name) {
+                $column_name = sanitize_key((string) $column_name);
+                if ($column_name === '' || isset($map[$column_name])) {
+                    continue;
+                }
+
+                $map[$column_name] = $alias . '.' . $column_name;
+            }
+        }
+
+        $this->column_map_cache = $map;
+
+        return $map;
+    }
+
+    private function build_select_columns($columns) {
+        $map = $this->get_column_map();
         $selected = [];
+
         foreach ($columns as $column) {
             if (!isset($map[$column])) {
                 continue;

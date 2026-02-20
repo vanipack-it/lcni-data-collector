@@ -1,5 +1,14 @@
 # Development Log
 
+
+## 2026-02-20
+- Refactor Watchlist frontend: panel chọn cột dạng dropdown chỉ mở khi click icon setting, lưu cấu hình cột theo `user_meta` và giữ nguyên sau reload.
+- Nâng cấp UI bảng Watchlist: thêm hover row, con trỏ pointer và click row để điều hướng sang URL động `/stock/{symbol}`.
+- Mở rộng nguồn cột Watchlist cho admin từ toàn bộ cột khả dụng trong `wp_lcni_ohlc_latest`, `wp_lcni_symbol_tongquan`, `wp_lcni_sym_icb_market`; user chỉ chọn trong danh sách admin cho phép.
+- Di chuyển cấu hình Watchlist vào tab con **LCNI Data → Frontend Setting → Watchlist**, đồng thời bổ sung lựa chọn page template cho Stock Detail.
+- Thêm dynamic stock route: rewrite `stock/{symbol}`, query vars `symbol` + `lcni_stock_symbol`, template loader render page được admin chọn và tự bind symbol vào shortcodes `lcni_stock_overview`, `lcni_stock_chart`, `lcni_stock_signals`.
+- Bổ sung tài liệu thiết lập nhanh trong `docs_watchlist_stock_detail_setup.md`.
+
 ## 2026-02-19
 - Tối ưu module LCNi Signals: chuyển truy vấn lấy dữ liệu mới nhất từ `wp_lcni_ohlc` sang `wp_lcni_ohlc_latest` để tránh `ORDER BY event_time DESC LIMIT 1` trên bảng lịch sử lớn, giúp giảm tải DB và tăng tốc độ tải trang.
 

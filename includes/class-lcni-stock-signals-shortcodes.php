@@ -57,7 +57,7 @@ class LCNI_Stock_Signals_Shortcodes {
             'version' => self::VERSION,
         ], $atts, 'lcni_stock_signals');
 
-        $symbol = $this->sanitize_symbol($atts['symbol']);
+        $symbol = $this->resolve_symbol($atts['symbol']);
         if ($symbol === '') {
             return '';
         }
@@ -142,6 +142,20 @@ class LCNI_Stock_Signals_Shortcodes {
         ]);
     }
 
+
+    private function resolve_symbol($symbol) {
+        $normalized = $this->sanitize_symbol($symbol);
+        if ($normalized !== '') {
+            return $normalized;
+        }
+
+        $query_symbol = get_query_var('symbol');
+        if (!is_string($query_symbol) || $query_symbol === '') {
+            $query_symbol = get_query_var('lcni_stock_symbol');
+        }
+
+        return $this->sanitize_symbol((string) $query_symbol);
+    }
     private function get_admin_config() {
         $default = $this->get_default_admin_config();
         $saved = get_option('lcni_frontend_settings_signals', []);
