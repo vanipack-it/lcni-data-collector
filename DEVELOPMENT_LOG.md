@@ -84,6 +84,12 @@
 - Tăng phiên bản plugin lên `1.7`.
 
 ## 2026-02-20
+- Refactor module Watchlist lưu danh sách symbol theo `user_meta` key `lcni_watchlist_symbols` (JSON array), bỏ phụ thuộc ghi/xóa vào bảng watchlist cũ.
+- Bổ sung shortcode mới `[lcni_watchlist_add_form]` và `[lcni_watchlist_add_button]` (giữ alias tương thích `[lcni_watchlist_add]`), hỗ trợ add/remove realtime qua AJAX + nonce.
+- Nâng cấp frontend watchlist: thay icon add trong bảng thành icon delete, xóa dòng realtime không reload, dùng event delegation và đồng bộ trạng thái toàn cục qua `window.lcniWatchlistStore`.
+- Bổ sung JS events đồng bộ module: `lcniSymbolAdded`, `lcniSymbolRemoved`, `lcniWatchlistSymbolsChanged`.
+- Mở rộng cấu hình admin tại Frontend Settings → Watchlist cho phép đặt label từng column (`column_labels`) và frontend render header theo label cấu hình (fallback key mặc định).
+- Cập nhật tài liệu `SHORTCODES.md` cho toàn bộ shortcode watchlist mới.
 - Refactor Watchlist row navigation để redirect theo slug page template cấu hình ở Frontend Setting (`/{page-slug}/?symbol={symbol}`), lưu thêm option slug `lcni_watchlist_stock_page` và encode symbol phía client trước khi chuyển trang.
 - Cập nhật UX Watchlist column selector: panel mặc định ẩn, mở/đóng bằng nút settings, click outside để tự đóng; panel dùng `position: absolute` nên không đẩy layout bảng.
 - Fix đồng bộ zoom/scroll cho lightweight-charts bằng `subscribeVisibleLogicalRangeChange` với cờ `isSyncingRange`, đồng bộ visible range giữa chart chính và toàn bộ chart phụ (volume/macd/rsi/rs).

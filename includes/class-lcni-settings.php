@@ -262,6 +262,8 @@ class LCNI_Settings {
                         'default_columns_desktop' => isset($_POST['lcni_frontend_watchlist_default_columns_desktop']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_default_columns_desktop']) : [],
                         'default_columns_mobile' => isset($_POST['lcni_frontend_watchlist_default_columns_mobile']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_default_columns_mobile']) : [],
                         'stock_detail_page_id' => isset($_POST['lcni_frontend_stock_detail_page']) ? wp_unslash($_POST['lcni_frontend_stock_detail_page']) : 0,
+                        'column_label_keys' => isset($_POST['lcni_frontend_watchlist_column_label_key']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_column_label_key']) : [],
+                        'column_label_values' => isset($_POST['lcni_frontend_watchlist_column_label']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_column_label']) : [],
                         'styles' => [
                             'font' => isset($_POST['lcni_frontend_watchlist_style_font']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_font']) : '',
                             'text_color' => isset($_POST['lcni_frontend_watchlist_style_text_color']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_text_color']) : '',
@@ -1452,6 +1454,27 @@ class LCNI_Settings {
 
         $styles = isset($input['styles']) && is_array($input['styles']) ? $input['styles'] : [];
         $button = isset($input['add_button']) && is_array($input['add_button']) ? $input['add_button'] : [];
+        $label_keys = isset($input['column_label_keys']) && is_array($input['column_label_keys']) ? $input['column_label_keys'] : [];
+        $label_values = isset($input['column_label_values']) && is_array($input['column_label_values']) ? $input['column_label_values'] : [];
+        $column_labels = [];
+        $label_count = max(count($label_keys), count($label_values));
+
+        for ($index = 0; $index < $label_count; $index++) {
+            $key = sanitize_key($label_keys[$index] ?? '');
+            if ($key === '' || !in_array($key, $all_columns, true)) {
+                continue;
+            }
+
+            $label = sanitize_text_field((string) ($label_values[$index] ?? ''));
+            if ($label === '') {
+                continue;
+            }
+
+            $column_labels[] = [
+                'data_key' => $key,
+                'label' => $label,
+            ];
+        }
         $stock_detail_page_id = absint($input['stock_detail_page_id'] ?? get_option('lcni_frontend_stock_detail_page', 0));
         $stock_detail_page_slug = '';
         if ($stock_detail_page_id > 0) {
@@ -1465,6 +1488,7 @@ class LCNI_Settings {
             'allowed_columns' => $allowed_columns,
             'default_columns_desktop' => $default_columns_desktop,
             'default_columns_mobile' => $default_columns_mobile,
+            'column_labels' => $column_labels,
             'stock_detail_page_id' => $stock_detail_page_id,
             'stock_detail_page_slug' => $stock_detail_page_slug,
             'styles' => [
@@ -1525,6 +1549,33 @@ class LCNI_Settings {
                         <label><input type="checkbox" name="lcni_frontend_watchlist_default_columns_mobile[]" value="<?php echo esc_attr($column); ?>" <?php checked(in_array($column, (array) ($settings['default_columns_mobile'] ?? []), true)); ?>> <?php echo esc_html($column); ?></label>
                     <?php endforeach; ?>
                 </div>
+
+                <h3>Column labels</h3>
+                <p>Admin có thể đặt label hiển thị cho từng cột (để trống sẽ dùng tên mặc định).</p>
+                <table class="form-table" role="presentation"><tbody>
+                    <?php
+                    $configured_labels = [];
+                    foreach ((array) ($settings['column_labels'] ?? []) as $label_item) {
+                        if (!is_array($label_item)) {
+                            continue;
+                        }
+                        $configured_key = sanitize_key($label_item['data_key'] ?? '');
+                        if ($configured_key === '') {
+                            continue;
+                        }
+                        $configured_labels[$configured_key] = sanitize_text_field((string) ($label_item['label'] ?? ''));
+                    }
+                    ?>
+                    <?php foreach ($all_columns as $column) : ?>
+                        <tr>
+                            <th><?php echo esc_html($column); ?></th>
+                            <td>
+                                <input type="hidden" name="lcni_frontend_watchlist_column_label_key[]" value="<?php echo esc_attr($column); ?>">
+                                <input type="text" name="lcni_frontend_watchlist_column_label[]" value="<?php echo esc_attr((string) ($configured_labels[$column] ?? '')); ?>" class="regular-text" placeholder="<?php echo esc_attr($column); ?>">
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody></table>
 
                 <h3>Style config</h3>
                 <p><input type="text" name="lcni_frontend_watchlist_style_font" value="<?php echo esc_attr((string) ($settings['styles']['font'] ?? 'inherit')); ?>" placeholder="Font family"></p>

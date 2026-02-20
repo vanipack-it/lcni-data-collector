@@ -12,20 +12,13 @@ Ví dụ:
 [lcni_stock_chart symbol="HPG" limit="250" height="480"]
 ```
 
-- `symbol`: mã cổ phiếu cố định.
-- `limit`: số nến tối đa.
-- `height`: chiều cao chart chính (px).
-
 ### `[lcni_stock_chart_query]`
-Hiển thị chart theo mã lấy từ query string (hữu ích khi dùng cùng form/link đổi mã).
+Hiển thị chart theo mã lấy từ query string.
 
 Ví dụ:
 ```text
 [lcni_stock_chart_query param="symbol" default_symbol="VNINDEX" limit="200"]
 ```
-
-- `param`: tên query param trên URL.
-- `default_symbol`: mã mặc định nếu URL chưa có.
 
 ### `[lcni_stock_query_form]`
 Form nhập mã cổ phiếu để đổi symbol ngay trên cùng trang.
@@ -40,37 +33,47 @@ Ví dụ:
 ### `[lcni_stock_overview]`
 Hiển thị overview cho **1 mã cố định**.
 
-Ví dụ:
-```text
-[lcni_stock_overview symbol="FPT"]
-```
-
 ### `[lcni_stock_overview_query]`
-Hiển thị overview theo query symbol, đồng bộ với chart khi đặt chung page.
+Hiển thị overview theo query symbol.
 
-Ví dụ:
-```text
-[lcni_stock_overview_query param="symbol" default_symbol="FPT"]
-```
-
-## 3) Bộ thông số LCNi Signals (mới)
+## 3) Bộ thông số LCNi Signals
 
 ### `[lcni_stock_signals]`
-Hiển thị các thông số LCNi custom cho **1 mã cố định**:
-`xay_nen`, `xay_nen_count_30`, `nen_type`, `pha_nen`, `tang_gia_kem_vol`, `smart_money`, `rs_exchange_status`, `rs_exchange_recommend`, `rs_recommend_status`.
-
-Ví dụ:
-```text
-[lcni_stock_signals symbol="SSI" version="1.7"]
-```
+Hiển thị các thông số LCNi custom cho **1 mã cố định**.
 
 ### `[lcni_stock_signals_query]`
-Hiển thị LCNi Signals theo query param, hỗ trợ đồng bộ với chart/overview khi thay đổi cổ phiếu trên cùng trang.
+Hiển thị LCNi Signals theo query param.
+
+## 4) Watchlist
+
+### `[lcni_watchlist]`
+Render bảng watchlist theo user đăng nhập.
+
+### `[lcni_watchlist_add_form]`
+Render form thêm symbol vào watchlist (input + nút `Thêm`).
+
+- Symbol được chuẩn hóa `trim + uppercase`.
+- Không thêm trùng symbol đã có trong watchlist.
+- Sau khi thêm thành công: tự clear input, phát sự kiện realtime và đồng bộ toàn bộ icon watchlist.
 
 Ví dụ:
 ```text
-[lcni_stock_signals_query param="symbol" default_symbol="SSI" version="1.7"]
+[lcni_watchlist_add_form]
 ```
 
-- Chỉ hiển thị dữ liệu tại `event_time` mới nhất đang có dữ liệu của mã.
-- Có thể phối hợp với các shortcode chart/overview để admin đặt linh hoạt nhiều module trên cùng page.
+### `[lcni_watchlist_add_button symbol="HPG"]`
+Render nút thêm/xóa watchlist dùng ở mọi nơi.
+
+- Nếu không truyền `symbol`, shortcode sẽ fallback từ query `?symbol=` hiện tại.
+- Khi thêm thành công, frontend dispatch sự kiện:
+
+```js
+window.dispatchEvent(new CustomEvent('lcniSymbolAdded', { detail: symbol }))
+```
+
+Ví dụ:
+```text
+[lcni_watchlist_add_button symbol="HPG"]
+```
+
+> Ghi chú tương thích ngược: shortcode cũ `[lcni_watchlist_add]` vẫn hoạt động, alias về cùng logic với `[lcni_watchlist_add_button]`.
