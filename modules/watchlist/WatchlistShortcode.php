@@ -22,6 +22,8 @@ class LCNI_WatchlistShortcode {
     public function register_shortcodes() {
         add_shortcode('lcni_watchlist', [$this, 'render_watchlist']);
         add_shortcode('lcni_watchlist_add', [$this, 'render_add_button']);
+        add_shortcode('lcni_watchlist_add_button', [$this, 'render_add_button']);
+        add_shortcode('lcni_watchlist_add_form', [$this, 'render_add_form']);
     }
 
     public function register_assets() {
@@ -40,9 +42,15 @@ class LCNI_WatchlistShortcode {
         return '<div class="lcni-watchlist" data-lcni-watchlist></div>';
     }
 
+    public function render_add_form() {
+        $this->enqueue_watchlist_assets();
+
+        return '<form class="lcni-watchlist-add-form" data-lcni-watchlist-add-form><input type="text" data-watchlist-symbol-input placeholder="Nhập mã cổ phiếu" autocomplete="off" /><button type="submit">Thêm</button></form>';
+    }
+
     public function render_add_button($atts = []) {
-        $atts = shortcode_atts(['symbol' => ''], $atts, 'lcni_watchlist_add');
-        $symbol = strtoupper(sanitize_text_field((string) $atts['symbol']));
+        $atts = shortcode_atts(['symbol' => ''], $atts, 'lcni_watchlist_add_button');
+        $symbol = $this->resolve_symbol($atts['symbol']);
 
         if ($symbol === '') {
             return '';
@@ -62,7 +70,7 @@ class LCNI_WatchlistShortcode {
         );
 
         return sprintf(
-            '<button type="button" class="lcni-watchlist-add" data-lcni-watchlist-add data-symbol="%1$s" style="%2$s"><i class="%3$s" aria-hidden="true"></i></button>',
+            '<button type="button" class="lcni-watchlist-add" data-lcni-watchlist-add data-symbol="%1$s" style="%2$s" aria-label="Add to watchlist"><i class="%3$s" aria-hidden="true"></i></button>',
             esc_attr($symbol),
             esc_attr($style),
             esc_attr($icon_class)
@@ -70,7 +78,7 @@ class LCNI_WatchlistShortcode {
     }
 
     public function inject_global_watchlist_button($symbol_html, $symbol) {
-        $symbol = strtoupper(sanitize_text_field((string) $symbol));
+        $symbol = $this->resolve_symbol($symbol);
         if ($symbol === '') {
             return (string) $symbol_html;
         }
@@ -80,6 +88,18 @@ class LCNI_WatchlistShortcode {
             (string) $symbol_html,
             $this->render_add_button(['symbol' => $symbol])
         );
+    }
+
+    private function resolve_symbol($symbol) {
+        $symbol = strtoupper(trim(sanitize_text_field((string) $symbol)));
+        if ($symbol !== '') {
+            return $symbol;
+        }
+
+        $query_symbol = isset($_GET['symbol']) ? wp_unslash($_GET['symbol']) : '';
+        $query_symbol = strtoupper(trim(sanitize_text_field((string) $query_symbol)));
+
+        return $query_symbol;
     }
 
     private function enqueue_watchlist_assets() {
@@ -114,6 +134,7 @@ class LCNI_WatchlistShortcode {
             'allowed_columns' => $this->service->get_default_columns('desktop'),
             'default_columns_desktop' => $this->service->get_default_columns('desktop'),
             'default_columns_mobile' => $this->service->get_default_columns('mobile'),
+            'column_labels' => [],
             'stock_detail_page_slug' => sanitize_title((string) get_option('lcni_watchlist_stock_page', '')),
             'styles' => [
                 'font' => 'inherit',

@@ -7,6 +7,7 @@ if (!defined('ABSPATH')) {
 class LCNI_WatchlistService {
 
     const USER_SETTINGS_META_KEY = 'lcni_watchlist_columns';
+    const USER_SYMBOLS_META_KEY = 'lcni_watchlist_symbols';
     const CACHE_GROUP = 'lcni_watchlist';
     const CACHE_TTL = 120;
 
@@ -23,10 +24,15 @@ class LCNI_WatchlistService {
             return new WP_Error('invalid_symbol', 'Symbol không hợp lệ.', ['status' => 400]);
         }
 
-        $this->repository->add($user_id, $symbol);
-        $this->clear_user_cache($user_id);
+        $symbols = $this->get_user_symbols($user_id);
+        if (in_array($symbol, $symbols, true)) {
+            return ['symbol' => $symbol, 'success' => true, 'already_exists' => true, 'symbols' => $symbols];
+        }
 
-        return ['symbol' => $symbol, 'success' => true];
+        array_unshift($symbols, $symbol);
+        $this->save_user_symbols($user_id, $symbols);
+
+        return ['symbol' => $symbol, 'success' => true, 'already_exists' => false, 'symbols' => $symbols];
     }
 
     public function remove_symbol($user_id, $symbol) {
@@ -35,10 +41,14 @@ class LCNI_WatchlistService {
             return new WP_Error('invalid_symbol', 'Symbol không hợp lệ.', ['status' => 400]);
         }
 
-        $this->repository->remove($user_id, $symbol);
-        $this->clear_user_cache($user_id);
+        $symbols = $this->get_user_symbols($user_id);
+        $next_symbols = array_values(array_filter($symbols, static function ($item) use ($symbol) {
+            return $item !== $symbol;
+        }));
 
-        return ['symbol' => $symbol, 'success' => true];
+        $this->save_user_symbols($user_id, $next_symbols);
+
+        return ['symbol' => $symbol, 'success' => true, 'symbols' => $next_symbols];
     }
 
     public function get_watchlist($user_id, $columns, $device = 'desktop') {
@@ -48,21 +58,35 @@ class LCNI_WatchlistService {
             $effective_columns = $this->get_default_columns($device);
         }
 
-        $cache_key = 'watchlist:' . $user_id . ':' . $this->get_cache_version($user_id) . ':' . md5(wp_json_encode($effective_columns));
+        $symbols = $this->get_user_symbols($user_id);
+        if (empty($symbols)) {
+            return [
+                'columns' => $effective_columns,
+                'items' => [],
+                'symbols' => [],
+                'column_labels' => $this->get_column_labels($effective_columns),
+            ];
+        }
+
+        $cache_key = 'watchlist:' . $user_id . ':' . $this->get_cache_version($user_id) . ':' . md5(wp_json_encode([$effective_columns, $symbols]));
         $cached = wp_cache_get($cache_key, self::CACHE_GROUP);
         if ($cached !== false) {
             return [
                 'columns' => $effective_columns,
                 'items' => $cached,
+                'symbols' => $symbols,
+                'column_labels' => $this->get_column_labels($effective_columns),
             ];
         }
 
-        $rows = $this->repository->get_by_user($user_id, $effective_columns);
+        $rows = $this->repository->get_by_symbols($symbols, $effective_columns);
         wp_cache_set($cache_key, $rows, self::CACHE_GROUP, self::CACHE_TTL);
 
         return [
             'columns' => $effective_columns,
             'items' => $rows,
+            'symbols' => $symbols,
+            'column_labels' => $this->get_column_labels($effective_columns),
         ];
     }
 
@@ -103,6 +127,24 @@ class LCNI_WatchlistService {
         return $normalized;
     }
 
+    public function get_user_symbols($user_id) {
+        $saved = get_user_meta($user_id, self::USER_SYMBOLS_META_KEY, true);
+        if (is_string($saved) && $saved !== '') {
+            $decoded = json_decode($saved, true);
+            if (is_array($decoded)) {
+                $saved = $decoded;
+            }
+        }
+
+        if (!is_array($saved)) {
+            return [];
+        }
+
+        $symbols = array_values(array_unique(array_filter(array_map([$this, 'sanitize_symbol'], $saved))));
+
+        return $symbols;
+    }
+
     public function get_allowed_columns() {
         $settings = get_option('lcni_watchlist_settings', []);
         $allowed = isset($settings['allowed_columns']) && is_array($settings['allowed_columns'])
@@ -112,6 +154,33 @@ class LCNI_WatchlistService {
         $normalized = array_values(array_intersect($this->get_all_columns(), $allowed));
 
         return !empty($normalized) ? $normalized : $this->get_default_columns();
+    }
+
+    public function get_column_labels($columns) {
+        $settings = get_option('lcni_watchlist_settings', []);
+        $configured = isset($settings['column_labels']) && is_array($settings['column_labels']) ? $settings['column_labels'] : [];
+        $label_map = [];
+
+        foreach ($configured as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $data_key = sanitize_key($item['data_key'] ?? '');
+            if ($data_key === '') {
+                continue;
+            }
+            $label = sanitize_text_field((string) ($item['label'] ?? ''));
+            if ($label !== '') {
+                $label_map[$data_key] = $label;
+            }
+        }
+
+        $result = [];
+        foreach ((array) $columns as $column) {
+            $result[$column] = $label_map[$column] ?? $column;
+        }
+
+        return $result;
     }
 
     public function get_all_columns() {
@@ -147,7 +216,14 @@ class LCNI_WatchlistService {
     }
 
     private function sanitize_symbol($symbol) {
-        return strtoupper(sanitize_text_field((string) $symbol));
+        $symbol = strtoupper(trim(sanitize_text_field((string) $symbol)));
+
+        return preg_match('/^[A-Z0-9._-]+$/', $symbol) ? $symbol : '';
+    }
+
+    private function save_user_symbols($user_id, $symbols) {
+        update_user_meta($user_id, self::USER_SYMBOLS_META_KEY, wp_json_encode(array_values($symbols)));
+        $this->clear_user_cache($user_id);
     }
 
     private function clear_user_cache($user_id) {

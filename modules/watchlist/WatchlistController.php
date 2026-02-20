@@ -66,7 +66,9 @@ class LCNI_WatchlistController {
         return rest_ensure_response([
             'allowed_columns' => $this->service->get_allowed_columns(),
             'columns' => $data['columns'],
+            'column_labels' => $data['column_labels'],
             'items' => $data['items'],
+            'symbols' => $data['symbols'],
         ]);
     }
 
@@ -77,7 +79,11 @@ class LCNI_WatchlistController {
 
         $result = $this->service->add_symbol(get_current_user_id(), $request->get_param('symbol'));
 
-        return is_wp_error($result) ? $result : rest_ensure_response($result);
+        if (is_wp_error($result)) {
+            return $result;
+        }
+
+        return rest_ensure_response($result);
     }
 
     public function remove_symbol(WP_REST_Request $request) {
@@ -87,7 +93,11 @@ class LCNI_WatchlistController {
 
         $result = $this->service->remove_symbol(get_current_user_id(), $request->get_param('symbol'));
 
-        return is_wp_error($result) ? $result : rest_ensure_response($result);
+        if (is_wp_error($result)) {
+            return $result;
+        }
+
+        return rest_ensure_response($result);
     }
 
     public function get_settings(WP_REST_Request $request) {
