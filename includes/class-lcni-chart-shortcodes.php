@@ -172,6 +172,8 @@ class LCNI_Chart_Shortcodes {
 
     private function render_chart_container($args) {
         wp_enqueue_script('lcni-chart');
+        wp_enqueue_style('lcni-chart-ui');
+        LCNI_Button_Style_Config::enqueue_frontend_assets('lcni-chart-ui');
 
         $symbol = $this->sanitize_symbol((string) ($args['symbol'] ?? ''));
         $fallback_symbol = $this->sanitize_symbol((string) ($args['fallback_symbol'] ?? ''));
@@ -181,7 +183,7 @@ class LCNI_Chart_Shortcodes {
         $admin_config = $this->get_admin_config();
 
         return sprintf(
-            '<div data-lcni-chart data-api-base="%1$s" data-symbol="%2$s" data-fallback-symbol="%3$s" data-query-param="%4$s" data-limit="%5$d" data-main-height="%6$d" data-admin-config="%7$s" data-settings-api="%8$s" data-settings-nonce="%9$s" data-settings-storage-key="%10$s"></div>',
+            '<div data-lcni-chart data-api-base="%1$s" data-symbol="%2$s" data-fallback-symbol="%3$s" data-query-param="%4$s" data-limit="%5$d" data-main-height="%6$d" data-admin-config="%7$s" data-settings-api="%8$s" data-settings-nonce="%9$s" data-settings-storage-key="%10$s" data-button-config="%11$s"></div>',
             esc_url(rest_url('lcni/v1/candles')),
             esc_attr($symbol),
             esc_attr($fallback_symbol),
@@ -191,7 +193,8 @@ class LCNI_Chart_Shortcodes {
             esc_attr(wp_json_encode($admin_config)),
             esc_url(rest_url('lcni/v1/stock-chart/settings')),
             esc_attr(wp_create_nonce('wp_rest')),
-            esc_attr('lcni_chart_settings_v1')
+            esc_attr('lcni_chart_settings_v1'),
+            esc_attr(wp_json_encode(LCNI_Button_Style_Config::get_button('btn_chart_setting')))
         );
     }
 

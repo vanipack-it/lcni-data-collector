@@ -21,6 +21,31 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   };
 
+
+  const parseButtonConfig = (rawConfig) => {
+    try {
+      const parsed = rawConfig ? JSON.parse(rawConfig) : {};
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (error) {
+      return {};
+    }
+  };
+
+  const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
+
+  const renderButtonContent = (buttonConfig) => {
+    const iconClass = String(buttonConfig?.icon_class || "").trim();
+    const label = String(buttonConfig?.label_text || "").trim();
+    const icon = iconClass ? `<i class="${escapeHtml(iconClass)}" aria-hidden="true"></i>` : "";
+    const text = label ? `<span>${escapeHtml(label)}</span>` : "";
+
+    if ((buttonConfig?.icon_position || "left") === "right") {
+      return `${text}${icon}`;
+    }
+
+    return `${icon}${text}`;
+  };
+
   const stockSync = stockSyncUtils
     ? stockSyncUtils.createStockSync()
     : { subscribe() {}, setSymbol() {}, getCurrentSymbol() { return ""; }, configureQueryParam() {} };
@@ -78,6 +103,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const fixedSymbol = sanitizeSymbol(container.dataset.symbol);
     const fallbackSymbol = sanitizeSymbol(container.dataset.fallbackSymbol);
     const adminConfig = parseAdminConfig(container.dataset.adminConfig);
+    const buttonConfig = parseButtonConfig(container.dataset.buttonConfig);
     const allowedPanels = Array.isArray(adminConfig.allowed_panels) && adminConfig.allowed_panels.length
       ? adminConfig.allowed_panels.filter((panel) => allPanels.includes(panel))
       : allPanels;
@@ -140,7 +166,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         const settingsBtn = document.createElement("button");
         settingsBtn.type = "button";
-        settingsBtn.textContent = "⚙";
+        settingsBtn.className = "lcni-btn lcni-btn-btn_chart_setting";
+        settingsBtn.innerHTML = renderButtonContent(buttonConfig);
         settingsBtn.dataset.chartSettingsToggle = "1";
         settingsBtn.setAttribute("aria-expanded", "false");
 

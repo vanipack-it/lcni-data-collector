@@ -41,4 +41,6 @@
 .lcni-watchlist-add.is-active { background: #ef4444 !important; color: #fff !important; }
 
 .lcni-table-wrapper { max-height: 600px; overflow-y: auto; }
-.lcni-table thead th { position: sticky; top: 0; z-index: 10; background: inherit; }
+.lcni-table thead th { position: sticky; top: 0; z-index: 10; background: #fff; }
+
+.lcni-watchlist-table thead th { background: #fff; }

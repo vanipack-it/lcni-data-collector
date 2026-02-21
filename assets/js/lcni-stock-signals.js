@@ -115,6 +115,38 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
+
+
+  const parseButtonConfig = (rawConfig) => {
+    if (!rawConfig) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(rawConfig);
+      if (!parsed || typeof parsed !== "object") {
+        return null;
+      }
+      return parsed;
+    } catch (error) {
+      return null;
+    }
+  };
+
+  const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
+
+  const renderButtonContent = (buttonConfig) => {
+    const iconClass = String(buttonConfig?.icon_class || "").trim();
+    const label = String(buttonConfig?.label_text || "").trim();
+    const icon = iconClass ? `<i class="${escapeHtml(iconClass)}" aria-hidden="true"></i>` : "";
+    const text = label ? `<span>${escapeHtml(label)}</span>` : "";
+
+    if ((buttonConfig?.icon_position || "left") === "right") {
+      return `${text}${icon}`;
+    }
+
+    return `${icon}${text}`;
+  };
   const loadSettings = async (settingsApi, fallbackFields) => {
     try {
       const response = await fetch(settingsApi, { credentials: "same-origin" });
@@ -173,6 +205,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const fixedSymbol = sanitizeSymbol(container.dataset.symbol);
     const settingsApi = container.dataset.settingsApi;
     const adminConfig = parseAdminConfig(container.dataset.adminConfig);
+    const buttonConfig = parseButtonConfig(container.dataset.buttonConfig) || {};
     const allowedFields = Array.isArray(adminConfig?.allowed_fields) && adminConfig.allowed_fields.length
       ? adminConfig.allowed_fields.filter((field) => labels[field])
       : defaultFields;
@@ -228,13 +261,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const settingBtn = document.createElement("button");
         settingBtn.type = "button";
-        settingBtn.textContent = "⚙";
+        settingBtn.className = "lcni-btn lcni-btn-btn_signals_setting";
+        settingBtn.innerHTML = renderButtonContent(buttonConfig);
         settingBtn.setAttribute("aria-label", "Cài đặt hiển thị tín hiệu");
-        settingBtn.style.border = "none";
-        settingBtn.style.background = "transparent";
-        settingBtn.style.cursor = "pointer";
-        settingBtn.style.fontSize = "16px";
-        settingBtn.style.lineHeight = "1";
 
         const panel = document.createElement("div");
         panel.style.display = "none";

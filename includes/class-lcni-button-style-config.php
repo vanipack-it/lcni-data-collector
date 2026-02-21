@@ -19,6 +19,9 @@ class LCNI_Button_Style_Config {
             'btn_watchlist_save' => 'Watchlist: Save',
             'btn_watchlist_setting' => 'Watchlist: Settings',
             'btn_watchlist_add_symbol' => 'Watchlist: Add Symbol',
+            'btn_overview_setting' => 'Overview: Settings',
+            'btn_chart_setting' => 'Chart: Settings',
+            'btn_signals_setting' => 'Signals: Settings',
         ];
     }
 
@@ -27,7 +30,9 @@ class LCNI_Button_Style_Config {
         $sanitized = [];
 
         foreach (array_keys(self::get_button_keys()) as $button_key) {
-            $sanitized[$button_key] = self::sanitize_button_entry(isset($input[$button_key]) && is_array($input[$button_key]) ? $input[$button_key] : []);
+            $defaults = self::get_default_button_entry($button_key);
+            $raw = isset($input[$button_key]) && is_array($input[$button_key]) ? $input[$button_key] : [];
+            $sanitized[$button_key] = self::sanitize_button_entry(array_merge($defaults, $raw));
         }
 
         return $sanitized;
@@ -85,11 +90,40 @@ class LCNI_Button_Style_Config {
 
     private static function sanitize_css_size($value, $default) {
         $value = trim((string) $value);
+        if (preg_match('/^\d+(\.\d+)?$/', $value)) {
+            return $value . 'px';
+        }
         if (preg_match('/^\d+(\.\d+)?(px|em|rem|%)$/', $value)) {
             return $value;
         }
 
         return $default;
+    }
+
+    private static function get_default_button_entry($button_key) {
+        $shared = [
+            'background_color' => '#2563eb',
+            'text_color' => '#ffffff',
+            'hover_background_color' => '#1d4ed8',
+            'hover_text_color' => '#ffffff',
+            'height' => '36px',
+            'border_radius' => '8px',
+            'padding_left_right' => '12px',
+            'font_size' => '14px',
+            'icon_class' => 'fa-solid fa-circle',
+            'icon_position' => 'left',
+            'label_text' => '',
+        ];
+
+        if (in_array($button_key, ['btn_overview_setting', 'btn_chart_setting', 'btn_signals_setting', 'btn_watchlist_setting', 'btn_filter_setting'], true)) {
+            $shared['icon_class'] = 'fa-solid fa-gear';
+            $shared['label_text'] = '';
+            $shared['height'] = '32px';
+            $shared['padding_left_right'] = '10px';
+            $shared['font_size'] = '13px';
+        }
+
+        return $shared;
     }
 
     private static function build_dynamic_css(array $config) {
