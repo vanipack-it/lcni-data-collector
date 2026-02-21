@@ -12,6 +12,20 @@
   const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
   const sessionKey = cfg.tableSettingsStorageKey || 'lcni_filter_visible_columns_v1';
 
+  function getButtonConfig(key) {
+    const all = cfg.buttonConfig || {};
+    return all[key] || {};
+  }
+
+  function renderButtonContent(key, fallbackLabel) {
+    const conf = getButtonConfig(key);
+    const iconClass = String(conf.icon_class || '').trim();
+    const labelText = String(conf.label_text || fallbackLabel || '');
+    const icon = iconClass ? `<i class="${esc(iconClass)}" aria-hidden="true"></i>` : '';
+    const label = `<span>${esc(labelText)}</span>`;
+    return conf.icon_position === 'right' ? `${label}${icon}` : `${icon}${label}`;
+  }
+
   function buildStockDetailUrl(symbol) {
     const slug = String(cfg.stockDetailPageSlug || '').replace(/^\/+|\/+$/g, '');
     const encoded = encodeURIComponent(String(symbol || '').trim());
@@ -103,7 +117,7 @@
     const labels = settings.column_labels || {};
     const columns = state.visibleColumns;
 
-    host.innerHTML = `<div class="lcni-filter-toolbar"><button type="button" class="lcni-btn" data-filter-toggle>Filter</button><button type="button" class="lcni-btn" data-column-toggle-btn>⚙</button></div>
+    host.innerHTML = `<div class="lcni-filter-toolbar"><button type="button" class="lcni-btn lcni-btn-btn_filter_open" data-filter-toggle>${renderButtonContent('btn_filter_open', 'Filter')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_setting" data-column-toggle-btn>${renderButtonContent('btn_filter_setting', '⚙')}</button></div>
       <div class="lcni-filter-panel" data-filter-panel hidden></div>
       <div class="lcni-column-pop" data-column-pop hidden></div>
       <div class="lcni-watchlist-table-wrap lcni-table-wrapper"><table class="lcni-watchlist-table lcni-table"><thead><tr>${columns.map((c, i) => `<th class="${i === 0 ? 'is-sticky-col' : ''}">${esc(labels[c] || c)}</th>`).join('')}</tr></thead><tbody></tbody></table></div>
@@ -114,10 +128,10 @@
         return `<div><strong>${esc(item.label)}</strong><div><input type="number" data-range-min="${esc(item.column)}" value="${esc(item.min)}"> - <input type="number" data-range-max="${esc(item.column)}" value="${esc(item.max)}"></div></div>`;
       }
       return `<div><strong>${esc(item.label)}</strong><div class="lcni-filter-check-list">${(item.values || []).map((v) => `<label><input type="checkbox" data-text-check="${esc(item.column)}" value="${esc(v)}"> ${esc(v)}</label>`).join('')}</div></div>`;
-    }).join('')}<button type="button" class="lcni-btn btn-apply-filter" data-apply-filter>Apply Filter</button>`;
+    }).join('')}<button type="button" class="lcni-btn lcni-btn-btn_apply_filter btn-apply-filter" data-apply-filter>${renderButtonContent('btn_apply_filter', 'Apply Filter')}</button>`;
 
     const selectable = settings.table_columns || columns;
-    host.querySelector('[data-column-pop]').innerHTML = `${selectable.map((c) => `<label><input type="checkbox" data-visible-col value="${esc(c)}" ${state.visibleColumns.includes(c) ? 'checked' : ''}> ${esc(labels[c] || c)}</label>`).join('')}<button type="button" class="lcni-btn" data-save-columns>Save</button>`;
+    host.querySelector('[data-column-pop]').innerHTML = `${selectable.map((c) => `<label><input type="checkbox" data-visible-col value="${esc(c)}" ${state.visibleColumns.includes(c) ? 'checked' : ''}> ${esc(labels[c] || c)}</label>`).join('')}<button type="button" class="lcni-btn lcni-btn-btn_save_filter" data-save-columns>${renderButtonContent('btn_save_filter', 'Save')}</button>`;
   }
 
   function renderTbody(host, payload) {
@@ -127,7 +141,7 @@
     }
     state.total = Number(payload.total || 0);
     const totalPages = Math.max(1, Math.ceil(state.total / state.limit));
-    host.querySelector('[data-filter-pagination]').innerHTML = `<button type="button" class="lcni-btn" data-prev ${state.page <= 1 ? 'disabled' : ''}>Prev</button> <span>${state.page}/${totalPages}</span> <button type="button" class="lcni-btn" data-next ${state.page >= totalPages ? 'disabled' : ''}>Next</button>`;
+    host.querySelector('[data-filter-pagination]').innerHTML = `<button type="button" class="lcni-btn lcni-btn-btn_filter_open" data-prev ${state.page <= 1 ? 'disabled' : ''}>Prev</button> <span>${state.page}/${totalPages}</span> <button type="button" class="lcni-btn lcni-btn-btn_filter_open" data-next ${state.page >= totalPages ? 'disabled' : ''}>Next</button>`;
   }
 
   async function load(host) {
@@ -204,13 +218,13 @@
         const symbol = addBtn.getAttribute('data-symbol');
         const icon = addBtn.querySelector('i');
         addBtn.disabled = true;
-        if (icon) icon.className = 'fas fa-spinner fa-spin';
+        if (icon) icon.className = 'fa-solid fa-spinner fa-spin';
         try {
           await watchlistApi('/add', { method: 'POST', body: { symbol } });
           addBtn.classList.add('is-active');
-          if (icon) icon.className = 'fas fa-check';
+          if (icon) icon.className = 'fa-solid fa-check';
         } catch (e) {
-          if (icon) icon.className = 'fas fa-exclamation-circle';
+          if (icon) icon.className = 'fa-solid fa-exclamation-circle';
         } finally {
           addBtn.disabled = false;
         }

@@ -40,21 +40,7 @@ class LCNI_FilterTable {
                 'background_color' => sanitize_hex_color((string) ($style['background_color'] ?? '#ffffff')) ?: '#ffffff',
                 'row_height' => max(24, min(64, (int) ($style['row_height'] ?? 36))),
             ],
-            'add_button' => $this->get_add_button_styles(),
             'default_filter_values' => $this->get_default_filter_values($criteria),
-        ];
-    }
-
-    public function get_button_style_config() {
-        $saved = get_option('lcni_button_style_config', []);
-        $saved = is_array($saved) ? $saved : [];
-
-        return [
-            'button_background_color' => sanitize_hex_color((string) ($saved['button_background_color'] ?? '#2563eb')) ?: '#2563eb',
-            'button_text_color' => sanitize_hex_color((string) ($saved['button_text_color'] ?? '#ffffff')) ?: '#ffffff',
-            'button_height' => max(28, min(56, (int) ($saved['button_height'] ?? 34))),
-            'button_border_radius' => max(0, min(30, (int) ($saved['button_border_radius'] ?? 8))),
-            'button_icon_class' => sanitize_text_field((string) ($saved['button_icon_class'] ?? 'fas fa-sliders-h')),
         ];
     }
 
@@ -198,8 +184,7 @@ class LCNI_FilterTable {
         return $normalized;
     }
 
-    public function render_tbody_rows(array $items, array $columns, array $add_button): string {
-        $icon = sanitize_text_field((string) ($add_button['icon'] ?? 'fas fa-heart'));
+    public function render_tbody_rows(array $items, array $columns, array $add_button = []): string {
         $html = '';
 
         foreach ($items as $row) {
@@ -211,8 +196,8 @@ class LCNI_FilterTable {
 
                 if ($column === 'symbol') {
                     $html .= '<td' . $sticky . '><span>' . esc_html($symbol) . '</span> '
-                        . '<button type="button" class="lcni-btn" data-lcni-watchlist-add data-symbol="' . esc_attr($symbol) . '">'
-                        . '<i class="' . esc_attr($icon) . '" aria-hidden="true"></i></button></td>';
+                        . '<button type="button" class="lcni-btn lcni-btn-btn_add_filter_row" data-lcni-watchlist-add data-symbol="' . esc_attr($symbol) . '" aria-label="Add to watchlist">'
+                        . LCNI_Button_Style_Config::build_button_content('btn_add_filter_row', '') . '</button></td>';
                     continue;
                 }
 
@@ -247,18 +232,5 @@ class LCNI_FilterTable {
         }
 
         return true;
-    }
-
-    private function get_add_button_styles() {
-        $watchlist_settings = get_option('lcni_watchlist_settings', []);
-        $button = isset($watchlist_settings['add_button']) && is_array($watchlist_settings['add_button']) ? $watchlist_settings['add_button'] : [];
-
-        return [
-            'icon' => sanitize_text_field((string) ($button['icon'] ?? 'fas fa-heart')),
-            'background' => sanitize_hex_color((string) ($button['background'] ?? '#dc2626')) ?: '#dc2626',
-            'text_color' => sanitize_hex_color((string) ($button['text_color'] ?? '#ffffff')) ?: '#ffffff',
-            'font_size' => max(10, min(24, (int) ($button['font_size'] ?? 14))),
-            'size' => max(20, min(48, (int) ($button['size'] ?? 26))),
-        ];
     }
 }

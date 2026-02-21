@@ -125,3 +125,11 @@
 - Thêm cấu hình admin `lcni_filter_default_values` (JSON) trong Frontend Settings → Filter để pre-check checkbox/range và auto apply ngay khi load trang.
 - Thêm Frontend Settings → Style Config → Button Style (`button_background_color`, `button_text_color`, `button_height`, `button_border_radius`, `button_icon_class`), render dynamic CSS `.lcni-btn` từ option và áp dụng cho các nút Filter/Watchlist.
 - Nâng version plugin lên `2.0.1`.
+
+## 2026-02-21 (v2.0.1.1)
+- Refactor Frontend Setting → Style Config thành **Button Settings** chi tiết theo từng key button, lưu tập trung vào option `lcni_button_style_config` theo cấu trúc mảng con cho từng button (`background_color`, `text_color`, `hover_*`, `height`, `border_radius`, `padding_left_right`, `font_size`, `icon_class`, `icon_position`, `label_text`).
+- Bổ sung class quản lý cấu hình `LCNI_Button_Style_Config` để sanitize dữ liệu, build dynamic CSS theo class `.lcni-btn` + `.lcni-btn-{button_key}`, render icon/label động và tái sử dụng cho nhiều module.
+- Cập nhật frontend Filter/Watchlist/Stock Query Form để dùng class riêng từng button (ví dụ `lcni-btn-btn_apply_filter`, `lcni-btn-btn_watchlist_add`, `lcni-btn-btn_stock_view`) và render icon FontAwesome từ config thay vì hardcode icon HTML.
+- Plugin enqueue FontAwesome 6 riêng bằng handle `lcni-fa`, không phụ thuộc/remove asset FontAwesome của theme.
+- Giữ nguyên shortcode, layout tổng thể và hành vi nghiệp vụ hiện có; chỉ bổ sung lớp cấu hình style + icon cho button theo yêu cầu.
+- Nâng version plugin lên `2.0.1.1`.
