@@ -117,3 +117,11 @@
 - Refactor module Filter theo kiến trúc Repository + Service: thêm `SnapshotRepository` để gom toàn bộ SQL filter, thêm `FilterService` cho validate/request mapping/output formatting, và cập nhật REST handler chỉ còn gọi service.
 - Bổ sung `CacheService` dùng `wp_cache_*` với fallback transient, tích hợp cache 60 giây cho payload filter và cache 5 phút cho danh sách distinct values + symbol list.
 - Tối ưu query filter theo phase 2: hỗ trợ `LIMIT/OFFSET` tùy chọn, chỉ SELECT các cột hiển thị, và JOIN động theo cột/filter đang dùng để giảm join dư thừa; thêm ghi chú TODO cho bước EXPLAIN trên production.
+
+## 2026-02-21 (v2.0.1)
+- Bổ sung sticky header cho bảng Watchlist + Filter bằng wrapper `.lcni-table-wrapper` và class bảng `.lcni-table`, giữ nguyên layout/shortcode cũ, không dùng JS clone header.
+- Mở rộng endpoint Filter và Watchlist với chế độ `mode=refresh` chỉ trả về `tbody` rows; frontend auto refresh mỗi 15 giây bằng `setInterval` và cập nhật `tbody.innerHTML` không reload trang.
+- Điều chỉnh luồng Filter frontend: bỏ gọi AJAX theo `onchange/input`, chỉ gọi một lần khi click nút `.btn-apply-filter`.
+- Thêm cấu hình admin `lcni_filter_default_values` (JSON) trong Frontend Settings → Filter để pre-check checkbox/range và auto apply ngay khi load trang.
+- Thêm Frontend Settings → Style Config → Button Style (`button_background_color`, `button_text_color`, `button_height`, `button_border_radius`, `button_icon_class`), render dynamic CSS `.lcni-btn` từ option và áp dụng cho các nút Filter/Watchlist.
+- Nâng version plugin lên `2.0.1`.

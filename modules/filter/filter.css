@@ -3,3 +3,5 @@
 .lcni-app .lcni-stock-filter .lcni-filter-check-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:4px}
 .lcni-app .lcni-stock-filter table{width:100%}
 .lcni-app .lcni-stock-filter button{cursor:pointer}
+.lcni-table-wrapper{max-height:600px;overflow-y:auto}
+.lcni-table thead th{position:sticky;top:0;z-index:10;background:inherit}

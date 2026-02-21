@@ -25,18 +25,38 @@ class LCNI_FilterAdmin {
         ];
     }
 
+    public static function sanitize_default_filter_values($json) {
+        if (!is_string($json)) {
+            return '';
+        }
+
+        $json = trim(wp_unslash($json));
+        if ($json === '') {
+            return '';
+        }
+
+        $decoded = json_decode($json, true);
+        if (!is_array($decoded)) {
+            return '';
+        }
+
+        return wp_json_encode($decoded);
+    }
+
     public static function render_filter_form($tab_id) {
         $service = new LCNI_WatchlistService(new LCNI_WatchlistRepository());
         $all_columns = $service->get_all_columns();
         $criteria = self::sanitize_columns(get_option('lcni_filter_criteria_columns', []));
         $table_columns = self::sanitize_columns(get_option('lcni_filter_table_columns', []));
         $style = self::sanitize_style(get_option('lcni_filter_style', []));
+        $default_filter_values = (string) get_option('lcni_filter_default_values', '');
         ?>
         <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
             <div class="lcni-sub-tab-nav" id="lcni-filter-sub-tabs">
                 <button type="button" data-filter-sub-tab="criteria">Filter Criteria</button>
                 <button type="button" data-filter-sub-tab="table_columns">Table Columns</button>
                 <button type="button" data-filter-sub-tab="style">Style</button>
+                <button type="button" data-filter-sub-tab="default_values">Default Values</button>
             </div>
 
             <div data-filter-sub-pane="criteria">
@@ -85,6 +105,19 @@ class LCNI_FilterAdmin {
                     <p><label>Text color <input type="color" name="lcni_filter_style[text_color]" value="<?php echo esc_attr((string) $style['text_color']); ?>"></label></p>
                     <p><label>Background color <input type="color" name="lcni_filter_style[background_color]" value="<?php echo esc_attr((string) $style['background_color']); ?>"></label></p>
                     <p><label>Row height <input type="number" name="lcni_filter_style[row_height]" value="<?php echo esc_attr((string) $style['row_height']); ?>"></label></p>
+                    <?php submit_button('Save'); ?>
+                </form>
+            </div>
+
+            <div data-filter-sub-pane="default_values" style="display:none">
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                    <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                    <input type="hidden" name="lcni_frontend_module" value="filter">
+                    <input type="hidden" name="lcni_filter_section" value="default_values">
+                    <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                    <h3>Default filter values (JSON)</h3>
+                    <p><textarea name="lcni_filter_default_values" rows="8" class="large-text code" placeholder='{"exchange":["HOSE"],"volume":[100000,5000000]}'><?php echo esc_textarea($default_filter_values); ?></textarea></p>
                     <?php submit_button('Save'); ?>
                 </form>
             </div>

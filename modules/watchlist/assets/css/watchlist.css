@@ -39,3 +39,6 @@
 .lcni-watchlist-add-form input { min-width: 180px; padding: 6px 10px; }
 .lcni-watchlist-add-form button { padding: 0 12px; cursor: pointer; border: 0; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px; }
 .lcni-watchlist-add.is-active { background: #ef4444 !important; color: #fff !important; }
+
+.lcni-table-wrapper { max-height: 600px; overflow-y: auto; }
+.lcni-table thead th { position: sticky; top: 0; z-index: 10; background: inherit; }
