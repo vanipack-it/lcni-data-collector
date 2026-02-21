@@ -227,6 +227,10 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         const payload = await response.json();
+        if (!payload || (Array.isArray(payload) && payload.length === 0) || (!Array.isArray(payload) && typeof payload === 'object' && Object.keys(payload).length === 0)) {
+          container.textContent = "NO DATA";
+          return;
+        }
 
         container.innerHTML = "";
         const wrap = document.createElement("div");

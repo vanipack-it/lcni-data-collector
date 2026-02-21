@@ -5,7 +5,7 @@ if (!defined('ABSPATH')) {
 }
 
 class LCNI_FilterShortcode {
-    const VERSION = '2.0.4';
+    const VERSION = '2.0.5';
 
     private $table;
 
@@ -40,6 +40,11 @@ class LCNI_FilterShortcode {
         wp_enqueue_script('lcni-filter');
         wp_enqueue_style('lcni-filter');
 
+        $dynamic_style = $this->build_dynamic_style_css();
+        if ($dynamic_style !== '') {
+            wp_add_inline_style('lcni-filter', $dynamic_style);
+        }
+
         $settings = $this->table->get_settings();
         LCNI_Button_Style_Config::enqueue_frontend_assets('lcni-filter');
         $stock_page_slug = sanitize_title((string) get_option('lcni_watchlist_stock_page', ''));
@@ -65,7 +70,52 @@ class LCNI_FilterShortcode {
     }
 
     public function render() {
-        return '<div class="lcni-app"><div class="lcni-stock-filter" data-lcni-stock-filter></div></div>';
+        return '<div class="lcni-app"><div class="lcni-stock-filter lcni-filter-module" data-lcni-stock-filter></div></div>';
+    }
+
+    private function build_dynamic_style_css() {
+        $style = get_option('lcni_filter_style_config', get_option('lcni_filter_style', []));
+        $style = is_array($style) ? $style : [];
+        if (!empty($style['inherit_style'])) {
+            return '';
+        }
+
+        $rules = [];
+        $map = [
+            'text_color' => 'color',
+            'background_color' => 'background-color',
+            'border_color' => 'border-color',
+        ];
+        foreach ($map as $key => $prop) {
+            $value = sanitize_hex_color((string) ($style[$key] ?? ''));
+            if ($value) {
+                $rules[] = $prop . ':' . $value;
+            }
+        }
+
+        foreach (['border_width' => 'border-width', 'border_radius' => 'border-radius', 'header_label_font_size' => 'font-size'] as $key => $prop) {
+            $raw = isset($style[$key]) ? trim((string) $style[$key]) : '';
+            if ($raw !== '' && preg_match('/^\d+(\.\d+)?$/', $raw)) {
+                $rules[] = $prop . ':' . $raw . 'px';
+            }
+        }
+
+        $row_font_size = isset($style['row_font_size']) ? trim((string) $style['row_font_size']) : '';
+        $row_rule = '';
+        if ($row_font_size !== '' && preg_match('/^\d+(\.\d+)?$/', $row_font_size)) {
+            $row_rule = 'font-size:' . $row_font_size . 'px;';
+        }
+
+        $css = '';
+        if (!empty($rules)) {
+            $css .= '.lcni-filter-module .lcni-table th,.lcni-filter-module .lcni-table td{' . implode(';', $rules) . ';}' . "\n";
+            $css .= '.lcni-filter-module .lcni-filter-panel,.lcni-filter-module .lcni-column-pop{' . implode(';', $rules) . ';}' . "\n";
+        }
+        if ($row_rule !== '') {
+            $css .= '.lcni-filter-module .lcni-table td{' . $row_rule . "}\n";
+        }
+
+        return $css;
     }
 
     private function should_enqueue_assets() {
