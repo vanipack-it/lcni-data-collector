@@ -103,3 +103,8 @@
 - Tạo module mới **LCNI Filter** (`modules/filter`) với shortcode `[lcni_stock_filter]`, data mode `all_symbols`, panel điều kiện lọc realtime (debounce + AJAX), pagination, cập nhật riêng `tbody` không reload trang và tích hợp nút `lcni_watchlist_add_button` trên từng dòng.
 - Mở rộng REST data provider để hỗ trợ truy vấn toàn bộ symbol + filter động từ frontend qua endpoint `POST /wp-json/lcni/v1/filter/list`.
 - Tái sử dụng kiến trúc bảng Watchlist (column config, column labels, style config, conditional color rules) cho Filter; thêm cài đặt admin Frontend Settings → Filter với options `lcni_filter_allowed_columns` và `lcni_filter_default_conditions`.
+
+## 2026-02-21
+- Refactor module Filter theo kiến trúc Repository + Service: thêm `SnapshotRepository` để gom toàn bộ SQL filter, thêm `FilterService` cho validate/request mapping/output formatting, và cập nhật REST handler chỉ còn gọi service.
+- Bổ sung `CacheService` dùng `wp_cache_*` với fallback transient, tích hợp cache 60 giây cho payload filter và cache 5 phút cho danh sách distinct values + symbol list.
+- Tối ưu query filter theo phase 2: hỗ trợ `LIMIT/OFFSET` tùy chọn, chỉ SELECT các cột hiển thị, và JOIN động theo cột/filter đang dùng để giảm join dư thừa; thêm ghi chú TODO cho bước EXPLAIN trên production.

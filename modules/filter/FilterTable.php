@@ -8,7 +8,7 @@ class LCNI_FilterTable {
     private $repository;
     private $watchlist_service;
 
-    public function __construct(LCNI_WatchlistRepository $repository, LCNI_WatchlistService $watchlist_service) {
+    public function __construct(SnapshotRepository $repository, LCNI_WatchlistService $watchlist_service) {
         $this->repository = $repository;
         $this->watchlist_service = $watchlist_service;
     }
@@ -61,8 +61,8 @@ class LCNI_FilterTable {
         $limit = max(10, min(200, (int) ($args['limit'] ?? 50)));
         $offset = ($page - 1) * $limit;
 
-        $items = $this->repository->get_all($columns, $limit, $offset, $filters);
-        $total = $this->repository->count_all($filters);
+        $items = $this->repository->getFiltered($filters, $columns, $limit, $offset);
+        $total = $this->repository->countFiltered($filters);
 
         return [
             'mode' => 'filter',
@@ -81,7 +81,7 @@ class LCNI_FilterTable {
         $defs = [];
 
         foreach ($settings['criteria_columns'] as $column) {
-            $values = $this->repository->get_distinct_values($column, [], 120);
+            $values = $this->repository->getDistinctValues($column);
             $is_number = $this->is_numeric_column($values);
 
             $definition = [

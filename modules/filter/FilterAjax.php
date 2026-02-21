@@ -6,9 +6,11 @@ if (!defined('ABSPATH')) {
 
 class LCNI_FilterAjax {
     private $table;
+    private $service;
 
-    public function __construct(LCNI_FilterTable $table) {
+    public function __construct(LCNI_FilterTable $table, FilterService $service) {
         $this->table = $table;
+        $this->service = $service;
     }
 
     public function register_routes() {
@@ -24,7 +26,7 @@ class LCNI_FilterAjax {
             return new WP_Error('invalid_nonce', 'Nonce không hợp lệ.', ['status' => 403]);
         }
 
-        $data = $this->table->query([
+        $result = $this->service->getFilterResult([
             'visible_columns' => $request->get_param('visible_columns'),
             'page' => $request->get_param('page'),
             'limit' => $request->get_param('limit'),
@@ -34,7 +36,7 @@ class LCNI_FilterAjax {
         return rest_ensure_response([
             'settings' => $this->table->get_settings(),
             'criteria' => $this->table->get_criteria_definitions(),
-            'data' => $data,
+            'data' => $result,
         ]);
     }
 
