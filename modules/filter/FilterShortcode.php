@@ -45,7 +45,7 @@ class LCNI_FilterShortcode {
         $stock_page_slug = sanitize_title((string) get_option('lcni_watchlist_stock_page', ''));
 
         wp_localize_script('lcni-filter', 'lcniFilterConfig', [
-            'restUrl' => esc_url_raw(rest_url('lcni/v1/filter/list')),
+            'restUrl' => esc_url_raw(rest_url('lcni/v1/filter/list')),'savedFilterBase' => esc_url_raw(rest_url('lcni/v1/filter')), 
             'watchlistRestBase' => esc_url_raw(rest_url('lcni/v1/watchlist')),
             'nonce' => wp_create_nonce('wp_rest'),
             'isLoggedIn' => is_user_logged_in(),

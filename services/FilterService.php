@@ -94,6 +94,11 @@ class FilterService {
         ];
     }
 
+
+    public function sanitizeFiltersPublic($filters, array $allowed_columns): array {
+        return $this->sanitizeFilters($filters, $allowed_columns);
+    }
+
     private function normalizeColumns($columns, array $all_columns): array {
         $columns = is_array($columns) ? array_map('sanitize_key', $columns) : [];
 

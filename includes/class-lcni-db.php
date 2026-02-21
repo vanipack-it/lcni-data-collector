@@ -55,6 +55,9 @@ class LCNI_DB {
             $wpdb->prefix . 'lcni_icb2',
             $wpdb->prefix . 'lcni_sym_icb_market',
             $wpdb->prefix . 'lcni_watchlist',
+            $wpdb->prefix . 'lcni_saved_filters',
+            $wpdb->prefix . 'lcni_watchlists',
+            $wpdb->prefix . 'lcni_watchlist_symbols',
         ];
 
         foreach ($required_tables as $table) {
@@ -106,6 +109,9 @@ class LCNI_DB {
         $icb2_table = $wpdb->prefix . 'lcni_icb2';
         $symbol_market_icb_table = $wpdb->prefix . 'lcni_sym_icb_market';
         $watchlist_table = $wpdb->prefix . 'lcni_watchlist';
+        $saved_filters_table = $wpdb->prefix . 'lcni_saved_filters';
+        $watchlists_table = $wpdb->prefix . 'lcni_watchlists';
+        $watchlist_symbols_table = $wpdb->prefix . 'lcni_watchlist_symbols';
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
@@ -304,6 +310,43 @@ class LCNI_DB {
             KEY idx_created_at (created_at)
         ) {$charset_collate};";
 
+
+
+        $sql_saved_filters = "CREATE TABLE {$saved_filters_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            user_id BIGINT UNSIGNED NOT NULL,
+            filter_name VARCHAR(191) NOT NULL,
+            filter_config LONGTEXT NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            KEY idx_user_id (user_id),
+            KEY idx_user_name (user_id, filter_name)
+        ) {$charset_collate};";
+
+        $sql_watchlists = "CREATE TABLE {$watchlists_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            user_id BIGINT UNSIGNED NOT NULL,
+            name VARCHAR(191) NOT NULL,
+            is_default TINYINT(1) NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            KEY idx_user_id (user_id),
+            KEY idx_user_default (user_id, is_default)
+        ) {$charset_collate};";
+
+        $sql_watchlist_symbols = "CREATE TABLE {$watchlist_symbols_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            watchlist_id BIGINT UNSIGNED NOT NULL,
+            symbol VARCHAR(20) NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            UNIQUE KEY uniq_watchlist_symbol (watchlist_id, symbol),
+            KEY idx_watchlist_id (watchlist_id),
+            KEY idx_symbol (symbol)
+        ) {$charset_collate};";
+
         $sql_watchlist = "CREATE TABLE {$watchlist_table} (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             user_id BIGINT UNSIGNED NOT NULL,
@@ -325,6 +368,9 @@ class LCNI_DB {
         dbDelta($sql_symbol_market_icb);
         dbDelta($sql_symbol_tongquan);
         dbDelta($sql_watchlist);
+        dbDelta($sql_saved_filters);
+        dbDelta($sql_watchlists);
+        dbDelta($sql_watchlist_symbols);
 
         self::seed_market_reference_data($market_table);
         self::seed_icb2_reference_data($icb2_table);

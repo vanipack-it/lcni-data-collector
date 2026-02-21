@@ -27,6 +27,7 @@
     }
   };
   window.lcniWatchlistStore = WatchlistStore;
+  let activeWatchlistId = 0;
 
   function api(path, options) {
     return fetch((cfg.restBase || '').replace(/\/$/, '') + path, {
@@ -139,9 +140,11 @@
     const items = Array.isArray(data.items) ? data.items : [];
     const settings = data.settings || cfg.settingsOption || {};
     const valueColorRules = Array.isArray(settings.value_color_rules) ? settings.value_color_rules : [];
+    activeWatchlistId = Number(data.active_watchlist_id || activeWatchlistId || 0);
 
     host.innerHTML = `
       <div class="lcni-watchlist-header"><strong>Watchlist</strong>
+      <div class="lcni-watchlist-list-controls"><select data-watchlist-select>${(Array.isArray(data.watchlists)?data.watchlists:[]).map((w)=>`<option value="${Number(w.id||0)}" ${(Number(w.id||0)===Number(data.active_watchlist_id||0))?'selected':''}>${esc(w.name||'')}</option>`).join('')}</select><button type="button" class="lcni-btn lcni-btn-btn_watchlist_save" data-watchlist-create>+ New</button><button type="button" class="lcni-btn lcni-btn-btn_watchlist_save" data-watchlist-delete>Delete</button></div>
       <div class="lcni-watchlist-dropdown"><button type="button" class="lcni-watchlist-settings-btn lcni-btn lcni-btn-btn_watchlist_setting" data-watchlist-settings aria-expanded="false">${renderButtonContent('btn_watchlist_setting', '')}</button>
       <div class="lcni-watchlist-controls"><div class="lcni-watchlist-col-grid">${allowed.map((c) => `<label class="lcni-watchlist-col-item"><input type="checkbox" data-col-toggle value="${esc(c)}" ${columns.includes(c) ? 'checked' : ''}> ${esc(labels[c] || c)}</label>`).join('')}</div><button type="button" class="lcni-btn lcni-btn-btn_watchlist_save" data-watchlist-save>${renderButtonContent('btn_watchlist_save', 'Lưu')}</button></div></div></div>
       <div class="lcni-watchlist-table-wrap lcni-table-wrapper"><table class="lcni-watchlist-table lcni-table"><thead><tr>${columns.map((c, idx) => `<th class="${idx === 0 && c === 'symbol' ? 'is-sticky-col' : ''}">${esc(labels[c] || c)}</th>`).join('')}</tr></thead>
@@ -161,8 +164,9 @@
   async function refreshTable(host) {
     const device = getDevice();
     const selected = Array.from(host.querySelectorAll('[data-col-toggle]:checked')).map((i) => i.value);
-    const query = selected.length ? '&' + selected.map((v) => `columns[]=${encodeURIComponent(v)}`).join('&') : '';
-    const data = await api('/list?device=' + encodeURIComponent(device) + query);
+    const queryCols = selected.length ? '&' + selected.map((v) => `columns[]=${encodeURIComponent(v)}`).join('&') : '';
+    const queryWatchlist = activeWatchlistId ? '&watchlist_id=' + encodeURIComponent(activeWatchlistId) : '';
+    const data = await api('/load?device=' + encodeURIComponent(device) + queryCols + queryWatchlist);
     renderTable(host, data);
     saveCachedColumns(device, data.columns || []);
     WatchlistStore.setSymbols(data.symbols || []);
@@ -172,8 +176,9 @@
   async function refreshRowsOnly(host) {
     const device = getDevice();
     const selected = Array.from(host.querySelectorAll('[data-col-toggle]:checked')).map((i) => i.value);
-    const query = selected.length ? '&' + selected.map((v) => `columns[]=${encodeURIComponent(v)}`).join('&') : '';
-    const data = await api('/list?mode=refresh&device=' + encodeURIComponent(device) + query);
+    const queryCols = selected.length ? '&' + selected.map((v) => `columns[]=${encodeURIComponent(v)}`).join('&') : '';
+    const queryWatchlist = activeWatchlistId ? '&watchlist_id=' + encodeURIComponent(activeWatchlistId) : '';
+    const data = await api('/list?mode=refresh&device=' + encodeURIComponent(device) + queryCols + queryWatchlist);
     const tbody = host.querySelector('tbody');
     if (tbody) {
       tbody.innerHTML = data.rows || '';
@@ -194,7 +199,8 @@
   async function toggleSymbol(symbol, forceAction) {
     const inWatchlist = WatchlistStore.has(symbol);
     const action = forceAction || (inWatchlist ? 'remove' : 'add');
-    const payload = await api('/' + action, { method: 'POST', body: { symbol } });
+    const endpoint = action === 'add' ? '/add-symbol' : '/remove-symbol';
+    const payload = await api(endpoint, { method: 'POST', body: { symbol, watchlist_id: activeWatchlistId } });
 
     if (action === 'add') {
       WatchlistStore.add(symbol);
@@ -309,6 +315,39 @@
         }
       }
 
+
+      const watchlistSelect = event.target.closest('[data-watchlist-select]');
+      if (watchlistSelect) {
+        return;
+      }
+
+      const createBtn = event.target.closest('[data-watchlist-create]');
+      if (createBtn) {
+        const name = window.prompt('Tên watchlist mới');
+        if (!name) return;
+        try {
+          const created = await api('/create', { method: 'POST', body: { name } });
+          activeWatchlistId = Number((created && created.id) || 0);
+          document.querySelectorAll('[data-lcni-watchlist]').forEach((host) => refreshTable(host).catch(() => {}));
+        } catch (error) {
+          showToast((error && error.message) || 'Không thể tạo watchlist');
+        }
+        return;
+      }
+
+      const deleteBtn = event.target.closest('[data-watchlist-delete]');
+      if (deleteBtn) {
+        if (!activeWatchlistId) return;
+        try {
+          const deleted = await api('/delete', { method: 'POST', body: { watchlist_id: activeWatchlistId } });
+          activeWatchlistId = Number((deleted && deleted.active_watchlist_id) || 0);
+          document.querySelectorAll('[data-lcni-watchlist]').forEach((host) => refreshTable(host).catch(() => {}));
+        } catch (error) {
+          showToast((error && error.message) || 'Không thể xoá watchlist');
+        }
+        return;
+      }
+
       document.querySelectorAll('[data-lcni-watchlist]').forEach((host) => {
         if (host.contains(event.target)) return;
         const dropdown = host.querySelector('.lcni-watchlist-dropdown');
@@ -316,6 +355,13 @@
         if (dropdown) dropdown.classList.remove('open');
         if (settings) settings.setAttribute('aria-expanded', 'false');
       });
+    });
+
+    document.addEventListener('change', async (event) => {
+      const select = event.target.closest('[data-watchlist-select]');
+      if (!select) return;
+      activeWatchlistId = Number(select.value || 0);
+      document.querySelectorAll('[data-lcni-watchlist]').forEach((host) => refreshTable(host).catch(() => {}));
     });
 
     document.addEventListener('click', (event) => {

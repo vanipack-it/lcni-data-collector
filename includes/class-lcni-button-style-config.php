@@ -8,21 +8,14 @@ class LCNI_Button_Style_Config {
     const OPTION_KEY = 'lcni_button_style_config';
 
     public static function get_button_keys() {
-        return [
-            'btn_filter_open' => 'Filter: Open',
-            'btn_apply_filter' => 'Filter: Apply',
-            'btn_save_filter' => 'Filter: Save Columns',
-            'btn_add_filter_row' => 'Filter: Add Watchlist',
-            'btn_filter_setting' => 'Filter: Settings',
-            'btn_stock_view' => 'Stock Detail: View',
-            'btn_watchlist_add' => 'Watchlist: Add/Remove Symbol',
-            'btn_watchlist_save' => 'Watchlist: Save',
-            'btn_watchlist_setting' => 'Watchlist: Settings',
-            'btn_watchlist_add_symbol' => 'Watchlist: Add Symbol',
-            'btn_overview_setting' => 'Overview: Settings',
-            'btn_chart_setting' => 'Chart: Settings',
-            'btn_signals_setting' => 'Signals: Settings',
-        ];
+        self::register_default_buttons();
+        $registered = LCNI_Button_Registry::getAll();
+        $result = [];
+        foreach ($registered as $key => $meta) {
+            $result[$key] = $meta['label'] ?? $key;
+        }
+
+        return $result;
     }
 
     public static function sanitize_config($input) {
@@ -70,6 +63,31 @@ class LCNI_Button_Style_Config {
         }
 
         return $icon_html . $label_html;
+    }
+
+    private static function register_default_buttons() {
+        $defaults = [
+            'btn_filter_open' => ['Filter: Open', 'filter'],
+            'btn_apply_filter' => ['Filter: Apply', 'filter'],
+            'btn_save_filter' => ['Filter: Save', 'filter'],
+            'btn_add_filter_row' => ['Filter: Add Watchlist', 'filter'],
+            'btn_filter_setting' => ['Filter: Settings', 'filter'],
+            'btn_stock_view' => ['Stock Detail: View', 'chart'],
+            'btn_watchlist_add' => ['Watchlist: Add/Remove Symbol', 'watchlist'],
+            'btn_watchlist_save' => ['Watchlist: Save', 'watchlist'],
+            'btn_watchlist_setting' => ['Watchlist: Settings', 'watchlist'],
+            'btn_watchlist_add_symbol' => ['Watchlist: Add Symbol', 'watchlist'],
+            'btn_overview_setting' => ['Overview: Settings', 'overview'],
+            'btn_chart_setting' => ['Chart: Settings', 'chart'],
+            'btn_signals_setting' => ['Signals: Settings', 'signal'],
+            'btn_overview_save' => ['Overview: Save', 'overview'],
+            'btn_signal_save' => ['LCNI Signal: Save', 'signal'],
+            'btn_chart_save' => ['Chart: Save', 'chart'],
+        ];
+
+        foreach ($defaults as $key => $meta) {
+            LCNI_Button_Registry::register($key, $meta[0], $meta[1]);
+        }
     }
 
     private static function sanitize_button_entry(array $button) {
