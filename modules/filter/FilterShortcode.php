@@ -5,7 +5,7 @@ if (!defined('ABSPATH')) {
 }
 
 class LCNI_FilterShortcode {
-    const VERSION = '1.0.0';
+    const VERSION = '2.0.0';
 
     private $table;
 
@@ -13,6 +13,7 @@ class LCNI_FilterShortcode {
         $this->table = $table;
         add_action('init', [$this, 'register_shortcodes']);
         add_action('wp_enqueue_scripts', [$this, 'register_assets']);
+        add_action('wp_enqueue_scripts', [$this, 'conditionally_enqueue_assets']);
     }
 
     public function register_shortcodes() {
@@ -27,9 +28,15 @@ class LCNI_FilterShortcode {
 
         wp_register_script('lcni-filter', LCNI_URL . 'modules/filter/filter.js', ['lcni-watchlist'], $version, true);
         wp_register_style('lcni-filter', LCNI_URL . 'modules/filter/filter.css', [], $css_version);
+        wp_register_style('lcni-font-awesome-6', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css', [], '6.5.2');
     }
 
-    public function render() {
+    public function conditionally_enqueue_assets() {
+        if (!$this->should_enqueue_assets()) {
+            return;
+        }
+
+        wp_enqueue_style('lcni-font-awesome-6');
         wp_enqueue_script('lcni-watchlist');
         wp_enqueue_style('lcni-watchlist');
         wp_enqueue_script('lcni-filter');
@@ -46,9 +53,40 @@ class LCNI_FilterShortcode {
             'loginUrl' => esc_url_raw(wp_login_url(get_permalink() ?: home_url('/'))),
             'stockDetailPageSlug' => $stock_page_slug,
             'settings' => $settings,
+            'criteria' => $this->table->get_criteria_definitions(),
             'tableSettingsStorageKey' => 'lcni_filter_visible_columns_v1',
         ]);
+    }
 
-        return '<div class="lcni-stock-filter" data-lcni-stock-filter></div>';
+    public function render() {
+        return '<div class="lcni-app"><div class="lcni-stock-filter" data-lcni-stock-filter></div></div>';
+    }
+
+    private function should_enqueue_assets() {
+        if ($this->is_stock_detail_context()) {
+            return true;
+        }
+
+        if (!is_singular()) {
+            return false;
+        }
+
+        $post = get_post();
+        if (!$post instanceof WP_Post) {
+            return false;
+        }
+
+        return has_shortcode((string) $post->post_content, 'lcni_stock_filter');
+    }
+
+    private function is_stock_detail_context() {
+        $symbol = get_query_var('symbol');
+        if (is_string($symbol) && $symbol !== '') {
+            return true;
+        }
+
+        $router_symbol = get_query_var(LCNI_Stock_Detail_Router::STOCK_QUERY_VAR);
+
+        return is_string($router_symbol) && $router_symbol !== '';
     }
 }

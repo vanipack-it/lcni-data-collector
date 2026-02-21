@@ -1,6 +1,13 @@
 (function () {
   const cfg = window.lcniFilterConfig || {};
-  const state = { page: 1, filters: [], criteria: [], visibleColumns: [] };
+  const state = {
+    page: 1,
+    limit: 50,
+    filters: [],
+    visibleColumns: [],
+    criteria: Array.isArray(cfg.criteria) ? cfg.criteria : [],
+    total: 0
+  };
   let loadTimer = null;
 
   const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
@@ -63,36 +70,16 @@
     }).filter((f) => Array.isArray(f.value) ? f.value.join('') !== '' : String(f.value || '') !== '');
   }
 
-  function render(host, response) {
-    const settings = response.settings || cfg.settings || {};
-    const data = response.data || {};
-    state.criteria = response.criteria || [];
+  function renderStatic(host) {
+    const settings = cfg.settings || {};
+    const labels = settings.column_labels || {};
+    const columns = state.visibleColumns;
 
-    if (!host.dataset.ready) {
-      state.visibleColumns = loadVisibleColumns(settings.table_columns || data.columns || []);
-      host.innerHTML = `<div class="lcni-filter-toolbar"><button type="button" data-filter-toggle>Filter</button><button type="button" data-column-toggle-btn>⚙</button></div>
+    host.innerHTML = `<div class="lcni-filter-toolbar"><button type="button" data-filter-toggle>Filter</button><button type="button" data-column-toggle-btn>⚙</button></div>
       <div class="lcni-filter-panel" data-filter-panel hidden></div>
       <div class="lcni-column-pop" data-column-pop hidden></div>
-      <div class="lcni-watchlist-table-wrap"><table class="lcni-watchlist-table"><thead></thead><tbody></tbody></table></div>
+      <div class="lcni-watchlist-table-wrap"><table class="lcni-watchlist-table"><thead><tr>${columns.map((c, i) => `<th class="${i === 0 ? 'is-sticky-col' : ''}">${esc(labels[c] || c)}</th>`).join('')}</tr></thead><tbody></tbody></table></div>
       <div data-filter-pagination></div>`;
-      host.dataset.ready = '1';
-    }
-
-    const labels = data.column_labels || settings.column_labels || {};
-    const columns = data.columns || [];
-    host.querySelector('thead').innerHTML = `<tr>${columns.map((c, i) => `<th class="${i===0?'is-sticky-col':''}">${esc(labels[c] || c)}</th>`).join('')}</tr>`;
-
-    const addBtn = settings.add_button || {};
-    host.querySelector('tbody').innerHTML = (data.items || []).map((row) => `<tr data-row-symbol="${esc(row.symbol || '')}">${columns.map((c, i) => {
-      if (c === 'symbol') {
-        const icon = addBtn.icon || 'fas fa-heart';
-        return `<td class="${i===0?'is-sticky-col':''}"><span>${esc(row.symbol || '')}</span> <button type="button" data-lcni-watchlist-add data-symbol="${esc(row.symbol || '')}"><i class="${esc(icon)}" aria-hidden="true"></i></button></td>`;
-      }
-      return `<td>${esc(row[c])}</td>`;
-    }).join('')}</tr>`).join('');
-
-    const totalPages = Math.max(1, Math.ceil((data.total || 0) / (data.limit || 50)));
-    host.querySelector('[data-filter-pagination]').innerHTML = `<button type="button" data-prev ${data.page <= 1 ? 'disabled' : ''}>Prev</button> <span>${data.page}/${totalPages}</span> <button type="button" data-next ${data.page >= totalPages ? 'disabled' : ''}>Next</button>`;
 
     host.querySelector('[data-filter-panel]').innerHTML = `${state.criteria.map((item) => {
       if (item.type === 'number') {
@@ -105,9 +92,16 @@
     host.querySelector('[data-column-pop]').innerHTML = `${selectable.map((c) => `<label><input type="checkbox" data-visible-col value="${esc(c)}" ${state.visibleColumns.includes(c) ? 'checked' : ''}> ${esc(labels[c] || c)}</label>`).join('')}<button type="button" data-save-columns>Save</button>`;
   }
 
+  function renderTbody(host, payload) {
+    host.querySelector('tbody').innerHTML = payload.rows || '';
+    state.total = Number(payload.total || 0);
+    const totalPages = Math.max(1, Math.ceil(state.total / state.limit));
+    host.querySelector('[data-filter-pagination]').innerHTML = `<button type="button" data-prev ${state.page <= 1 ? 'disabled' : ''}>Prev</button> <span>${state.page}/${totalPages}</span> <button type="button" data-next ${state.page >= totalPages ? 'disabled' : ''}>Next</button>`;
+  }
+
   async function load(host) {
-    const response = await api({ mode: 'filter', page: state.page, limit: 50, filters: state.filters, visible_columns: state.visibleColumns });
-    render(host, response);
+    const payload = await api({ mode: 'filter', page: state.page, limit: state.limit, filters: state.filters, visible_columns: state.visibleColumns });
+    renderTbody(host, payload || {});
   }
 
   function debounceLoad(host) {
@@ -135,6 +129,7 @@
         if (!state.visibleColumns.includes('symbol')) state.visibleColumns.unshift('symbol');
         saveVisibleColumns(state.visibleColumns);
         state.page = 1;
+        renderStatic(host);
         await load(host);
       }
 
@@ -150,6 +145,7 @@
         state.page = Math.max(1, state.page - 1);
         await load(host);
       }
+
       const next = event.target.closest('[data-next]');
       if (next) {
         state.page += 1;
@@ -179,9 +175,9 @@
         }
       }
 
-      const row = event.target.closest('tbody tr[data-row-symbol]');
-      if (row && !event.target.closest('button,a,[role="button"],svg,i')) {
-        const url = buildStockDetailUrl(row.getAttribute('data-row-symbol'));
+      const row = event.target.closest('tr[data-symbol]');
+      if (row && !event.target.closest('button')) {
+        const url = buildStockDetailUrl(row.getAttribute('data-symbol'));
         if (url) window.location.href = url;
       }
     });
@@ -204,9 +200,14 @@
   }
 
   function boot() {
+    const defaultColumns = ((cfg.settings || {}).table_columns || []).slice();
+    state.visibleColumns = loadVisibleColumns(defaultColumns);
+    if (!state.visibleColumns.includes('symbol')) state.visibleColumns.unshift('symbol');
+
     document.querySelectorAll('[data-lcni-stock-filter]').forEach(async (host) => {
-      await load(host);
+      renderStatic(host);
       bind(host);
+      await load(host);
     });
   }
 

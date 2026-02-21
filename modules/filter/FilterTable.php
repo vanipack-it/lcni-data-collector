@@ -154,6 +154,34 @@ class LCNI_FilterTable {
         return $normalized;
     }
 
+    public function render_tbody_rows(array $items, array $columns, array $add_button): string {
+        $icon = sanitize_text_field((string) ($add_button['icon'] ?? 'fas fa-heart'));
+        $html = '';
+
+        foreach ($items as $row) {
+            $symbol = isset($row['symbol']) ? (string) $row['symbol'] : '';
+            $html .= '<tr data-symbol="' . esc_attr($symbol) . '">';
+
+            foreach ($columns as $index => $column) {
+                $sticky = $index === 0 ? ' class="is-sticky-col"' : '';
+
+                if ($column === 'symbol') {
+                    $html .= '<td' . $sticky . '><span>' . esc_html($symbol) . '</span> '
+                        . '<button type="button" data-lcni-watchlist-add data-symbol="' . esc_attr($symbol) . '">'
+                        . '<i class="' . esc_attr($icon) . '" aria-hidden="true"></i></button></td>';
+                    continue;
+                }
+
+                $value = isset($row[$column]) ? (string) $row[$column] : '';
+                $html .= '<td' . $sticky . '>' . esc_html($value) . '</td>';
+            }
+
+            $html .= '</tr>';
+        }
+
+        return $html;
+    }
+
     private function normalize_columns($columns, $all_columns) {
         $columns = is_array($columns) ? array_map('sanitize_key', $columns) : [];
 

@@ -1,6 +1,15 @@
 # Development Log
 
 
+
+## 2026-02-21
+- Release `2.0.0`: refactor module Filter theo hướng SaaS, giữ nguyên hành vi người dùng nhưng tách rõ responsibility giữa shortcode/render, service và repository.
+- Tối ưu enqueue assets chỉ khi cần: chỉ nạp assets Filter (JS/CSS) + Watchlist dependency + Font Awesome 6 CDN khi trang chứa shortcode `[lcni_stock_filter]` hoặc đang ở stock detail context.
+- Chuẩn hóa render wrapper frontend thành `<div class="lcni-app">...` và cập nhật CSS filter sang scoped selectors `.lcni-app ...` để tránh xung đột style global.
+- Refactor endpoint `POST /wp-json/lcni/v1/filter/list` chỉ trả về payload tối giản `{ rows, total }`; frontend cập nhật bảng theo `tbody.innerHTML` thay vì render lại toàn bộ table.
+- Cập nhật JS filter theo event delegation cho click row (`tr[data-symbol]`, bỏ qua click button) và luồng add watchlist qua AJAX realtime (đổi trạng thái icon, không reload trang).
+- Củng cố data layer: REST handler không query trực tiếp, mọi SQL vẫn tập trung trong `repositories/SnapshotRepository.php`.
+
 ## 2026-02-20
 - Watchlist: bổ sung cấu hình cột mặc định tách riêng desktop/mobile trong Admin Frontend Setting; user setting lưu JSON trong `user_meta`, có cache `localStorage` + sync AJAX để render nhanh không reload.
 - Watchlist mobile UX: bật scroll ngang mượt, sticky cột `symbol`, giữ layout ổn định trên màn hình nhỏ, panel setting mặc định ẩn và chỉ mở khi click nút ⚙ (event delegation).
