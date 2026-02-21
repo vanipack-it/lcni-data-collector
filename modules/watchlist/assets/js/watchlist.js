@@ -75,6 +75,11 @@
     try { window.localStorage.setItem(getStorageKey(device), JSON.stringify({ columns, updatedAt: Date.now() })); } catch (e) {}
   }
 
+  function resolveActiveWatchlistName() {
+    const selected = document.querySelector('[data-watchlist-select] option:checked');
+    return selected ? String(selected.textContent || '').trim() : '';
+  }
+
   function showToast(msg) {
     const node = document.createElement('div');
     node.className = 'lcni-watchlist-toast';
@@ -148,10 +153,10 @@
     watchlistDatasetByHost.set(host, items);
     host.innerHTML = `
       <div class="lcni-watchlist-header"><strong>Watchlist</strong>
-      <div class="lcni-watchlist-list-controls"><select data-watchlist-select>${(Array.isArray(data.watchlists)?data.watchlists:[]).map((w)=>`<option value="${Number(w.id||0)}" ${(Number(w.id||0)===Number(data.active_watchlist_id||0))?'selected':''}>${esc(w.name||'')}</option>`).join('')}</select><button type="button" class="lcni-btn lcni-btn-btn_watchlist_new" data-watchlist-create>${renderButtonContent('btn_watchlist_new', '+ New')}</button><button type="button" class="lcni-btn lcni-btn-btn_watchlist_delete" data-watchlist-delete>${renderButtonContent('btn_watchlist_delete', 'Delete')}</button></div>
+      <div class="lcni-watchlist-list-controls"><select data-watchlist-select>${(Array.isArray(data.watchlists)?data.watchlists:[]).map((w)=>`<option value="${Number(w.id||0)}" ${(Number(w.id||0)===Number(data.active_watchlist_id||0))?'selected':''}>${esc(w.name||'')}</option>`).join('')}</select><input type="text" class="lcni-watchlist-symbol-input" data-watchlist-symbol-input placeholder="Nhập mã" /><button type="button" class="lcni-btn lcni-btn-btn_watchlist_add_symbol lcni-watchlist-add-btn" data-watchlist-add-btn>${renderButtonContent('btn_watchlist_add_symbol', 'Thêm')}</button><button type="button" class="lcni-btn lcni-btn-btn_watchlist_new" data-watchlist-create>${renderButtonContent('btn_watchlist_new', '+ New')}</button><button type="button" class="lcni-btn lcni-btn-btn_watchlist_delete" data-watchlist-delete>${renderButtonContent('btn_watchlist_delete', 'Delete')}</button></div>
       <div class="lcni-watchlist-dropdown"><button type="button" class="lcni-watchlist-settings-btn lcni-btn lcni-btn-btn_watchlist_setting" data-watchlist-settings aria-expanded="false">${renderButtonContent('btn_watchlist_setting', '')}</button>
       <div class="lcni-watchlist-controls"><div class="lcni-watchlist-col-grid">${allowed.map((c) => `<label class="lcni-watchlist-col-item"><input type="checkbox" data-col-toggle value="${esc(c)}" ${columns.includes(c) ? 'checked' : ''}> ${esc(labels[c] || c)}</label>`).join('')}</div><button type="button" class="lcni-btn lcni-btn-btn_watchlist_save" data-watchlist-save>${renderButtonContent('btn_watchlist_save', 'Lưu')}</button></div></div></div>
-      <div class="lcni-watchlist-table-wrap lcni-table-wrapper"><table class="lcni-watchlist-table lcni-table"><thead><tr>${columns.map((c, idx) => `<th data-sort-key="${esc(c)}" class="${idx === 0 && c === 'symbol' ? 'is-sticky-col' : ''}">${esc(labels[c] || c)} <span class="lcni-sort-icon">${watchlistSortKey===c?(watchlistSortDir==='asc'?'↑':'↓'):""}</span></th>`).join('')}</tr></thead>
+      <div class="lcni-watchlist-table-wrap lcni-table-scroll lcni-table-wrapper"><table class="lcni-watchlist-table lcni-table"><thead><tr>${columns.map((c, idx) => `<th data-sort-key="${esc(c)}" class="${idx === 0 && c === 'symbol' ? 'is-sticky-col' : ''}">${esc(labels[c] || c)} <span class="lcni-sort-icon">${watchlistSortKey===c?(watchlistSortDir==='asc'?'↑':'↓'):""}</span></th>`).join('')}</tr></thead>
       <tbody>${items.map((row) => {
         const symbol = row.symbol || '';
         return `<tr data-row-symbol="${esc(symbol)}">${columns.map((c, idx) => {
@@ -241,8 +246,9 @@
       try {
         if (submitBtn) submitBtn.disabled = true;
         if (submitIcon) submitIcon.className = 'fa-solid fa-spinner fa-spin';
-        await toggleSymbol(symbol, 'add');
-        showToast('Đã thêm mã ' + symbol + ' vào Watchlist');
+        const payload = await toggleSymbol(symbol, 'add');
+        const watchlistName = String((payload && (payload.watchlist_name || payload.name)) || resolveActiveWatchlistName() || '');
+        showToast('Đã thêm mã ' + symbol + ' vào Watchlist: ' + watchlistName);
         if (input) input.value = '';
         if (submitIcon) submitIcon.className = 'fa-solid fa-check-circle';
         window.setTimeout(() => {
@@ -258,6 +264,32 @@
     });
 
     document.addEventListener('click', async (event) => {
+      const quickAddBtn = event.target.closest('[data-watchlist-add-btn]');
+      if (quickAddBtn) {
+        const host = quickAddBtn.closest('[data-lcni-watchlist]');
+        const input = host ? host.querySelector('[data-watchlist-symbol-input]') : null;
+        const symbol = String((input && input.value) || '').trim().toUpperCase();
+        if (input) input.value = symbol;
+        if (!symbol) { showToast('Vui lòng nhập mã cổ phiếu'); return; }
+        if (!activeWatchlistId) { showToast('Vui lòng chọn watchlist'); return; }
+
+        quickAddBtn.disabled = true;
+        try {
+          const payload = await toggleSymbol(symbol, 'add');
+          const watchlistName = String((payload && (payload.watchlist_name || payload.name)) || resolveActiveWatchlistName() || '');
+          showToast('Đã thêm mã ' + symbol + ' vào Watchlist: ' + watchlistName);
+          if (input) input.value = '';
+          if (host) {
+            await refreshTable(host);
+          }
+        } catch (error) {
+          showToast((error && error.message) || 'Không thể thêm vào watchlist');
+        } finally {
+          quickAddBtn.disabled = false;
+        }
+        return;
+      }
+
       const addBtn = event.target.closest('[data-lcni-watchlist-add]');
       if (addBtn) {
         event.preventDefault();

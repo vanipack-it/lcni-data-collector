@@ -1,6 +1,6 @@
 (function () {
   const cfg = window.LCNIFilterConfig || {};
-  const operators = ['=', '>', '<', '>=', '<=', 'between', 'contains'];
+  const operators = ['=', '!=', '>', '>=', '<', '<=', 'between'];
   const stateKey = 'lcni_stock_filter_state';
 
   function esc(value) {
@@ -59,19 +59,27 @@
     } catch (e) { return null; }
   }
 
+  function renderRuleRow(column, labels, current) {
+    const valueA = Array.isArray(current.value) ? (current.value[0] || '') : (current.value || '');
+    const valueB = Array.isArray(current.value) ? (current.value[1] || '') : '';
+    return `<div class="lcni-filter-row" data-filter-row="${esc(column)}">
+      <label>${esc(labels[column] || column)}</label>
+      <select data-filter-operator>${operators.map((op) => `<option value="${op}" ${current.operator === op ? 'selected' : ''}>${op}</option>`).join('')}</select>
+      <input type="text" data-filter-value-a value="${esc(valueA)}" placeholder="Giá trị" />
+      <input type="text" data-filter-value-b value="${esc(valueB)}" placeholder="Từ/Đến" ${current.operator === 'between' ? '' : 'style="display:none"'} />
+    </div>`;
+  }
+
   function renderPanel(host, columns, labels, filters) {
     const panel = host.querySelector('[data-filter-panel]');
-    panel.innerHTML = columns.map((column) => {
-      const current = filters.find((f) => f.column === column) || { operator: '=', value: '' };
-      const valueA = Array.isArray(current.value) ? (current.value[0] || '') : (current.value || '');
-      const valueB = Array.isArray(current.value) ? (current.value[1] || '') : '';
-      return `<div class="lcni-filter-row" data-filter-row="${esc(column)}">
-        <label>${esc(labels[column] || column)}</label>
-        <select data-filter-operator>${operators.map((op) => `<option value="${op}" ${current.operator === op ? 'selected' : ''}>${op}</option>`).join('')}</select>
-        <input type="text" data-filter-value-a value="${esc(valueA)}" placeholder="Giá trị" />
-        <input type="text" data-filter-value-b value="${esc(valueB)}" placeholder="Từ/Đến" ${current.operator === 'between' ? '' : 'style="display:none"'} />
-      </div>`;
-    }).join('');
+    const sourceFilters = Array.isArray(filters) && filters.length
+      ? filters
+      : Array.from({ length: Math.min(5, columns.length) }).map((_, index) => ({ column: columns[index], operator: '=', value: '' }));
+    panel.innerHTML = sourceFilters.map((row) => {
+      const column = columns.includes(row.column) ? row.column : (columns[0] || 'symbol');
+      const current = row || { operator: '=', value: '' };
+      return renderRuleRow(column, labels, current);
+    }).join('') + '<button type="button" class="lcni-btn" data-add-filter-rule>Thêm rule</button>';
   }
 
   function updateBody(host, data, settings) {
@@ -158,6 +166,15 @@
     });
 
     host.addEventListener('click', (event) => {
+      const addRuleBtn = event.target.closest('[data-add-filter-rule]');
+      if (addRuleBtn) {
+        const columns = (cfg.settings && cfg.settings.allowed_columns) || [];
+        const labels = (cfg.settings && cfg.settings.column_labels) || {};
+        if (!columns.length) return;
+        addRuleBtn.insertAdjacentHTML('beforebegin', renderRuleRow(columns[0], labels, { operator: '=', value: '' }));
+        return;
+      }
+
       const prev = event.target.closest('[data-page-prev]');
       const next = event.target.closest('[data-page-next]');
       if (prev) load(host, Math.max(1, (host._filterState.page || 1) - 1));

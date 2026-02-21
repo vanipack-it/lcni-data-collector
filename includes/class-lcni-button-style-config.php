@@ -89,6 +89,8 @@ class LCNI_Button_Style_Config {
             'btn_overview_save' => ['Overview: Save', 'overview'],
             'btn_signal_save' => ['LCNI Signal: Save', 'signal'],
             'btn_chart_save' => ['Chart: Save', 'chart'],
+            'btn_popup_confirm' => ['Popup: Confirm', 'watchlist'],
+            'btn_popup_close' => ['Popup: Close', 'watchlist'],
         ];
 
         foreach ($defaults as $key => $meta) {
@@ -102,6 +104,7 @@ class LCNI_Button_Style_Config {
             'text_color' => sanitize_hex_color((string) ($button['text_color'] ?? '#ffffff')) ?: '#ffffff',
             'hover_background_color' => sanitize_hex_color((string) ($button['hover_background_color'] ?? '#1d4ed8')) ?: '#1d4ed8',
             'hover_text_color' => sanitize_hex_color((string) ($button['hover_text_color'] ?? '#ffffff')) ?: '#ffffff',
+            'border' => sanitize_text_field((string) ($button['border'] ?? '0')),
             'height' => self::sanitize_css_size($button['height'] ?? '36px', '36px'),
             'border_radius' => self::sanitize_css_size($button['border_radius'] ?? '8px', '8px'),
             'padding_left_right' => self::sanitize_css_size($button['padding_left_right'] ?? '12px', '12px'),
@@ -130,6 +133,7 @@ class LCNI_Button_Style_Config {
             'text_color' => '#ffffff',
             'hover_background_color' => '#1d4ed8',
             'hover_text_color' => '#ffffff',
+            'border' => '0',
             'height' => '36px',
             'border_radius' => '8px',
             'padding_left_right' => '12px',
@@ -165,6 +169,7 @@ class LCNI_Button_Style_Config {
                 esc_attr($button['padding_left_right']),
                 esc_attr($button['font_size'])
             );
+            $css .= sprintf("%s{border:%s;}\n", $class, esc_attr((string) ($button['border'] ?? '0')));
             $css .= sprintf(
                 "%s:hover,%s:focus{background:%s;color:%s;}\n",
                 $class,

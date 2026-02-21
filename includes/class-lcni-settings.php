@@ -349,7 +349,8 @@ class LCNI_Settings {
                     } elseif ($section === 'table_columns') {
                         update_option('lcni_filter_table_columns', LCNI_FilterAdmin::sanitize_columns(isset($_POST['lcni_filter_table_columns']) ? (array) wp_unslash($_POST['lcni_filter_table_columns']) : []));
                     } elseif ($section === 'style') {
-                        $style_config = LCNI_FilterAdmin::sanitize_style(isset($_POST['lcni_filter_style']) ? (array) wp_unslash($_POST['lcni_filter_style']) : []);
+                        $raw_style = isset($_POST['lcni_filter_style_config']) ? (array) wp_unslash($_POST['lcni_filter_style_config']) : (isset($_POST['lcni_filter_style']) ? (array) wp_unslash($_POST['lcni_filter_style']) : []);
+                        $style_config = LCNI_FilterAdmin::sanitize_style($raw_style);
                         update_option('lcni_filter_style', $style_config);
                         update_option('lcni_filter_style_config', $style_config);
                     } elseif ($section === 'default_values') {
@@ -1564,6 +1565,7 @@ private function sanitize_module_title($value, $fallback) {
                         <p><label>text_color <input type="color" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][text_color]" value="<?php echo esc_attr((string) ($button['text_color'] ?? '#ffffff')); ?>"></label></p>
                         <p><label>hover_background_color <input type="color" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][hover_background_color]" value="<?php echo esc_attr((string) ($button['hover_background_color'] ?? '#1d4ed8')); ?>"></label></p>
                         <p><label>hover_text_color <input type="color" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][hover_text_color]" value="<?php echo esc_attr((string) ($button['hover_text_color'] ?? '#ffffff')); ?>"></label></p>
+                        <p><label>border <input type="text" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][border]" value="<?php echo esc_attr((string) ($button['border'] ?? '0')); ?>" placeholder="1px solid #d1d5db"></label></p>
                         <p><label>height <input type="text" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][height]" value="<?php echo esc_attr((string) ($button['height'] ?? '36px')); ?>" placeholder="36px"></label></p>
                         <p><label>border_radius <input type="text" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][border_radius]" value="<?php echo esc_attr((string) ($button['border_radius'] ?? '8px')); ?>" placeholder="8px"></label></p>
                         <p><label>padding_left_right <input type="text" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][padding_left_right]" value="<?php echo esc_attr((string) ($button['padding_left_right'] ?? '12px')); ?>" placeholder="12px"></label></p>

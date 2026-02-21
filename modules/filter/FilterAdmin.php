@@ -25,13 +25,13 @@ class LCNI_FilterAdmin {
         return [
             'inherit_style' => !empty($input['inherit_style']),
             'font_size' => max(10, min(24, (int) ($input['font_size'] ?? 13))),
-            'text_color' => sanitize_hex_color((string) ($input['text_color'] ?? '#111827')) ?: '#111827',
-            'background_color' => sanitize_hex_color((string) ($input['background_color'] ?? '#ffffff')) ?: '#ffffff',
-            'border_color' => sanitize_hex_color((string) ($input['border_color'] ?? '#e5e7eb')) ?: '#e5e7eb',
-            'border_width' => max(0, min(6, (int) ($input['border_width'] ?? 1))),
-            'border_radius' => max(0, min(30, (int) ($input['border_radius'] ?? 8))),
-            'header_label_font_size' => max(10, min(30, (int) ($input['header_label_font_size'] ?? 12))),
-            'row_font_size' => max(10, min(30, (int) ($input['row_font_size'] ?? 13))),
+            'text_color' => sanitize_hex_color((string) ($input['text_color'] ?? '')) ?: '',
+            'background_color' => sanitize_hex_color((string) ($input['background_color'] ?? '')) ?: '',
+            'border_color' => sanitize_hex_color((string) ($input['border_color'] ?? '')) ?: '',
+            'border_width' => is_numeric($input['border_width'] ?? '') ? max(0, min(6, (int) $input['border_width'])) : '',
+            'border_radius' => is_numeric($input['border_radius'] ?? '') ? max(0, min(30, (int) $input['border_radius'])) : '',
+            'header_label_font_size' => is_numeric($input['header_label_font_size'] ?? '') ? max(10, min(30, (int) $input['header_label_font_size'])) : '',
+            'row_font_size' => is_numeric($input['row_font_size'] ?? '') ? max(10, min(30, (int) $input['row_font_size'])) : '',
             'row_height' => max(24, min(64, (int) ($input['row_height'] ?? 36))),
             'conditional_value_colors' => is_string($rules) ? $rules : '[]',
         ];
@@ -60,7 +60,7 @@ class LCNI_FilterAdmin {
         $all_columns = $service->get_all_columns();
         $criteria = self::sanitize_columns(get_option('lcni_filter_criteria_columns', []));
         $table_columns = self::sanitize_columns(get_option('lcni_filter_table_columns', []));
-        $style = self::sanitize_style(get_option('lcni_filter_style', []));
+        $style = self::sanitize_style(get_option('lcni_filter_style_config', get_option('lcni_filter_style', [])));
         $default_filter_values = (string) get_option('lcni_filter_default_values', '');
         ?>
         <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
@@ -113,16 +113,17 @@ class LCNI_FilterAdmin {
                     <input type="hidden" name="lcni_filter_section" value="style">
                     <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
                     <h3>Style</h3>
-                    <p><label>Font size <input type="number" name="lcni_filter_style[font_size]" value="<?php echo esc_attr((string) $style['font_size']); ?>"></label></p>
-                    <p><label>Text color <input type="color" name="lcni_filter_style[text_color]" value="<?php echo esc_attr((string) $style['text_color']); ?>"></label></p>
-                    <p><label>Background color <input type="color" name="lcni_filter_style[background_color]" value="<?php echo esc_attr((string) $style['background_color']); ?>"></label></p>
-                    <p><label>Border color <input type="color" name="lcni_filter_style[border_color]" value="<?php echo esc_attr((string) ($style['border_color'] ?? '#e5e7eb')); ?>"></label></p>
-                    <p><label>Border width <input type="number" name="lcni_filter_style[border_width]" value="<?php echo esc_attr((string) ($style['border_width'] ?? 1)); ?>"></label></p>
-                    <p><label>Border radius <input type="number" name="lcni_filter_style[border_radius]" value="<?php echo esc_attr((string) ($style['border_radius'] ?? 8)); ?>"></label></p>
-                    <p><label>Header label font size <input type="number" name="lcni_filter_style[header_label_font_size]" value="<?php echo esc_attr((string) ($style['header_label_font_size'] ?? 12)); ?>"></label></p>
-                    <p><label>Row font size <input type="number" name="lcni_filter_style[row_font_size]" value="<?php echo esc_attr((string) ($style['row_font_size'] ?? 13)); ?>"></label></p>
-                    <p><label>Row height <input type="number" name="lcni_filter_style[row_height]" value="<?php echo esc_attr((string) $style['row_height']); ?>"></label></p>
-                    <p><label>Conditional value colors JSON <textarea name="lcni_filter_style[conditional_value_colors]" rows="5" class="large-text code"><?php echo esc_textarea((string) ($style['conditional_value_colors'] ?? '[]')); ?></textarea></label></p>
+                    <p><label><input type="checkbox" name="lcni_filter_style_config[inherit_style]" value="1" <?php checked(!empty($style['inherit_style'])); ?>> Inherit global style</label></p>
+                    <p><label>Font size <input type="number" name="lcni_filter_style_config[font_size]" value="<?php echo esc_attr((string) $style['font_size']); ?>"></label></p>
+                    <p><label>Text color <input type="color" name="lcni_filter_style_config[text_color]" value="<?php echo esc_attr((string) $style['text_color']); ?>"></label></p>
+                    <p><label>Background color <input type="color" name="lcni_filter_style_config[background_color]" value="<?php echo esc_attr((string) $style['background_color']); ?>"></label></p>
+                    <p><label>Border color <input type="color" name="lcni_filter_style_config[border_color]" value="<?php echo esc_attr((string) ($style['border_color'] ?? '#e5e7eb')); ?>"></label></p>
+                    <p><label>Border width <input type="number" name="lcni_filter_style_config[border_width]" value="<?php echo esc_attr((string) ($style['border_width'] ?? 1)); ?>"></label></p>
+                    <p><label>Border radius <input type="number" name="lcni_filter_style_config[border_radius]" value="<?php echo esc_attr((string) ($style['border_radius'] ?? 8)); ?>"></label></p>
+                    <p><label>Header label font size <input type="number" name="lcni_filter_style_config[header_label_font_size]" value="<?php echo esc_attr((string) ($style['header_label_font_size'] ?? 12)); ?>"></label></p>
+                    <p><label>Row font size <input type="number" name="lcni_filter_style_config[row_font_size]" value="<?php echo esc_attr((string) ($style['row_font_size'] ?? 13)); ?>"></label></p>
+                    <p><label>Row height <input type="number" name="lcni_filter_style_config[row_height]" value="<?php echo esc_attr((string) $style['row_height']); ?>"></label></p>
+                    <p><label>Conditional value colors JSON <textarea name="lcni_filter_style_config[conditional_value_colors]" rows="5" class="large-text code"><?php echo esc_textarea((string) ($style['conditional_value_colors'] ?? '[]')); ?></textarea></label></p>
                     <?php submit_button('Save'); ?>
                 </form>
             </div>
