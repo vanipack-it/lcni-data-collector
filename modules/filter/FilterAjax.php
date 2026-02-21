@@ -33,10 +33,16 @@ class LCNI_FilterAjax {
             'filters' => $request->get_param('filters'),
         ]);
 
-        return rest_ensure_response([
+        $response = [
             'rows' => $this->table->render_tbody_rows($result['items'] ?? [], $result['columns'] ?? [], $this->table->get_settings()['add_button'] ?? []),
-            'total' => (int) ($result['total'] ?? 0),
-        ]);
+        ];
+
+        $mode = sanitize_key((string) $request->get_param('mode'));
+        if ($mode !== 'refresh') {
+            $response['total'] = (int) ($result['total'] ?? 0);
+        }
+
+        return rest_ensure_response($response);
     }
 
     private function verify_rest_nonce(WP_REST_Request $request) {

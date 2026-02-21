@@ -63,6 +63,14 @@ class LCNI_WatchlistController {
 
         $data = $this->service->get_watchlist($user_id, $columns, $device);
 
+        $mode = sanitize_key((string) $request->get_param('mode'));
+        if ($mode === 'refresh') {
+            return rest_ensure_response([
+                'rows' => $this->render_tbody_rows($data['items'], $data['columns']),
+                'symbols' => $data['symbols'],
+            ]);
+        }
+
         return rest_ensure_response([
             'allowed_columns' => $this->service->get_allowed_columns(),
             'columns' => $data['columns'],
@@ -127,6 +135,77 @@ class LCNI_WatchlistController {
             'columns' => $saved,
             'allowed_columns' => $this->service->get_allowed_columns(),
         ]);
+    }
+
+
+    private function render_tbody_rows(array $items, array $columns) {
+        $settings = $this->service->get_settings();
+        $rules = isset($settings['value_color_rules']) && is_array($settings['value_color_rules']) ? $settings['value_color_rules'] : [];
+        $html = '';
+
+        foreach ($items as $row) {
+            $symbol = isset($row['symbol']) ? (string) $row['symbol'] : '';
+            $html .= '<tr data-row-symbol="' . esc_attr($symbol) . '">';
+
+            foreach ($columns as $index => $column) {
+                $sticky = ($index === 0 && $column === 'symbol') ? ' class="is-sticky-col"' : '';
+
+                if ($column === 'symbol') {
+                    $html .= '<td' . $sticky . '><span class="lcni-watchlist-symbol">' . esc_html($symbol) . '</span>'
+                        . '<button type="button" class="lcni-watchlist-add lcni-btn is-active" data-lcni-watchlist-add data-symbol="' . esc_attr($symbol) . '"><i class="fas fa-trash" aria-hidden="true"></i></button></td>';
+                    continue;
+                }
+
+                $value = isset($row[$column]) ? (string) $row[$column] : '';
+                $style = $this->resolve_cell_style($column, $value, $rules);
+                $html .= '<td' . $sticky . ($style ? ' style="' . esc_attr($style) . '"' : '') . '>' . esc_html($value) . '</td>';
+            }
+
+            $html .= '</tr>';
+        }
+
+        return $html;
+    }
+
+    private function resolve_cell_style($column, $value, array $rules) {
+        foreach ($rules as $rule) {
+            if (!is_array($rule) || ($rule['column'] ?? '') !== $column) {
+                continue;
+            }
+
+            $operator = (string) ($rule['operator'] ?? '');
+            $expected = $rule['value'] ?? '';
+            if (!$this->match_rule($value, $operator, $expected)) {
+                continue;
+            }
+
+            $bg = sanitize_hex_color((string) ($rule['bg_color'] ?? ''));
+            $text = sanitize_hex_color((string) ($rule['text_color'] ?? ''));
+            if (!$bg || !$text) {
+                return '';
+            }
+
+            return 'background:' . $bg . ';color:' . $text . ';';
+        }
+
+        return '';
+    }
+
+    private function match_rule($raw_value, $operator, $expected) {
+        $left_num = is_numeric($raw_value) ? (float) $raw_value : null;
+        $right_num = is_numeric($expected) ? (float) $expected : null;
+
+        $left = $left_num !== null && $right_num !== null ? $left_num : (string) $raw_value;
+        $right = $left_num !== null && $right_num !== null ? $right_num : (string) $expected;
+
+        if ($operator === '>') return $left > $right;
+        if ($operator === '>=') return $left >= $right;
+        if ($operator === '<') return $left < $right;
+        if ($operator === '<=') return $left <= $right;
+        if ($operator === '=') return $left === $right;
+        if ($operator === '!=') return $left !== $right;
+
+        return false;
     }
 
     private function verify_rest_nonce(WP_REST_Request $request) {

@@ -8,7 +8,6 @@
     criteria: Array.isArray(cfg.criteria) ? cfg.criteria : [],
     total: 0
   };
-  let loadTimer = null;
 
   const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
   const sessionKey = cfg.tableSettingsStorageKey || 'lcni_filter_visible_columns_v1';
@@ -70,15 +69,44 @@
     }).filter((f) => Array.isArray(f.value) ? f.value.join('') !== '' : String(f.value || '') !== '');
   }
 
+  function applyDefaultFilters(host) {
+    const defaults = cfg.defaultFilterValues || {};
+    if (!defaults || typeof defaults !== 'object') return false;
+
+    let hasAny = false;
+    state.criteria.forEach((item) => {
+      const defaultValue = defaults[item.column];
+      if (typeof defaultValue === 'undefined' || defaultValue === null) return;
+
+      if (item.type === 'number') {
+        const min = host.querySelector(`[data-range-min="${item.column}"]`);
+        const max = host.querySelector(`[data-range-max="${item.column}"]`);
+        const range = Array.isArray(defaultValue) ? defaultValue : [];
+        if (min && typeof range[0] !== 'undefined') min.value = range[0];
+        if (max && typeof range[1] !== 'undefined') max.value = range[1];
+        if ((min && String(min.value) !== '') || (max && String(max.value) !== '')) hasAny = true;
+        return;
+      }
+
+      const selected = Array.isArray(defaultValue) ? defaultValue.map((v) => String(v)) : [String(defaultValue)];
+      host.querySelectorAll(`[data-text-check="${item.column}"]`).forEach((input) => {
+        input.checked = selected.includes(String(input.value));
+      });
+      if (selected.length) hasAny = true;
+    });
+
+    return hasAny;
+  }
+
   function renderStatic(host) {
     const settings = cfg.settings || {};
     const labels = settings.column_labels || {};
     const columns = state.visibleColumns;
 
-    host.innerHTML = `<div class="lcni-filter-toolbar"><button type="button" data-filter-toggle>Filter</button><button type="button" data-column-toggle-btn>⚙</button></div>
+    host.innerHTML = `<div class="lcni-filter-toolbar"><button type="button" class="lcni-btn" data-filter-toggle>Filter</button><button type="button" class="lcni-btn" data-column-toggle-btn>⚙</button></div>
       <div class="lcni-filter-panel" data-filter-panel hidden></div>
       <div class="lcni-column-pop" data-column-pop hidden></div>
-      <div class="lcni-watchlist-table-wrap"><table class="lcni-watchlist-table"><thead><tr>${columns.map((c, i) => `<th class="${i === 0 ? 'is-sticky-col' : ''}">${esc(labels[c] || c)}</th>`).join('')}</tr></thead><tbody></tbody></table></div>
+      <div class="lcni-watchlist-table-wrap lcni-table-wrapper"><table class="lcni-watchlist-table lcni-table"><thead><tr>${columns.map((c, i) => `<th class="${i === 0 ? 'is-sticky-col' : ''}">${esc(labels[c] || c)}</th>`).join('')}</tr></thead><tbody></tbody></table></div>
       <div data-filter-pagination></div>`;
 
     host.querySelector('[data-filter-panel]').innerHTML = `${state.criteria.map((item) => {
@@ -86,17 +114,20 @@
         return `<div><strong>${esc(item.label)}</strong><div><input type="number" data-range-min="${esc(item.column)}" value="${esc(item.min)}"> - <input type="number" data-range-max="${esc(item.column)}" value="${esc(item.max)}"></div></div>`;
       }
       return `<div><strong>${esc(item.label)}</strong><div class="lcni-filter-check-list">${(item.values || []).map((v) => `<label><input type="checkbox" data-text-check="${esc(item.column)}" value="${esc(v)}"> ${esc(v)}</label>`).join('')}</div></div>`;
-    }).join('')}<button type="button" data-apply-filter>Apply Filter</button>`;
+    }).join('')}<button type="button" class="lcni-btn btn-apply-filter" data-apply-filter>Apply Filter</button>`;
 
     const selectable = settings.table_columns || columns;
-    host.querySelector('[data-column-pop]').innerHTML = `${selectable.map((c) => `<label><input type="checkbox" data-visible-col value="${esc(c)}" ${state.visibleColumns.includes(c) ? 'checked' : ''}> ${esc(labels[c] || c)}</label>`).join('')}<button type="button" data-save-columns>Save</button>`;
+    host.querySelector('[data-column-pop]').innerHTML = `${selectable.map((c) => `<label><input type="checkbox" data-visible-col value="${esc(c)}" ${state.visibleColumns.includes(c) ? 'checked' : ''}> ${esc(labels[c] || c)}</label>`).join('')}<button type="button" class="lcni-btn" data-save-columns>Save</button>`;
   }
 
   function renderTbody(host, payload) {
-    host.querySelector('tbody').innerHTML = payload.rows || '';
+    const tbody = host.querySelector('tbody');
+    if (tbody) {
+      tbody.innerHTML = payload.rows || '';
+    }
     state.total = Number(payload.total || 0);
     const totalPages = Math.max(1, Math.ceil(state.total / state.limit));
-    host.querySelector('[data-filter-pagination]').innerHTML = `<button type="button" data-prev ${state.page <= 1 ? 'disabled' : ''}>Prev</button> <span>${state.page}/${totalPages}</span> <button type="button" data-next ${state.page >= totalPages ? 'disabled' : ''}>Next</button>`;
+    host.querySelector('[data-filter-pagination]').innerHTML = `<button type="button" class="lcni-btn" data-prev ${state.page <= 1 ? 'disabled' : ''}>Prev</button> <span>${state.page}/${totalPages}</span> <button type="button" class="lcni-btn" data-next ${state.page >= totalPages ? 'disabled' : ''}>Next</button>`;
   }
 
   async function load(host) {
@@ -104,9 +135,18 @@
     renderTbody(host, payload || {});
   }
 
-  function debounceLoad(host) {
-    window.clearTimeout(loadTimer);
-    loadTimer = window.setTimeout(() => load(host).catch(() => {}), 300);
+  async function refreshOnly(host) {
+    const tbody = host.querySelector('tbody');
+    if (!tbody) return;
+    const payload = await api({ mode: 'refresh', page: state.page, limit: state.limit, filters: state.filters, visible_columns: state.visibleColumns });
+    tbody.innerHTML = payload.rows || '';
+  }
+
+  function startAutoRefresh(host) {
+    window.clearInterval(host._lcniRefreshTimer);
+    host._lcniRefreshTimer = window.setInterval(() => {
+      refreshOnly(host).catch(() => {});
+    }, 15000);
   }
 
   function bind(host) {
@@ -131,9 +171,10 @@
         state.page = 1;
         renderStatic(host);
         await load(host);
+        return;
       }
 
-      const apply = event.target.closest('[data-apply-filter]');
+      const apply = event.target.closest('.btn-apply-filter,[data-apply-filter]');
       if (apply) {
         state.filters = collectFilters(host);
         state.page = 1;
@@ -181,22 +222,6 @@
         if (url) window.location.href = url;
       }
     });
-
-    host.addEventListener('input', (event) => {
-      if (event.target.matches('[data-range-min],[data-range-max]')) {
-        state.filters = collectFilters(host);
-        state.page = 1;
-        debounceLoad(host);
-      }
-    });
-
-    host.addEventListener('change', (event) => {
-      if (event.target.matches('[data-text-check]')) {
-        state.filters = collectFilters(host);
-        state.page = 1;
-        debounceLoad(host);
-      }
-    });
   }
 
   function boot() {
@@ -207,7 +232,12 @@
     document.querySelectorAll('[data-lcni-stock-filter]').forEach(async (host) => {
       renderStatic(host);
       bind(host);
+      const hasDefaults = applyDefaultFilters(host);
+      if (hasDefaults) {
+        state.filters = collectFilters(host);
+      }
       await load(host);
+      startAutoRefresh(host);
     });
   }
 

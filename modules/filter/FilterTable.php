@@ -41,6 +41,20 @@ class LCNI_FilterTable {
                 'row_height' => max(24, min(64, (int) ($style['row_height'] ?? 36))),
             ],
             'add_button' => $this->get_add_button_styles(),
+            'default_filter_values' => $this->get_default_filter_values($criteria),
+        ];
+    }
+
+    public function get_button_style_config() {
+        $saved = get_option('lcni_button_style_config', []);
+        $saved = is_array($saved) ? $saved : [];
+
+        return [
+            'button_background_color' => sanitize_hex_color((string) ($saved['button_background_color'] ?? '#2563eb')) ?: '#2563eb',
+            'button_text_color' => sanitize_hex_color((string) ($saved['button_text_color'] ?? '#ffffff')) ?: '#ffffff',
+            'button_height' => max(28, min(56, (int) ($saved['button_height'] ?? 34))),
+            'button_border_radius' => max(0, min(30, (int) ($saved['button_border_radius'] ?? 8))),
+            'button_icon_class' => sanitize_text_field((string) ($saved['button_icon_class'] ?? 'fas fa-sliders-h')),
         ];
     }
 
@@ -105,6 +119,36 @@ class LCNI_FilterTable {
         return $defs;
     }
 
+    public function get_default_filter_values(array $criteria_columns) {
+        $raw = get_option('lcni_filter_default_values', '');
+        if (!is_string($raw) || trim($raw) === '') {
+            return [];
+        }
+
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($decoded as $column => $value) {
+            $column = sanitize_key((string) $column);
+            if ($column === '' || !in_array($column, $criteria_columns, true)) {
+                continue;
+            }
+
+            if (is_array($value)) {
+                $normalized[$column] = array_values(array_map(static function ($item) {
+                    return sanitize_text_field((string) $item);
+                }, $value));
+            } else {
+                $normalized[$column] = sanitize_text_field((string) $value);
+            }
+        }
+
+        return $normalized;
+    }
+
     public function sanitize_filters($filters, $allowed_columns) {
         $normalized = [];
 
@@ -167,7 +211,7 @@ class LCNI_FilterTable {
 
                 if ($column === 'symbol') {
                     $html .= '<td' . $sticky . '><span>' . esc_html($symbol) . '</span> '
-                        . '<button type="button" data-lcni-watchlist-add data-symbol="' . esc_attr($symbol) . '">'
+                        . '<button type="button" class="lcni-btn" data-lcni-watchlist-add data-symbol="' . esc_attr($symbol) . '">'
                         . '<i class="' . esc_attr($icon) . '" aria-hidden="true"></i></button></td>';
                     continue;
                 }

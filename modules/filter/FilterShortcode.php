@@ -5,7 +5,7 @@ if (!defined('ABSPATH')) {
 }
 
 class LCNI_FilterShortcode {
-    const VERSION = '2.0.0';
+    const VERSION = '2.0.1';
 
     private $table;
 
@@ -43,6 +43,8 @@ class LCNI_FilterShortcode {
         wp_enqueue_style('lcni-filter');
 
         $settings = $this->table->get_settings();
+        $button_style = $this->table->get_button_style_config();
+        $this->enqueue_button_style($button_style);
         $stock_page_slug = sanitize_title((string) get_option('lcni_watchlist_stock_page', ''));
 
         wp_localize_script('lcni-filter', 'lcniFilterConfig', [
@@ -55,11 +57,25 @@ class LCNI_FilterShortcode {
             'settings' => $settings,
             'criteria' => $this->table->get_criteria_definitions(),
             'tableSettingsStorageKey' => 'lcni_filter_visible_columns_v1',
+            'defaultFilterValues' => $settings['default_filter_values'] ?? [],
         ]);
     }
 
     public function render() {
         return '<div class="lcni-app"><div class="lcni-stock-filter" data-lcni-stock-filter></div></div>';
+    }
+
+
+    private function enqueue_button_style(array $button_style) {
+        $css = sprintf(
+            '.lcni-btn{background:%1$s;color:%2$s;height:%3$dpx;border-radius:%4$dpx;display:inline-flex;align-items:center;justify-content:center;gap:6px;}',
+            esc_attr((string) ($button_style['button_background_color'] ?? '#2563eb')),
+            esc_attr((string) ($button_style['button_text_color'] ?? '#ffffff')),
+            (int) ($button_style['button_height'] ?? 34),
+            (int) ($button_style['button_border_radius'] ?? 8)
+        );
+
+        wp_add_inline_style('lcni-filter', $css);
     }
 
     private function should_enqueue_assets() {
