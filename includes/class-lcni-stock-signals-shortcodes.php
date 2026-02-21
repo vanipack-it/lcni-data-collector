@@ -30,6 +30,7 @@ class LCNI_Stock_Signals_Shortcodes {
         $version = file_exists($script_path) ? (string) filemtime($script_path) : self::VERSION;
 
         wp_register_script('lcni-stock-signals', LCNI_URL . 'assets/js/lcni-stock-signals.js', ['lcni-stock-sync'], $version, true);
+        wp_register_style('lcni-stock-signals', false, [], $version);
     }
 
     public function register_routes() {
@@ -87,15 +88,18 @@ class LCNI_Stock_Signals_Shortcodes {
 
     private function render_container($symbol, $query_param, $version) {
         wp_enqueue_script('lcni-stock-signals');
+        wp_enqueue_style('lcni-stock-signals');
+        LCNI_Button_Style_Config::enqueue_frontend_assets('lcni-stock-signals');
         $admin_config = $this->get_admin_config();
 
         return sprintf(
-            '<div data-lcni-stock-signals data-symbol="%1$s" data-query-param="%2$s" data-api-base="%3$s" data-settings-api="%4$s" data-admin-config="%5$s" data-version="%6$s"></div>',
+            '<div data-lcni-stock-signals data-symbol="%1$s" data-query-param="%2$s" data-api-base="%3$s" data-settings-api="%4$s" data-admin-config="%5$s" data-button-config="%6$s" data-version="%7$s"></div>',
             esc_attr($symbol),
             esc_attr($query_param),
             esc_url(rest_url('lcni/v1/stock-signals')),
             esc_url(rest_url('lcni/v1/stock-signals/settings')),
             esc_attr(wp_json_encode($admin_config)),
+            esc_attr(wp_json_encode(LCNI_Button_Style_Config::get_button('btn_signals_setting'))),
             esc_attr($version)
         );
     }

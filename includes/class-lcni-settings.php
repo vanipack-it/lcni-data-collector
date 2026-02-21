@@ -1530,7 +1530,7 @@ private function sanitize_module_title($value, $fallback) {
         </script>
         <?php
     }
-    private function sanitize_button_style_config($input) {
+    public function sanitize_button_style_config($input) {
         return LCNI_Button_Style_Config::sanitize_config($input);
     }
 

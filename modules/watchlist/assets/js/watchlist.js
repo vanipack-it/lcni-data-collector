@@ -142,7 +142,7 @@
 
     host.innerHTML = `
       <div class="lcni-watchlist-header"><strong>Watchlist</strong>
-      <div class="lcni-watchlist-dropdown"><button type="button" class="lcni-watchlist-settings-btn lcni-btn lcni-btn-btn_watchlist_setting" data-watchlist-settings aria-expanded="false">${renderButtonContent('btn_watchlist_setting', '⚙')}</button>
+      <div class="lcni-watchlist-dropdown"><button type="button" class="lcni-watchlist-settings-btn lcni-btn lcni-btn-btn_watchlist_setting" data-watchlist-settings aria-expanded="false">${renderButtonContent('btn_watchlist_setting', '')}</button>
       <div class="lcni-watchlist-controls"><div class="lcni-watchlist-col-grid">${allowed.map((c) => `<label class="lcni-watchlist-col-item"><input type="checkbox" data-col-toggle value="${esc(c)}" ${columns.includes(c) ? 'checked' : ''}> ${esc(labels[c] || c)}</label>`).join('')}</div><button type="button" class="lcni-btn lcni-btn-btn_watchlist_save" data-watchlist-save>${renderButtonContent('btn_watchlist_save', 'Lưu')}</button></div></div></div>
       <div class="lcni-watchlist-table-wrap lcni-table-wrapper"><table class="lcni-watchlist-table lcni-table"><thead><tr>${columns.map((c, idx) => `<th class="${idx === 0 && c === 'symbol' ? 'is-sticky-col' : ''}">${esc(labels[c] || c)}</th>`).join('')}</tr></thead>
       <tbody>${items.map((row) => {

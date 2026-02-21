@@ -106,6 +106,34 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
+  const parseButtonConfig = (rawConfig) => {
+    if (!rawConfig) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(rawConfig);
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch (error) {
+      return null;
+    }
+  };
+
+  const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
+
+  const renderButtonContent = (buttonConfig) => {
+    const iconClass = String(buttonConfig?.icon_class || "").trim();
+    const label = String(buttonConfig?.label_text || "").trim();
+    const icon = iconClass ? `<i class="${escapeHtml(iconClass)}" aria-hidden="true"></i>` : "";
+    const text = label ? `<span>${escapeHtml(label)}</span>` : "";
+
+    if ((buttonConfig?.icon_position || "left") === "right") {
+      return `${text}${icon}`;
+    }
+
+    return `${icon}${text}`;
+  };
+
   const stockSync = stockSyncUtils
     ? stockSyncUtils.createStockSync()
     : {
@@ -216,10 +244,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const settingBtn = document.createElement("button");
         settingBtn.type = "button";
-        settingBtn.textContent = "⚙";
-        settingBtn.style.border = "none";
-        settingBtn.style.background = "transparent";
-        settingBtn.style.cursor = "pointer";
+        settingBtn.className = "lcni-btn lcni-btn-btn_overview_setting";
+        settingBtn.innerHTML = renderButtonContent(buttonConfig);
+        settingBtn.setAttribute("aria-label", "Mở cài đặt hiển thị");
 
         const panel = document.createElement("div");
         panel.style.display = "none";
