@@ -28,6 +28,9 @@
   };
   window.lcniWatchlistStore = WatchlistStore;
   let activeWatchlistId = 0;
+  let watchlistSortKey = "";
+  let watchlistSortDir = "asc";
+  const watchlistDatasetByHost = new WeakMap();
 
   function api(path, options) {
     return fetch((cfg.restBase || '').replace(/\/$/, '') + path, {
@@ -142,12 +145,13 @@
     const valueColorRules = Array.isArray(settings.value_color_rules) ? settings.value_color_rules : [];
     activeWatchlistId = Number(data.active_watchlist_id || activeWatchlistId || 0);
 
+    watchlistDatasetByHost.set(host, items);
     host.innerHTML = `
       <div class="lcni-watchlist-header"><strong>Watchlist</strong>
       <div class="lcni-watchlist-list-controls"><select data-watchlist-select>${(Array.isArray(data.watchlists)?data.watchlists:[]).map((w)=>`<option value="${Number(w.id||0)}" ${(Number(w.id||0)===Number(data.active_watchlist_id||0))?'selected':''}>${esc(w.name||'')}</option>`).join('')}</select><button type="button" class="lcni-btn lcni-btn-btn_watchlist_new" data-watchlist-create>${renderButtonContent('btn_watchlist_new', '+ New')}</button><button type="button" class="lcni-btn lcni-btn-btn_watchlist_delete" data-watchlist-delete>${renderButtonContent('btn_watchlist_delete', 'Delete')}</button></div>
       <div class="lcni-watchlist-dropdown"><button type="button" class="lcni-watchlist-settings-btn lcni-btn lcni-btn-btn_watchlist_setting" data-watchlist-settings aria-expanded="false">${renderButtonContent('btn_watchlist_setting', '')}</button>
       <div class="lcni-watchlist-controls"><div class="lcni-watchlist-col-grid">${allowed.map((c) => `<label class="lcni-watchlist-col-item"><input type="checkbox" data-col-toggle value="${esc(c)}" ${columns.includes(c) ? 'checked' : ''}> ${esc(labels[c] || c)}</label>`).join('')}</div><button type="button" class="lcni-btn lcni-btn-btn_watchlist_save" data-watchlist-save>${renderButtonContent('btn_watchlist_save', 'Lưu')}</button></div></div></div>
-      <div class="lcni-watchlist-table-wrap lcni-table-wrapper"><table class="lcni-watchlist-table lcni-table"><thead><tr>${columns.map((c, idx) => `<th class="${idx === 0 && c === 'symbol' ? 'is-sticky-col' : ''}">${esc(labels[c] || c)}</th>`).join('')}</tr></thead>
+      <div class="lcni-watchlist-table-wrap lcni-table-wrapper"><table class="lcni-watchlist-table lcni-table"><thead><tr>${columns.map((c, idx) => `<th data-sort-key="${esc(c)}" class="${idx === 0 && c === 'symbol' ? 'is-sticky-col' : ''}">${esc(labels[c] || c)} <span class="lcni-sort-icon">${watchlistSortKey===c?(watchlistSortDir==='asc'?'↑':'↓'):""}</span></th>`).join('')}</tr></thead>
       <tbody>${items.map((row) => {
         const symbol = row.symbol || '';
         return `<tr data-row-symbol="${esc(symbol)}">${columns.map((c, idx) => {
@@ -230,12 +234,15 @@
       const submitBtn = form.querySelector('button[type="submit"]');
       const submitIcon = submitBtn ? submitBtn.querySelector('i') : null;
       const symbol = String((input && input.value) || '').trim().toUpperCase();
+      if (input) input.value = symbol;
       if (!symbol) return;
+      if (!activeWatchlistId) { showToast('Vui lòng chọn watchlist'); return; }
 
       try {
         if (submitBtn) submitBtn.disabled = true;
         if (submitIcon) submitIcon.className = 'fa-solid fa-spinner fa-spin';
         await toggleSymbol(symbol, 'add');
+        showToast('Đã thêm mã ' + symbol + ' vào Watchlist');
         if (input) input.value = '';
         if (submitIcon) submitIcon.className = 'fa-solid fa-check-circle';
         window.setTimeout(() => {
@@ -281,6 +288,21 @@
           addBtn.classList.remove('is-loading');
           setButtonState(addBtn);
         }
+        return;
+      }
+
+      const sortTh = event.target.closest('th[data-sort-key]');
+      if (sortTh) {
+        const key = sortTh.getAttribute('data-sort-key');
+        if (key === 'actions') return;
+        watchlistSortDir = watchlistSortKey === key && watchlistSortDir === 'asc' ? 'desc' : 'asc';
+        watchlistSortKey = key;
+        const host = sortTh.closest('[data-lcni-watchlist]');
+        const dataset = watchlistDatasetByHost.get(host) || [];
+        const dir = watchlistSortDir === 'asc' ? 1 : -1;
+        dataset.sort((a,b)=>{ const av=a[key], bv=b[key]; const an=Number(av), bn=Number(bv); if(Number.isFinite(an)&&Number.isFinite(bn)) return (an-bn)*dir; return String(av||'').localeCompare(String(bv||''))*dir;});
+        renderTable(host, Object.assign({}, {allowed_columns: [], columns: Array.from(host.querySelectorAll('thead th')).map((th)=>th.getAttribute('data-sort-key')), column_labels: cfg.settingsOption.column_labels || {}, items: dataset, settings: cfg.settingsOption, watchlists: [], active_watchlist_id: activeWatchlistId}));
+        syncAllButtons();
         return;
       }
 

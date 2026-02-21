@@ -45,6 +45,7 @@ class LCNI_Settings {
         register_setting('lcni_settings_group', 'lcni_filter_criteria_columns', ['type' => 'array', 'sanitize_callback' => ['LCNI_FilterAdmin', 'sanitize_columns'], 'default' => []]);
         register_setting('lcni_settings_group', 'lcni_filter_table_columns', ['type' => 'array', 'sanitize_callback' => ['LCNI_FilterAdmin', 'sanitize_columns'], 'default' => []]);
         register_setting('lcni_settings_group', 'lcni_filter_style', ['type' => 'array', 'sanitize_callback' => ['LCNI_FilterAdmin', 'sanitize_style'], 'default' => []]);
+        register_setting('lcni_settings_group', 'lcni_filter_style_config', ['type' => 'array', 'sanitize_callback' => ['LCNI_FilterAdmin', 'sanitize_style'], 'default' => []]);
         register_setting('lcni_settings_group', 'lcni_filter_default_values', ['type' => 'string', 'sanitize_callback' => ['LCNI_FilterAdmin', 'sanitize_default_filter_values'], 'default' => '']);
         register_setting('lcni_settings_group', 'lcni_button_style_config', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_button_style_config'], 'default' => []]);
         register_setting('lcni_settings_group', 'lcni_column_labels', ['type' => 'array', 'default' => []]);
@@ -348,7 +349,9 @@ class LCNI_Settings {
                     } elseif ($section === 'table_columns') {
                         update_option('lcni_filter_table_columns', LCNI_FilterAdmin::sanitize_columns(isset($_POST['lcni_filter_table_columns']) ? (array) wp_unslash($_POST['lcni_filter_table_columns']) : []));
                     } elseif ($section === 'style') {
-                        update_option('lcni_filter_style', LCNI_FilterAdmin::sanitize_style(isset($_POST['lcni_filter_style']) ? (array) wp_unslash($_POST['lcni_filter_style']) : []));
+                        $style_config = LCNI_FilterAdmin::sanitize_style(isset($_POST['lcni_filter_style']) ? (array) wp_unslash($_POST['lcni_filter_style']) : []);
+                        update_option('lcni_filter_style', $style_config);
+                        update_option('lcni_filter_style_config', $style_config);
                     } elseif ($section === 'default_values') {
                         update_option('lcni_filter_default_values', LCNI_FilterAdmin::sanitize_default_filter_values(isset($_POST['lcni_filter_default_values']) ? (string) wp_unslash($_POST['lcni_filter_default_values']) : ''));
                     }

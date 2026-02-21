@@ -32,7 +32,7 @@ function lcni_get_stock($symbol) {
 
     $normalized_symbol = strtoupper(sanitize_text_field((string) $stock['symbol']));
 
-    $stock['chart_library'] = 'lightweight-charts';
+    $stock['chart_library'] = 'echarts';
     $stock['chart_symbol'] = lcni_get_chart_symbol($normalized_symbol);
     $stock['chart_data_endpoint'] = esc_url_raw(
         rest_url(sprintf('lcni/v1/candles?symbol=%s', rawurlencode($normalized_symbol)))

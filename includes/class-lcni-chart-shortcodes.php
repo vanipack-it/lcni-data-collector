@@ -51,9 +51,21 @@ class LCNI_Chart_Shortcodes {
             ? (string) filemtime($sync_script_path)
             : self::VERSION;
 
+        $engine_script_path = LCNI_PATH . 'assets/js/lcni-echarts-engine.js';
+        $engine_script_version = file_exists($engine_script_path)
+            ? (string) filemtime($engine_script_path)
+            : self::VERSION;
+
+        $echarts_vendor_path = LCNI_PATH . 'assets/vendor/echarts.min.js';
+        $echarts_vendor_version = file_exists($echarts_vendor_path)
+            ? (string) filemtime($echarts_vendor_path)
+            : self::VERSION;
+
         wp_register_script('lcni-stock-sync', LCNI_URL . 'assets/js/lcni-stock-sync.js', [], $sync_script_version, true);
         wp_register_script('lcni-lightweight-charts', 'https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js', [], '4.2.3', true);
-        wp_register_script('lcni-chart', LCNI_URL . 'assets/js/lcni-chart.js', ['lcni-lightweight-charts', 'lcni-stock-sync'], $chart_script_version, true);
+        wp_register_script('lcni-echarts-vendor', LCNI_URL . 'assets/vendor/echarts.min.js', [], $echarts_vendor_version, true);
+        wp_register_script('lcni-echarts-engine', LCNI_URL . 'assets/js/lcni-echarts-engine.js', ['lcni-echarts-vendor'], $engine_script_version, true);
+        wp_register_script('lcni-chart', LCNI_URL . 'assets/js/lcni-chart.js', ['lcni-stock-sync', 'lcni-echarts-engine', 'lcni-lightweight-charts'], $chart_script_version, true);
         wp_register_style('lcni-chart-ui', false, [], self::VERSION);
     }
 
@@ -172,6 +184,7 @@ class LCNI_Chart_Shortcodes {
 
     private function render_chart_container($args) {
         wp_enqueue_script('lcni-chart');
+        wp_add_inline_script('lcni-chart', 'window.lcniChartEngineType = ' . wp_json_encode((string) get_option('lcni_chart_engine_type', 'echarts')) . ';', 'before');
         wp_enqueue_style('lcni-chart-ui');
         LCNI_Button_Style_Config::enqueue_frontend_assets('lcni-chart-ui');
 

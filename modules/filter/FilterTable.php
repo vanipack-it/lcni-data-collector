@@ -27,7 +27,7 @@ class LCNI_FilterTable {
             array_unshift($table_columns, 'symbol');
         }
 
-        $style = get_option('lcni_filter_style', []);
+        $style = get_option('lcni_filter_style_config', get_option('lcni_filter_style', []));
         $style = is_array($style) ? $style : [];
 
         return [
@@ -39,6 +39,12 @@ class LCNI_FilterTable {
                 'text_color' => sanitize_hex_color((string) ($style['text_color'] ?? '#111827')) ?: '#111827',
                 'background_color' => sanitize_hex_color((string) ($style['background_color'] ?? '#ffffff')) ?: '#ffffff',
                 'row_height' => max(24, min(64, (int) ($style['row_height'] ?? 36))),
+                'border_color' => sanitize_hex_color((string) ($style['border_color'] ?? '#e5e7eb')) ?: '#e5e7eb',
+                'border_width' => max(0, min(6, (int) ($style['border_width'] ?? 1))),
+                'border_radius' => max(0, min(30, (int) ($style['border_radius'] ?? 8))),
+                'header_label_font_size' => max(10, min(30, (int) ($style['header_label_font_size'] ?? 12))),
+                'row_font_size' => max(10, min(30, (int) ($style['row_font_size'] ?? 13))),
+                'conditional_value_colors' => is_string($style['conditional_value_colors'] ?? null) ? (string) $style['conditional_value_colors'] : '[]',
             ],
             'default_filter_values' => $this->get_default_filter_values($criteria),
         ];

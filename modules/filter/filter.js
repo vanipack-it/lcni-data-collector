@@ -12,7 +12,10 @@
     total: 0,
     savedFilters: [],
     selectedSavedFilterId: 0,
-    lastAppliedTotal: 0
+    lastAppliedTotal: 0,
+    sortKey: '',
+    sortDir: 'asc',
+    dataset: []
   };
 
   const sessionKey = cfg.tableSettingsStorageKey || 'lcni_filter_visible_columns_v1';
@@ -215,7 +218,7 @@
     const columns = state.visibleColumns;
     const selectedId = Number(state.selectedSavedFilterId || 0);
 
-    host.innerHTML = `<div class="lcni-filter-toolbar"><button type="button" class="lcni-btn lcni-btn-btn_filter_open" data-filter-toggle>${renderButtonContent('btn_filter_open', 'Filter')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_setting" data-column-toggle-btn>${renderButtonContent('btn_filter_setting', '')}</button></div><div class="lcni-filter-panel" data-filter-panel hidden><div class="lcni-filter-criteria">${state.criteria.map((item) => item.type === 'number' ? `<div><strong>${esc(item.label)}</strong><div><input type="number" data-range-min="${esc(item.column)}" value=""> - <input type="number" data-range-max="${esc(item.column)}" value=""></div></div>` : `<div><strong>${esc(item.label)}</strong><div class="lcni-filter-check-list">${(item.values || []).map((v) => `<label><input type="checkbox" data-text-check="${esc(item.column)}" value="${esc(v)}"> ${esc(v)}</label>`).join('')}</div></div>`).join('')}</div><div class="lcni-filter-panel-actions"><select data-saved-filter-select><option value="">Saved filters</option>${(state.savedFilters || []).map((f) => `<option value="${Number(f.id || 0)}" ${Number(f.id || 0) === selectedId ? 'selected' : ''}>${esc(f.filter_name || '')}</option>`).join('')}</select><button type="button" class="lcni-btn lcni-btn-btn_filter_reload" data-reload-filter>${renderButtonContent('btn_filter_reload', 'Reload')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_save" data-save-current-filter>${renderButtonContent('btn_filter_save', 'Save')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_delete" data-delete-current-filter>${renderButtonContent('btn_filter_delete', 'Delete')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_apply" data-apply-filter>${renderButtonContent('btn_filter_apply', 'Apply Filter', getApplyLabel())}</button></div></div><div class="lcni-column-pop" data-column-pop hidden></div><div class="lcni-table-scroll"><table class="lcni-table"><thead><tr>${columns.map((c) => `<th>${esc(labels[c] || c)}</th>`).join('')}</tr></thead><tbody></tbody></table></div><div data-filter-pagination></div>`;
+    host.innerHTML = `<div class="lcni-filter-toolbar"><button type="button" class="lcni-btn lcni-btn-btn_filter_hide" data-filter-hide>Ẩn</button><button type="button" class="lcni-btn lcni-btn-btn_filter_open" data-filter-toggle>${renderButtonContent('btn_filter_open', 'Filter')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_setting" data-column-toggle-btn>${renderButtonContent('btn_filter_setting', '')}</button></div><div class="lcni-filter-panel" data-filter-panel hidden><div class="lcni-filter-criteria">${state.criteria.map((item) => item.type === 'number' ? `<div><strong>${esc(item.label)}</strong><div><input type="number" data-range-min="${esc(item.column)}" value=""> - <input type="number" data-range-max="${esc(item.column)}" value=""></div></div>` : `<div><strong>${esc(item.label)}</strong><div class="lcni-filter-check-list">${(item.values || []).map((v) => `<label><input type="checkbox" data-text-check="${esc(item.column)}" value="${esc(v)}"> ${esc(v)}</label>`).join('')}</div></div>`).join('')}</div><div class="lcni-filter-panel-actions"><select data-saved-filter-select><option value="">Saved filters</option>${(state.savedFilters || []).map((f) => `<option value="${Number(f.id || 0)}" ${Number(f.id || 0) === selectedId ? 'selected' : ''}>${esc(f.filter_name || '')}</option>`).join('')}</select><button type="button" class="lcni-btn lcni-btn-btn_filter_reload" data-reload-filter>${renderButtonContent('btn_filter_reload', 'Reload')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_save" data-save-current-filter>${renderButtonContent('btn_filter_save', 'Save')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_delete" data-delete-current-filter>${renderButtonContent('btn_filter_delete', 'Delete')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_apply" data-apply-filter>${renderButtonContent('btn_filter_apply', 'Apply Filter', getApplyLabel())}</button></div></div><div class="lcni-column-pop" data-column-pop hidden></div><div class="lcni-table-scroll"><table class="lcni-table"><thead><tr>${columns.map((c) => `<th data-sort-key="${esc(c)}">${esc(labels[c] || c)} <span data-sort-icon>${state.sortKey===c?(state.sortDir==='asc'?'↑':'↓'):''}</span></th>`).join('')}</tr></thead><tbody></tbody></table></div><div data-filter-pagination></div>`;
 
     const selectable = settings.table_columns || columns;
     host.querySelector('[data-column-pop]').innerHTML = `${selectable.map((c) => `<label><input type="checkbox" data-visible-col value="${esc(c)}" ${state.visibleColumns.includes(c) ? 'checked' : ''}> ${esc(labels[c] || c)}</label>`).join('')}<button type="button" class="lcni-btn lcni-btn-btn_save_filter" data-save-columns>${renderButtonContent('btn_save_filter', 'Save')}</button>`;
@@ -230,9 +233,31 @@
     btn.innerHTML = renderButtonContent('btn_filter_apply', 'Apply Filter', getApplyLabel());
   }
 
+  function sortDataset(items) {
+    if (!state.sortKey) return items;
+    const dir = state.sortDir === 'desc' ? -1 : 1;
+    return [...items].sort((a, b) => {
+      const av = a[state.sortKey];
+      const bv = b[state.sortKey];
+      const an = Number(av);
+      const bn = Number(bv);
+      if (Number.isFinite(an) && Number.isFinite(bn)) return (an - bn) * dir;
+      return String(av || '').localeCompare(String(bv || '')) * dir;
+    });
+  }
+
   function renderTbody(host, payload) {
     const tbody = host.querySelector('tbody');
-    if (tbody) tbody.innerHTML = payload.rows || '';
+    state.dataset = Array.isArray(payload.items) ? payload.items : state.dataset;
+    if (tbody) {
+      if (payload.rows && !state.sortKey) {
+        tbody.innerHTML = payload.rows;
+      } else {
+        const columns = state.visibleColumns.length ? state.visibleColumns : ((cfg.settings && cfg.settings.table_columns) || []);
+        const sorted = sortDataset(state.dataset);
+        tbody.innerHTML = sorted.map((row) => `<tr>${columns.map((column) => `<td>${esc(row[column])}</td>`).join('')}</tr>`).join('');
+      }
+    }
     state.total = Number(payload.total || state.total || 0);
     state.lastAppliedTotal = state.total;
     updateApplyButtonLabel(host);
@@ -254,6 +279,11 @@
 
   function bind(host) {
     host.addEventListener('click', async (event) => {
+      if (event.target.closest('[data-filter-hide]')) {
+        const panel = host.querySelector('[data-filter-panel]');
+        if (panel) panel.classList.toggle('is-hidden');
+        return;
+      }
       if (event.target.closest('[data-filter-toggle]')) {
         host.querySelector('[data-filter-panel]').hidden = !host.querySelector('[data-filter-panel]').hidden;
         return;
@@ -322,6 +352,17 @@
       if (event.target.closest('[data-prev]')) { state.page = Math.max(1, state.page - 1); await load(host); return; }
       if (event.target.closest('[data-next]')) { state.page += 1; await load(host); return; }
 
+
+      const sortTh = event.target.closest('th[data-sort-key]');
+      if (sortTh) {
+        const key = sortTh.getAttribute('data-sort-key');
+        if (key === 'actions') return;
+        if (state.sortKey === key) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+        else { state.sortKey = key; state.sortDir = 'asc'; }
+        renderStatic(host);
+        renderTbody(host, { items: state.dataset, total: state.total });
+        return;
+      }
       const addBtn = event.target.closest('[data-lcni-watchlist-add]');
       if (addBtn) {
         const symbol = String(addBtn.getAttribute('data-symbol') || '').trim().toUpperCase();
