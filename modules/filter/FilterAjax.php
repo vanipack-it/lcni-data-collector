@@ -49,6 +49,7 @@ class LCNI_FilterAjax {
         if (!is_user_logged_in()) return new WP_Error('forbidden', 'Bạn cần đăng nhập để lưu bộ lọc.', ['status' => 403]);
 
         $user_id = get_current_user_id();
+        if ($user_id <= 0) return new WP_Error('forbidden', 'Bạn cần đăng nhập để lưu bộ lọc.', ['status' => 403]);
         $filter_name = sanitize_text_field((string) $request->get_param('filter_name'));
         $filters = $this->service->sanitizeFiltersPublic($request->get_param('filters'), $this->table->get_settings()['criteria_columns'] ?? []);
         $config_json = wp_json_encode(['filters' => $filters]);
@@ -73,9 +74,10 @@ class LCNI_FilterAjax {
 
         $id = absint($request->get_param('id'));
         $user_id = get_current_user_id();
+        if ($user_id <= 0) return new WP_Error('forbidden', 'Bạn cần đăng nhập.', ['status' => 403]);
         $sql = $this->wpdb->prepare("SELECT filter_config FROM {$this->saved_filters_table} WHERE id = %d AND user_id = %d", $id, $user_id);
         $raw = $this->wpdb->get_var($sql);
-        $decoded = json_decode((string) $raw, true);
+        $decoded = json_decode(wp_unslash((string) $raw), true);
         return rest_ensure_response(['id' => $id, 'config' => is_array($decoded) ? $decoded : ['filters' => []]]);
     }
 
@@ -84,7 +86,9 @@ class LCNI_FilterAjax {
         if (!is_user_logged_in()) return new WP_Error('forbidden', 'Bạn cần đăng nhập.', ['status' => 403]);
 
         $id = absint($request->get_param('id'));
-        $this->wpdb->delete($this->saved_filters_table, ['id' => $id, 'user_id' => get_current_user_id()], ['%d', '%d']);
+        $user_id = get_current_user_id();
+        if ($user_id <= 0) return new WP_Error('forbidden', 'Bạn cần đăng nhập.', ['status' => 403]);
+        $this->wpdb->delete($this->saved_filters_table, ['id' => $id, 'user_id' => $user_id], ['%d', '%d']);
         return $this->list_saved_filters($request);
     }
 

@@ -2,6 +2,17 @@
 
 
 
+## 2026-02-21 (v2.0.3)
+- Fix luồng click row ở Filter theo event delegation toàn cục (`tr[data-symbol]`) và bỏ trigger khi click `.lcni-btn`, giúp hành vi đồng nhất với Watchlist.
+- Nâng cấp layout bảng Filter với wrapper `.lcni-table-scroll` + `.lcni-table` để hỗ trợ scroll ngang ổn định, sticky header và sticky cột symbol mà không clone header bằng JS.
+- Di chuyển cụm Saved Filter (dropdown, Reload, Save, Delete) vào trong panel Filter; bổ sung nút `Reload Filter` để nạp lại `filter_config` từ DB nhưng không auto apply.
+- Bổ sung popup bắt buộc đăng nhập/đăng ký khi Save Filter hoặc Add to Watchlist từ Filter nếu user chưa đăng nhập (không còn silent fail).
+- Bổ sung modal chọn watchlist khi Add từ Filter: cho phép chọn watchlist bằng radio, tạo watchlist mới khi chưa có, và gọi REST `/watchlist/add-symbol` với `watchlist_id` không reload trang.
+- Mở rộng button style registry theo cơ chế auto-register cho các key mới: `btn_watchlist_new`, `btn_watchlist_delete`, `btn_filter_reload`, `btn_filter_save`, `btn_filter_delete`, `btn_filter_apply` (lưu trong `lcni_button_style_config`).
+- Cập nhật nút Apply Filter hiển thị số lượng kết quả sau khi apply theo định dạng `Apply Filter (N)` dựa trên phản hồi REST `{ rows, total }`.
+- Tăng version plugin lên `2.0.3`.
+
+
 ## 2026-02-21
 - Release `2.0.0`: refactor module Filter theo hướng SaaS, giữ nguyên hành vi người dùng nhưng tách rõ responsibility giữa shortcode/render, service và repository.
 - Tối ưu enqueue assets chỉ khi cần: chỉ nạp assets Filter (JS/CSS) + Watchlist dependency + Font Awesome 6 CDN khi trang chứa shortcode `[lcni_stock_filter]` hoặc đang ở stock detail context.
