@@ -34,9 +34,8 @@ class LCNI_FilterAjax {
         ]);
 
         return rest_ensure_response([
-            'settings' => $this->table->get_settings(),
-            'criteria' => $this->table->get_criteria_definitions(),
-            'data' => $result,
+            'rows' => $this->table->render_tbody_rows($result['items'] ?? [], $result['columns'] ?? [], $this->table->get_settings()['add_button'] ?? []),
+            'total' => (int) ($result['total'] ?? 0),
         ]);
     }
 
