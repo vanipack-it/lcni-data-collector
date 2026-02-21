@@ -7,7 +7,7 @@ if (!defined('ABSPATH')) {
 class LCNI_WatchlistShortcode {
 
     const OPTION_KEY = 'lcni_watchlist_settings';
-    const VERSION = '2.0.1';
+    const VERSION = '2.0.1.1';
 
     private $service;
 
@@ -51,18 +51,7 @@ class LCNI_WatchlistShortcode {
 
     public function render_add_form() {
         $this->enqueue_watchlist_assets();
-        $settings = $this->get_settings();
-        $form_button = isset($settings['add_form_button']) && is_array($settings['add_form_button']) ? $settings['add_form_button'] : [];
-        $icon_class = isset($form_button['icon']) ? sanitize_text_field($form_button['icon']) : 'fas fa-heart';
-        $style = sprintf(
-            'background:%s;color:%s;font-size:%dpx;height:%dpx;',
-            esc_attr($form_button['background'] ?? '#2563eb'),
-            esc_attr($form_button['text_color'] ?? '#ffffff'),
-            (int) ($form_button['font_size'] ?? 14),
-            (int) ($form_button['height'] ?? 34)
-        );
-
-        return sprintf('<form class="lcni-watchlist-add-form" data-lcni-watchlist-add-form><input type="text" data-watchlist-symbol-input placeholder="Nhập mã cổ phiếu" autocomplete="off" /><button type="submit" class="lcni-btn" style="%1$s"><i class="%2$s" aria-hidden="true"></i><span>Thêm</span></button></form>', esc_attr($style), esc_attr($icon_class));
+        return sprintf('<form class="lcni-watchlist-add-form" data-lcni-watchlist-add-form><input type="text" data-watchlist-symbol-input placeholder="Nhập mã cổ phiếu" autocomplete="off" /><button type="submit" class="lcni-btn lcni-btn-btn_watchlist_add_symbol">%s</button></form>', LCNI_Button_Style_Config::build_button_content('btn_watchlist_add_symbol', 'Thêm'));
     }
 
     public function render_add_button($atts = []) {
@@ -74,24 +63,10 @@ class LCNI_WatchlistShortcode {
         }
 
         $this->enqueue_watchlist_assets();
-
-        $settings = $this->get_settings();
-        $button_styles = isset($settings['add_button']) && is_array($settings['add_button']) ? $settings['add_button'] : [];
-        $icon_class = isset($button_styles['icon']) ? sanitize_text_field($button_styles['icon']) : 'fas fa-heart';
-
-        $style = sprintf(
-            'background:%s;color:%s;font-size:%dpx;',
-            esc_attr($button_styles['background'] ?? '#dc2626'),
-            esc_attr($button_styles['text_color'] ?? '#ffffff'),
-            (int) ($button_styles['font_size'] ?? 14)
-        );
-        $style .= sprintf('width:%dpx;height:%dpx;', (int) ($button_styles['size'] ?? 26), (int) ($button_styles['size'] ?? 26));
-
         return sprintf(
-            '<button type="button" class="lcni-watchlist-add lcni-btn" data-lcni-watchlist-add data-symbol="%1$s" style="%2$s" aria-label="Add to watchlist"><i class="%3$s" aria-hidden="true"></i></button>',
+            '<button type="button" class="lcni-watchlist-add lcni-btn lcni-btn-btn_watchlist_add" data-lcni-watchlist-add data-symbol="%1$s" aria-label="Add to watchlist">%2$s</button>',
             esc_attr($symbol),
-            esc_attr($style),
-            esc_attr($icon_class)
+            LCNI_Button_Style_Config::build_button_content('btn_watchlist_add', '')
         );
     }
 
@@ -124,8 +99,7 @@ class LCNI_WatchlistShortcode {
         wp_enqueue_script('lcni-watchlist');
         wp_enqueue_style('lcni-watchlist');
 
-        $button_style = $this->get_button_style_config();
-        $this->enqueue_button_style($button_style);
+        LCNI_Button_Style_Config::enqueue_frontend_assets('lcni-watchlist');
 
         $settings = $this->get_settings();
         $stock_page_slug = sanitize_title((string) get_option('lcni_watchlist_stock_page', (string) ($settings['stock_detail_page_slug'] ?? '')));
@@ -146,34 +120,8 @@ class LCNI_WatchlistShortcode {
             'settingsStorageKey' => 'lcni_watchlist_settings_v1',
             'defaultColumnsDesktop' => $this->service->get_default_columns('desktop'),
             'defaultColumnsMobile' => $this->service->get_default_columns('mobile'),
-            'buttonStyle' => $button_style,
+            'buttonConfig' => LCNI_Button_Style_Config::get_config(),
         ]);
-    }
-
-
-    private function get_button_style_config() {
-        $saved = get_option('lcni_button_style_config', []);
-        $saved = is_array($saved) ? $saved : [];
-
-        return [
-            'button_background_color' => sanitize_hex_color((string) ($saved['button_background_color'] ?? '#2563eb')) ?: '#2563eb',
-            'button_text_color' => sanitize_hex_color((string) ($saved['button_text_color'] ?? '#ffffff')) ?: '#ffffff',
-            'button_height' => max(28, min(56, (int) ($saved['button_height'] ?? 34))),
-            'button_border_radius' => max(0, min(30, (int) ($saved['button_border_radius'] ?? 8))),
-            'button_icon_class' => sanitize_text_field((string) ($saved['button_icon_class'] ?? 'fas fa-sliders-h')),
-        ];
-    }
-
-    private function enqueue_button_style(array $button_style) {
-        $css = sprintf(
-            '.lcni-btn{background:%1$s;color:%2$s;height:%3$dpx;border-radius:%4$dpx;display:inline-flex;align-items:center;justify-content:center;gap:6px;}',
-            esc_attr((string) ($button_style['button_background_color'] ?? '#2563eb')),
-            esc_attr((string) ($button_style['button_text_color'] ?? '#ffffff')),
-            (int) ($button_style['button_height'] ?? 34),
-            (int) ($button_style['button_border_radius'] ?? 8)
-        );
-
-        wp_add_inline_style('lcni-watchlist', $css);
     }
 
     private function get_settings() {

@@ -54,6 +54,7 @@ class LCNI_Chart_Shortcodes {
         wp_register_script('lcni-stock-sync', LCNI_URL . 'assets/js/lcni-stock-sync.js', [], $sync_script_version, true);
         wp_register_script('lcni-lightweight-charts', 'https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js', [], '4.2.3', true);
         wp_register_script('lcni-chart', LCNI_URL . 'assets/js/lcni-chart.js', ['lcni-lightweight-charts', 'lcni-stock-sync'], $chart_script_version, true);
+        wp_register_style('lcni-chart-ui', false, [], self::VERSION);
     }
 
     public function get_user_settings(WP_REST_Request $request) {
@@ -138,6 +139,9 @@ class LCNI_Chart_Shortcodes {
             $symbol = $this->sanitize_symbol($atts['default_symbol']);
         }
 
+        wp_enqueue_style('lcni-chart-ui');
+        LCNI_Button_Style_Config::enqueue_frontend_assets('lcni-chart-ui');
+
         ob_start();
         ?>
         <form method="get" class="lcni-stock-query-form" data-lcni-stock-query-form>
@@ -145,7 +149,7 @@ class LCNI_Chart_Shortcodes {
                 <span class="screen-reader-text"><?php echo esc_html($atts['placeholder']); ?></span>
                 <input type="text" name="<?php echo esc_attr($query_param); ?>" value="<?php echo esc_attr($symbol); ?>" placeholder="<?php echo esc_attr($atts['placeholder']); ?>" style="padding:8px 10px; min-width:160px;">
             </label>
-            <button type="submit" style="padding:8px 12px;"><?php echo esc_html($atts['button_text']); ?></button>
+            <button type="submit" class="lcni-btn lcni-btn-btn_stock_view" style="padding:8px 12px;"><?php echo LCNI_Button_Style_Config::build_button_content('btn_stock_view', (string) $atts['button_text']); ?></button>
         </form>
         <?php
 

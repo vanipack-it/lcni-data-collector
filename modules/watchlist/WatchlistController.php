@@ -152,7 +152,8 @@ class LCNI_WatchlistController {
 
                 if ($column === 'symbol') {
                     $html .= '<td' . $sticky . '><span class="lcni-watchlist-symbol">' . esc_html($symbol) . '</span>'
-                        . '<button type="button" class="lcni-watchlist-add lcni-btn is-active" data-lcni-watchlist-add data-symbol="' . esc_attr($symbol) . '"><i class="fas fa-trash" aria-hidden="true"></i></button></td>';
+                        . '<button type="button" class="lcni-watchlist-add lcni-btn lcni-btn-btn_watchlist_add is-active" data-lcni-watchlist-add data-symbol="' . esc_attr($symbol) . '" aria-label="Remove from watchlist">'
+                        . LCNI_Button_Style_Config::build_button_content('btn_watchlist_add', '') . '</button></td>';
                     continue;
                 }
 

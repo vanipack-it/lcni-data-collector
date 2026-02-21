@@ -1530,23 +1530,13 @@ private function sanitize_module_title($value, $fallback) {
         </script>
         <?php
     }
-
-
-
     private function sanitize_button_style_config($input) {
-        $input = is_array($input) ? $input : [];
-
-        return [
-            'button_background_color' => sanitize_hex_color((string) ($input['button_background_color'] ?? '#2563eb')) ?: '#2563eb',
-            'button_text_color' => sanitize_hex_color((string) ($input['button_text_color'] ?? '#ffffff')) ?: '#ffffff',
-            'button_height' => max(28, min(56, (int) ($input['button_height'] ?? 34))),
-            'button_border_radius' => max(0, min(30, (int) ($input['button_border_radius'] ?? 8))),
-            'button_icon_class' => sanitize_text_field((string) ($input['button_icon_class'] ?? 'fas fa-sliders-h')),
-        ];
+        return LCNI_Button_Style_Config::sanitize_config($input);
     }
 
     private function render_frontend_button_style_form($module, $tab_id) {
-        $settings = $this->sanitize_button_style_config(get_option('lcni_button_style_config', []));
+        $settings = LCNI_Button_Style_Config::get_config();
+        $button_keys = LCNI_Button_Style_Config::get_button_keys();
         ?>
         <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
             <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
@@ -1555,12 +1545,28 @@ private function sanitize_module_title($value, $fallback) {
                 <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
                 <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
 
-                <h3>Button Style</h3>
-                <p><label>button_background_color <input type="color" name="lcni_button_style_config[button_background_color]" value="<?php echo esc_attr((string) $settings['button_background_color']); ?>"></label></p>
-                <p><label>button_text_color <input type="color" name="lcni_button_style_config[button_text_color]" value="<?php echo esc_attr((string) $settings['button_text_color']); ?>"></label></p>
-                <p><label>button_height <input type="number" min="28" max="56" name="lcni_button_style_config[button_height]" value="<?php echo esc_attr((string) $settings['button_height']); ?>"> px</label></p>
-                <p><label>button_border_radius <input type="number" min="0" max="30" name="lcni_button_style_config[button_border_radius]" value="<?php echo esc_attr((string) $settings['button_border_radius']); ?>"> px</label></p>
-                <p><label>button_icon_class <input type="text" name="lcni_button_style_config[button_icon_class]" value="<?php echo esc_attr((string) $settings['button_icon_class']); ?>" class="regular-text"></label></p>
+                <h3>Button Settings</h3>
+                <?php foreach ($button_keys as $button_key => $button_label) : $button = $settings[$button_key] ?? []; ?>
+                    <fieldset style="border:1px solid #dcdcde;padding:12px;margin:0 0 12px;">
+                        <legend><strong><?php echo esc_html($button_label . ' (' . $button_key . ')'); ?></strong></legend>
+                        <p><label>label_text <input type="text" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][label_text]" value="<?php echo esc_attr((string) ($button['label_text'] ?? '')); ?>" class="regular-text"></label></p>
+                        <p><label>icon_class <input type="text" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][icon_class]" value="<?php echo esc_attr((string) ($button['icon_class'] ?? '')); ?>" class="regular-text" placeholder="fa-solid fa-filter"></label></p>
+                        <p><label>icon_position
+                            <select name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][icon_position]">
+                                <option value="left" <?php selected((string) ($button['icon_position'] ?? 'left'), 'left'); ?>>left</option>
+                                <option value="right" <?php selected((string) ($button['icon_position'] ?? 'left'), 'right'); ?>>right</option>
+                            </select>
+                        </label></p>
+                        <p><label>background_color <input type="color" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][background_color]" value="<?php echo esc_attr((string) ($button['background_color'] ?? '#2563eb')); ?>"></label></p>
+                        <p><label>text_color <input type="color" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][text_color]" value="<?php echo esc_attr((string) ($button['text_color'] ?? '#ffffff')); ?>"></label></p>
+                        <p><label>hover_background_color <input type="color" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][hover_background_color]" value="<?php echo esc_attr((string) ($button['hover_background_color'] ?? '#1d4ed8')); ?>"></label></p>
+                        <p><label>hover_text_color <input type="color" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][hover_text_color]" value="<?php echo esc_attr((string) ($button['hover_text_color'] ?? '#ffffff')); ?>"></label></p>
+                        <p><label>height <input type="text" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][height]" value="<?php echo esc_attr((string) ($button['height'] ?? '36px')); ?>" placeholder="36px"></label></p>
+                        <p><label>border_radius <input type="text" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][border_radius]" value="<?php echo esc_attr((string) ($button['border_radius'] ?? '8px')); ?>" placeholder="8px"></label></p>
+                        <p><label>padding_left_right <input type="text" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][padding_left_right]" value="<?php echo esc_attr((string) ($button['padding_left_right'] ?? '12px')); ?>" placeholder="12px"></label></p>
+                        <p><label>font_size <input type="text" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][font_size]" value="<?php echo esc_attr((string) ($button['font_size'] ?? '14px')); ?>" placeholder="14px"></label></p>
+                    </fieldset>
+                <?php endforeach; ?>
                 <?php submit_button('Save'); ?>
             </form>
         </div>

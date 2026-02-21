@@ -2,7 +2,7 @@
 /*
 Plugin Name: LCNI Data Collector
 Description: LCNI Market Data Engine: lấy nến, lưu DB, cron auto update
-Version: 2.0.1
+Version: 2.0.1.1
 */
 
 if (!defined('ABSPATH')) {
@@ -22,6 +22,7 @@ require_once LCNI_PATH . 'includes/class-lcni-seed-repository.php';
 require_once LCNI_PATH . 'includes/class-lcni-history-fetcher.php';
 require_once LCNI_PATH . 'includes/class-lcni-seed-scheduler.php';
 require_once LCNI_PATH . 'includes/class-lcni-settings.php';
+require_once LCNI_PATH . 'includes/class-lcni-button-style-config.php';
 require_once LCNI_PATH . 'includes/class-lcni-update-manager.php';
 require_once LCNI_PATH . 'includes/class-lcni-ohlc-latest-manager.php';
 require_once LCNI_PATH . 'includes/Cache/CacheService.php';
