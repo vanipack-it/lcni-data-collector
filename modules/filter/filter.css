@@ -1,22 +1,121 @@
-.lcni-app .lcni-stock-filter .lcni-filter-toolbar{display:flex;justify-content:flex-end;gap:8px;margin-bottom:8px}
-.lcni-app .lcni-stock-filter .lcni-filter-panel,.lcni-app .lcni-stock-filter .lcni-column-pop{padding:10px;border:1px solid #ddd;background:#fff;margin-bottom:10px}
-.lcni-app .lcni-stock-filter.is-hidden .lcni-filter-panel{display:none}
-.lcni-app .lcni-stock-filter .lcni-filter-check-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:4px}
-.lcni-app .lcni-stock-filter button{cursor:pointer}
-.lcni-app .lcni-stock-filter .lcni-filter-criteria{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:10px}
-.lcni-app .lcni-stock-filter .lcni-filter-panel-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
-.lcni-app .lcni-stock-filter .lcni-filter-panel-actions select{min-width:180px;height:36px;margin-right:auto}
+.lcni-app .lcni-stock-filter,
+.lcni-filter-wrapper {
+  display: block;
+}
 
-.lcni-app .lcni-stock-filter .lcni-table-scroll{width:100%;overflow-x:auto;overflow-y:auto;max-width:100%}
-.lcni-app .lcni-stock-filter .lcni-table{width:100%;border-collapse:collapse;table-layout:auto}
-.lcni-app .lcni-stock-filter .lcni-table td,.lcni-app .lcni-stock-filter .lcni-table th{white-space:nowrap}
-.lcni-app .lcni-stock-filter .lcni-table thead th{position:sticky;top:0;background:#fff;z-index:20}
-.lcni-app .lcni-stock-filter .lcni-table td:first-child,.lcni-app .lcni-stock-filter .lcni-table th:first-child{position:sticky;left:0;background:#fff;z-index:15}
-.lcni-app .lcni-stock-filter .lcni-table thead th:first-child{z-index:30}
-.lcni-app .lcni-stock-filter .lcni-table tbody tr:hover{cursor:pointer;background:var(--row-hover-bg)}
+.lcni-app .lcni-stock-filter .lcni-filter-toolbar,
+.lcni-filter-wrapper .lcni-filter-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 8px;
+}
 
-.lcni-filter-toast{position:fixed;right:16px;bottom:16px;background:#111827;color:#fff;padding:8px 12px;border-radius:8px;z-index:9999}
-.lcni-filter-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:10000}
-.lcni-filter-modal{background:#fff;border-radius:10px;padding:16px;min-width:320px;max-width:520px}
-.lcni-filter-modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap}
-.lcni-filter-watchlist-options{display:grid;gap:6px;max-height:260px;overflow:auto}
+.lcni-app .lcni-stock-filter [data-filter-toggle],
+.lcni-filter-wrapper .lcni-filter-toggle {
+  cursor: pointer;
+}
+
+.lcni-app .lcni-stock-filter .lcni-filter-panel,
+.lcni-filter-wrapper .lcni-filter-panel,
+.lcni-app .lcni-stock-filter .lcni-column-pop {
+  padding: 10px;
+  margin-bottom: 10px;
+  border: 1px solid #ddd;
+  background: #fff;
+}
+
+.lcni-app .lcni-stock-filter .lcni-filter-panel[hidden],
+.lcni-app .lcni-stock-filter.is-hidden .lcni-filter-panel,
+.lcni-filter-wrapper .lcni-filter-panel.is-hidden {
+  display: none;
+}
+
+.lcni-app .lcni-stock-filter .lcni-filter-criteria,
+.lcni-filter-panel .lcni-filter-field {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.lcni-app .lcni-stock-filter .lcni-filter-criteria strong,
+.lcni-filter-panel .lcni-filter-label {
+  display: inline-block;
+  margin-bottom: 4px;
+}
+
+.lcni-app .lcni-stock-filter .lcni-filter-criteria input[type='number'],
+.lcni-filter-panel .lcni-filter-range {
+  width: 100%;
+}
+
+.lcni-app .lcni-stock-filter .lcni-filter-check-list,
+.lcni-filter-panel .lcni-filter-checkbox-group {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 4px;
+}
+
+.lcni-app .lcni-stock-filter .lcni-filter-panel-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.lcni-app .lcni-stock-filter .lcni-filter-panel-actions select {
+  min-width: 180px;
+  height: 36px;
+  margin-right: auto;
+}
+
+.lcni-app .lcni-stock-filter [data-apply-filter],
+.lcni-filter-panel .lcni-filter-apply {
+  cursor: pointer;
+}
+
+.lcni-filter-toast {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 9999;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #111827;
+  color: #fff;
+}
+
+.lcni-filter-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.lcni-filter-modal {
+  min-width: 320px;
+  max-width: 520px;
+  padding: 16px;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.lcni-filter-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.lcni-filter-watchlist-options {
+  display: grid;
+  gap: 6px;
+  max-height: 260px;
+  overflow: auto;
+}
