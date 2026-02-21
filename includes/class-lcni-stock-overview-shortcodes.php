@@ -98,7 +98,7 @@ class LCNI_Stock_Overview_Shortcodes {
 
         $symbol = $this->resolve_symbol($atts['symbol']);
         if ($symbol === '') {
-            return '';
+            return $this->render_missing_symbol_notice();
         }
 
         return $this->render_container($symbol, '', (string) $atts['version']);
@@ -180,6 +180,13 @@ class LCNI_Stock_Overview_Shortcodes {
             esc_attr(wp_json_encode(LCNI_Button_Style_Config::get_button('btn_overview_setting'))),
             esc_attr($version)
         );
+    }
+
+    private function render_missing_symbol_notice() {
+        wp_enqueue_style('lcni-stock-overview');
+        wp_add_inline_style('lcni-stock-overview', '.lcni-module-empty{padding:24px;text-align:center;background:#fafafa;border:1px solid #eee;border-radius:6px;}.lcni-module-empty-inner{color:#777;font-size:14px;}');
+
+        return '<div class="lcni-module-empty"><div class="lcni-module-empty-inner">Vui lòng chọn mã cổ phiếu để xem dữ liệu.</div></div>';
     }
 
     private function get_admin_config() {
