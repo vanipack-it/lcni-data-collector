@@ -1,3 +1,9 @@
+## 2.0.4
+- Refactor chart runtime qua abstraction `LCNIChartEngine` và thêm engine ECharts có fallback Lightweight qua `window.lcniChartEngineType`.
+- Mở rộng cấu hình style cho filter/watchlist popup-input, thêm lưu `lcni_filter_style_config`.
+- Cập nhật filter/watchlist table cho sticky + hover + table-layout auto + sort client-side + filter hide toggle.
+- Nâng cấp watchlist shortcode runtime để có input thêm mã trực tiếp, validate uppercase/trim và toast rõ ràng.
+
 # Development Log
 
 

@@ -1,5 +1,6 @@
 .lcni-watchlist { --lcni-watchlist-label-font-size: 12px; --lcni-watchlist-row-font-size: 13px; }
-.lcni-watchlist-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.lcni-watchlist-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 8px; flex-wrap: wrap; }
+.lcni-watchlist-list-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 .lcni-watchlist-dropdown { position: relative; }
 .lcni-watchlist-settings-btn { border: none; background: transparent; cursor: pointer; font-size: 18px; line-height: 1; }
 .lcni-watchlist-controls { position: absolute; top: 28px; right: 0; z-index: 30; min-width: 420px; max-width: min(90vw, 680px); background: #fff; border: 1px solid #d1d5db; border-radius: 8px; box-shadow: 0 10px 25px rgba(17, 24, 39, 0.12); padding: 12px; display: none; flex-direction: column; gap: 10px; }
@@ -12,7 +13,8 @@
 .lcni-watchlist-table th { font-size: var(--lcni-watchlist-label-font-size); }
 .lcni-watchlist-table td { font-size: var(--lcni-watchlist-row-font-size); }
 .lcni-watchlist-table .is-sticky-col { position: sticky; left: 0; z-index: 2; box-shadow: 2px 0 0 rgba(229, 231, 235, 0.7); }
-.lcni-watchlist-table thead .is-sticky-col { z-index: 3; }
+.lcni-watchlist-table thead .is-sticky-col { z-index: 30; }
+.lcni-watchlist-table thead th{position:sticky;top:0;z-index:20;background:#fff;}
 .lcni-watchlist-table tbody tr { cursor: pointer; transition: background-color .18s ease; }
 .lcni-watchlist-table tbody tr:hover { background: #f8fafc; }
 .lcni-watchlist-symbol { margin-right: 6px; font-weight: 600; }
@@ -27,6 +29,8 @@
 @media (max-width: 767px) {
   .lcni-watchlist-controls { min-width: 280px; width: min(92vw, 360px); }
   .lcni-watchlist-table { min-width: 560px; }
+  .lcni-watchlist-list-controls{display:grid;grid-template-columns:1fr auto auto;align-items:center;}
+  .lcni-watchlist-add-form{grid-column:1/-1;}
 }
 
 @keyframes lcni-watchlist-shake {
@@ -35,7 +39,9 @@
   75% { transform: translateX(2px); }
 }
 
-.lcni-watchlist-add-form { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+.lcni-watchlist-add-form { display: flex; gap: 8px; align-items: center; margin: 0; }
+.lcni-watchlist-symbol-input{height:34px;}
+.lcni-watchlist-add-btn{height:34px;}
 .lcni-watchlist-add-form input { min-width: 180px; padding: 6px 10px; }
 .lcni-watchlist-add-form button { padding: 0 12px; cursor: pointer; border: 0; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px; }
 .lcni-watchlist-add.is-active { background: #ef4444 !important; color: #fff !important; }

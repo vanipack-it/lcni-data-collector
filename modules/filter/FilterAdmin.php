@@ -17,11 +17,23 @@ class LCNI_FilterAdmin {
     public static function sanitize_style($input) {
         $input = is_array($input) ? $input : [];
 
+        $rules = $input['conditional_value_colors'] ?? '[]';
+        if (is_array($rules)) {
+            $rules = wp_json_encode($rules);
+        }
+
         return [
+            'inherit_style' => !empty($input['inherit_style']),
             'font_size' => max(10, min(24, (int) ($input['font_size'] ?? 13))),
             'text_color' => sanitize_hex_color((string) ($input['text_color'] ?? '#111827')) ?: '#111827',
             'background_color' => sanitize_hex_color((string) ($input['background_color'] ?? '#ffffff')) ?: '#ffffff',
+            'border_color' => sanitize_hex_color((string) ($input['border_color'] ?? '#e5e7eb')) ?: '#e5e7eb',
+            'border_width' => max(0, min(6, (int) ($input['border_width'] ?? 1))),
+            'border_radius' => max(0, min(30, (int) ($input['border_radius'] ?? 8))),
+            'header_label_font_size' => max(10, min(30, (int) ($input['header_label_font_size'] ?? 12))),
+            'row_font_size' => max(10, min(30, (int) ($input['row_font_size'] ?? 13))),
             'row_height' => max(24, min(64, (int) ($input['row_height'] ?? 36))),
+            'conditional_value_colors' => is_string($rules) ? $rules : '[]',
         ];
     }
 
@@ -104,7 +116,13 @@ class LCNI_FilterAdmin {
                     <p><label>Font size <input type="number" name="lcni_filter_style[font_size]" value="<?php echo esc_attr((string) $style['font_size']); ?>"></label></p>
                     <p><label>Text color <input type="color" name="lcni_filter_style[text_color]" value="<?php echo esc_attr((string) $style['text_color']); ?>"></label></p>
                     <p><label>Background color <input type="color" name="lcni_filter_style[background_color]" value="<?php echo esc_attr((string) $style['background_color']); ?>"></label></p>
+                    <p><label>Border color <input type="color" name="lcni_filter_style[border_color]" value="<?php echo esc_attr((string) ($style['border_color'] ?? '#e5e7eb')); ?>"></label></p>
+                    <p><label>Border width <input type="number" name="lcni_filter_style[border_width]" value="<?php echo esc_attr((string) ($style['border_width'] ?? 1)); ?>"></label></p>
+                    <p><label>Border radius <input type="number" name="lcni_filter_style[border_radius]" value="<?php echo esc_attr((string) ($style['border_radius'] ?? 8)); ?>"></label></p>
+                    <p><label>Header label font size <input type="number" name="lcni_filter_style[header_label_font_size]" value="<?php echo esc_attr((string) ($style['header_label_font_size'] ?? 12)); ?>"></label></p>
+                    <p><label>Row font size <input type="number" name="lcni_filter_style[row_font_size]" value="<?php echo esc_attr((string) ($style['row_font_size'] ?? 13)); ?>"></label></p>
                     <p><label>Row height <input type="number" name="lcni_filter_style[row_height]" value="<?php echo esc_attr((string) $style['row_height']); ?>"></label></p>
+                    <p><label>Conditional value colors JSON <textarea name="lcni_filter_style[conditional_value_colors]" rows="5" class="large-text code"><?php echo esc_textarea((string) ($style['conditional_value_colors'] ?? '[]')); ?></textarea></label></p>
                     <?php submit_button('Save'); ?>
                 </form>
             </div>
