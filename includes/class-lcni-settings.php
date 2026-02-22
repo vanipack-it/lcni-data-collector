@@ -12,6 +12,7 @@ class LCNI_Settings {
         add_action('admin_init', [$this, 'handle_admin_actions']);
         add_action('wp_ajax_lcni_seed_dashboard_snapshot', [$this, 'ajax_seed_dashboard_snapshot']);
         add_action('wp_ajax_lcni_rule_rebuild_status', [$this, 'ajax_rule_rebuild_status']);
+        add_action('wp_ajax_lcni_update_data_status_snapshot', [$this, 'ajax_update_data_status_snapshot']);
     }
 
     public function menu() {
@@ -699,6 +700,75 @@ class LCNI_Settings {
         wp_send_json_success($status);
     }
 
+    private function format_mysql_datetime_to_gmt7($datetime) {
+        $raw = trim((string) $datetime);
+        if ($raw === '') {
+            return '-';
+        }
+
+        try {
+            $wp_timezone = wp_timezone();
+            $date = new DateTimeImmutable($raw, $wp_timezone);
+
+            return $date->setTimezone(new DateTimeZone('Asia/Ho_Chi_Minh'))->format('Y-m-d H:i:s');
+        } catch (Exception $e) {
+            return $raw;
+        }
+    }
+
+    private function format_timestamp_to_gmt7($timestamp) {
+        $ts = (int) $timestamp;
+        if ($ts <= 0) {
+            return '-';
+        }
+
+        return wp_date('Y-m-d H:i:s', $ts, new DateTimeZone('Asia/Ho_Chi_Minh'));
+    }
+
+    private function normalize_runtime_status_for_display($status) {
+        $status = is_array($status) ? $status : [];
+
+        return [
+            'running_label' => !empty($status['running']) ? 'Đang chạy' : 'Đã dừng',
+            'processed_symbols' => (int) ($status['processed_symbols'] ?? 0),
+            'pending_symbols' => (int) ($status['pending_symbols'] ?? 0),
+            'changed_symbols' => (int) ($status['changed_symbols'] ?? 0),
+            'indicators_done_label' => !empty($status['indicators_done']) ? 'Đã xong' : 'Chưa xong',
+            'started_at' => $this->format_mysql_datetime_to_gmt7($status['started_at'] ?? ''),
+            'ended_at' => $this->format_mysql_datetime_to_gmt7($status['ended_at'] ?? ''),
+            'next_run_at' => $this->format_timestamp_to_gmt7($status['next_run_ts'] ?? 0),
+            'message' => (string) ($status['message'] ?? '-'),
+            'error' => (string) ($status['error'] ?? ''),
+        ];
+    }
+
+    private function normalize_ohlc_latest_status_for_display($status) {
+        $status = is_array($status) ? $status : [];
+
+        return [
+            'running_label' => !empty($status['running']) ? 'Đang chạy' : 'Đã dừng',
+            'rows_affected' => (int) ($status['rows_affected'] ?? 0),
+            'started_at' => $this->format_mysql_datetime_to_gmt7($status['started_at'] ?? ''),
+            'ended_at' => $this->format_mysql_datetime_to_gmt7($status['ended_at'] ?? ''),
+            'message' => (string) ($status['message'] ?? '-'),
+            'error' => (string) ($status['error'] ?? ''),
+        ];
+    }
+
+    public function ajax_update_data_status_snapshot() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Forbidden'], 403);
+        }
+
+        check_ajax_referer('lcni_update_data_status_nonce', 'nonce');
+
+        wp_send_json_success([
+            'runtime' => $this->normalize_runtime_status_for_display(LCNI_Update_Manager::get_status()),
+            'snapshot' => $this->normalize_ohlc_latest_status_for_display(LCNI_OHLC_Latest_Manager::get_status()),
+            'updated_at' => wp_date('Y-m-d H:i:s', null, new DateTimeZone('Asia/Ho_Chi_Minh')),
+        ]);
+    }
+
     public function settings_page() {
         global $wpdb;
 
@@ -909,11 +979,12 @@ class LCNI_Settings {
             <?php elseif ($active_tab === 'update_data') : ?>
                 <?php
                 $update_settings = LCNI_Update_Manager::get_settings();
-                $update_status = LCNI_Update_Manager::get_status();
                 $ohlc_latest_settings = LCNI_OHLC_Latest_Manager::get_settings();
-                $ohlc_latest_status = LCNI_OHLC_Latest_Manager::get_status();
+                $update_status = $this->normalize_runtime_status_for_display(LCNI_Update_Manager::get_status());
+                $ohlc_latest_status = $this->normalize_ohlc_latest_status_for_display(LCNI_OHLC_Latest_Manager::get_status());
                 $requested_update_sub_tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'lcni-tab-update-runtime';
                 $active_update_sub_tab = in_array($requested_update_sub_tab, ['lcni-tab-update-runtime', 'lcni-tab-update-ohlc-latest'], true) ? $requested_update_sub_tab : 'lcni-tab-update-runtime';
+                $update_status_nonce = wp_create_nonce('lcni_update_data_status_nonce');
                 ?>
                 <h2>Update Data</h2>
                 <div class="lcni-sub-tab-nav" id="lcni-update-sub-tabs">
@@ -948,18 +1019,19 @@ class LCNI_Settings {
                     </form>
 
                     <h3>Trạng thái cập nhật</h3>
+                    <p id="lcni-runtime-status-updated-at" style="margin:0 0 8px;color:#50575e;">Timezone hiển thị: GMT+7 (Asia/Ho_Chi_Minh).</p>
                     <table class="widefat striped" style="max-width:980px;">
                         <tbody>
-                            <tr><th>Đang chạy</th><td><?php echo !empty($update_status['running']) ? 'Đang chạy' : 'Đã dừng'; ?></td></tr>
-                            <tr><th>Số symbol đã cập nhật</th><td><?php echo esc_html((string) ($update_status['processed_symbols'] ?? 0)); ?></td></tr>
-                            <tr><th>Số symbol chờ cập nhật</th><td><?php echo esc_html((string) ($update_status['pending_symbols'] ?? 0)); ?></td></tr>
-                            <tr><th>Số symbol thay đổi giá</th><td><?php echo esc_html((string) ($update_status['changed_symbols'] ?? 0)); ?></td></tr>
-                            <tr><th>Cột tính toán hoàn tất</th><td><?php echo !empty($update_status['indicators_done']) ? 'Đã xong' : 'Chưa xong'; ?></td></tr>
-                            <tr><th>Thời gian bắt đầu</th><td><?php echo esc_html((string) ($update_status['started_at'] ?? '-')); ?></td></tr>
-                            <tr><th>Thời gian kết thúc</th><td><?php echo esc_html((string) ($update_status['ended_at'] ?? '-')); ?></td></tr>
-                            <tr><th>Dự kiến phiên cập nhật tiếp theo</th><td><?php echo !empty($update_status['next_run_ts']) ? esc_html(wp_date('Y-m-d H:i:s', (int) $update_status['next_run_ts'])) : '-'; ?></td></tr>
-                            <tr><th>Thông báo</th><td><?php echo esc_html((string) ($update_status['message'] ?? '-')); ?></td></tr>
-                            <tr><th>Lỗi</th><td><?php echo esc_html((string) ($update_status['error'] ?? '')); ?></td></tr>
+                            <tr><th>Đang chạy</th><td data-lcni-runtime-status="running_label"><?php echo esc_html((string) $update_status['running_label']); ?></td></tr>
+                            <tr><th>Số symbol đã cập nhật</th><td data-lcni-runtime-status="processed_symbols"><?php echo esc_html((string) ($update_status['processed_symbols'] ?? 0)); ?></td></tr>
+                            <tr><th>Số symbol chờ cập nhật</th><td data-lcni-runtime-status="pending_symbols"><?php echo esc_html((string) ($update_status['pending_symbols'] ?? 0)); ?></td></tr>
+                            <tr><th>Số symbol thay đổi giá</th><td data-lcni-runtime-status="changed_symbols"><?php echo esc_html((string) ($update_status['changed_symbols'] ?? 0)); ?></td></tr>
+                            <tr><th>Cột tính toán hoàn tất</th><td data-lcni-runtime-status="indicators_done_label"><?php echo esc_html((string) $update_status['indicators_done_label']); ?></td></tr>
+                            <tr><th>Thời gian bắt đầu</th><td data-lcni-runtime-status="started_at"><?php echo esc_html((string) ($update_status['started_at'] ?? '-')); ?></td></tr>
+                            <tr><th>Thời gian kết thúc</th><td data-lcni-runtime-status="ended_at"><?php echo esc_html((string) ($update_status['ended_at'] ?? '-')); ?></td></tr>
+                            <tr><th>Dự kiến phiên cập nhật tiếp theo</th><td data-lcni-runtime-status="next_run_at"><?php echo esc_html((string) ($update_status['next_run_at'] ?? '-')); ?></td></tr>
+                            <tr><th>Thông báo</th><td data-lcni-runtime-status="message"><?php echo esc_html((string) ($update_status['message'] ?? '-')); ?></td></tr>
+                            <tr><th>Lỗi</th><td data-lcni-runtime-status="error"><?php echo esc_html((string) ($update_status['error'] ?? '')); ?></td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -992,14 +1064,15 @@ class LCNI_Settings {
                     </form>
 
                     <h3>Trạng thái snapshot</h3>
+                    <p id="lcni-snapshot-status-updated-at" style="margin:0 0 8px;color:#50575e;">Timezone hiển thị: GMT+7 (Asia/Ho_Chi_Minh).</p>
                     <table class="widefat striped" style="max-width:980px;">
                         <tbody>
-                            <tr><th>Đang chạy</th><td><?php echo !empty($ohlc_latest_status['running']) ? 'Đang chạy' : 'Đã dừng'; ?></td></tr>
-                            <tr><th>Rows affected lần chạy cuối</th><td><?php echo esc_html((string) ($ohlc_latest_status['rows_affected'] ?? 0)); ?></td></tr>
-                            <tr><th>Thời gian bắt đầu</th><td><?php echo esc_html((string) ($ohlc_latest_status['started_at'] ?? '-')); ?></td></tr>
-                            <tr><th>Thời gian kết thúc</th><td><?php echo esc_html((string) ($ohlc_latest_status['ended_at'] ?? '-')); ?></td></tr>
-                            <tr><th>Thông báo</th><td><?php echo esc_html((string) ($ohlc_latest_status['message'] ?? '-')); ?></td></tr>
-                            <tr><th>Lỗi</th><td><?php echo esc_html((string) ($ohlc_latest_status['error'] ?? '')); ?></td></tr>
+                            <tr><th>Đang chạy</th><td data-lcni-snapshot-status="running_label"><?php echo esc_html((string) $ohlc_latest_status['running_label']); ?></td></tr>
+                            <tr><th>Rows affected lần chạy cuối</th><td data-lcni-snapshot-status="rows_affected"><?php echo esc_html((string) ($ohlc_latest_status['rows_affected'] ?? 0)); ?></td></tr>
+                            <tr><th>Thời gian bắt đầu</th><td data-lcni-snapshot-status="started_at"><?php echo esc_html((string) ($ohlc_latest_status['started_at'] ?? '-')); ?></td></tr>
+                            <tr><th>Thời gian kết thúc</th><td data-lcni-snapshot-status="ended_at"><?php echo esc_html((string) ($ohlc_latest_status['ended_at'] ?? '-')); ?></td></tr>
+                            <tr><th>Thông báo</th><td data-lcni-snapshot-status="message"><?php echo esc_html((string) ($ohlc_latest_status['message'] ?? '-')); ?></td></tr>
+                            <tr><th>Lỗi</th><td data-lcni-snapshot-status="error"><?php echo esc_html((string) ($ohlc_latest_status['error'] ?? '')); ?></td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1013,6 +1086,10 @@ class LCNI_Settings {
                         const buttons = nav.querySelectorAll('button[data-sub-tab]');
                         const panes = document.querySelectorAll('#lcni-tab-update-runtime, #lcni-tab-update-ohlc-latest');
                         const active = '<?php echo esc_js($active_update_sub_tab); ?>';
+                        const endpoint = '<?php echo esc_js(admin_url('admin-ajax.php')); ?>';
+                        const statusNonce = '<?php echo esc_js($update_status_nonce); ?>';
+                        const runtimeUpdatedAt = document.getElementById('lcni-runtime-status-updated-at');
+                        const snapshotUpdatedAt = document.getElementById('lcni-snapshot-status-updated-at');
 
                         const activate = function(tabId) {
                             buttons.forEach((btn) => btn.classList.toggle('active', btn.getAttribute('data-sub-tab') === tabId));
@@ -1023,7 +1100,54 @@ class LCNI_Settings {
                             btn.addEventListener('click', () => activate(btn.getAttribute('data-sub-tab')));
                         });
 
+                        const setFields = function(selectorPrefix, data) {
+                            if (!data || typeof data !== 'object') {
+                                return;
+                            }
+
+                            Object.keys(data).forEach((key) => {
+                                const el = document.querySelector('[' + selectorPrefix + '="' + key + '"]');
+                                if (el) {
+                                    el.textContent = String(data[key] ?? '');
+                                }
+                            });
+                        };
+
+                        const refreshStatuses = function() {
+                            const body = new URLSearchParams();
+                            body.append('action', 'lcni_update_data_status_snapshot');
+                            body.append('nonce', statusNonce);
+
+                            fetch(endpoint, {
+                                method: 'POST',
+                                credentials: 'same-origin',
+                                headers: {
+                                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                                },
+                                body: body.toString()
+                            })
+                            .then((response) => response.json())
+                            .then((payload) => {
+                                if (!payload || !payload.success || !payload.data) {
+                                    return;
+                                }
+
+                                setFields('data-lcni-runtime-status', payload.data.runtime || {});
+                                setFields('data-lcni-snapshot-status', payload.data.snapshot || {});
+
+                                const updatedLabel = 'Timezone hiển thị: GMT+7 (Asia/Ho_Chi_Minh). Cập nhật gần nhất: ' + (payload.data.updated_at || '-');
+                                if (runtimeUpdatedAt) {
+                                    runtimeUpdatedAt.textContent = updatedLabel;
+                                }
+                                if (snapshotUpdatedAt) {
+                                    snapshotUpdatedAt.textContent = updatedLabel;
+                                }
+                            });
+                        };
+
                         activate(active);
+                        refreshStatuses();
+                        setInterval(refreshStatuses, 5000);
                     })();
                 </script>
 
