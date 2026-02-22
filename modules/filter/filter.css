@@ -19,7 +19,7 @@
 .lcni-app .lcni-stock-filter .lcni-filter-value-panel { display:none; }
 .lcni-app .lcni-stock-filter .lcni-filter-value-panel.is-active { display:block; }
 .lcni-app .lcni-stock-filter .lcni-filter-value-panel strong { display:block; margin-bottom:8px; color:var(--lcni-panel-label-color,#111827); font-size:var(--lcni-panel-label-size,13px); }
-.lcni-app .lcni-stock-filter .lcni-filter-check-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:5px; color:var(--lcni-panel-value-color,#374151); font-size:var(--lcni-panel-value-size,13px); max-height:280px; overflow:auto; }
+.lcni-app .lcni-stock-filter .lcni-filter-check-list { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:4px; color:var(--lcni-panel-value-color,#374151); font-size:var(--lcni-panel-value-size,13px); max-height:280px; overflow:auto; }
 .lcni-app .lcni-stock-filter .lcni-filter-range-wrap { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
 .lcni-app .lcni-stock-filter .lcni-filter-range-wrap input { width:100%; color:var(--lcni-panel-value-color,#374151); font-size:var(--lcni-panel-value-size,13px); }
 
@@ -27,14 +27,13 @@
 .lcni-app .lcni-stock-filter .lcni-saved-filter-label { font-size:var(--lcni-panel-label-size,13px); color:var(--lcni-panel-label-color,#111827); }
 .lcni-app .lcni-stock-filter .lcni-filter-panel-actions select { min-width:190px; height:36px; margin-right:auto; font-size:var(--lcni-panel-value-size,13px); }
 
-.lcni-app .lcni-stock-filter .lcni-column-pop { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:8px; }
+.lcni-app .lcni-stock-filter .lcni-column-pop { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:6px; }
 .lcni-app .lcni-stock-filter .lcni-column-option { display:flex; align-items:center; gap:8px; border:1px solid #e5e7eb; border-radius:8px; padding:6px 8px; background:#fff; }
 .lcni-app .lcni-stock-filter .lcni-column-option span { flex:1; }
-.lcni-app .lcni-stock-filter .lcni-column-position { width:68px; }
-.lcni-app .lcni-stock-filter .lcni-table-scroll { max-height:70vh; overflow:auto; overscroll-behavior:contain; }
+.lcni-app .lcni-stock-filter .lcni-table-scroll { max-height:calc(100vh - 180px); overflow:auto; overscroll-behavior:contain; overscroll-behavior-x:contain; scrollbar-gutter:stable; }
 .lcni-app .lcni-stock-filter .lcni-table { width:100%; border-collapse:separate; border-spacing:0; }
-.lcni-app .lcni-stock-filter .lcni-table th { position:sticky; top:0; z-index:3; background:var(--lcni-table-header-bg,#f3f4f6); color:var(--lcni-table-header-color,#111827); font-size:var(--lcni-table-header-size,12px); border-bottom:var(--lcni-row-divider-width,1px) solid var(--lcni-row-divider-color,#e5e7eb); height:var(--lcni-table-header-height,42px); }
-.lcni-app .lcni-stock-filter .lcni-table td { background:var(--lcni-table-value-bg,#fff); color:var(--lcni-table-value-color,#111827); font-size:var(--lcni-table-value-size,13px); border-bottom:var(--lcni-row-divider-width,1px) solid var(--lcni-row-divider-color,#e5e7eb); }
+.lcni-app .lcni-stock-filter .lcni-table th { position:sticky; top:0; z-index:3; background:var(--lcni-table-header-bg,#f3f4f6); color:var(--lcni-table-header-color,#111827); font-size:var(--lcni-table-header-size,12px); border-bottom:var(--lcni-row-divider-width,1px) solid var(--lcni-row-divider-color,#e5e7eb); height:var(--lcni-table-header-height,42px); white-space:nowrap; }
+.lcni-app .lcni-stock-filter .lcni-table td { background:var(--lcni-table-value-bg,#fff); color:var(--lcni-table-value-color,#111827); font-size:var(--lcni-table-value-size,13px); border-bottom:var(--lcni-row-divider-width,1px) solid var(--lcni-row-divider-color,#e5e7eb); white-space:nowrap; word-break:keep-all; }
 .lcni-app .lcni-stock-filter .lcni-table tr:hover td { background:var(--lcni-row-hover-bg,#eef2ff); }
 .lcni-app .lcni-stock-filter .lcni-table .is-sticky-col { position:sticky; left:0; z-index:2; }
 .lcni-app .lcni-stock-filter .lcni-table th.is-sticky-col { z-index:4; }
@@ -48,3 +47,10 @@
 .lcni-app .lcni-stock-filter.lcni-disable-sticky-header .lcni-table th { position: static; }
 
 .lcni-app .lcni-stock-filter [data-column-pop][hidden] { display:none !important; }
+
+@media (max-width: 767px) {
+  .lcni-app .lcni-stock-filter .lcni-filter-toolbar{position:sticky;top:0;background:#fff;z-index:5;padding-bottom:6px;}
+  .lcni-app .lcni-stock-filter .lcni-filter-panel,
+  .lcni-app .lcni-stock-filter .lcni-column-pop{position:fixed;left:8px;right:8px;top:8px;max-height:80vh;overflow:auto;z-index:10001;margin:0;}
+  .lcni-app .lcni-stock-filter .lcni-table-scroll{max-height:calc(100vh - 140px);}
+}

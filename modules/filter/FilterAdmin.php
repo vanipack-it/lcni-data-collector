@@ -50,6 +50,7 @@ class LCNI_FilterAdmin {
             'sticky_column_count' => is_numeric($input['sticky_column_count'] ?? '') ? max(0, min(5, (int) $input['sticky_column_count'])) : 1,
             'sticky_header_rows' => is_numeric($input['sticky_header_rows'] ?? '') ? max(0, min(2, (int) $input['sticky_header_rows'])) : 1,
             'table_header_row_height' => is_numeric($input['table_header_row_height'] ?? '') ? max(28, min(80, (int) $input['table_header_row_height'])) : 42,
+            'table_scroll_speed' => is_numeric($input['table_scroll_speed'] ?? '') ? max(1, min(5, (int) $input['table_scroll_speed'])) : 1,
             'row_hover_background' => sanitize_hex_color((string) ($input['row_hover_background'] ?? '')) ?: '',
             'conditional_value_colors' => is_string($rules) ? $rules : '[]',
         ];
@@ -178,6 +179,7 @@ class LCNI_FilterAdmin {
                     <p><label>Sticky column count <input type="number" name="lcni_filter_style_config[sticky_column_count]" value="<?php echo esc_attr((string) ($style['sticky_column_count'] ?? 1)); ?>"></label></p>
                     <p><label>Sticky header rows <input type="number" name="lcni_filter_style_config[sticky_header_rows]" value="<?php echo esc_attr((string) ($style['sticky_header_rows'] ?? 1)); ?>"></label></p>
                     <p><label>Table header row height <input type="number" name="lcni_filter_style_config[table_header_row_height]" value="<?php echo esc_attr((string) ($style['table_header_row_height'] ?? 42)); ?>"></label></p>
+                    <p><label>Table horizontal scroll speed <input type="number" min="1" max="5" name="lcni_filter_style_config[table_scroll_speed]" value="<?php echo esc_attr((string) ($style['table_scroll_speed'] ?? 1)); ?>"></label></p>
                     <p><label>Row hover background <input type="color" name="lcni_filter_style_config[row_hover_background]" value="<?php echo esc_attr((string) ($style['row_hover_background'] ?? '#eef2ff')); ?>"></label></p>
                     <p><label>Conditional value colors JSON <textarea name="lcni_filter_style_config[conditional_value_colors]" rows="5" class="large-text code"><?php echo esc_textarea((string) ($style['conditional_value_colors'] ?? '[]')); ?></textarea></label></p>
                     <?php submit_button('Save'); ?>
