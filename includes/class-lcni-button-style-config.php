@@ -76,6 +76,8 @@ class LCNI_Button_Style_Config {
             'btn_filter_apply' => ['Filter: Apply', 'filter'],
             'btn_add_filter_row' => ['Filter: Add Watchlist', 'filter'],
             'btn_filter_setting' => ['Filter: Settings', 'filter'],
+            'btn_filter_hide' => ['Filter: Hide Panel', 'filter'],
+            'btn_set_default_filter' => ['Filter: Set Default', 'filter'],
             'btn_stock_view' => ['Stock Detail: View', 'chart'],
             'btn_watchlist_add' => ['Watchlist: Add/Remove Symbol', 'watchlist'],
             'btn_watchlist_save' => ['Watchlist: Save', 'watchlist'],

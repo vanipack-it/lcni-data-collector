@@ -5,7 +5,7 @@
 
   const state = {
     page: 1,
-    limit: 50,
+    limit: 5000,
     filters: [],
     visibleColumns: [],
     criteria: Array.isArray(cfg.criteria) ? cfg.criteria : [],
@@ -17,7 +17,7 @@
     sortDir: 'asc',
     dataset: [],
     activeCriteriaColumn: '',
-    panelHidden: false,
+    panelHidden: true,
     columnPanelOpen: false
   };
 
@@ -76,6 +76,38 @@
     } catch (e) { return defaultColumns; }
   }
   function saveVisibleColumns(cols) { try { sessionStorage.setItem(sessionKey, JSON.stringify(cols)); } catch (e) {} }
+
+  function renderColumnPositionItems(columns, labels) {
+    const selected = state.visibleColumns.length ? state.visibleColumns : columns;
+    const selectedOrder = {};
+    selected.forEach((column, index) => {
+      selectedOrder[column] = index + 1;
+    });
+
+    return columns.map((column) => {
+      const checked = state.visibleColumns.includes(column);
+      const position = checked ? selectedOrder[column] : '';
+      return `<label class="lcni-column-option"><input type="checkbox" data-visible-col value="${esc(column)}" ${checked ? 'checked' : ''}> <span>${esc(labels[column] || column)}</span> <input type="number" min="1" step="1" class="lcni-column-position" data-col-position="${esc(column)}" value="${position}" ${checked ? '' : 'disabled'}></label>`;
+    }).join('');
+  }
+
+  function collectVisibleColumns(host) {
+    const rows = Array.from(host.querySelectorAll('[data-visible-col]')).map((node) => {
+      const column = node.value;
+      const isChecked = node.checked;
+      const positionInput = Array.from(host.querySelectorAll('[data-col-position]')).find((node) => node.getAttribute('data-col-position') === column);
+      const position = Number(positionInput && positionInput.value ? positionInput.value : Number.MAX_SAFE_INTEGER);
+      return { column, isChecked, position };
+    });
+
+    const selected = rows
+      .filter((item) => item.isChecked)
+      .sort((a, b) => a.position - b.position)
+      .map((item) => item.column);
+
+    if (!selected.includes('symbol')) selected.unshift('symbol');
+    return selected;
+  }
 
   function showToast(message) {
     const node = document.createElement('div');
@@ -254,15 +286,16 @@
     host.style.setProperty('--lcni-row-divider-color', String(style.table_row_divider_color || '#e5e7eb'));
     host.style.setProperty('--lcni-row-divider-width', `${Number(style.table_row_divider_width || 1)}px`);
     host.style.setProperty('--lcni-row-hover-bg', String(style.row_hover_background || '#eef2ff'));
+    host.style.setProperty('--lcni-table-header-height', `${Number(style.table_header_row_height || 42)}px`);
     host.classList.toggle('lcni-disable-sticky-header', Number(style.sticky_header_rows || 1) < 1);
 
-    const hideBtn = style.enable_hide_button ? `<button type="button" class="lcni-btn lcni-btn-btn_filter_hide lcni-filter-hide-btn" data-filter-hide>Ẩn</button>` : '';
+    const hideBtn = style.enable_hide_button ? `<button type="button" class="lcni-btn lcni-btn-btn_filter_hide lcni-filter-hide-btn" data-filter-hide>${renderButtonContent('btn_filter_hide', 'Ẩn')}</button>` : '';
     const savedFilterLabel = esc(style.saved_filter_label || 'Saved filters');
 
-    host.innerHTML = `<div class="lcni-filter-toolbar"><button type="button" class="lcni-btn lcni-btn-btn_filter_open" data-filter-toggle>${renderButtonContent('btn_filter_open', 'Filter')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_setting" data-column-toggle-btn>${renderButtonContent('btn_filter_setting', '')}</button></div><div class="lcni-filter-panel ${state.panelHidden ? 'is-collapsed' : ''}" data-filter-panel><div class="lcni-filter-panel-body">${renderCriteriaPanel()}</div><div class="lcni-filter-panel-actions"><label class="lcni-saved-filter-label">${savedFilterLabel}</label><select data-saved-filter-select><option value="">${savedFilterLabel}</option>${(state.savedFilters || []).map((f) => `<option value="${Number(f.id || 0)}" ${Number(f.id || 0) === selectedId ? 'selected' : ''}>${esc(f.filter_name || '')}</option>`).join('')}</select><button type="button" class="lcni-btn lcni-btn-btn_filter_reload" data-reload-filter>${renderButtonContent('btn_filter_reload', 'Reload')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_save" data-save-current-filter>${renderButtonContent('btn_filter_save', 'Save')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_delete" data-delete-current-filter>${renderButtonContent('btn_filter_delete', 'Delete')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_reload" data-set-default-filter>Set Default</button><button type="button" class="lcni-btn lcni-btn-btn_filter_apply" data-apply-filter>${renderButtonContent('btn_filter_apply', 'Apply Filter', getApplyLabel())}</button>${hideBtn}</div></div><div class="lcni-column-pop" data-column-pop ${state.columnPanelOpen ? '' : 'hidden'}></div><div class="lcni-table-scroll"><table class="lcni-table"><thead><tr>${columns.map((c, idx) => `<th data-sort-key="${esc(c)}" class="${idx < Number(style.sticky_column_count || 1) ? 'is-sticky-col' : ''}">${esc(labels[c] || c)} <span data-sort-icon>${state.sortKey === c ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</span></th>`).join('')}</tr></thead><tbody></tbody></table></div><div data-filter-pagination></div>`;
+    host.innerHTML = `<div class="lcni-filter-toolbar"><button type="button" class="lcni-btn lcni-btn-btn_filter_open" data-filter-toggle>${renderButtonContent('btn_filter_open', 'Filter')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_setting" data-column-toggle-btn>${renderButtonContent('btn_filter_setting', '')}</button></div><div class="lcni-filter-panel ${state.panelHidden ? 'is-collapsed' : ''}" data-filter-panel><div class="lcni-filter-panel-body">${renderCriteriaPanel()}</div><div class="lcni-filter-panel-actions"><label class="lcni-saved-filter-label">${savedFilterLabel}</label><select data-saved-filter-select><option value="">${savedFilterLabel}</option>${(state.savedFilters || []).map((f) => `<option value="${Number(f.id || 0)}" ${Number(f.id || 0) === selectedId ? 'selected' : ''}>${esc(f.filter_name || '')}</option>`).join('')}</select><button type="button" class="lcni-btn lcni-btn-btn_filter_reload" data-reload-filter>${renderButtonContent('btn_filter_reload', 'Reload')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_save" data-save-current-filter>${renderButtonContent('btn_filter_save', 'Save')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_delete" data-delete-current-filter>${renderButtonContent('btn_filter_delete', 'Delete')}</button><button type="button" class="lcni-btn lcni-btn-btn_set_default_filter" data-set-default-filter>${renderButtonContent('btn_set_default_filter', 'Set Default')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_apply" data-apply-filter>${renderButtonContent('btn_filter_apply', 'Apply Filter', getApplyLabel())}</button>${hideBtn}</div></div><div class="lcni-column-pop" data-column-pop ${state.columnPanelOpen ? '' : 'hidden'}></div><div class="lcni-table-scroll"><table class="lcni-table"><thead><tr>${columns.map((c, idx) => `<th data-sort-key="${esc(c)}" class="${idx < Number(style.sticky_column_count || 1) ? 'is-sticky-col' : ''}">${esc(labels[c] || c)} <span data-sort-icon>${state.sortKey === c ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</span></th>`).join('')}</tr></thead><tbody></tbody></table></div>`;
 
     const selectable = settings.table_columns || columns;
-    host.querySelector('[data-column-pop]').innerHTML = `${selectable.map((c) => `<label><input type="checkbox" data-visible-col value="${esc(c)}" ${state.visibleColumns.includes(c) ? 'checked' : ''}> ${esc(labels[c] || c)}</label>`).join('')}<button type="button" class="lcni-btn lcni-btn-btn_save_filter" data-save-columns>${renderButtonContent('btn_save_filter', 'Save')}</button>`;
+    host.querySelector('[data-column-pop]').innerHTML = `${renderColumnPositionItems(selectable, labels)}<button type="button" class="lcni-btn lcni-btn-btn_save_filter" data-save-columns>${renderButtonContent('btn_save_filter', 'Save')}</button>`;
 
     applyDefaultFilterConfig(host);
     if (state.filters.length) applySavedFilterConfig(host, { filters: state.filters });
@@ -310,8 +343,6 @@
     state.total = Number(payload.total || state.total || 0);
     state.lastAppliedTotal = state.total;
     updateApplyButtonLabel(host);
-    const totalPages = Math.max(1, Math.ceil(state.total / state.limit));
-    host.querySelector('[data-filter-pagination]').innerHTML = `<button type="button" class="lcni-btn lcni-btn-btn_filter_open" data-prev ${state.page <= 1 ? 'disabled' : ''}>Prev</button> <span>${state.page}/${totalPages}</span> <button type="button" class="lcni-btn lcni-btn-btn_filter_open" data-next ${state.page >= totalPages ? 'disabled' : ''}>Next</button>`;
   }
 
   async function load(host) { renderTbody(host, await api({ mode: 'filter', page: state.page, limit: state.limit, filters: state.filters, visible_columns: state.visibleColumns }) || {}); }
@@ -349,8 +380,7 @@
         return;
       }
       if (event.target.closest('[data-save-columns]')) {
-        state.visibleColumns = Array.from(host.querySelectorAll('[data-visible-col]:checked')).map((n) => n.value);
-        if (!state.visibleColumns.includes('symbol')) state.visibleColumns.unshift('symbol');
+        state.visibleColumns = collectVisibleColumns(host);
         saveVisibleColumns(state.visibleColumns);
         state.columnPanelOpen = false;
         state.page = 1;
@@ -403,8 +433,6 @@
         await load(host);
         return;
       }
-      if (event.target.closest('[data-prev]')) { state.page = Math.max(1, state.page - 1); await load(host); return; }
-      if (event.target.closest('[data-next]')) { state.page += 1; await load(host); return; }
 
       const sortTh = event.target.closest('th[data-sort-key]');
       if (sortTh) {
@@ -436,6 +464,15 @@
         }
       }
       if (event.target.matches('[data-visible-col]')) state.columnPanelOpen = true;
+      const columnCheckbox = event.target.closest('[data-visible-col]');
+      if (columnCheckbox) {
+        const column = columnCheckbox.value;
+        const input = Array.from(host.querySelectorAll('[data-col-position]')).find((node) => node.getAttribute('data-col-position') === column);
+        if (input) {
+          input.disabled = !columnCheckbox.checked;
+          if (columnCheckbox.checked && !input.value) input.value = String(host.querySelectorAll('[data-visible-col]:checked').length);
+        }
+      }
       if (event.target.matches('input[type="checkbox"], input[type="number"]')) updateCriteriaSelectionState(host);
     });
   }
