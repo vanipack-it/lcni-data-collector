@@ -172,9 +172,7 @@
     if (key.indexOf('macd') !== -1) return { type: 'macd' };
     if (PERCENT_COLUMNS_SCALE_100.has(key)) return { type: 'percent', scalePercent: true };
     if (PERCENT_COLUMNS_DIRECT.has(key)) return { type: 'percent', scalePercent: false };
-    if (key.indexOf('percent') !== -1 || key.indexOf('_pct') !== -1 || key.indexOf('pct_') !== -1 || key.indexOf('change') !== -1) {
-      return { type: 'percent', scalePercent: false };
-    }
+    if (key.indexOf('change') !== -1) return { type: 'percent', scalePercent: true };
     if (key.indexOf('rs') !== -1) return { type: 'rs' };
     if (key === 'pe' || key.indexOf('pe_') === 0) return { type: 'pe' };
     if (key === 'pb' || key.indexOf('pb_') === 0) return { type: 'pb' };

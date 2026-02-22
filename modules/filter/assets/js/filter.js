@@ -82,6 +82,19 @@
     }).join('') + '<button type="button" class="lcni-btn" data-add-filter-rule>Thêm rule</button>';
   }
 
+  function formatCellValue(column, value) {
+    if (value === null || value === undefined || value === '') return '-';
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return String(value);
+    if (window.LCNIFormatter && typeof window.LCNIFormatter.formatByColumn === 'function') {
+      return window.LCNIFormatter.formatByColumn(numeric, column);
+    }
+    if (window.LCNIFormatter && typeof window.LCNIFormatter.format === 'function') {
+      return window.LCNIFormatter.format(numeric, 'price');
+    }
+    return String(numeric);
+  }
+
   function updateBody(host, data, settings) {
     const tbody = host.querySelector('tbody');
     const pagination = host.querySelector('[data-filter-pagination]');
@@ -95,7 +108,7 @@
           return `<td class="${index === 0 ? 'is-sticky-col' : ''}"><span class="lcni-watchlist-symbol">${esc(symbol)}</span> <button type="button" class="lcni-watchlist-add" data-lcni-watchlist-add data-symbol="${esc(symbol)}" style="${style}" aria-label="Add to watchlist"><i class="${esc(addBtn.icon || 'fa-solid fa-heart-circle-plus')}" aria-hidden="true"></i></button></td>`;
         }
         const cellStyle = applyCellStyle(column, row[column], settings.value_color_rules || []);
-        return `<td style="${cellStyle}">${esc(row[column])}</td>`;
+        return `<td style="${cellStyle}">${esc(formatCellValue(column, row[column]))}</td>`;
       }).join('')}</tr>`;
     }).join('');
 
