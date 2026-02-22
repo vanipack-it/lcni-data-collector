@@ -2,136 +2,94 @@
   'use strict';
 
   const SELECTOR = '[data-lcni-chart]';
-  const MAX_LIMIT = 500;
-  const FETCH_TIMEOUT_MS = 12000;
-  const initialized = new WeakSet();
-  const chartStates = new WeakMap();
-  const trackedElements = new Set();
-  let observerStarted = false;
+  const DEFAULT_LIMIT = 200;
+  const MAX_LIMIT = 1000;
+  const DEFAULT_HEIGHT = 420;
+  const MIN_HEIGHT = 260;
+  const MAX_HEIGHT = 1600;
+  const instances = new WeakMap();
 
-  const normalizeSymbol = (raw) => String(raw || '').trim().toUpperCase();
+  function sanitizeSymbol(value) {
+    const symbol = String(value || '').trim().toUpperCase();
+    return /^[A-Z0-9._-]{1,20}$/.test(symbol) ? symbol : '';
+  }
 
-  const parseLimit = (raw) => {
-    const value = Number.parseInt(String(raw || ''), 10);
-    if (Number.isNaN(value) || value <= 0) {
-      return 200;
+  function parseLimit(value) {
+    const parsed = Number.parseInt(String(value || ''), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return DEFAULT_LIMIT;
     }
 
-    return Math.min(value, MAX_LIMIT);
-  };
+    return Math.min(parsed, MAX_LIMIT);
+  }
 
-  const parseHeight = (raw) => {
-    const value = Number.parseInt(String(raw || ''), 10);
-    if (Number.isNaN(value) || value < 240) {
-      return 420;
+  function parseHeight(value) {
+    const parsed = Number.parseInt(String(value || ''), 10);
+    if (!Number.isFinite(parsed)) {
+      return DEFAULT_HEIGHT;
     }
 
-    return Math.min(value, 1200);
-  };
+    return Math.max(MIN_HEIGHT, Math.min(parsed, MAX_HEIGHT));
+  }
 
-  const createShell = (el) => {
-    const root = document.createElement('div');
-    root.className = 'lcni-chart-shell';
-    root.style.height = `${parseHeight(el.dataset.height)}px`;
+  function setError(el) {
+    el.innerHTML = '<div class="lcni-chart-error">No data available</div>';
+  }
 
-    const canvas = document.createElement('div');
-    canvas.className = 'lcni-chart-canvas';
-
-    const loadingEl = document.createElement('div');
-    loadingEl.className = 'lcni-chart-loading';
-    loadingEl.textContent = 'Loading chart...';
-    loadingEl.hidden = true;
-
-    const messageEl = document.createElement('div');
-    messageEl.className = 'lcni-chart-message';
-    messageEl.hidden = true;
-
-    root.appendChild(canvas);
-    root.appendChild(loadingEl);
-    root.appendChild(messageEl);
-    el.replaceChildren(root);
-
-    return { canvas, loadingEl, messageEl };
-  };
-
-  const setLoading = (el, isLoading) => {
-    const state = chartStates.get(el);
-    if (!state) {
-      return;
+  function fetchData(apiBase, symbol, limit) {
+    const base = String(apiBase || '').trim();
+    if (!base || !symbol) {
+      return Promise.reject(new Error('Invalid chart configuration'));
     }
 
-    state.loadingEl.hidden = !isLoading;
-  };
-
-  const setMessage = (el, message, isError = false) => {
-    const state = chartStates.get(el);
-    if (!state) {
-      return;
+    let endpoint;
+    try {
+      endpoint = new URL(base, window.location.origin);
+    } catch (_error) {
+      return Promise.reject(new Error('Invalid endpoint'));
     }
 
-    state.messageEl.textContent = message || '';
-    state.messageEl.hidden = !message;
-    state.messageEl.dataset.level = isError ? 'error' : 'info';
-  };
-
-  const parseApiResponse = (payload) => {
-    if (Array.isArray(payload)) {
-      return payload;
-    }
-
-    if (payload && Array.isArray(payload.data)) {
-      return payload.data;
-    }
-
-    if (payload && payload.data && Array.isArray(payload.data.candles)) {
-      return payload.data.candles;
-    }
-
-    if (payload && Array.isArray(payload.candles)) {
-      return payload.candles;
-    }
-
-    return [];
-  };
-
-  const fetchData = async (apiBase, symbol, limit, controller) => {
-    const endpoint = new URL(apiBase, window.location.origin);
     endpoint.searchParams.set('symbol', symbol);
     endpoint.searchParams.set('limit', String(limit));
 
-    const timeoutId = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    return fetch(endpoint.toString(), {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      credentials: 'same-origin'
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('REST request failed');
+        }
 
-    try {
-      const response = await fetch(endpoint.toString(), {
-        method: 'GET',
-        headers: { Accept: 'application/json' },
-        credentials: 'same-origin',
-        signal: controller.signal
+        return response.json();
+      })
+      .then((payload) => {
+        if (!payload || !Array.isArray(payload.data) || !payload.data.length) {
+          throw new Error('No rows');
+        }
+
+        return {
+          symbol: sanitizeSymbol(payload.symbol) || symbol,
+          rows: payload.data
+        };
       });
+  }
 
-      if (!response.ok) {
-        throw new Error(`REST request failed (HTTP ${response.status})`);
-      }
-
-      let json;
-      try {
-        json = await response.json();
-      } catch (_error) {
-        throw new Error('Invalid JSON received from API.');
-      }
-
-      return parseApiResponse(json);
-    } finally {
-      window.clearTimeout(timeoutId);
+  function renderChart(el, symbol, rows) {
+    if (!window.echarts || typeof window.echarts.init !== 'function') {
+      throw new Error('ECharts unavailable');
     }
-  };
 
-  const toSeriesData = (rows) => {
+    if (!Array.isArray(rows) || !rows.length) {
+      throw new Error('No rows');
+    }
+
     const categoryData = [];
     const values = [];
     const volumes = [];
 
-    (Array.isArray(rows) ? rows : []).forEach((row) => {
+    rows.forEach((row) => {
       const date = String(row && row.date ? row.date : '').trim();
       const open = Number(row && row.open);
       const high = Number(row && row.high);
@@ -148,156 +106,205 @@
       volumes.push(Number.isFinite(volume) ? volume : 0);
     });
 
-    return { categoryData, values, volumes };
-  };
+    if (!categoryData.length) {
+      throw new Error('Invalid data');
+    }
 
-  const buildOption = ({ categoryData, values, volumes }) => ({
-    animation: true,
-    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
-    axisPointer: { link: [{ xAxisIndex: [0, 1] }] },
-    grid: [
-      { left: '8%', right: '4%', top: 20, height: '60%' },
-      { left: '8%', right: '4%', top: '76%', height: '16%' }
-    ],
-    xAxis: [
-      { type: 'category', data: categoryData, boundaryGap: false, axisLine: { onZero: false }, min: 'dataMin', max: 'dataMax' },
-      { type: 'category', gridIndex: 1, data: categoryData, boundaryGap: false, axisLine: { onZero: false }, axisTick: { show: false }, axisLabel: { show: false }, min: 'dataMin', max: 'dataMax' }
-    ],
-    yAxis: [
-      { scale: true, splitArea: { show: true } },
-      { scale: true, gridIndex: 1, splitNumber: 2 }
-    ],
-    dataZoom: [
-      { type: 'inside', xAxisIndex: [0, 1], start: 70, end: 100 },
-      { type: 'slider', xAxisIndex: [0, 1], bottom: 0, start: 70, end: 100 }
-    ],
-    series: [
-      { name: 'Price', type: 'candlestick', data: values },
-      { name: 'Volume', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: volumes, barMaxWidth: 12 }
-    ]
-  });
+    let chart = window.echarts.getInstanceByDom(el);
+    if (chart) {
+      chart.dispose();
+    }
 
-  const renderChart = (el, rows) => {
-    const state = chartStates.get(el);
-    if (!state || !state.chart) {
+    chart = window.echarts.init(el);
+
+    const option = {
+      animation: true,
+      legend: {
+        data: [symbol, 'Volume'],
+        left: 0
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: {
+          type: 'cross'
+        }
+      },
+      axisPointer: {
+        link: [{ xAxisIndex: [0, 1] }]
+      },
+      grid: [
+        {
+          left: '8%',
+          right: '3%',
+          top: 40,
+          height: '58%'
+        },
+        {
+          left: '8%',
+          right: '3%',
+          top: '74%',
+          height: '16%'
+        }
+      ],
+      xAxis: [
+        {
+          type: 'category',
+          data: categoryData,
+          boundaryGap: false,
+          axisLine: { onZero: false },
+          splitLine: { show: false },
+          min: 'dataMin',
+          max: 'dataMax'
+        },
+        {
+          type: 'category',
+          gridIndex: 1,
+          data: categoryData,
+          boundaryGap: false,
+          axisLine: { onZero: false },
+          axisTick: { show: false },
+          axisLabel: { show: false },
+          splitLine: { show: false },
+          min: 'dataMin',
+          max: 'dataMax'
+        }
+      ],
+      yAxis: [
+        {
+          scale: true,
+          splitArea: { show: true }
+        },
+        {
+          scale: true,
+          gridIndex: 1,
+          splitNumber: 2,
+          axisLabel: { show: true },
+          splitLine: { show: false }
+        }
+      ],
+      dataZoom: [
+        {
+          type: 'inside',
+          xAxisIndex: [0, 1],
+          start: 70,
+          end: 100
+        },
+        {
+          show: true,
+          type: 'slider',
+          xAxisIndex: [0, 1],
+          bottom: 10,
+          start: 70,
+          end: 100
+        }
+      ],
+      series: [
+        {
+          name: symbol,
+          type: 'candlestick',
+          data: values,
+          itemStyle: {
+            color: '#16a34a',
+            color0: '#dc2626',
+            borderColor: '#16a34a',
+            borderColor0: '#dc2626'
+          }
+        },
+        {
+          name: 'Volume',
+          type: 'bar',
+          xAxisIndex: 1,
+          yAxisIndex: 1,
+          data: volumes,
+          barMaxWidth: 12,
+          itemStyle: {
+            color: '#94a3b8'
+          }
+        }
+      ]
+    };
+
+    chart.setOption(option, true);
+    return chart;
+  }
+
+  function initChart(el) {
+    if (!el || instances.has(el)) {
       return;
     }
 
-    const seriesData = toSeriesData(rows);
-    if (!seriesData.categoryData.length) {
-      state.chart.clear();
-      setMessage(el, 'No chart data available for this symbol.');
-      return;
-    }
+    instances.set(el, { initialized: true });
 
-    setMessage(el, '');
-    state.chart.setOption(buildOption(seriesData), true);
-  };
-
-  const disposeIfDetached = (el) => {
-    if (document.body.contains(el)) {
-      return;
-    }
-
-    const state = chartStates.get(el);
-    if (!state) {
-      trackedElements.delete(el);
-      return;
-    }
-
-    if (state.abortController) {
-      state.abortController.abort();
-    }
-
-    if (state.resizeHandler) {
-      window.removeEventListener('resize', state.resizeHandler);
-    }
-
-    if (state.chart && !state.chart.isDisposed()) {
-      state.chart.dispose();
-    }
-
-    chartStates.delete(el);
-    initialized.delete(el);
-    trackedElements.delete(el);
-  };
-
-  const initChart = (el) => {
-    if (!el || initialized.has(el)) {
-      return;
-    }
-
-    initialized.add(el);
-    const shell = createShell(el);
-
-    if (!window.echarts || typeof window.echarts.init !== 'function') {
-      chartStates.set(el, { ...shell, chart: null });
-      setMessage(el, 'ECharts runtime not available.', true);
-      return;
-    }
-
-    const symbol = normalizeSymbol(el.dataset.symbol);
-    const limit = parseLimit(el.dataset.limit);
     const apiBase = String(el.dataset.apiBase || '').trim();
+    const symbol = sanitizeSymbol(el.dataset.symbol);
+    const limit = parseLimit(el.dataset.limit);
+    const height = parseHeight(el.dataset.height || el.dataset.mainHeight);
 
-    const chart = window.echarts.init(shell.canvas);
+    if (!apiBase || !symbol) {
+      setError(el);
+      return;
+    }
+
+    el.innerHTML = '';
+
+    const chartEl = document.createElement('div');
+    chartEl.className = 'lcni-chart-canvas';
+    chartEl.style.width = '100%';
+    chartEl.style.height = `${height}px`;
+    chartEl.textContent = 'Loading chart...';
+    el.appendChild(chartEl);
+
+    let disposed = false;
+
     const resizeHandler = () => {
-      if (!chart.isDisposed()) {
+      if (disposed || !window.echarts) {
+        return;
+      }
+
+      const chart = window.echarts.getInstanceByDom(chartEl);
+      if (chart) {
         chart.resize();
       }
     };
 
     window.addEventListener('resize', resizeHandler, { passive: true });
 
-    const state = {
-      ...shell,
-      chart,
-      resizeHandler,
-      abortController: null
-    };
-    chartStates.set(el, state);
-    trackedElements.add(el);
-
-    if (!symbol || !apiBase) {
-      setMessage(el, 'Invalid chart configuration.', true);
-      return;
-    }
-
-    state.abortController = new AbortController();
-    setLoading(el, true);
-
-    fetchData(apiBase, symbol, limit, state.abortController)
-      .then((rows) => renderChart(el, rows))
-      .catch((error) => {
-        if (error && error.name === 'AbortError') {
-          setMessage(el, 'Chart request timed out.', true);
+    fetchData(apiBase, symbol, limit)
+      .then((result) => {
+        if (disposed) {
           return;
         }
 
-        setMessage(el, (error && error.message) ? error.message : 'Unable to load chart data.', true);
+        const chart = renderChart(chartEl, result.symbol, result.rows);
+        chartEl.textContent = '';
+        instances.set(el, { initialized: true, chartEl, chart, resizeHandler });
       })
-      .finally(() => setLoading(el, false));
-  };
+      .catch(() => {
+        if (disposed) {
+          return;
+        }
 
-  const initAllCharts = () => {
-    document.querySelectorAll(SELECTOR).forEach(initChart);
+        setError(el);
+      });
 
-    if (observerStarted || typeof MutationObserver === 'undefined') {
-      return;
-    }
-
-    observerStarted = true;
-    const observer = new MutationObserver(() => {
-      document.querySelectorAll(SELECTOR).forEach(initChart);
-      trackedElements.forEach((el) => disposeIfDetached(el));
+    instances.set(el, {
+      initialized: true,
+      chartEl,
+      resizeHandler,
+      destroy: () => {
+        disposed = true;
+        window.removeEventListener('resize', resizeHandler);
+        if (window.echarts && chartEl) {
+          const chart = window.echarts.getInstanceByDom(chartEl);
+          if (chart) {
+            chart.dispose();
+          }
+        }
+      }
     });
-
-    observer.observe(document.body, { childList: true, subtree: true });
-  };
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initAllCharts, { once: true });
-  } else {
-    initAllCharts();
   }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll(SELECTOR).forEach(initChart);
+  });
 })();
