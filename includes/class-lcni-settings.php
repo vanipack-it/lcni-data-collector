@@ -250,7 +250,7 @@ class LCNI_Settings {
             }
         } elseif ($action === 'save_frontend_settings') {
             $module = isset($_POST['lcni_frontend_module']) ? sanitize_key(wp_unslash($_POST['lcni_frontend_module'])) : '';
-            $allowed_modules = ['signals', 'overview', 'chart', 'watchlist', 'filter', 'column_labels', 'button_style'];
+            $allowed_modules = ['signals', 'overview', 'chart', 'chart_analyst', 'watchlist', 'filter', 'column_labels', 'button_style'];
 
             if (!in_array($module, $allowed_modules, true)) {
                 $this->set_notice('error', 'Module frontend không hợp lệ.');
@@ -263,9 +263,40 @@ class LCNI_Settings {
                         'default_visible_bars' => isset($_POST['lcni_frontend_default_visible_bars']) ? wp_unslash($_POST['lcni_frontend_default_visible_bars']) : 120,
                         'chart_sync_enabled' => isset($_POST['lcni_frontend_chart_sync_enabled']) ? wp_unslash($_POST['lcni_frontend_chart_sync_enabled']) : '',
                         'fit_to_screen_on_load' => isset($_POST['lcni_frontend_fit_to_screen_on_load']) ? wp_unslash($_POST['lcni_frontend_fit_to_screen_on_load']) : '',
+                        'default_ma20' => isset($_POST['lcni_frontend_default_ma20']) ? wp_unslash($_POST['lcni_frontend_default_ma20']) : '',
+                        'default_ma50' => isset($_POST['lcni_frontend_default_ma50']) ? wp_unslash($_POST['lcni_frontend_default_ma50']) : '',
+                        'default_rsi' => isset($_POST['lcni_frontend_default_rsi']) ? wp_unslash($_POST['lcni_frontend_default_rsi']) : '',
+                        'default_macd' => isset($_POST['lcni_frontend_default_macd']) ? wp_unslash($_POST['lcni_frontend_default_macd']) : '',
+                        'default_rs_1w_by_exchange' => isset($_POST['lcni_frontend_default_rs_1w_by_exchange']) ? wp_unslash($_POST['lcni_frontend_default_rs_1w_by_exchange']) : '',
+                        'default_rs_1m_by_exchange' => isset($_POST['lcni_frontend_default_rs_1m_by_exchange']) ? wp_unslash($_POST['lcni_frontend_default_rs_1m_by_exchange']) : '',
+                        'default_rs_3m_by_exchange' => isset($_POST['lcni_frontend_default_rs_3m_by_exchange']) ? wp_unslash($_POST['lcni_frontend_default_rs_3m_by_exchange']) : '',
                     ];
                     update_option('lcni_frontend_settings_chart', $this->sanitize_frontend_chart_settings($input));
                     update_option('lcni_frontend_chart_title', $this->sanitize_module_title(isset($_POST['lcni_frontend_module_title']) ? wp_unslash($_POST['lcni_frontend_module_title']) : '', 'Stock Chart'));
+
+                } elseif ($module === 'chart_analyst') {
+                    $templates = [];
+                    foreach (['momentum', 'trend', 'swing'] as $template_key) {
+                        $templates[$template_key] = [
+                            'label' => isset($_POST['lcni_chart_analyst_template_label'][$template_key])
+                                ? wp_unslash($_POST['lcni_chart_analyst_template_label'][$template_key])
+                                : '',
+                            'indicators' => isset($_POST['lcni_chart_analyst_template_indicators'][$template_key])
+                                ? (array) wp_unslash($_POST['lcni_chart_analyst_template_indicators'][$template_key])
+                                : [],
+                        ];
+                    }
+
+                    $input = [
+                        'templates' => $templates,
+                        'default_template' => [
+                            'stock_detail' => isset($_POST['lcni_chart_analyst_default_template_stock_detail']) ? wp_unslash($_POST['lcni_chart_analyst_default_template_stock_detail']) : '',
+                            'dashboard' => isset($_POST['lcni_chart_analyst_default_template_dashboard']) ? wp_unslash($_POST['lcni_chart_analyst_default_template_dashboard']) : '',
+                            'watchlist' => isset($_POST['lcni_chart_analyst_default_template_watchlist']) ? wp_unslash($_POST['lcni_chart_analyst_default_template_watchlist']) : '',
+                        ],
+                    ];
+
+                    update_option('lcni_chart_analyst_settings', LCNI_Chart_Analyst_Settings::sanitize_config($input));
                 } elseif ($module === 'watchlist') {
                     $existing_watchlist = $this->sanitize_watchlist_settings(get_option('lcni_watchlist_settings', []));
                     $existing_label_pairs = $this->normalize_watchlist_column_label_pairs($existing_watchlist['column_labels'] ?? []);
@@ -439,7 +470,7 @@ class LCNI_Settings {
         $redirect_page = in_array($redirect_page, ['lcni-settings', 'lcni-data-viewer'], true) ? $redirect_page : 'lcni-settings';
         $redirect_url = admin_url('admin.php?page=' . $redirect_page);
 
-        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange', 'lcni-tab-update-runtime', 'lcni-tab-update-ohlc-latest', 'lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-column-label'], true)) {
+        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange', 'lcni-tab-update-runtime', 'lcni-tab-update-ohlc-latest', 'lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-column-label'], true)) {
             $redirect_url = add_query_arg('tab', $redirect_tab, $redirect_url);
         }
 
@@ -668,7 +699,7 @@ class LCNI_Settings {
 
         $active_tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'general';
         $rule_sub_tabs = ['lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange'];
-        $frontend_sub_tabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-column-label'];
+        $frontend_sub_tabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label'];
         $update_data_sub_tabs = ['lcni-tab-update-runtime', 'lcni-tab-update-ohlc-latest'];
         if (in_array($active_tab, $rule_sub_tabs, true)) {
             $active_tab = 'rule_settings';
@@ -1376,6 +1407,13 @@ class LCNI_Settings {
             'default_visible_bars' => 120,
             'chart_sync_enabled' => true,
             'fit_to_screen_on_load' => true,
+            'default_ma20' => true,
+            'default_ma50' => true,
+            'default_rsi' => true,
+            'default_macd' => false,
+            'default_rs_1w_by_exchange' => true,
+            'default_rs_1m_by_exchange' => true,
+            'default_rs_3m_by_exchange' => false,
         ];
 
         $allowed_panels = isset($value['allowed_panels']) && is_array($value['allowed_panels'])
@@ -1398,6 +1436,13 @@ class LCNI_Settings {
         $fit_to_screen_raw = $value['fit_to_screen_on_load'] ?? $default['fit_to_screen_on_load'];
         $fit_to_screen_on_load = in_array($fit_to_screen_raw, [1, '1', true, 'true', 'yes', 'on'], true);
         $default_visible_bars = max(20, min(1000, (int) ($value['default_visible_bars'] ?? $default['default_visible_bars'])));
+        $default_ma20 = in_array(($value['default_ma20'] ?? $default['default_ma20']), [1, '1', true, 'true', 'yes', 'on'], true);
+        $default_ma50 = in_array(($value['default_ma50'] ?? $default['default_ma50']), [1, '1', true, 'true', 'yes', 'on'], true);
+        $default_rsi = in_array(($value['default_rsi'] ?? $default['default_rsi']), [1, '1', true, 'true', 'yes', 'on'], true);
+        $default_macd = in_array(($value['default_macd'] ?? $default['default_macd']), [1, '1', true, 'true', 'yes', 'on'], true);
+        $default_rs_1w_by_exchange = in_array(($value['default_rs_1w_by_exchange'] ?? $default['default_rs_1w_by_exchange']), [1, '1', true, 'true', 'yes', 'on'], true);
+        $default_rs_1m_by_exchange = in_array(($value['default_rs_1m_by_exchange'] ?? $default['default_rs_1m_by_exchange']), [1, '1', true, 'true', 'yes', 'on'], true);
+        $default_rs_3m_by_exchange = in_array(($value['default_rs_3m_by_exchange'] ?? $default['default_rs_3m_by_exchange']), [1, '1', true, 'true', 'yes', 'on'], true);
 
         return [
             'default_mode' => $mode,
@@ -1406,6 +1451,13 @@ class LCNI_Settings {
             'default_visible_bars' => $default_visible_bars,
             'chart_sync_enabled' => $chart_sync_enabled,
             'fit_to_screen_on_load' => $fit_to_screen_on_load,
+            'default_ma20' => $default_ma20,
+            'default_ma50' => $default_ma50,
+            'default_rsi' => $default_rsi,
+            'default_macd' => $default_macd,
+            'default_rs_1w_by_exchange' => $default_rs_1w_by_exchange,
+            'default_rs_1m_by_exchange' => $default_rs_1m_by_exchange,
+            'default_rs_3m_by_exchange' => $default_rs_3m_by_exchange,
         ];
     }
 
@@ -1504,6 +1556,7 @@ private function sanitize_module_title($value, $fallback) {
         $overview = $this->sanitize_frontend_module_settings(get_option('lcni_frontend_settings_overview', ['allowed_fields' => array_keys($overview_labels)]));
         $chart = $this->sanitize_frontend_chart_settings(get_option('lcni_frontend_settings_chart', []));
         $watchlist = $this->sanitize_watchlist_settings(get_option('lcni_watchlist_settings', []));
+        $chart_analyst = LCNI_Chart_Analyst_Settings::sanitize_config(get_option('lcni_chart_analyst_settings', []));
         ?>
         <style>
             .lcni-sub-tab-nav { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; border-bottom: 1px solid #dcdcde; }
@@ -1521,6 +1574,7 @@ private function sanitize_module_title($value, $fallback) {
             <button type="button" data-sub-tab="lcni-tab-frontend-signals">LCNi Signals</button>
             <button type="button" data-sub-tab="lcni-tab-frontend-overview">Stock Overview</button>
             <button type="button" data-sub-tab="lcni-tab-frontend-chart">Stock Chart</button>
+            <button type="button" data-sub-tab="lcni-tab-frontend-chart-analyst">Chart Analyst</button>
             <button type="button" data-sub-tab="lcni-tab-frontend-watchlist">Watchlist</button>
             <button type="button" data-sub-tab="lcni-tab-frontend-filter">Filter</button>
             <button type="button" data-sub-tab="lcni-tab-frontend-style-config">Style Config</button>
@@ -1529,6 +1583,7 @@ private function sanitize_module_title($value, $fallback) {
         <?php $this->render_frontend_module_form('signals', 'lcni-tab-frontend-signals', $signals_labels, $signals); ?>
         <?php $this->render_frontend_module_form('overview', 'lcni-tab-frontend-overview', $overview_labels, $overview); ?>
         <?php $this->render_frontend_chart_form('chart', 'lcni-tab-frontend-chart', $chart); ?>
+        <?php $this->render_frontend_chart_analyst_form('chart_analyst', 'lcni-tab-frontend-chart-analyst', $chart_analyst); ?>
         <?php $this->render_frontend_watchlist_form('watchlist', 'lcni-tab-frontend-watchlist', $watchlist); ?>
         <?php LCNI_FilterAdmin::render_filter_form('lcni-tab-frontend-filter'); ?>
         <?php $this->render_frontend_button_style_form('button_style', 'lcni-tab-frontend-style-config'); ?>
@@ -1543,13 +1598,13 @@ private function sanitize_module_title($value, $fallback) {
                 const activate = function(tabId){
                     buttons.forEach((btn) => btn.classList.toggle('active', btn.getAttribute('data-sub-tab') === tabId));
                     panes.forEach((pane) => {
-                        if (pane.id === 'lcni-tab-frontend-signals' || pane.id === 'lcni-tab-frontend-overview' || pane.id === 'lcni-tab-frontend-chart' || pane.id === 'lcni-tab-frontend-watchlist' || pane.id === 'lcni-tab-frontend-filter' || pane.id === 'lcni-tab-frontend-style-config' || pane.id === 'lcni-tab-frontend-column-label') {
+                        if (pane.id === 'lcni-tab-frontend-signals' || pane.id === 'lcni-tab-frontend-overview' || pane.id === 'lcni-tab-frontend-chart' || pane.id === 'lcni-tab-frontend-chart-analyst' || pane.id === 'lcni-tab-frontend-watchlist' || pane.id === 'lcni-tab-frontend-filter' || pane.id === 'lcni-tab-frontend-style-config' || pane.id === 'lcni-tab-frontend-column-label') {
                             pane.classList.toggle('active', pane.id === tabId);
                         }
                     });
                 };
                 buttons.forEach((btn) => btn.addEventListener('click', () => activate(btn.getAttribute('data-sub-tab'))));
-                const validTabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label'];
+                const validTabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label'];
                 activate(validTabs.includes(current) ? current : 'lcni-tab-frontend-signals');
             })();
         </script>
@@ -2175,6 +2230,15 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
         $compact_mode = !empty($settings['compact_mode']);
         $chart_sync_enabled = !array_key_exists('chart_sync_enabled', $settings) || !empty($settings['chart_sync_enabled']);
         $fit_to_screen_on_load = !array_key_exists('fit_to_screen_on_load', $settings) || !empty($settings['fit_to_screen_on_load']);
+        $default_indicators = [
+            'default_ma20' => !array_key_exists('default_ma20', $settings) || !empty($settings['default_ma20']),
+            'default_ma50' => !array_key_exists('default_ma50', $settings) || !empty($settings['default_ma50']),
+            'default_rsi' => !array_key_exists('default_rsi', $settings) || !empty($settings['default_rsi']),
+            'default_macd' => !empty($settings['default_macd']),
+            'default_rs_1w_by_exchange' => !array_key_exists('default_rs_1w_by_exchange', $settings) || !empty($settings['default_rs_1w_by_exchange']),
+            'default_rs_1m_by_exchange' => !array_key_exists('default_rs_1m_by_exchange', $settings) || !empty($settings['default_rs_1m_by_exchange']),
+            'default_rs_3m_by_exchange' => !empty($settings['default_rs_3m_by_exchange']),
+        ];
         $panel_labels = [
             'volume' => 'Volume',
             'macd' => 'MACD',
@@ -2222,6 +2286,85 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
                         <th>Fit to screen on load</th>
                         <td><label><input type="checkbox" name="lcni_frontend_fit_to_screen_on_load" value="1" <?php checked($fit_to_screen_on_load); ?>> Enable "Fit to screen on load"</label></td>
                     </tr>
+                    <tr>
+                        <th>Default enabled indicators</th>
+                        <td>
+                            <div class="lcni-front-grid">
+                                <label><input type="checkbox" name="lcni_frontend_default_ma20" value="1" <?php checked($default_indicators['default_ma20']); ?>> MA20</label>
+                                <label><input type="checkbox" name="lcni_frontend_default_ma50" value="1" <?php checked($default_indicators['default_ma50']); ?>> MA50</label>
+                                <label><input type="checkbox" name="lcni_frontend_default_rsi" value="1" <?php checked($default_indicators['default_rsi']); ?>> RSI</label>
+                                <label><input type="checkbox" name="lcni_frontend_default_macd" value="1" <?php checked($default_indicators['default_macd']); ?>> MACD</label>
+                                <label><input type="checkbox" name="lcni_frontend_default_rs_1w_by_exchange" value="1" <?php checked($default_indicators['default_rs_1w_by_exchange']); ?>> RS 1W</label>
+                                <label><input type="checkbox" name="lcni_frontend_default_rs_1m_by_exchange" value="1" <?php checked($default_indicators['default_rs_1m_by_exchange']); ?>> RS 1M</label>
+                                <label><input type="checkbox" name="lcni_frontend_default_rs_3m_by_exchange" value="1" <?php checked($default_indicators['default_rs_3m_by_exchange']); ?>> RS 3M</label>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody></table>
+                <?php submit_button('Lưu Frontend Settings'); ?>
+            </form>
+        </div>
+        <?php
+    }
+
+
+    private function render_frontend_chart_analyst_form($module, $tab_id, $settings) {
+        $templates = (array) ($settings['templates'] ?? []);
+        $default_template = (array) ($settings['default_template'] ?? []);
+        $indicator_labels = [
+            'ma20' => 'MA20',
+            'ma50' => 'MA50',
+            'ma100' => 'MA100',
+            'ma200' => 'MA200',
+            'rsi' => 'RSI(14)',
+            'macd' => 'MACD(12,26,9)',
+            'rs_1w_by_exchange' => 'RS 1W',
+            'rs_1m_by_exchange' => 'RS 1M',
+            'rs_3m_by_exchange' => 'RS 3M',
+        ];
+        $context_labels = [
+            'stock_detail' => 'Stock Detail',
+            'dashboard' => 'Dashboard',
+            'watchlist' => 'Watchlist',
+        ];
+        ?>
+        <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
+                <h3>Chart Analyst</h3>
+                <p>Thiết lập template chỉ báo mặc định cho các ngữ cảnh hiển thị frontend.</p>
+                <?php foreach ($templates as $template_key => $template_config) :
+                    $template_label = (string) ($template_config['label'] ?? $template_key);
+                    $enabled_indicators = isset($template_config['indicators']) && is_array($template_config['indicators']) ? $template_config['indicators'] : [];
+                    ?>
+                    <h4><?php echo esc_html($template_label); ?></h4>
+                    <p><label>Tên template <input type="text" name="lcni_chart_analyst_template_label[<?php echo esc_attr($template_key); ?>]" value="<?php echo esc_attr($template_label); ?>" class="regular-text"></label></p>
+                    <div class="lcni-front-grid" style="margin-bottom:16px;">
+                        <?php foreach ($indicator_labels as $indicator_key => $indicator_label) : ?>
+                            <label><input type="checkbox" name="lcni_chart_analyst_template_indicators[<?php echo esc_attr($template_key); ?>][]" value="<?php echo esc_attr($indicator_key); ?>" <?php checked(in_array($indicator_key, $enabled_indicators, true)); ?>> <?php echo esc_html($indicator_label); ?></label>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endforeach; ?>
+
+                <h4>Default template by context</h4>
+                <table class="form-table" role="presentation"><tbody>
+                    <?php foreach ($context_labels as $context_key => $context_label) : ?>
+                        <tr>
+                            <th><?php echo esc_html($context_label); ?></th>
+                            <td>
+                                <select name="lcni_chart_analyst_default_template_<?php echo esc_attr($context_key); ?>">
+                                    <?php foreach ($templates as $template_key => $template_config) : ?>
+                                        <option value="<?php echo esc_attr($template_key); ?>" <?php selected((string) ($default_template[$context_key] ?? ''), (string) $template_key); ?>>
+                                            <?php echo esc_html((string) ($template_config['label'] ?? $template_key)); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
                 </tbody></table>
                 <?php submit_button('Lưu Frontend Settings'); ?>
             </form>

@@ -22,6 +22,7 @@ require_once LCNI_PATH . 'includes/class-lcni-seed-repository.php';
 require_once LCNI_PATH . 'includes/class-lcni-history-fetcher.php';
 require_once LCNI_PATH . 'includes/class-lcni-seed-scheduler.php';
 require_once LCNI_PATH . 'includes/class-lcni-settings.php';
+require_once LCNI_PATH . 'includes/Admin/class-lcni-chart-analyst-settings.php';
 require_once LCNI_PATH . 'includes/class-lcni-button-registry.php';
 require_once LCNI_PATH . 'includes/class-lcni-button-style-config.php';
 require_once LCNI_PATH . 'includes/class-lcni-update-manager.php';

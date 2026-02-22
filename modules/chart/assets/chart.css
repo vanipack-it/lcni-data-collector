@@ -37,3 +37,8 @@
 .lcni-chart-message[data-level='error'] {
   color: #b91c1c;
 }
+
+.lcni-chart-error {
+  padding: 16px;
+  color: #b91c1c;
+}

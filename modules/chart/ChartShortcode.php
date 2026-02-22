@@ -51,6 +51,25 @@ class LCNI_Chart_Shortcode {
             true
         );
 
+        $chart_settings = get_option('lcni_frontend_settings_chart', []);
+        $chart_analyst_settings = LCNI_Chart_Analyst_Settings::sanitize_config(get_option('lcni_chart_analyst_settings', []));
+
+        wp_localize_script('lcni-chart', 'LCNI_CHART_CONFIG', [
+            'default_indicators' => [
+                'ma20' => !array_key_exists('default_ma20', $chart_settings) || !empty($chart_settings['default_ma20']),
+                'ma50' => !array_key_exists('default_ma50', $chart_settings) || !empty($chart_settings['default_ma50']),
+                'ma100' => !empty($chart_settings['default_ma100']),
+                'ma200' => !empty($chart_settings['default_ma200']),
+                'rsi' => !array_key_exists('default_rsi', $chart_settings) || !empty($chart_settings['default_rsi']),
+                'macd' => !empty($chart_settings['default_macd']),
+                'rs_1w_by_exchange' => !array_key_exists('default_rs_1w_by_exchange', $chart_settings) || !empty($chart_settings['default_rs_1w_by_exchange']),
+                'rs_1m_by_exchange' => !array_key_exists('default_rs_1m_by_exchange', $chart_settings) || !empty($chart_settings['default_rs_1m_by_exchange']),
+                'rs_3m_by_exchange' => !empty($chart_settings['default_rs_3m_by_exchange']),
+            ],
+            'analyst' => $chart_analyst_settings,
+            'storage_key' => 'lcni_chart_settings',
+        ]);
+
         wp_register_style('lcni-chart-ui', LCNI_URL . 'modules/chart/assets/chart.css', [], $chart_style_version);
     }
 
