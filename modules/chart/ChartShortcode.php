@@ -6,7 +6,7 @@ if (!defined('ABSPATH')) {
 
 class LCNI_Chart_Shortcode {
 
-    const VERSION = '2.0.6';
+    const VERSION = '2.0.7';
 
     private $ajax;
 
@@ -25,6 +25,11 @@ class LCNI_Chart_Shortcode {
     }
 
     public function register_assets() {
+        $sync_script_path = LCNI_PATH . 'assets/js/lcni-stock-sync.js';
+        $sync_version = file_exists($sync_script_path) ? (string) filemtime($sync_script_path) : self::VERSION;
+
+        wp_register_script('lcni-stock-sync', LCNI_URL . 'assets/js/lcni-stock-sync.js', [], $sync_version, true);
+
         $chart_script_path = LCNI_PATH . 'modules/chart/assets/chart.js';
         $chart_script_version = file_exists($chart_script_path)
             ? (string) filemtime($chart_script_path)
@@ -36,14 +41,14 @@ class LCNI_Chart_Shortcode {
             : self::VERSION;
 
         wp_register_script('lcni-lightweight-charts', 'https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js', [], '4.2.3', true);
-        wp_register_script('lcni-chart', LCNI_URL . 'modules/chart/assets/chart.js', ['lcni-lightweight-charts'], $chart_script_version, true);
+        wp_register_script('lcni-chart', LCNI_URL . 'modules/chart/assets/chart.js', ['lcni-lightweight-charts', 'lcni-stock-sync'], $chart_script_version, true);
         wp_register_style('lcni-chart-ui', LCNI_URL . 'modules/chart/assets/chart.css', [], $chart_style_version);
     }
 
     public function render($atts = []) {
-        $atts = shortcode_atts(['symbol' => '', 'limit' => 200, 'height' => 420], $atts, 'lcni_stock_chart');
+        $atts = shortcode_atts(['symbol' => ''], $atts, 'lcni_stock_chart');
 
-        $symbol = $this->sanitize_symbol($atts['symbol']);
+        $symbol = lcni_get_current_symbol($atts['symbol']);
         if ($symbol === '') {
             return '';
         }
@@ -51,15 +56,7 @@ class LCNI_Chart_Shortcode {
         wp_enqueue_script('lcni-chart');
         wp_enqueue_style('lcni-chart-ui');
 
-        $limit = max(10, min(1000, (int) $atts['limit']));
-        $height = max(260, min(1000, (int) $atts['height']));
-
-        return sprintf(
-            '<div data-lcni-chart data-symbol="%1$s" data-limit="%2$d" data-main-height="%3$d"></div>',
-            esc_attr($symbol),
-            $limit,
-            $height
-        );
+        return '<div data-lcni-chart></div>';
     }
 
     public function render_query_form($atts = []) {
@@ -90,7 +87,6 @@ class LCNI_Chart_Shortcode {
 
         return (string) ob_get_clean();
     }
-
     private function sanitize_symbol($symbol) {
         $symbol = strtoupper(sanitize_text_field((string) $symbol));
         if ($symbol === '') {
@@ -99,7 +95,9 @@ class LCNI_Chart_Shortcode {
 
         return preg_match('/^[A-Z0-9._-]{1,15}$/', $symbol) === 1 ? $symbol : '';
     }
+
 }
+
 
 if (!class_exists('LCNI_Chart_Shortcodes')) {
     class LCNI_Chart_Shortcodes extends LCNI_Chart_Shortcode {

@@ -106,14 +106,6 @@ class LCNI_Stock_Detail_Router {
     }
 
     private function get_current_symbol() {
-        $symbol = get_query_var('symbol');
-
-        if (!is_string($symbol) || $symbol === '') {
-            $symbol = get_query_var(self::STOCK_QUERY_VAR);
-        }
-
-        $symbol = strtoupper(sanitize_text_field((string) $symbol));
-
-        return preg_match('/^[A-Z0-9_.-]{1,20}$/', $symbol) ? $symbol : '';
+        return lcni_get_current_symbol();
     }
 }

@@ -74,6 +74,30 @@ function lcni_get_watchlist_add_button($symbol) {
     return do_shortcode(sprintf('[lcni_watchlist_add symbol="%s"]', esc_attr($symbol)));
 }
 
+function lcni_get_current_symbol($atts_symbol = '') {
+    $sanitize_symbol = static function ($symbol) {
+        $symbol = strtoupper(sanitize_text_field((string) $symbol));
+        if ($symbol === '') {
+            return '';
+        }
+
+        return preg_match('/^[A-Z0-9._-]{1,15}$/', $symbol) === 1 ? $symbol : '';
+    };
+
+    $symbol = $sanitize_symbol($atts_symbol);
+    if ($symbol !== '') {
+        return $symbol;
+    }
+
+    $symbol = get_query_var('symbol');
+    if (!is_string($symbol) || $symbol === '') {
+        $query_symbol = isset($_GET['symbol']) ? wp_unslash((string) $_GET['symbol']) : '';
+        $symbol = $query_symbol !== '' ? $query_symbol : get_query_var('lcni_stock_symbol');
+    }
+
+    return $sanitize_symbol($symbol);
+}
+
 function lcni_render_symbol($symbol) {
     $normalized = strtoupper(sanitize_text_field((string) $symbol));
     if ($normalized === '') {

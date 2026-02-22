@@ -4,73 +4,44 @@
   }
   window.__lcniOverviewInitialized = true;
 
-  document.addEventListener('DOMContentLoaded', async () => {
+  const initOverview = async (symbol) => {
     const containers = document.querySelectorAll('[data-lcni-overview]');
     if (!containers.length) {
       return;
     }
 
-    const labels = {
-      symbol: 'Mã',
-      exchange: 'Sàn',
-      icb2_name: 'Ngành',
-      eps: 'EPS',
-      roe: 'ROE',
-      pe_ratio: 'P/E',
-      pb_ratio: 'P/B',
-      volume: 'KL'
-    };
+    const context = window.LCNIStockContext;
+    const cacheKey = `overview:${symbol}`;
 
-    const renderNoData = (container) => {
-      container.textContent = 'No data';
-    };
+    try {
+      const payload = await context.fetchJson(cacheKey, `/wp-json/lcni/v1/stock-overview?symbol=${encodeURIComponent(symbol)}`);
+      containers.forEach((container) => {
+        container.innerHTML = `<pre class="lcni-overview-json">${JSON.stringify(payload || {}, null, 2)}</pre>`;
+      });
+    } catch (error) {
+      containers.forEach((container) => {
+        container.textContent = 'No data';
+      });
+    }
+  };
 
-    const renderOverview = (container, payload) => {
-      const entries = Object.entries(payload || {}).filter(([, value]) => value !== null && value !== '');
-      if (!entries.length) {
-        renderNoData(container);
+  document.addEventListener('DOMContentLoaded', function () {
+    const context = window.LCNIStockContext;
+    if (!context) {
+      return;
+    }
+
+    const symbol = context.getCurrentSymbol();
+    if (!symbol) return;
+
+    initOverview(symbol);
+
+    document.addEventListener('lcni:symbolChange', (event) => {
+      const nextSymbol = context.normalizeSymbol(event?.detail?.symbol || '');
+      if (!nextSymbol) {
         return;
       }
-
-      const html = entries.map(([key, value]) => {
-        const label = labels[key] || key;
-        return `<div class="lcni-overview-item"><strong>${label}:</strong> <span>${String(value)}</span></div>`;
-      }).join('');
-
-      container.innerHTML = `<div class="lcni-overview">${html}</div>`;
-    };
-
-    await Promise.all(Array.from(containers).map(async (container) => {
-      if (container.dataset.lcniInitialized === '1') {
-        return;
-      }
-      container.dataset.lcniInitialized = '1';
-
-      const symbol = String(container.dataset.symbol || '').toUpperCase().trim();
-      if (!symbol) {
-        renderNoData(container);
-        return;
-      }
-
-      try {
-        const response = await fetch(`/wp-json/lcni/v1/stock-overview?symbol=${encodeURIComponent(symbol)}`, {
-          credentials: 'same-origin'
-        });
-        if (!response.ok) {
-          renderNoData(container);
-          return;
-        }
-
-        const payload = await response.json();
-        if (!payload || (Array.isArray(payload) && payload.length === 0) || (typeof payload === 'object' && Object.keys(payload).length === 0)) {
-          renderNoData(container);
-          return;
-        }
-
-        renderOverview(container, payload);
-      } catch (error) {
-        renderNoData(container);
-      }
-    }));
+      initOverview(nextSymbol);
+    });
   });
 })();
