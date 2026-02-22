@@ -355,6 +355,8 @@ class LCNI_Settings {
                         update_option('lcni_filter_style_config', $style_config);
                     } elseif ($section === 'default_values') {
                         update_option('lcni_filter_default_values', LCNI_FilterAdmin::sanitize_default_filter_values(isset($_POST['lcni_filter_default_values']) ? (string) wp_unslash($_POST['lcni_filter_default_values']) : ''));
+                    } elseif ($section === 'default_criteria') {
+                        update_option('lcni_filter_default_admin_saved_filter_id', absint(isset($_POST['lcni_filter_default_admin_saved_filter_id']) ? wp_unslash($_POST['lcni_filter_default_admin_saved_filter_id']) : 0));
                     }
                 } elseif ($module === 'button_style') {
                     update_option('lcni_button_style_config', $this->sanitize_button_style_config(isset($_POST['lcni_button_style_config']) ? (array) wp_unslash($_POST['lcni_button_style_config']) : []));

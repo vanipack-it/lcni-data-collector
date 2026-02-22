@@ -17,7 +17,8 @@
     sortDir: 'asc',
     dataset: [],
     activeCriteriaColumn: '',
-    panelHidden: false
+    panelHidden: false,
+    columnPanelOpen: false
   };
 
   const sessionKey = cfg.tableSettingsStorageKey || 'lcni_filter_visible_columns_v1';
@@ -163,9 +164,15 @@
   }
 
   async function loadSavedFilters() {
-    if (!cfg.isLoggedIn) return (state.savedFilters = []);
+    if (!cfg.isLoggedIn) {
+      state.savedFilters = [];
+      state.selectedSavedFilterId = 0;
+      return;
+    }
     const payload = await savedFilterApi('/list', { method: 'GET' });
     state.savedFilters = Array.isArray(payload.items) ? payload.items : [];
+    const defaultId = Number(payload.default_filter_id || 0);
+    if (!state.selectedSavedFilterId && defaultId > 0) state.selectedSavedFilterId = defaultId;
   }
 
   function applySavedFilterConfig(host, config) {
@@ -189,6 +196,11 @@
 
   function applyDefaultFilterConfig(host) {
     const defaults = cfg.defaultFilterValues || {};
+    const defaultSaved = Array.isArray((cfg.settings || {}).default_saved_filters) ? (cfg.settings || {}).default_saved_filters : [];
+    if (!state.filters.length && defaultSaved.length) {
+      applySavedFilterConfig(host, { filters: defaultSaved });
+      return;
+    }
     state.criteria.forEach((item) => {
       const value = defaults[item.column];
       if (item.type === 'number' && Array.isArray(value)) {
@@ -247,7 +259,7 @@
     const hideBtn = style.enable_hide_button ? `<button type="button" class="lcni-btn lcni-btn-btn_filter_hide lcni-filter-hide-btn" data-filter-hide>Ẩn</button>` : '';
     const savedFilterLabel = esc(style.saved_filter_label || 'Saved filters');
 
-    host.innerHTML = `<div class="lcni-filter-toolbar"><button type="button" class="lcni-btn lcni-btn-btn_filter_open" data-filter-toggle>${renderButtonContent('btn_filter_open', 'Filter')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_setting" data-column-toggle-btn>${renderButtonContent('btn_filter_setting', '')}</button></div><div class="lcni-filter-panel ${state.panelHidden ? 'is-collapsed' : ''}" data-filter-panel><div class="lcni-filter-panel-body">${renderCriteriaPanel()}</div><div class="lcni-filter-panel-actions"><label class="lcni-saved-filter-label">${savedFilterLabel}</label><select data-saved-filter-select><option value="">${savedFilterLabel}</option>${(state.savedFilters || []).map((f) => `<option value="${Number(f.id || 0)}" ${Number(f.id || 0) === selectedId ? 'selected' : ''}>${esc(f.filter_name || '')}</option>`).join('')}</select><button type="button" class="lcni-btn lcni-btn-btn_filter_reload" data-reload-filter>${renderButtonContent('btn_filter_reload', 'Reload')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_save" data-save-current-filter>${renderButtonContent('btn_filter_save', 'Save')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_delete" data-delete-current-filter>${renderButtonContent('btn_filter_delete', 'Delete')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_apply" data-apply-filter>${renderButtonContent('btn_filter_apply', 'Apply Filter', getApplyLabel())}</button>${hideBtn}</div></div><div class="lcni-column-pop" data-column-pop hidden></div><div class="lcni-table-scroll"><table class="lcni-table"><thead><tr>${columns.map((c, idx) => `<th data-sort-key="${esc(c)}" class="${idx < Number(style.sticky_column_count || 1) ? 'is-sticky-col' : ''}">${esc(labels[c] || c)} <span data-sort-icon>${state.sortKey === c ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</span></th>`).join('')}</tr></thead><tbody></tbody></table></div><div data-filter-pagination></div>`;
+    host.innerHTML = `<div class="lcni-filter-toolbar"><button type="button" class="lcni-btn lcni-btn-btn_filter_open" data-filter-toggle>${renderButtonContent('btn_filter_open', 'Filter')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_setting" data-column-toggle-btn>${renderButtonContent('btn_filter_setting', '')}</button></div><div class="lcni-filter-panel ${state.panelHidden ? 'is-collapsed' : ''}" data-filter-panel><div class="lcni-filter-panel-body">${renderCriteriaPanel()}</div><div class="lcni-filter-panel-actions"><label class="lcni-saved-filter-label">${savedFilterLabel}</label><select data-saved-filter-select><option value="">${savedFilterLabel}</option>${(state.savedFilters || []).map((f) => `<option value="${Number(f.id || 0)}" ${Number(f.id || 0) === selectedId ? 'selected' : ''}>${esc(f.filter_name || '')}</option>`).join('')}</select><button type="button" class="lcni-btn lcni-btn-btn_filter_reload" data-reload-filter>${renderButtonContent('btn_filter_reload', 'Reload')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_save" data-save-current-filter>${renderButtonContent('btn_filter_save', 'Save')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_delete" data-delete-current-filter>${renderButtonContent('btn_filter_delete', 'Delete')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_reload" data-set-default-filter>Set Default</button><button type="button" class="lcni-btn lcni-btn-btn_filter_apply" data-apply-filter>${renderButtonContent('btn_filter_apply', 'Apply Filter', getApplyLabel())}</button>${hideBtn}</div></div><div class="lcni-column-pop" data-column-pop ${state.columnPanelOpen ? '' : 'hidden'}></div><div class="lcni-table-scroll"><table class="lcni-table"><thead><tr>${columns.map((c, idx) => `<th data-sort-key="${esc(c)}" class="${idx < Number(style.sticky_column_count || 1) ? 'is-sticky-col' : ''}">${esc(labels[c] || c)} <span data-sort-icon>${state.sortKey === c ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</span></th>`).join('')}</tr></thead><tbody></tbody></table></div><div data-filter-pagination></div>`;
 
     const selectable = settings.table_columns || columns;
     host.querySelector('[data-column-pop]').innerHTML = `${selectable.map((c) => `<label><input type="checkbox" data-visible-col value="${esc(c)}" ${state.visibleColumns.includes(c) ? 'checked' : ''}> ${esc(labels[c] || c)}</label>`).join('')}<button type="button" class="lcni-btn lcni-btn-btn_save_filter" data-save-columns>${renderButtonContent('btn_save_filter', 'Save')}</button>`;
@@ -331,13 +343,16 @@
         return;
       }
       if (event.target.closest('[data-column-toggle-btn]')) {
-        host.querySelector('[data-column-pop]').hidden = !host.querySelector('[data-column-pop]').hidden;
+        state.columnPanelOpen = !state.columnPanelOpen;
+        const panel = host.querySelector('[data-column-pop]');
+        if (panel) panel.hidden = !state.columnPanelOpen;
         return;
       }
       if (event.target.closest('[data-save-columns]')) {
         state.visibleColumns = Array.from(host.querySelectorAll('[data-visible-col]:checked')).map((n) => n.value);
         if (!state.visibleColumns.includes('symbol')) state.visibleColumns.unshift('symbol');
         saveVisibleColumns(state.visibleColumns);
+        state.columnPanelOpen = false;
         state.page = 1;
         renderStatic(host);
         await load(host);
@@ -348,6 +363,7 @@
         const name = window.prompt('Tên bộ lọc');
         if (!name) return;
         state.filters = collectFilters(host);
+      if (!state.filters.length && Array.isArray((cfg.settings || {}).default_saved_filters)) state.filters = (cfg.settings || {}).default_saved_filters;
         await savedFilterApi('/save', { method: 'POST', body: { filter_name: name, filters: state.filters } });
         await loadSavedFilters();
         renderStatic(host);
@@ -372,9 +388,18 @@
         applySavedFilterConfig(host, payload.config || {});
         return;
       }
+      if (event.target.closest('[data-set-default-filter]')) {
+        if (!cfg.isLoggedIn) return showAuthModal('Vui lòng đăng nhập hoặc đăng ký để lưu bộ lọc');
+        const id = Number(state.selectedSavedFilterId || 0);
+        await savedFilterApi('/default', { method: 'POST', body: { id } });
+        showToast(id > 0 ? 'Đã đặt bộ lọc mặc định' : 'Đã bỏ bộ lọc mặc định');
+        return;
+      }
       if (event.target.closest('[data-apply-filter]')) {
         state.filters = collectFilters(host);
+      if (!state.filters.length && Array.isArray((cfg.settings || {}).default_saved_filters)) state.filters = (cfg.settings || {}).default_saved_filters;
         state.page = 1;
+        state.columnPanelOpen = false;
         await load(host);
         return;
       }
@@ -397,9 +422,20 @@
       }
     });
 
-    host.addEventListener('change', (event) => {
+    host.addEventListener('change', async (event) => {
       const select = event.target.closest('[data-saved-filter-select]');
-      if (select) state.selectedSavedFilterId = Number(select.value || 0);
+      if (select) {
+        state.selectedSavedFilterId = Number(select.value || 0);
+        if (state.selectedSavedFilterId > 0) {
+          const payload = await savedFilterApi('/load?id=' + encodeURIComponent(state.selectedSavedFilterId), { method: 'GET' });
+          applySavedFilterConfig(host, payload.config || {});
+          state.filters = collectFilters(host);
+      if (!state.filters.length && Array.isArray((cfg.settings || {}).default_saved_filters)) state.filters = (cfg.settings || {}).default_saved_filters;
+          state.page = 1;
+          await load(host);
+        }
+      }
+      if (event.target.matches('[data-visible-col]')) state.columnPanelOpen = true;
       if (event.target.matches('input[type="checkbox"], input[type="number"]')) updateCriteriaSelectionState(host);
     });
   }
@@ -430,6 +466,7 @@
       bind(host);
       updateCriteriaSelectionState(host);
       state.filters = collectFilters(host);
+      if (!state.filters.length && Array.isArray((cfg.settings || {}).default_saved_filters)) state.filters = (cfg.settings || {}).default_saved_filters;
       await load(host);
       window.clearInterval(host._lcniRefreshTimer);
       host._lcniRefreshTimer = window.setInterval(() => refreshOnly(host).catch(() => {}), 15000);

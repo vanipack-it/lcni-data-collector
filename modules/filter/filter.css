@@ -42,3 +42,5 @@
 .lcni-filter-watchlist-options { display:grid; gap:6px; max-height:260px; overflow:auto; }
 
 .lcni-app .lcni-stock-filter.lcni-disable-sticky-header .lcni-table th { position: static; }
+
+.lcni-app .lcni-stock-filter [data-column-pop][hidden] { display:none !important; }
