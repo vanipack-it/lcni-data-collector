@@ -61,26 +61,47 @@ class LCNI_Chart_Shortcode {
         ];
         $atts = shortcode_atts($defaults, $atts, $shortcode_tag);
 
-        $symbol = $shortcode_tag === 'lcni_stock_chart_query'
+        $raw_symbol = $shortcode_tag === 'lcni_stock_chart_query'
             ? $this->resolve_query_symbol($atts['param'], $atts['default_symbol'])
             : lcni_get_current_symbol($atts['symbol']);
-        if ($symbol === '') {
-            return '';
+
+        $symbol = strtoupper(sanitize_text_field((string) $raw_symbol));
+        if ($symbol === '' || preg_match('/^[A-Z0-9.-]+$/', $symbol) !== 1) {
+            return '<div class="lcni-chart-error">Invalid symbol</div>';
         }
 
-        $limit = $this->sanitize_limit($atts['limit']);
-        $height = $this->sanitize_height($atts['height']);
+        $limit = (int) $atts['limit'];
+        if ($limit <= 0) {
+            $limit = 200;
+        }
+        if ($limit > 500) {
+            $limit = 500;
+        }
+
+        $height = (int) $atts['height'];
+        if ($height < 300) {
+            $height = 300;
+        }
+        if ($height > 1200) {
+            $height = 1200;
+        }
 
         wp_enqueue_script('lcni-chart');
         wp_enqueue_style('lcni-chart-ui');
 
-        return sprintf(
-            '<div data-lcni-chart data-lcni-symbol="%1$s" data-lcni-limit="%2$d" data-lcni-height="%3$d" data-lcni-candles-endpoint="%4$s"></div>',
-            esc_attr($symbol),
-            (int) $limit,
-            (int) $height,
-            esc_url(rest_url('lcni/v1/candles'))
-        );
+        ob_start();
+        ?>
+        <div
+            data-lcni-chart
+            data-symbol="<?php echo esc_attr($symbol); ?>"
+            data-limit="<?php echo esc_attr((string) $limit); ?>"
+            data-height="<?php echo esc_attr((string) $height); ?>"
+            data-api-base="<?php echo esc_url(rest_url('lcni/v1/chart')); ?>"
+            style="height:<?php echo esc_attr((string) $height); ?>px"
+        ></div>
+        <?php
+
+        return ob_get_clean();
     }
 
     public function render_query_form($atts = []) {
