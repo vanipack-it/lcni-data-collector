@@ -33,21 +33,29 @@ class LCNI_Chart_Shortcode {
         $chart_script_path = LCNI_PATH . 'modules/chart/assets/chart.js';
         $chart_script_version = file_exists($chart_script_path)
             ? (string) filemtime($chart_script_path)
-            : self::VERSION;
-
-        $echarts_engine_path = LCNI_PATH . 'modules/chart/assets/lcni-echarts-engine.js';
-        $echarts_engine_version = file_exists($echarts_engine_path)
-            ? (string) filemtime($echarts_engine_path)
-            : self::VERSION;
+            : (defined('LCNI_VERSION') ? LCNI_VERSION : self::VERSION);
 
         $chart_style_path = LCNI_PATH . 'modules/chart/assets/chart.css';
         $chart_style_version = file_exists($chart_style_path)
             ? (string) filemtime($chart_style_path)
             : self::VERSION;
 
-        wp_register_script('lcni-echarts', LCNI_URL . 'assets/vendor/echarts.min.js', [], self::VERSION, true);
-        wp_register_script('lcni-echarts-engine', LCNI_URL . 'modules/chart/assets/lcni-echarts-engine.js', ['lcni-echarts'], $echarts_engine_version, true);
-        wp_register_script('lcni-chart', LCNI_URL . 'modules/chart/assets/chart.js', ['lcni-stock-sync', 'lcni-echarts-engine'], $chart_script_version, true);
+        wp_register_script(
+            'lcni-echarts',
+            'https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js',
+            [],
+            '5.x',
+            true
+        );
+
+        wp_register_script(
+            'lcni-chart',
+            plugin_dir_url(__FILE__) . 'assets/chart.js',
+            ['lcni-echarts'],
+            defined('LCNI_VERSION') ? LCNI_VERSION : $chart_script_version,
+            true
+        );
+
         wp_register_style('lcni-chart-ui', LCNI_URL . 'modules/chart/assets/chart.css', [], $chart_style_version);
     }
 
@@ -59,49 +67,33 @@ class LCNI_Chart_Shortcode {
             'param' => 'symbol',
             'default_symbol' => '',
         ];
+
         $atts = shortcode_atts($defaults, $atts, $shortcode_tag);
 
         $raw_symbol = $shortcode_tag === 'lcni_stock_chart_query'
             ? $this->resolve_query_symbol($atts['param'], $atts['default_symbol'])
             : lcni_get_current_symbol($atts['symbol']);
 
-        $symbol = strtoupper(sanitize_text_field((string) $raw_symbol));
-        if ($symbol === '' || preg_match('/^[A-Z0-9.-]+$/', $symbol) !== 1) {
-            return '<div class="lcni-chart-error">Invalid symbol</div>';
-        }
-
-        $limit = (int) $atts['limit'];
-        if ($limit <= 0) {
-            $limit = 200;
-        }
-        if ($limit > 500) {
-            $limit = 500;
-        }
-
-        $height = (int) $atts['height'];
-        if ($height < 300) {
-            $height = 300;
-        }
-        if ($height > 1200) {
-            $height = 1200;
-        }
+        $symbol = $this->sanitize_symbol($raw_symbol);
+        $limit = $this->sanitize_limit($atts['limit']);
+        $height = $this->sanitize_height($atts['height']);
 
         wp_enqueue_script('lcni-chart');
         wp_enqueue_style('lcni-chart-ui');
 
-        ob_start();
-        ?>
-        <div
-            data-lcni-chart
-            data-lcni-symbol="<?php echo esc_attr($symbol); ?>"
-            data-lcni-limit="<?php echo esc_attr((string) $limit); ?>"
-            data-lcni-height="<?php echo esc_attr((string) $height); ?>"
-            data-lcni-candles-endpoint="<?php echo esc_url(rest_url('lcni/v1/candles')); ?>"
-            style="height:<?php echo esc_attr((string) $height); ?>px"
-        ></div>
-        <?php
+        $api_base = rest_url('lcni/v1/chart');
 
-        return ob_get_clean();
+        $html  = '<div class="lcni-chart-wrapper">';
+        $html .= '<div data-lcni-chart';
+        $html .= ' data-symbol="' . esc_attr($symbol) . '"';
+        $html .= ' data-limit="' . esc_attr((string) $limit) . '"';
+        $html .= ' data-height="' . esc_attr((string) $height) . '"';
+        $html .= ' data-api-base="' . esc_url($api_base) . '"';
+        $html .= ' style="height:' . esc_attr((string) $height) . 'px"></div>';
+        $html .= '<noscript>' . esc_html__('JavaScript is required to render the stock chart.', 'lcni') . '</noscript>';
+        $html .= '</div>';
+
+        return $html;
     }
 
     public function render_query_form($atts = []) {
@@ -123,6 +115,7 @@ class LCNI_Chart_Shortcode {
             esc_attr((string) $atts['button_text'])
         );
     }
+
     private function sanitize_symbol($symbol) {
         $symbol = strtoupper(sanitize_text_field((string) $symbol));
         if ($symbol === '') {
@@ -164,9 +157,7 @@ class LCNI_Chart_Shortcode {
 
         return lcni_get_current_symbol($default_symbol);
     }
-
 }
-
 
 if (!class_exists('LCNI_Chart_Shortcodes')) {
     class LCNI_Chart_Shortcodes extends LCNI_Chart_Shortcode {

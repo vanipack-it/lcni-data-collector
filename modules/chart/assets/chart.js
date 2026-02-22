@@ -1,354 +1,303 @@
-(function initLcniChart(windowObject, documentObject) {
+(() => {
   'use strict';
 
-  if (!windowObject || !documentObject || windowObject.__lcniChartInitialized) {
-    return;
-  }
-  windowObject.__lcniChartInitialized = true;
-
+  const SELECTOR = '[data-lcni-chart]';
   const MAX_LIMIT = 500;
-  const ECHARTS_CDN_URL = 'https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js';
-  const stateMap = new WeakMap();
-  let echartsLoaderPromise = null;
+  const FETCH_TIMEOUT_MS = 12000;
+  const initialized = new WeakSet();
+  const chartStates = new WeakMap();
+  const trackedElements = new Set();
+  let observerStarted = false;
 
-  const parseLimit = function parseLimit(rawLimit) {
-    const parsed = Number.parseInt(rawLimit, 10);
-    if (Number.isNaN(parsed) || parsed <= 0) {
+  const normalizeSymbol = (raw) => String(raw || '').trim().toUpperCase();
+
+  const parseLimit = (raw) => {
+    const value = Number.parseInt(String(raw || ''), 10);
+    if (Number.isNaN(value) || value <= 0) {
       return 200;
     }
 
-    return Math.min(parsed, MAX_LIMIT);
+    return Math.min(value, MAX_LIMIT);
   };
 
-  const parseHeight = function parseHeight(rawHeight) {
-    const parsed = Number.parseInt(rawHeight, 10);
-    if (Number.isNaN(parsed) || parsed < 240) {
+  const parseHeight = (raw) => {
+    const value = Number.parseInt(String(raw || ''), 10);
+    if (Number.isNaN(value) || value < 240) {
       return 420;
     }
 
-    return Math.min(parsed, 1200);
+    return Math.min(value, 1200);
   };
 
-  const loadEchartsRuntime = function loadEchartsRuntime() {
-    if (windowObject.echarts && typeof windowObject.echarts.init === 'function') {
-      return Promise.resolve(windowObject.echarts);
-    }
+  const createShell = (el) => {
+    const root = document.createElement('div');
+    root.className = 'lcni-chart-shell';
+    root.style.height = `${parseHeight(el.dataset.height)}px`;
 
-    if (echartsLoaderPromise) {
-      return echartsLoaderPromise;
-    }
+    const canvas = document.createElement('div');
+    canvas.className = 'lcni-chart-canvas';
 
-    echartsLoaderPromise = new Promise(function (resolve, reject) {
-      const script = documentObject.createElement('script');
-      script.src = ECHARTS_CDN_URL;
-      script.async = true;
-      script.onload = function onLoad() {
-        if (windowObject.echarts && typeof windowObject.echarts.init === 'function') {
-          resolve(windowObject.echarts);
-          return;
-        }
+    const loadingEl = document.createElement('div');
+    loadingEl.className = 'lcni-chart-loading';
+    loadingEl.textContent = 'Loading chart...';
+    loadingEl.hidden = true;
 
-        reject(new Error('ECharts runtime unavailable after loading script.'));
-      };
-      script.onerror = function onError() {
-        reject(new Error('Failed to load ECharts runtime.'));
-      };
+    const messageEl = document.createElement('div');
+    messageEl.className = 'lcni-chart-message';
+    messageEl.hidden = true;
 
-      documentObject.head.appendChild(script);
-    }).catch(function (error) {
-      echartsLoaderPromise = null;
-      throw error;
-    });
+    root.appendChild(canvas);
+    root.appendChild(loadingEl);
+    root.appendChild(messageEl);
+    el.replaceChildren(root);
 
-    return echartsLoaderPromise;
+    return { canvas, loadingEl, messageEl };
   };
 
-  const unwrapCandlesPayload = function unwrapCandlesPayload(payload) {
+  const setLoading = (el, isLoading) => {
+    const state = chartStates.get(el);
+    if (!state) {
+      return;
+    }
+
+    state.loadingEl.hidden = !isLoading;
+  };
+
+  const setMessage = (el, message, isError = false) => {
+    const state = chartStates.get(el);
+    if (!state) {
+      return;
+    }
+
+    state.messageEl.textContent = message || '';
+    state.messageEl.hidden = !message;
+    state.messageEl.dataset.level = isError ? 'error' : 'info';
+  };
+
+  const parseApiResponse = (payload) => {
     if (Array.isArray(payload)) {
       return payload;
     }
 
-    if (Array.isArray(payload && payload.candles)) {
+    if (payload && Array.isArray(payload.data)) {
+      return payload.data;
+    }
+
+    if (payload && payload.data && Array.isArray(payload.data.candles)) {
+      return payload.data.candles;
+    }
+
+    if (payload && Array.isArray(payload.candles)) {
       return payload.candles;
-    }
-
-    const payloadData = payload && typeof payload === 'object' ? payload.data : null;
-    if (Array.isArray(payloadData)) {
-      return payloadData;
-    }
-
-    if (Array.isArray(payloadData && payloadData.candles)) {
-      return payloadData.candles;
     }
 
     return [];
   };
 
-  const ensureState = function ensureState(container) {
-    let state = stateMap.get(container);
-    if (state) {
-      return state;
-    }
+  const fetchData = async (apiBase, symbol, limit, controller) => {
+    const endpoint = new URL(apiBase, window.location.origin);
+    endpoint.searchParams.set('symbol', symbol);
+    endpoint.searchParams.set('limit', String(limit));
 
-    state = {
-      engine: null,
-      abortController: null,
-      requestId: 0,
-      currentSymbol: '',
-      overlay: null,
-      errorNode: null,
-      loadingNode: null
-    };
-
-    const chartHeight = parseHeight(container.dataset.lcniHeight || '420');
-
-    const overlay = documentObject.createElement('div');
-    overlay.style.position = 'relative';
-    overlay.style.minHeight = chartHeight + 'px';
-
-    const chartNode = documentObject.createElement('div');
-    chartNode.style.height = chartHeight + 'px';
-    chartNode.style.width = '100%';
-
-    const loadingNode = documentObject.createElement('div');
-    loadingNode.textContent = 'Loading...';
-    loadingNode.style.position = 'absolute';
-    loadingNode.style.inset = '0';
-    loadingNode.style.display = 'none';
-    loadingNode.style.alignItems = 'center';
-    loadingNode.style.justifyContent = 'center';
-    loadingNode.style.background = 'rgba(255,255,255,0.7)';
-    loadingNode.style.zIndex = '2';
-
-    const errorNode = documentObject.createElement('div');
-    errorNode.style.position = 'absolute';
-    errorNode.style.inset = '0';
-    errorNode.style.display = 'none';
-    errorNode.style.alignItems = 'center';
-    errorNode.style.justifyContent = 'center';
-    errorNode.style.padding = '12px';
-    errorNode.style.color = '#b91c1c';
-    errorNode.style.background = 'rgba(255,255,255,0.92)';
-    errorNode.style.zIndex = '3';
-
-    overlay.appendChild(chartNode);
-    overlay.appendChild(loadingNode);
-    overlay.appendChild(errorNode);
-    container.innerHTML = '';
-    container.appendChild(overlay);
-
-    state.overlay = chartNode;
-    state.errorNode = errorNode;
-    state.loadingNode = loadingNode;
-    stateMap.set(container, state);
-
-    return state;
-  };
-
-  const setLoading = function setLoading(state, isLoading) {
-    state.loadingNode.style.display = isLoading ? 'flex' : 'none';
-  };
-
-  const setError = function setError(state, message) {
-    if (!message) {
-      state.errorNode.textContent = '';
-      state.errorNode.style.display = 'none';
-      return;
-    }
-
-    state.errorNode.textContent = message;
-    state.errorNode.style.display = 'flex';
-  };
-
-  const getErrorMessage = function getErrorMessage(error, fallback) {
-    if (!error) {
-      return fallback;
-    }
-
-    if (typeof error === 'string' && error.trim()) {
-      return error.trim();
-    }
-
-    if (typeof error.message === 'string' && error.message.trim()) {
-      return error.message.trim();
-    }
-
-    const restMessage = error && error.data && typeof error.data.message === 'string'
-      ? error.data.message
-      : '';
-
-    if (restMessage.trim()) {
-      return restMessage.trim();
-    }
-
-    return fallback;
-  };
-
-  const buildCandlesEndpoint = function buildCandlesEndpoint(container, symbol, limit) {
-    const safeLimit = parseLimit(limit);
-    const explicitEndpoint = String(container.dataset.lcniCandlesEndpoint || '').trim();
-    const endpointBase = explicitEndpoint || '/wp-json/lcni/v1/candles';
+    const timeoutId = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
     try {
-      const url = new URL(endpointBase, windowObject.location.origin);
-      url.searchParams.set('symbol', symbol);
-      url.searchParams.set('limit', String(safeLimit));
+      const response = await fetch(endpoint.toString(), {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        credentials: 'same-origin',
+        signal: controller.signal
+      });
 
-      return {
-        cacheKey: 'candles:' + symbol + ':' + safeLimit,
-        requestPath: url.pathname + url.search
-      };
-    } catch (_error) {
-      return {
-        cacheKey: 'candles:' + symbol + ':' + safeLimit,
-        requestPath: '/wp-json/lcni/v1/candles?symbol=' + encodeURIComponent(symbol) + '&limit=' + safeLimit
-      };
-    }
-  };
-
-  const getCandles = async function getCandles(container, symbol, limit, signal) {
-    const context = windowObject.LCNIStockContext;
-    const requestInfo = buildCandlesEndpoint(container, symbol, limit);
-
-    if (context && typeof context.fetchJson === 'function') {
-      const payload = await context.fetchJson(requestInfo.cacheKey, requestInfo.requestPath, { signal: signal });
-      return unwrapCandlesPayload(payload);
-    }
-
-    const response = await windowObject.fetch(requestInfo.requestPath, { signal: signal });
-    if (!response.ok) {
-      let serverMessage = '';
-      try {
-        const errorPayload = await response.json();
-        serverMessage = getErrorMessage(errorPayload, '');
-      } catch (_error) {
-        serverMessage = '';
+      if (!response.ok) {
+        throw new Error(`REST request failed (HTTP ${response.status})`);
       }
 
-      throw new Error(serverMessage || ('HTTP ' + response.status));
-    }
+      let json;
+      try {
+        json = await response.json();
+      } catch (_error) {
+        throw new Error('Invalid JSON received from API.');
+      }
 
-    const payload = await response.json();
-    return unwrapCandlesPayload(payload);
+      return parseApiResponse(json);
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
   };
 
-  const renderContainer = async function renderContainer(container, symbol) {
-    await loadEchartsRuntime();
-    const engineFactory = windowObject.LCNIChartEchartsEngine;
-    const echarts = windowObject.echarts;
-    const state = ensureState(container);
+  const toSeriesData = (rows) => {
+    const categoryData = [];
+    const values = [];
+    const volumes = [];
 
-    if (!engineFactory || typeof engineFactory.createChart !== 'function' || !echarts) {
-      setLoading(state, false);
-      setError(state, 'Không thể khởi tạo biểu đồ. Vui lòng tải lại trang.');
+    (Array.isArray(rows) ? rows : []).forEach((row) => {
+      const date = String(row && row.date ? row.date : '').trim();
+      const open = Number(row && row.open);
+      const high = Number(row && row.high);
+      const low = Number(row && row.low);
+      const close = Number(row && row.close);
+      const volume = Number(row && row.volume);
+
+      if (!date || !Number.isFinite(open) || !Number.isFinite(high) || !Number.isFinite(low) || !Number.isFinite(close)) {
+        return;
+      }
+
+      categoryData.push(date);
+      values.push([open, close, low, high]);
+      volumes.push(Number.isFinite(volume) ? volume : 0);
+    });
+
+    return { categoryData, values, volumes };
+  };
+
+  const buildOption = ({ categoryData, values, volumes }) => ({
+    animation: true,
+    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+    axisPointer: { link: [{ xAxisIndex: [0, 1] }] },
+    grid: [
+      { left: '8%', right: '4%', top: 20, height: '60%' },
+      { left: '8%', right: '4%', top: '76%', height: '16%' }
+    ],
+    xAxis: [
+      { type: 'category', data: categoryData, boundaryGap: false, axisLine: { onZero: false }, min: 'dataMin', max: 'dataMax' },
+      { type: 'category', gridIndex: 1, data: categoryData, boundaryGap: false, axisLine: { onZero: false }, axisTick: { show: false }, axisLabel: { show: false }, min: 'dataMin', max: 'dataMax' }
+    ],
+    yAxis: [
+      { scale: true, splitArea: { show: true } },
+      { scale: true, gridIndex: 1, splitNumber: 2 }
+    ],
+    dataZoom: [
+      { type: 'inside', xAxisIndex: [0, 1], start: 70, end: 100 },
+      { type: 'slider', xAxisIndex: [0, 1], bottom: 0, start: 70, end: 100 }
+    ],
+    series: [
+      { name: 'Price', type: 'candlestick', data: values },
+      { name: 'Volume', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: volumes, barMaxWidth: 12 }
+    ]
+  });
+
+  const renderChart = (el, rows) => {
+    const state = chartStates.get(el);
+    if (!state || !state.chart) {
       return;
     }
 
-    const limit = parseLimit(container.dataset.lcniLimit || '200');
+    const seriesData = toSeriesData(rows);
+    if (!seriesData.categoryData.length) {
+      state.chart.clear();
+      setMessage(el, 'No chart data available for this symbol.');
+      return;
+    }
+
+    setMessage(el, '');
+    state.chart.setOption(buildOption(seriesData), true);
+  };
+
+  const disposeIfDetached = (el) => {
+    if (document.body.contains(el)) {
+      return;
+    }
+
+    const state = chartStates.get(el);
+    if (!state) {
+      trackedElements.delete(el);
+      return;
+    }
 
     if (state.abortController) {
       state.abortController.abort();
     }
 
-    state.abortController = new AbortController();
-    state.requestId += 1;
-    const requestId = state.requestId;
-
-    setError(state, '');
-    setLoading(state, true);
-
-    try {
-      const candles = await getCandles(container, symbol, limit, state.abortController.signal);
-
-      if (requestId !== state.requestId) {
-        return;
-      }
-
-      if (!state.engine) {
-        state.engine = engineFactory.createChart(state.overlay);
-      }
-
-      if (!state.engine || !candles.length) {
-        setError(state, 'Không có dữ liệu để hiển thị biểu đồ cho mã này.');
-        return;
-      }
-
-      state.engine.updateData(candles.slice(-MAX_LIMIT));
-      state.currentSymbol = symbol;
-    } catch (error) {
-      if (error && error.name === 'AbortError') {
-        return;
-      }
-      if (requestId === state.requestId) {
-        setError(state, getErrorMessage(error, 'Không thể tải dữ liệu biểu đồ.'));
-      }
-    } finally {
-      if (requestId === state.requestId) {
-        setLoading(state, false);
-      }
+    if (state.resizeHandler) {
+      window.removeEventListener('resize', state.resizeHandler);
     }
+
+    if (state.chart && !state.chart.isDisposed()) {
+      state.chart.dispose();
+    }
+
+    chartStates.delete(el);
+    initialized.delete(el);
+    trackedElements.delete(el);
   };
 
-  const init = function init() {
-    const context = windowObject.LCNIStockContext;
-    const containers = documentObject.querySelectorAll('[data-lcni-chart]');
-    if (!containers.length) {
+  const initChart = (el) => {
+    if (!el || initialized.has(el)) {
       return;
     }
 
-    containers.forEach(function (container) {
-      const containerSymbol = context && typeof context.normalizeSymbol === 'function'
-        ? context.normalizeSymbol(container.dataset.lcniSymbol || '')
-        : String(container.dataset.lcniSymbol || '').trim().toUpperCase();
-      const initialSymbol = containerSymbol || (context && typeof context.getCurrentSymbol === 'function' ? context.getCurrentSymbol() : '');
+    initialized.add(el);
+    const shell = createShell(el);
 
-      if (initialSymbol) {
-        renderContainer(container, initialSymbol);
-      } else {
-        const state = ensureState(container);
-        setLoading(state, false);
-        setError(state, 'Thiếu mã cổ phiếu để tải biểu đồ.');
+    if (!window.echarts || typeof window.echarts.init !== 'function') {
+      chartStates.set(el, { ...shell, chart: null });
+      setMessage(el, 'ECharts runtime not available.', true);
+      return;
+    }
+
+    const symbol = normalizeSymbol(el.dataset.symbol);
+    const limit = parseLimit(el.dataset.limit);
+    const apiBase = String(el.dataset.apiBase || '').trim();
+
+    const chart = window.echarts.init(shell.canvas);
+    const resizeHandler = () => {
+      if (!chart.isDisposed()) {
+        chart.resize();
       }
-    });
+    };
 
-    documentObject.addEventListener('lcni:symbolChange', function onSymbolChange(event) {
-      const raw = event && event.detail ? event.detail.symbol : '';
-      const nextSymbol = context && typeof context.normalizeSymbol === 'function'
-        ? context.normalizeSymbol(raw || '')
-        : String(raw || '').trim().toUpperCase();
+    window.addEventListener('resize', resizeHandler, { passive: true });
 
-      if (!nextSymbol) {
-        return;
-      }
+    const state = {
+      ...shell,
+      chart,
+      resizeHandler,
+      abortController: null
+    };
+    chartStates.set(el, state);
+    trackedElements.add(el);
 
-      containers.forEach(function (container) {
-        renderContainer(container, nextSymbol);
-      });
-    }, { passive: true });
+    if (!symbol || !apiBase) {
+      setMessage(el, 'Invalid chart configuration.', true);
+      return;
+    }
 
-    windowObject.addEventListener('beforeunload', function destroyAll() {
-      containers.forEach(function (container) {
-        const state = stateMap.get(container);
-        if (!state) {
+    state.abortController = new AbortController();
+    setLoading(el, true);
+
+    fetchData(apiBase, symbol, limit, state.abortController)
+      .then((rows) => renderChart(el, rows))
+      .catch((error) => {
+        if (error && error.name === 'AbortError') {
+          setMessage(el, 'Chart request timed out.', true);
           return;
         }
 
-        if (state.abortController) {
-          state.abortController.abort();
-        }
-
-        if (state.engine && typeof state.engine.destroy === 'function') {
-          state.engine.destroy();
-        }
-
-        stateMap.delete(container);
-      });
-    }, { once: true });
+        setMessage(el, (error && error.message) ? error.message : 'Unable to load chart data.', true);
+      })
+      .finally(() => setLoading(el, false));
   };
 
-  if (documentObject.readyState === 'loading') {
-    documentObject.addEventListener('DOMContentLoaded', init, { once: true });
+  const initAllCharts = () => {
+    document.querySelectorAll(SELECTOR).forEach(initChart);
+
+    if (observerStarted || typeof MutationObserver === 'undefined') {
+      return;
+    }
+
+    observerStarted = true;
+    const observer = new MutationObserver(() => {
+      document.querySelectorAll(SELECTOR).forEach(initChart);
+      trackedElements.forEach((el) => disposeIfDetached(el));
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initAllCharts, { once: true });
   } else {
-    init();
+    initAllCharts();
   }
-})(window, document);
+})();
