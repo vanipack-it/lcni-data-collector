@@ -158,3 +158,10 @@
 - Loại bỏ phụ thuộc router/query injection trong 2 shortcode trên: chỉ nhận symbol tường minh qua thuộc tính shortcode.
 - Thêm guard chống khởi tạo JS trùng lặp (`window.__lcniOverviewInitialized`, `window.__lcniChartInitialized` + cờ `data-lcni-initialized`).
 - Giữ nguyên nguyên tắc enqueue script chỉ khi shortcode xuất hiện (enqueue trong hàm render shortcode).
+
+## 2026-02-22 (v2.0.8)
+- Module `modules/chart` chuyển hoàn toàn sang Apache ECharts: bỏ dependency Lightweight Charts CDN, thêm script local `assets/vendor/echarts.min.js` + engine tách file `modules/chart/assets/lcni-echarts-engine.js`.
+- Refactor `modules/chart/assets/chart.js` theo lifecycle rõ ràng: DOM scan, fetch candles giữ nguyên endpoint `/wp-json/lcni/v1/candles`, thêm `AbortController`, loading overlay, error overlay và chặn race condition khi đổi symbol nhanh.
+- Tối ưu hiệu năng chart cho 0-10k daily users: giới hạn cứng tối đa 500 candles ở frontend, dùng `useDirtyRect`, `progressive`, `progressiveThreshold`, cập nhật dữ liệu bằng `setOption` + `replaceMerge` thay vì rebuild full option mỗi lần.
+- Bổ sung memory-safety: kiểm tra `echarts.getInstanceByDom` trước init, dispose instance khi destroy, resize bằng `ResizeObserver` có debounce, tránh listener trùng lặp.
+- Giữ nguyên shortcode `[lcni_stock_chart]`, kiến trúc PHP module, và REST API contract hiện có.
