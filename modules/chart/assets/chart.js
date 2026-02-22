@@ -21,6 +21,49 @@
   }, (window.LCNI_CHART_CONFIG && window.LCNI_CHART_CONFIG.default_indicators) || {});
   const instances = new WeakMap();
 
+  function formatByType(value, type) {
+    if (window.LCNIFormatter && typeof window.LCNIFormatter.format === 'function') {
+      return window.LCNIFormatter.format(value, type);
+    }
+
+    const number = Number(value);
+    return Number.isFinite(number) ? String(number) : '-';
+  }
+
+  function buildTooltipFormatter() {
+    return (params) => {
+      const rows = [];
+      const items = Array.isArray(params) ? params : [];
+      if (!items.length) return '';
+
+      rows.push(String(items[0].axisValueLabel || items[0].name || ''));
+      items.forEach((item) => {
+        const series = String(item.seriesName || '');
+        const marker = item.marker || '';
+        let value = item.value;
+        let type = 'price';
+
+        if (series === 'Volume') type = 'volume';
+        if (series.indexOf('RSI') === 0) type = 'rsi';
+        if (series === 'MACD' || series === 'Signal' || series === 'Histogram') type = 'macd';
+        if (series.indexOf('RS ') === 0) type = 'rs';
+
+        if (Array.isArray(value) && value.length >= 4) {
+          const open = formatByType(value[0], 'price');
+          const close = formatByType(value[1], 'price');
+          const low = formatByType(value[2], 'price');
+          const high = formatByType(value[3], 'price');
+          rows.push(`${marker}${series}: O ${open} | C ${close} | L ${low} | H ${high}`);
+          return;
+        }
+
+        rows.push(`${marker}${series}: ${formatByType(value, type)}`);
+      });
+
+      return rows.join('<br/>');
+    };
+  }
+
   function sanitizeSymbol(value) { const s = String(value || '').trim().toUpperCase(); return /^[A-Z0-9._-]{1,20}$/.test(s) ? s : ''; }
   function parseLimit(v) { const n = Number.parseInt(String(v || ''), 10); return Number.isFinite(n) && n > 0 ? Math.min(n, MAX_LIMIT) : DEFAULT_LIMIT; }
   function parseHeight(v) { const n = Number.parseInt(String(v || ''), 10); return Number.isFinite(n) ? Math.max(MIN_HEIGHT, Math.min(n, MAX_HEIGHT)) : DEFAULT_HEIGHT; }
@@ -181,7 +224,13 @@
       panelIndexes[panel.key] = idx;
       grid.push({ left: '8%', right: '3%', top: `${top}%`, height: `${panel.height}%` });
       xAxis.push({ type: 'category', gridIndex: idx, data: dates, boundaryGap: false, axisLine: { onZero: false }, min: 'dataMin', max: 'dataMax', axisLabel: { show: panel.key === 'rs' || idx === panels.length - 1 } });
-      yAxis.push({ scale: true, gridIndex: idx, splitLine: { show: panel.key !== 'macd' } });
+      const yAxisConfig = {
+        scale: true,
+        gridIndex: idx,
+        splitLine: { show: panel.key !== 'macd' },
+        axisLabel: { formatter: (value) => formatByType(value, panel.key === 'volume' ? 'volume' : panel.key) }
+      };
+      yAxis.push(yAxisConfig);
       xIndices.push(idx);
       top += panel.height + 2;
     });
@@ -212,7 +261,7 @@
     return {
       animation: false,
       legend: { top: 0 },
-      tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+      tooltip: { trigger: 'axis', axisPointer: { type: 'cross' }, formatter: buildTooltipFormatter() },
       axisPointer: { link: [{ xAxisIndex: xIndices }] },
       grid,
       xAxis,

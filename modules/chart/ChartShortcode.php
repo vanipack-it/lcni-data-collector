@@ -46,7 +46,7 @@ class LCNI_Chart_Shortcode {
         wp_register_script(
             'lcni-chart',
             plugin_dir_url(__FILE__) . 'assets/chart.js',
-            ['lcni-echarts'],
+            ['lcni-main-js', 'lcni-echarts'],
             defined('LCNI_VERSION') ? LCNI_VERSION : $chart_script_version,
             true
         );

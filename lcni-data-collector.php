@@ -22,6 +22,7 @@ require_once LCNI_PATH . 'includes/class-lcni-seed-repository.php';
 require_once LCNI_PATH . 'includes/class-lcni-history-fetcher.php';
 require_once LCNI_PATH . 'includes/class-lcni-seed-scheduler.php';
 require_once LCNI_PATH . 'includes/class-lcni-settings.php';
+require_once LCNI_PATH . 'admin/settings/DataFormatSettings.php';
 require_once LCNI_PATH . 'includes/Admin/class-lcni-chart-analyst-settings.php';
 require_once LCNI_PATH . 'includes/class-lcni-button-registry.php';
 require_once LCNI_PATH . 'includes/class-lcni-button-style-config.php';
@@ -113,6 +114,27 @@ function lcni_enqueue_stock_detail_assets() {
     wp_add_inline_script('lcni-stock-sync', 'window.LCNI_CURRENT_SYMBOL = ' . $localized_symbol . ';', 'before');
 }
 
+function lcni_register_frontend_core_assets() {
+    $formatter_path = LCNI_PATH . 'assets/js/core/formatter.js';
+    $formatter_version = file_exists($formatter_path)
+        ? (string) filemtime($formatter_path)
+        : '1.0.0';
+
+    wp_register_script(
+        'lcni-main-js',
+        LCNI_URL . 'assets/js/core/formatter.js',
+        [],
+        $formatter_version,
+        true
+    );
+
+    wp_localize_script(
+        'lcni-main-js',
+        'LCNI_FORMAT_CONFIG',
+        LCNI_Data_Format_Settings::get_settings()
+    );
+}
+
 function lcni_deactivate_plugin() {
     $incremental_timestamp = wp_next_scheduled(LCNI_CRON_HOOK);
     if ($incremental_timestamp) {
@@ -172,12 +194,14 @@ add_action(LCNI_SECDEF_DAILY_CRON_HOOK, 'lcni_run_daily_secdef_sync');
 add_action(LCNI_RULE_REBUILD_CRON_HOOK, 'lcni_run_rule_rebuild_batch');
 add_action('plugins_loaded', 'lcni_ensure_plugin_tables');
 add_action('init', 'lcni_ensure_cron_scheduled');
+add_action('wp_enqueue_scripts', 'lcni_register_frontend_core_assets', 1);
 add_action('wp_enqueue_scripts', 'lcni_enqueue_stock_detail_assets', 20);
 
 register_activation_hook(__FILE__, 'lcni_activate_plugin');
 register_deactivation_hook(__FILE__, 'lcni_deactivate_plugin');
 
 new LCNI_Settings();
+new LCNI_Data_Format_Settings();
 new LCNI_Chart_Ajax();
 new LCNI_Chart_Shortcode();
 new LCNI_Overview_Shortcode();

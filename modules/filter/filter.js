@@ -77,6 +77,29 @@
   }
   function saveVisibleColumns(cols) { try { sessionStorage.setItem(sessionKey, JSON.stringify(cols)); } catch (e) {} }
 
+
+  function inferFormatType(column) {
+    const key = String(column || '').toLowerCase();
+    if (key.indexOf('volume') !== -1 || key === 'vol') return 'volume';
+    if (key.indexOf('rsi') !== -1) return 'rsi';
+    if (key.indexOf('macd') !== -1) return 'macd';
+    if (key.indexOf('percent') !== -1 || key.indexOf('_pct') !== -1 || key.indexOf('change') !== -1) return 'percent';
+    if (key.indexOf('rs') !== -1) return 'rs';
+    if (key === 'pe' || key.indexOf('pe_') === 0) return 'pe';
+    if (key === 'pb' || key.indexOf('pb_') === 0) return 'pb';
+    return 'price';
+  }
+
+  function formatCellValue(column, value) {
+    if (value === null || value === undefined || value === '') return '-';
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return String(value);
+    if (window.LCNIFormatter && typeof window.LCNIFormatter.format === 'function') {
+      return window.LCNIFormatter.format(numeric, inferFormatType(column));
+    }
+    return String(numeric);
+  }
+
   function renderColumnPositionItems(columns, labels) {
     return columns.map((column) => {
       const checked = state.visibleColumns.includes(column);
@@ -320,7 +343,7 @@
         const stickyCount = Number(style.sticky_column_count || 1);
         const columns = state.visibleColumns.length ? state.visibleColumns : ((cfg.settings && cfg.settings.table_columns) || []);
         const sorted = sortDataset(state.dataset);
-        tbody.innerHTML = sorted.map((row) => `<tr data-symbol="${esc(row.symbol || '')}">${columns.map((column, idx) => `<td class="${idx < stickyCount ? 'is-sticky-col' : ''}">${esc(row[column])}</td>`).join('')}</tr>`).join('');
+        tbody.innerHTML = sorted.map((row) => `<tr data-symbol="${esc(row.symbol || '')}">${columns.map((column, idx) => `<td class="${idx < stickyCount ? 'is-sticky-col' : ''}">${esc(column === 'symbol' ? row[column] : formatCellValue(column, row[column]))}</td>`).join('')}</tr>`).join('');
       }
     }
     state.total = Number(payload.total || state.total || 0);

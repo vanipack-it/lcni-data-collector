@@ -59,7 +59,7 @@ class LCNI_Overview_Shortcode {
         $script_path = LCNI_PATH . 'modules/overview/assets/overview.js';
         $version = file_exists($script_path) ? (string) filemtime($script_path) : self::VERSION;
 
-        wp_register_script('lcni-stock-overview', LCNI_URL . 'modules/overview/assets/overview.js', ['lcni-stock-sync'], $version, true);
+        wp_register_script('lcni-stock-overview', LCNI_URL . 'modules/overview/assets/overview.js', ['lcni-main-js', 'lcni-stock-sync'], $version, true);
         wp_register_style('lcni-stock-overview', LCNI_URL . 'modules/overview/assets/overview.css', [], $version);
     }
 
