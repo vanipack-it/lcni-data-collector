@@ -101,6 +101,11 @@ class LCNI_FilterShortcode {
         }
 
         $row_font_size = isset($style['row_font_size']) ? trim((string) $style['row_font_size']) : '';
+        $header_row_height = isset($style['table_header_row_height']) ? trim((string) $style['table_header_row_height']) : '';
+        $header_height_rule = '';
+        if ($header_row_height !== '' && preg_match('/^\d+(\.\d+)?$/', $header_row_height)) {
+            $header_height_rule = 'height:' . $header_row_height . 'px;';
+        }
         $row_rule = '';
         if ($row_font_size !== '' && preg_match('/^\d+(\.\d+)?$/', $row_font_size)) {
             $row_rule = 'font-size:' . $row_font_size . 'px;';
@@ -113,6 +118,9 @@ class LCNI_FilterShortcode {
         }
         if ($row_rule !== '') {
             $css .= '.lcni-filter-module .lcni-table td{' . $row_rule . "}\n";
+        }
+        if ($header_height_rule !== '') {
+            $css .= '.lcni-filter-module .lcni-table th{' . $header_height_rule . "}\n";
         }
 
         return $css;

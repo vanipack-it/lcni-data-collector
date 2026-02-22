@@ -60,6 +60,7 @@ class LCNI_FilterTable {
                 'table_row_divider_width' => max(0, min(6, (int) ($style['table_row_divider_width'] ?? 1))),
                 'sticky_column_count' => max(0, min(5, (int) ($style['sticky_column_count'] ?? 1))),
                 'sticky_header_rows' => max(0, min(2, (int) ($style['sticky_header_rows'] ?? 1))),
+                'table_header_row_height' => max(28, min(80, (int) ($style['table_header_row_height'] ?? 42))),
                 'row_hover_background' => sanitize_hex_color((string) ($style['row_hover_background'] ?? '#eef2ff')) ?: '#eef2ff',
                 'conditional_value_colors' => is_string($style['conditional_value_colors'] ?? null) ? (string) $style['conditional_value_colors'] : '[]',
             ],
@@ -117,7 +118,7 @@ class LCNI_FilterTable {
 
         $filters = $this->sanitize_filters(isset($args['filters']) ? $args['filters'] : [], $settings['criteria_columns']);
         $page = max(1, (int) ($args['page'] ?? 1));
-        $limit = max(10, min(200, (int) ($args['limit'] ?? 50)));
+        $limit = max(10, min(10000, (int) ($args['limit'] ?? 50)));
         $offset = ($page - 1) * $limit;
 
         $items = $this->repository->getFiltered($filters, $columns, $limit, $offset);
