@@ -75,10 +75,11 @@ class LCNI_Chart_Shortcode {
         wp_enqueue_style('lcni-chart-ui');
 
         return sprintf(
-            '<div data-lcni-chart data-lcni-symbol="%1$s" data-lcni-limit="%2$d" data-lcni-height="%3$d"></div>',
+            '<div data-lcni-chart data-lcni-symbol="%1$s" data-lcni-limit="%2$d" data-lcni-height="%3$d" data-lcni-candles-endpoint="%4$s"></div>',
             esc_attr($symbol),
             (int) $limit,
-            (int) $height
+            (int) $height,
+            esc_url(rest_url('lcni/v1/candles'))
         );
     }
 

@@ -160,20 +160,72 @@
     state.errorNode.style.display = 'flex';
   };
 
-  const getCandles = async function getCandles(symbol, limit, signal) {
-    const context = windowObject.LCNIStockContext;
+  const getErrorMessage = function getErrorMessage(error, fallback) {
+    if (!error) {
+      return fallback;
+    }
+
+    if (typeof error === 'string' && error.trim()) {
+      return error.trim();
+    }
+
+    if (typeof error.message === 'string' && error.message.trim()) {
+      return error.message.trim();
+    }
+
+    const restMessage = error && error.data && typeof error.data.message === 'string'
+      ? error.data.message
+      : '';
+
+    if (restMessage.trim()) {
+      return restMessage.trim();
+    }
+
+    return fallback;
+  };
+
+  const buildCandlesEndpoint = function buildCandlesEndpoint(container, symbol, limit) {
     const safeLimit = parseLimit(limit);
-    const endpoint = '/wp-json/lcni/v1/candles?symbol=' + encodeURIComponent(symbol) + '&limit=' + safeLimit;
+    const explicitEndpoint = String(container.dataset.lcniCandlesEndpoint || '').trim();
+    const endpointBase = explicitEndpoint || '/wp-json/lcni/v1/candles';
+
+    try {
+      const url = new URL(endpointBase, windowObject.location.origin);
+      url.searchParams.set('symbol', symbol);
+      url.searchParams.set('limit', String(safeLimit));
+
+      return {
+        cacheKey: 'candles:' + symbol + ':' + safeLimit,
+        requestPath: url.pathname + url.search
+      };
+    } catch (_error) {
+      return {
+        cacheKey: 'candles:' + symbol + ':' + safeLimit,
+        requestPath: '/wp-json/lcni/v1/candles?symbol=' + encodeURIComponent(symbol) + '&limit=' + safeLimit
+      };
+    }
+  };
+
+  const getCandles = async function getCandles(container, symbol, limit, signal) {
+    const context = windowObject.LCNIStockContext;
+    const requestInfo = buildCandlesEndpoint(container, symbol, limit);
 
     if (context && typeof context.fetchJson === 'function') {
-      const cacheKey = 'candles:' + symbol + ':' + safeLimit;
-      const payload = await context.fetchJson(cacheKey, endpoint, { signal: signal });
+      const payload = await context.fetchJson(requestInfo.cacheKey, requestInfo.requestPath, { signal: signal });
       return unwrapCandlesPayload(payload);
     }
 
-    const response = await windowObject.fetch(endpoint, { signal: signal });
+    const response = await windowObject.fetch(requestInfo.requestPath, { signal: signal });
     if (!response.ok) {
-      throw new Error('Fetch failed');
+      let serverMessage = '';
+      try {
+        const errorPayload = await response.json();
+        serverMessage = getErrorMessage(errorPayload, '');
+      } catch (_error) {
+        serverMessage = '';
+      }
+
+      throw new Error(serverMessage || ('HTTP ' + response.status));
     }
 
     const payload = await response.json();
@@ -184,11 +236,14 @@
     await loadEchartsRuntime();
     const engineFactory = windowObject.LCNIChartEchartsEngine;
     const echarts = windowObject.echarts;
+    const state = ensureState(container);
+
     if (!engineFactory || typeof engineFactory.createChart !== 'function' || !echarts) {
+      setLoading(state, false);
+      setError(state, 'Không thể khởi tạo biểu đồ. Vui lòng tải lại trang.');
       return;
     }
 
-    const state = ensureState(container);
     const limit = parseLimit(container.dataset.lcniLimit || '200');
 
     if (state.abortController) {
@@ -203,7 +258,7 @@
     setLoading(state, true);
 
     try {
-      const candles = await getCandles(symbol, limit, state.abortController.signal);
+      const candles = await getCandles(container, symbol, limit, state.abortController.signal);
 
       if (requestId !== state.requestId) {
         return;
@@ -214,7 +269,7 @@
       }
 
       if (!state.engine || !candles.length) {
-        setError(state, 'No data');
+        setError(state, 'Không có dữ liệu để hiển thị biểu đồ cho mã này.');
         return;
       }
 
@@ -225,7 +280,7 @@
         return;
       }
       if (requestId === state.requestId) {
-        setError(state, 'Không thể tải dữ liệu biểu đồ.');
+        setError(state, getErrorMessage(error, 'Không thể tải dữ liệu biểu đồ.'));
       }
     } finally {
       if (requestId === state.requestId) {
@@ -249,6 +304,10 @@
 
       if (initialSymbol) {
         renderContainer(container, initialSymbol);
+      } else {
+        const state = ensureState(container);
+        setLoading(state, false);
+        setError(state, 'Thiếu mã cổ phiếu để tải biểu đồ.');
       }
     });
 
