@@ -2,7 +2,7 @@
 /*
 Plugin Name: LCNI Data Collector
 Description: LCNI Market Data Engine: lấy nến, lưu DB, cron auto update
-Version: 2.0.6
+Version: 2.0.7
 */
 
 if (!defined('ABSPATH')) {
@@ -93,6 +93,25 @@ function lcni_ensure_cron_scheduled() {
     }
 }
 
+
+function lcni_enqueue_stock_detail_assets() {
+    if (!is_page_template('page-stock-detail.php')) {
+        return;
+    }
+
+    $symbol = lcni_get_current_symbol();
+    $localized_symbol = wp_json_encode($symbol !== '' ? $symbol : null);
+
+    wp_enqueue_script('lcni-stock-overview');
+    wp_enqueue_style('lcni-stock-overview');
+    wp_enqueue_script('lcni-chart');
+    wp_enqueue_style('lcni-chart-ui');
+    wp_enqueue_script('lcni-stock-signals');
+    wp_enqueue_style('lcni-stock-signals');
+
+    wp_add_inline_script('lcni-stock-sync', 'window.LCNI_CURRENT_SYMBOL = ' . $localized_symbol . ';', 'before');
+}
+
 function lcni_deactivate_plugin() {
     $incremental_timestamp = wp_next_scheduled(LCNI_CRON_HOOK);
     if ($incremental_timestamp) {
@@ -152,6 +171,7 @@ add_action(LCNI_SECDEF_DAILY_CRON_HOOK, 'lcni_run_daily_secdef_sync');
 add_action(LCNI_RULE_REBUILD_CRON_HOOK, 'lcni_run_rule_rebuild_batch');
 add_action('plugins_loaded', 'lcni_ensure_plugin_tables');
 add_action('init', 'lcni_ensure_cron_scheduled');
+add_action('wp_enqueue_scripts', 'lcni_enqueue_stock_detail_assets', 20);
 
 register_activation_hook(__FILE__, 'lcni_activate_plugin');
 register_deactivation_hook(__FILE__, 'lcni_deactivate_plugin');

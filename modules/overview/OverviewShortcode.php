@@ -6,7 +6,7 @@ if (!defined('ABSPATH')) {
 
 class LCNI_Overview_Shortcode {
 
-    const VERSION = '2.0.6';
+    const VERSION = '2.0.7';
 
     const DEFAULT_FIELDS = [
         'symbol',
@@ -51,10 +51,15 @@ class LCNI_Overview_Shortcode {
     }
 
     public function register_assets() {
+        $sync_script_path = LCNI_PATH . 'assets/js/lcni-stock-sync.js';
+        $sync_version = file_exists($sync_script_path) ? (string) filemtime($sync_script_path) : self::VERSION;
+
+        wp_register_script('lcni-stock-sync', LCNI_URL . 'assets/js/lcni-stock-sync.js', [], $sync_version, true);
+
         $script_path = LCNI_PATH . 'modules/overview/assets/overview.js';
         $version = file_exists($script_path) ? (string) filemtime($script_path) : self::VERSION;
 
-        wp_register_script('lcni-stock-overview', LCNI_URL . 'modules/overview/assets/overview.js', [], $version, true);
+        wp_register_script('lcni-stock-overview', LCNI_URL . 'modules/overview/assets/overview.js', ['lcni-stock-sync'], $version, true);
         wp_register_style('lcni-stock-overview', LCNI_URL . 'modules/overview/assets/overview.css', [], $version);
     }
 
@@ -63,7 +68,7 @@ class LCNI_Overview_Shortcode {
             'symbol' => '',
         ], $atts, 'lcni_stock_overview');
 
-        $symbol = $this->sanitize_symbol($atts['symbol']);
+        $symbol = lcni_get_current_symbol($atts['symbol']);
         if ($symbol === '') {
             return '';
         }
@@ -71,19 +76,7 @@ class LCNI_Overview_Shortcode {
         wp_enqueue_script('lcni-stock-overview');
         wp_enqueue_style('lcni-stock-overview');
 
-        return sprintf(
-            '<div data-lcni-overview data-symbol="%1$s"></div>',
-            esc_attr($symbol)
-        );
-    }
-
-    private function sanitize_symbol($symbol) {
-        $symbol = strtoupper(sanitize_text_field((string) $symbol));
-        if ($symbol === '') {
-            return '';
-        }
-
-        return preg_match('/^[A-Z0-9._-]{1,15}$/', $symbol) === 1 ? $symbol : '';
+        return '<div data-lcni-overview></div>';
     }
 }
 

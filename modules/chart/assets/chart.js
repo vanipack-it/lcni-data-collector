@@ -4,61 +4,29 @@
   }
   window.__lcniChartInitialized = true;
 
-  document.addEventListener('DOMContentLoaded', async () => {
+  const initChart = async (symbol) => {
     const containers = document.querySelectorAll('[data-lcni-chart]');
     if (!containers.length) {
       return;
     }
 
-    const renderNoData = (container) => {
-      container.textContent = 'No data';
-    };
+    const context = window.LCNIStockContext;
+    const cacheKey = `candles:${symbol}`;
 
-    const parseCandles = (payload) => {
-      if (Array.isArray(payload)) {
-        return payload;
-      }
-      if (Array.isArray(payload?.candles)) {
-        return payload.candles;
-      }
-      return [];
-    };
+    try {
+      const payload = await context.fetchJson(cacheKey, `/wp-json/lcni/v1/candles?symbol=${encodeURIComponent(symbol)}&limit=200`);
+      const candles = Array.isArray(payload) ? payload : (Array.isArray(payload?.candles) ? payload.candles : []);
 
-    await Promise.all(Array.from(containers).map(async (container) => {
-      if (container.dataset.lcniInitialized === '1') {
-        return;
-      }
-      container.dataset.lcniInitialized = '1';
-
-      const symbol = String(container.dataset.symbol || '').toUpperCase().trim();
-      const limit = Number(container.dataset.limit || 200);
-
-      if (!symbol) {
-        renderNoData(container);
-        return;
-      }
-
-      try {
-        const response = await fetch(`/wp-json/lcni/v1/candles?symbol=${encodeURIComponent(symbol)}&limit=${encodeURIComponent(limit)}`, {
-          credentials: 'same-origin'
-        });
-
-        if (!response.ok) {
-          renderNoData(container);
-          return;
-        }
-
-        const payload = await response.json();
-        const candles = parseCandles(payload);
+      containers.forEach((container) => {
         if (!candles.length || typeof LightweightCharts === 'undefined') {
-          renderNoData(container);
+          container.textContent = 'No data';
           return;
         }
 
         container.innerHTML = '';
         const chartRoot = document.createElement('div');
         chartRoot.style.width = '100%';
-        chartRoot.style.height = `${Number(container.dataset.mainHeight || 420)}px`;
+        chartRoot.style.height = '420px';
         container.appendChild(chartRoot);
 
         const chart = LightweightCharts.createChart(chartRoot, {
@@ -69,9 +37,31 @@
         const candleSeries = chart.addCandlestickSeries();
         candleSeries.setData(candles);
         chart.timeScale().fitContent();
-      } catch (error) {
-        renderNoData(container);
+      });
+    } catch (error) {
+      containers.forEach((container) => {
+        container.textContent = 'No data';
+      });
+    }
+  };
+
+  document.addEventListener('DOMContentLoaded', function () {
+    const context = window.LCNIStockContext;
+    if (!context) {
+      return;
+    }
+
+    const symbol = context.getCurrentSymbol();
+    if (!symbol) return;
+
+    initChart(symbol);
+
+    document.addEventListener('lcni:symbolChange', (event) => {
+      const nextSymbol = context.normalizeSymbol(event?.detail?.symbol || '');
+      if (!nextSymbol) {
+        return;
       }
-    }));
+      initChart(nextSymbol);
+    });
   });
 })();

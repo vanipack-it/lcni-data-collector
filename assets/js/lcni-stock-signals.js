@@ -4,22 +4,12 @@ document.addEventListener("DOMContentLoaded", () => {
     return;
   }
 
-  const stockSyncUtils = window.LCNIStockSyncUtils || null;
-  const sanitizeSymbol = stockSyncUtils
-    ? stockSyncUtils.sanitizeSymbol
-    : (value) => {
-      const symbol = String(value || "").toUpperCase().trim();
-      return /^[A-Z0-9._-]{1,15}$/.test(symbol) ? symbol : "";
-    };
+  const context = window.LCNIStockContext;
+  if (!context) {
+    return;
+  }
 
-  const stockSync = stockSyncUtils
-    ? stockSyncUtils.createStockSync()
-    : {
-      subscribe() {},
-      setSymbol() {},
-      getCurrentSymbol() { return ""; },
-      configureQueryParam() {}
-    };
+  const sanitizeSymbol = context.normalizeSymbol;
 
   const labels = {
     xay_nen: "Nền giá",
@@ -211,23 +201,13 @@ document.addEventListener("DOMContentLoaded", () => {
       : defaultFields;
     const styles = adminConfig?.styles || {};
 
-    stockSync.configureQueryParam(queryParam);
-
     let selectedFields = await loadSettings(settingsApi, allowedFields);
     selectedFields = selectedFields.filter((field) => allowedFields.includes(field));
     if (!selectedFields.length) {
       selectedFields = allowedFields;
     }
 
-    const resolveSymbol = () => {
-      if (fixedSymbol) {
-        return fixedSymbol;
-      }
-
-      const query = new URLSearchParams(window.location.search);
-      const symbolFromQuery = queryParam ? sanitizeSymbol(query.get(queryParam)) : "";
-      return stockSync.getCurrentSymbol() || symbolFromQuery || "";
-    };
+    const resolveSymbol = () => fixedSymbol || context.getCurrentSymbol() || '';
 
     const render = async (symbol) => {
       if (!symbol || !apiBase) {
@@ -236,12 +216,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       try {
-        const response = await fetch(`${apiBase}?symbol=${encodeURIComponent(symbol)}`, { credentials: "same-origin" });
-        if (!response.ok) {
-          throw new Error("request failed");
-        }
-
-        const payload = await response.json();
+        const payload = await context.fetchJson(`signals:${symbol}`, `${apiBase}?symbol=${encodeURIComponent(symbol)}`);
 
         container.innerHTML = "";
         const wrap = document.createElement("div");
@@ -331,18 +306,19 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     };
 
-    const initialSymbol = resolveSymbol();
-    if (initialSymbol && !stockSync.getCurrentSymbol()) {
-      stockSync.setSymbol(initialSymbol, { source: "signals-init", pushState: false });
-    }
-
     render(resolveSymbol());
 
-    stockSync.subscribe((symbol) => {
-      if (fixedSymbol || !symbol) {
+    document.addEventListener('lcni:symbolChange', (event) => {
+      if (fixedSymbol) {
         return;
       }
-      render(symbol);
+
+      const nextSymbol = sanitizeSymbol(event?.detail?.symbol || '');
+      if (!nextSymbol) {
+        return;
+      }
+
+      render(nextSymbol);
     });
   });
 });
