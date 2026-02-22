@@ -273,7 +273,7 @@ class LCNI_WatchlistService {
                 'row_divider_color' => sanitize_hex_color($styles['row_divider_color'] ?? '#e5e7eb') ?: '#e5e7eb',
                 'row_divider_width' => max(1, min(6, (int) ($styles['row_divider_width'] ?? 1))),
                 'row_hover_bg' => sanitize_hex_color($styles['row_hover_bg'] ?? '#f3f4f6') ?: '#f3f4f6',
-                'head_height' => max(30, min(80, (int) ($styles['head_height'] ?? 40))),
+                'head_height' => max(1, min(240, (int) ($styles['head_height'] ?? 40))),
                 'sticky_column' => sanitize_key($styles['sticky_column'] ?? 'symbol'),
                 'sticky_header' => !empty($styles['sticky_header']) ? 1 : 0,
                 'dropdown_height' => max(28, min(60, (int) ($styles['dropdown_height'] ?? 34))),
@@ -284,6 +284,7 @@ class LCNI_WatchlistService {
                 'input_font_size' => max(10, min(24, (int) ($styles['input_font_size'] ?? 13))),
                 'input_border_color' => sanitize_hex_color($styles['input_border_color'] ?? '#d1d5db') ?: '#d1d5db',
                 'input_border_radius' => max(0, min(24, (int) ($styles['input_border_radius'] ?? 8))),
+                'scroll_speed' => max(1, min(5, (int) ($styles['scroll_speed'] ?? 1))),
                 'column_order' => array_values(array_map('sanitize_key', is_array($styles['column_order'] ?? null) ? $styles['column_order'] : [])),
             ],
             'value_color_rules' => array_values(array_filter(array_map(static function ($rule) {

@@ -334,6 +334,7 @@ class LCNI_Settings {
                             'input_font_size' => isset($_POST['lcni_frontend_watchlist_style_input_font_size']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_input_font_size']) : 13,
                             'input_border_color' => isset($_POST['lcni_frontend_watchlist_style_input_border_color']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_input_border_color']) : '',
                             'input_border_radius' => isset($_POST['lcni_frontend_watchlist_style_input_border_radius']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_input_border_radius']) : 8,
+                            'scroll_speed' => isset($_POST['lcni_frontend_watchlist_style_scroll_speed']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_scroll_speed']) : 1,
                         ];
                         $input['value_color_rule_columns'] = isset($_POST['lcni_watchlist_value_color_rule_column']) ? (array) wp_unslash($_POST['lcni_watchlist_value_color_rule_column']) : [];
                         $input['value_color_rule_operators'] = isset($_POST['lcni_watchlist_value_color_rule_operator']) ? (array) wp_unslash($_POST['lcni_watchlist_value_color_rule_operator']) : [];
@@ -1915,7 +1916,7 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
                     <p><label>Row divider color <input type="color" name="lcni_frontend_watchlist_style_row_divider_color" value="<?php echo esc_attr((string) ($settings['styles']['row_divider_color'] ?? '#e5e7eb')); ?>"></label></p>
                     <p><label>Row divider width <input type="number" min="1" max="6" name="lcni_frontend_watchlist_style_row_divider_width" value="<?php echo esc_attr((string) ($settings['styles']['row_divider_width'] ?? 1)); ?>"> px</label></p>
                     <p><label>Row hover background <input type="color" name="lcni_frontend_watchlist_style_row_hover_bg" value="<?php echo esc_attr((string) ($settings['styles']['row_hover_bg'] ?? '#f3f4f6')); ?>"></label></p>
-                    <p><label>Header row height <input type="number" min="30" max="80" name="lcni_frontend_watchlist_style_head_height" value="<?php echo esc_attr((string) ($settings['styles']['head_height'] ?? 40)); ?>"> px</label></p>
+                    <p><label>Header row height <input type="number" min="1" max="240" name="lcni_frontend_watchlist_style_head_height" value="<?php echo esc_attr((string) ($settings['styles']['head_height'] ?? 40)); ?>"> px</label></p>
                     <p><label>Sticky column
                         <select name="lcni_frontend_watchlist_style_sticky_column">
                             <option value="first" <?php selected((string) ($settings['styles']['sticky_column'] ?? 'symbol'), 'first'); ?>>First column</option>
@@ -1935,6 +1936,7 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
                     <p><label>Font size <input type="number" min="10" max="24" name="lcni_frontend_watchlist_style_input_font_size" value="<?php echo esc_attr((string) ($settings['styles']['input_font_size'] ?? 13)); ?>"> px</label></p>
                     <p><label>Border color <input type="color" name="lcni_frontend_watchlist_style_input_border_color" value="<?php echo esc_attr((string) ($settings['styles']['input_border_color'] ?? '#d1d5db')); ?>"></label></p>
                     <p><label>Border radius <input type="number" min="0" max="24" name="lcni_frontend_watchlist_style_input_border_radius" value="<?php echo esc_attr((string) ($settings['styles']['input_border_radius'] ?? 8)); ?>"> px</label></p>
+                    <p><label>Table horizontal scroll speed <input type="number" min="1" max="5" name="lcni_frontend_watchlist_style_scroll_speed" value="<?php echo esc_attr((string) ($settings['styles']['scroll_speed'] ?? 1)); ?>"></label></p>
 
                     <h3>Conditional value colors</h3>
                     <p class="description">Mặc định hiển thị 5 rule. Nếu cần thêm, bấm nút "Thêm rule".</p>

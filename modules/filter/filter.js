@@ -78,33 +78,14 @@
   function saveVisibleColumns(cols) { try { sessionStorage.setItem(sessionKey, JSON.stringify(cols)); } catch (e) {} }
 
   function renderColumnPositionItems(columns, labels) {
-    const selected = state.visibleColumns.length ? state.visibleColumns : columns;
-    const selectedOrder = {};
-    selected.forEach((column, index) => {
-      selectedOrder[column] = index + 1;
-    });
-
     return columns.map((column) => {
       const checked = state.visibleColumns.includes(column);
-      const position = checked ? selectedOrder[column] : '';
-      return `<label class="lcni-column-option"><input type="checkbox" data-visible-col value="${esc(column)}" ${checked ? 'checked' : ''}> <span>${esc(labels[column] || column)}</span> <input type="number" min="1" step="1" class="lcni-column-position" data-col-position="${esc(column)}" value="${position}" ${checked ? '' : 'disabled'}></label>`;
+      return `<label class="lcni-column-option"><input type="checkbox" data-visible-col value="${esc(column)}" ${checked ? 'checked' : ''}> <span>${esc(labels[column] || column)}</span></label>`;
     }).join('');
   }
 
   function collectVisibleColumns(host) {
-    const rows = Array.from(host.querySelectorAll('[data-visible-col]')).map((node) => {
-      const column = node.value;
-      const isChecked = node.checked;
-      const positionInput = Array.from(host.querySelectorAll('[data-col-position]')).find((node) => node.getAttribute('data-col-position') === column);
-      const position = Number(positionInput && positionInput.value ? positionInput.value : Number.MAX_SAFE_INTEGER);
-      return { column, isChecked, position };
-    });
-
-    const selected = rows
-      .filter((item) => item.isChecked)
-      .sort((a, b) => a.position - b.position)
-      .map((item) => item.column);
-
+    const selected = Array.from(host.querySelectorAll('[data-visible-col]:checked')).map((node) => node.value);
     if (!selected.includes('symbol')) selected.unshift('symbol');
     return selected;
   }
@@ -287,6 +268,7 @@
     host.style.setProperty('--lcni-row-divider-width', `${Number(style.table_row_divider_width || 1)}px`);
     host.style.setProperty('--lcni-row-hover-bg', String(style.row_hover_background || '#eef2ff'));
     host.style.setProperty('--lcni-table-header-height', `${Number(style.table_header_row_height || 42)}px`);
+    host.style.setProperty('--lcni-table-scroll-speed', String(Number(style.table_scroll_speed || 1)));
     host.classList.toggle('lcni-disable-sticky-header', Number(style.sticky_header_rows || 1) < 1);
 
     const hideBtn = style.enable_hide_button ? `<button type="button" class="lcni-btn lcni-btn-btn_filter_hide lcni-filter-hide-btn" data-filter-hide>${renderButtonContent('btn_filter_hide', 'Ẩn')}</button>` : '';
@@ -297,6 +279,7 @@
     const selectable = settings.table_columns || columns;
     host.querySelector('[data-column-pop]').innerHTML = `${renderColumnPositionItems(selectable, labels)}<button type="button" class="lcni-btn lcni-btn-btn_save_filter" data-save-columns>${renderButtonContent('btn_save_filter', 'Save')}</button>`;
 
+    bindHorizontalScrollLock(host);
     applyDefaultFilterConfig(host);
     if (state.filters.length) applySavedFilterConfig(host, { filters: state.filters });
   }
@@ -337,7 +320,7 @@
         const stickyCount = Number(style.sticky_column_count || 1);
         const columns = state.visibleColumns.length ? state.visibleColumns : ((cfg.settings && cfg.settings.table_columns) || []);
         const sorted = sortDataset(state.dataset);
-        tbody.innerHTML = sorted.map((row) => `<tr>${columns.map((column, idx) => `<td class="${idx < stickyCount ? 'is-sticky-col' : ''}">${esc(row[column])}</td>`).join('')}</tr>`).join('');
+        tbody.innerHTML = sorted.map((row) => `<tr data-symbol="${esc(row.symbol || '')}">${columns.map((column, idx) => `<td class="${idx < stickyCount ? 'is-sticky-col' : ''}">${esc(row[column])}</td>`).join('')}</tr>`).join('');
       }
     }
     state.total = Number(payload.total || state.total || 0);
@@ -351,6 +334,24 @@
     if (!tbody) return;
     const payload = await api({ mode: 'refresh', page: state.page, limit: state.limit, filters: state.filters, visible_columns: state.visibleColumns });
     tbody.innerHTML = payload.rows || '';
+  }
+
+
+  function bindHorizontalScrollLock(host) {
+    const wrap = host.querySelector('.lcni-table-scroll');
+    if (!wrap || wrap.dataset.scrollLockBound === '1') return;
+    wrap.dataset.scrollLockBound = '1';
+    wrap.addEventListener('wheel', (event) => {
+      const speed = Number((cfg.settings && cfg.settings.style && cfg.settings.style.table_scroll_speed) || host.style.getPropertyValue('--lcni-table-scroll-speed') || 1) || 1;
+      const deltaX = (event.deltaX || 0) + ((event.shiftKey ? event.deltaY : 0) * speed);
+      if (!deltaX) return;
+      const maxLeft = wrap.scrollWidth - wrap.clientWidth;
+      const nextLeft = wrap.scrollLeft + deltaX;
+      if (maxLeft > 0 && nextLeft >= 0 && nextLeft <= maxLeft) {
+        wrap.scrollLeft = nextLeft;
+        event.preventDefault();
+      }
+    }, { passive: false });
   }
 
   function bind(host) {
@@ -464,16 +465,7 @@
         }
       }
       if (event.target.matches('[data-visible-col]')) state.columnPanelOpen = true;
-      const columnCheckbox = event.target.closest('[data-visible-col]');
-      if (columnCheckbox) {
-        const column = columnCheckbox.value;
-        const input = Array.from(host.querySelectorAll('[data-col-position]')).find((node) => node.getAttribute('data-col-position') === column);
-        if (input) {
-          input.disabled = !columnCheckbox.checked;
-          if (columnCheckbox.checked && !input.value) input.value = String(host.querySelectorAll('[data-visible-col]:checked').length);
-        }
-      }
-      if (event.target.matches('input[type="checkbox"], input[type="number"]')) updateCriteriaSelectionState(host);
+      if (event.target.matches('input[type="checkbox"]')) updateCriteriaSelectionState(host);
     });
   }
 

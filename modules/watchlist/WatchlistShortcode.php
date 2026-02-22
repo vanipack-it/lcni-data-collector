@@ -41,7 +41,7 @@ class LCNI_WatchlistShortcode {
 
         $styles = (array) ($this->get_settings()['styles'] ?? []);
         $style_attr = sprintf(
-            '--lcni-watchlist-label-font-size:%1$dpx;--lcni-watchlist-row-font-size:%2$dpx;--lcni-watchlist-header-bg:%3$s;--lcni-watchlist-header-color:%4$s;--lcni-watchlist-value-bg:%5$s;--lcni-watchlist-value-color:%6$s;--lcni-watchlist-row-divider-color:%7$s;--lcni-watchlist-row-divider-width:%8$dpx;--lcni-watchlist-row-hover-bg:%9$s;--lcni-watchlist-head-height:%10$dpx;--lcni-watchlist-dropdown-height:%11$dpx;--lcni-watchlist-dropdown-font-size:%12$dpx;--lcni-watchlist-dropdown-border-color:%13$s;--lcni-watchlist-dropdown-radius:%14$dpx;--lcni-watchlist-input-height:%15$dpx;--lcni-watchlist-input-font-size:%16$dpx;--lcni-watchlist-input-border-color:%17$s;--lcni-watchlist-input-radius:%18$dpx;',
+            '--lcni-watchlist-label-font-size:%1$dpx;--lcni-watchlist-row-font-size:%2$dpx;--lcni-watchlist-header-bg:%3$s;--lcni-watchlist-header-color:%4$s;--lcni-watchlist-value-bg:%5$s;--lcni-watchlist-value-color:%6$s;--lcni-watchlist-row-divider-color:%7$s;--lcni-watchlist-row-divider-width:%8$dpx;--lcni-watchlist-row-hover-bg:%9$s;--lcni-watchlist-head-height:%10$dpx;--lcni-watchlist-dropdown-height:%11$dpx;--lcni-watchlist-dropdown-font-size:%12$dpx;--lcni-watchlist-dropdown-border-color:%13$s;--lcni-watchlist-dropdown-radius:%14$dpx;--lcni-watchlist-input-height:%15$dpx;--lcni-watchlist-input-font-size:%16$dpx;--lcni-watchlist-input-border-color:%17$s;--lcni-watchlist-input-radius:%18$dpx;--lcni-watchlist-scroll-speed:%19$s;',
             max(10, min(30, (int) ($styles['label_font_size'] ?? 12))),
             max(10, min(30, (int) ($styles['row_font_size'] ?? 13))),
             esc_attr((string) ($styles['header_background'] ?? '#ffffff')),
@@ -51,7 +51,7 @@ class LCNI_WatchlistShortcode {
             esc_attr((string) ($styles['row_divider_color'] ?? '#e5e7eb')),
             max(1, min(6, (int) ($styles['row_divider_width'] ?? 1))),
             esc_attr((string) ($styles['row_hover_bg'] ?? '#f3f4f6')),
-            max(30, min(80, (int) ($styles['head_height'] ?? 40))),
+            max(1, min(240, (int) ($styles['head_height'] ?? 40))),
             max(28, min(60, (int) ($styles['dropdown_height'] ?? 34))),
             max(10, min(24, (int) ($styles['dropdown_font_size'] ?? 13))),
             esc_attr((string) ($styles['dropdown_border_color'] ?? '#d1d5db')),
@@ -59,7 +59,8 @@ class LCNI_WatchlistShortcode {
             max(28, min(60, (int) ($styles['input_height'] ?? 34))),
             max(10, min(24, (int) ($styles['input_font_size'] ?? 13))),
             esc_attr((string) ($styles['input_border_color'] ?? '#d1d5db')),
-            max(0, min(24, (int) ($styles['input_border_radius'] ?? 8)))
+            max(0, min(24, (int) ($styles['input_border_radius'] ?? 8))),
+            esc_attr((string) max(1, min(5, (int) ($styles['scroll_speed'] ?? 1))))
         );
 
         return sprintf('<div class="lcni-watchlist" data-lcni-watchlist style="%s"></div>', esc_attr($style_attr));
@@ -174,6 +175,7 @@ class LCNI_WatchlistShortcode {
                 'input_font_size' => 13,
                 'input_border_color' => '#d1d5db',
                 'input_border_radius' => 8,
+                'scroll_speed' => 1,
                 'column_order' => [],
             ],
             'value_color_rules' => [],

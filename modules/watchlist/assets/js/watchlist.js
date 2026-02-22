@@ -164,6 +164,24 @@
     return order;
   }
 
+
+  function bindHorizontalScrollLock(host) {
+    const wrap = host.querySelector('.lcni-watchlist-table-wrap');
+    if (!wrap || wrap.dataset.scrollLockBound === '1') return;
+    wrap.dataset.scrollLockBound = '1';
+    wrap.addEventListener('wheel', (event) => {
+      const speed = Number(wrap.dataset.scrollSpeed || 1) || 1;
+      const deltaX = (event.deltaX || 0) + ((event.shiftKey ? event.deltaY : 0) * speed);
+      if (!deltaX) return;
+      const maxLeft = wrap.scrollWidth - wrap.clientWidth;
+      const nextLeft = wrap.scrollLeft + deltaX;
+      if (maxLeft > 0 && nextLeft >= 0 && nextLeft <= maxLeft) {
+        wrap.scrollLeft = nextLeft;
+        event.preventDefault();
+      }
+    }, { passive: false });
+  }
+
   function renderTable(host, data) {
     const allowed = Array.isArray(data.allowed_columns) ? data.allowed_columns : [];
     const columns = Array.isArray(data.columns) ? data.columns : [];
@@ -174,6 +192,7 @@
     const stickyColumn = String(styles.sticky_column || 'symbol');
     const stickyHeader = String(styles.sticky_header || '1') !== '0';
     const rowHoverBg = String(styles.row_hover_bg || '#f3f4f6');
+    const scrollSpeed = Number(styles.scroll_speed || 1);
     const columnOrder = parseColumnOrder(styles.column_order || [], columns, allowed);
     const orderedColumns = columnOrder.length ? columnOrder : columns;
     const valueColorRules = Array.isArray(settings.value_color_rules) ? settings.value_color_rules : [];
@@ -184,8 +203,8 @@
       <div class="lcni-watchlist-header"><strong>Watchlist</strong>
       <div class="lcni-watchlist-list-controls"><select data-watchlist-select>${(Array.isArray(data.watchlists)?data.watchlists:[]).map((w)=>`<option value="${Number(w.id||0)}" ${(Number(w.id||0)===Number(data.active_watchlist_id||0))?'selected':''}>${esc(w.name||'')}</option>`).join('')}</select><input type="text" class="lcni-watchlist-symbol-input" data-watchlist-symbol-input placeholder="Nhập mã" /><button type="button" class="lcni-btn lcni-btn-btn_watchlist_add_symbol lcni-watchlist-add-btn" data-watchlist-add-btn>${renderButtonContent('btn_watchlist_add_symbol', 'Thêm')}</button><button type="button" class="lcni-btn lcni-btn-btn_watchlist_new" data-watchlist-create>${renderButtonContent('btn_watchlist_new', '+ New')}</button><button type="button" class="lcni-btn lcni-btn-btn_watchlist_delete" data-watchlist-delete>${renderButtonContent('btn_watchlist_delete', 'Delete')}</button></div>
       <div class="lcni-watchlist-dropdown"><button type="button" class="lcni-watchlist-settings-btn lcni-btn lcni-btn-btn_watchlist_setting" data-watchlist-settings aria-expanded="false">${renderButtonContent('btn_watchlist_setting', '')}</button>
-      <div class="lcni-watchlist-controls"><div class="lcni-watchlist-col-grid">${allowed.map((c) => `<label class="lcni-watchlist-col-item" draggable="true" data-col-item="${esc(c)}"><span class="lcni-drag-handle">↕</span><input type="checkbox" data-col-toggle value="${esc(c)}" ${orderedColumns.includes(c) ? 'checked' : ''}> ${esc(labels[c] || c)}</label>`).join('')}</div><button type="button" class="lcni-btn lcni-btn-btn_watchlist_save" data-watchlist-save>${renderButtonContent('btn_watchlist_save', 'Lưu')}</button></div></div></div>
-      <div class="lcni-watchlist-table-wrap lcni-table-scroll lcni-table-wrapper" style="--row-hover-bg:${esc(rowHoverBg)};"><table class="lcni-watchlist-table lcni-table ${stickyHeader ? 'has-sticky-header' : ''}"><thead><tr>${orderedColumns.map((c, idx) => { const stickyCls = resolveStickyColumnClass(stickyColumn, c, idx); return `<th data-sort-key="${esc(c)}" class="${esc(stickyCls)}">${esc(labels[c] || c)} <span class="lcni-sort-icon">${watchlistSortKey===c?(watchlistSortDir==='asc'?'↑':'↓'):""}</span></th>`; }).join('')}</tr></thead>
+      <div class="lcni-watchlist-controls"><div class="lcni-watchlist-col-grid">${allowed.map((c) => `<label class="lcni-watchlist-col-item"><input type="checkbox" data-col-toggle value="${esc(c)}" ${orderedColumns.includes(c) ? 'checked' : ''}><span>${esc(labels[c] || c)}</span></label>`).join('')}</div><button type="button" class="lcni-btn lcni-btn-btn_watchlist_save" data-watchlist-save>${renderButtonContent('btn_watchlist_save', 'Lưu')}</button></div></div></div>
+      <div class="lcni-watchlist-table-wrap lcni-table-scroll lcni-table-wrapper" data-scroll-speed="${esc(scrollSpeed)}" style="--row-hover-bg:${esc(rowHoverBg)};"><table class="lcni-watchlist-table lcni-table ${stickyHeader ? 'has-sticky-header' : ''}"><thead><tr>${orderedColumns.map((c, idx) => { const stickyCls = resolveStickyColumnClass(stickyColumn, c, idx); return `<th data-sort-key="${esc(c)}" class="${esc(stickyCls)}">${esc(labels[c] || c)} <span class="lcni-sort-icon">${watchlistSortKey===c?(watchlistSortDir==='asc'?'↑':'↓'):""}</span></th>`; }).join('')}</tr></thead>
       <tbody>${items.map((row) => {
         const symbol = row.symbol || '';
         return `<tr data-row-symbol="${esc(symbol)}">${orderedColumns.map((c, idx) => {
@@ -198,6 +217,8 @@
           return `<td${cls}${valueStyle ? ` style="${valueStyle}"` : ''}>${esc(row[c])}</td>`;
         }).join('')}</tr>`;
       }).join('')}</tbody></table><div class="lcni-watchlist-overlay" data-watchlist-overlay hidden>Loading...</div></div>`;
+    bindHorizontalScrollLock(host);
+    host.querySelectorAll('[data-lcni-watchlist-add]').forEach(setButtonState);
   }
 
   async function refreshTable(host) {
@@ -387,11 +408,10 @@
         if (!host) return;
         const device = getDevice();
         const selected = Array.from(host.querySelectorAll('[data-col-toggle]:checked')).map((input) => input.value);
-        const columnOrder = Array.from(host.querySelectorAll('[data-col-item]')).map((item) => item.getAttribute('data-col-item')).filter(Boolean);
         setHostLoading(host, true);
         try {
           saveCachedColumns(device, selected);
-          await api('/settings?device=' + encodeURIComponent(device), { method: 'POST', body: { columns: selected, column_order: columnOrder } });
+          await api('/settings?device=' + encodeURIComponent(device), { method: 'POST', body: { columns: selected } });
           await refreshTable(host);
         } catch (error) {
           showToast((error && error.message) || 'Không thể lưu cài đặt.');
@@ -455,31 +475,6 @@
       const url = buildStockDetailUrl(row.getAttribute('data-row-symbol'));
       if (url) window.location.href = url;
     });
-
-
-    document.addEventListener('dragstart', (event) => {
-      const item = event.target.closest('[data-col-item]');
-      if (!item) return;
-      event.dataTransfer.setData('text/plain', item.getAttribute('data-col-item') || '');
-      item.classList.add('is-dragging');
-    });
-
-    document.addEventListener('dragend', (event) => {
-      const item = event.target.closest('[data-col-item]');
-      if (item) item.classList.remove('is-dragging');
-    });
-
-    document.addEventListener('dragover', (event) => {
-      const over = event.target.closest('[data-col-item]');
-      const dragging = document.querySelector('[data-col-item].is-dragging');
-      if (!over || !dragging || over === dragging) return;
-      event.preventDefault();
-      const rect = over.getBoundingClientRect();
-      const before = (event.clientY - rect.top) < rect.height / 2;
-      if (before) over.parentNode.insertBefore(dragging, over);
-      else over.parentNode.insertBefore(dragging, over.nextSibling);
-    });
-
     window.addEventListener('lcniWatchlistSymbolsChanged', syncAllButtons);
   }
 
