@@ -133,23 +133,32 @@ class LCNI_WatchlistService {
             return new WP_Error('invalid_watchlist', 'Watchlist không hợp lệ.', ['status' => 400]);
         }
 
+        $watchlist = $this->get_user_watchlist($user_id, $target_watchlist_id);
+        $watchlist_name = sanitize_text_field((string) ($watchlist['name'] ?? ''));
         $existing = $this->wpdb->get_var($this->wpdb->prepare(
             "SELECT id FROM {$this->watchlist_symbols_table} WHERE watchlist_id = %d AND symbol = %s",
             $target_watchlist_id,
             $symbol
         ));
 
-        if (!$existing) {
-            $this->wpdb->insert($this->watchlist_symbols_table, [
-                'watchlist_id' => $target_watchlist_id,
+        if ($existing) {
+            return new WP_Error('duplicate_symbol', sprintf('Mã %s đã có trong watchlist: %s.', $symbol, $watchlist_name !== '' ? $watchlist_name : ('#' . $target_watchlist_id)), [
+                'status' => 409,
                 'symbol' => $symbol,
-            ], ['%d', '%s']);
-            $this->clear_user_cache($user_id);
+                'watchlist_id' => $target_watchlist_id,
+                'watchlist_name' => $watchlist_name,
+            ]);
         }
+
+        $this->wpdb->insert($this->watchlist_symbols_table, [
+            'watchlist_id' => $target_watchlist_id,
+            'symbol' => $symbol,
+        ], ['%d', '%s']);
+        $this->clear_user_cache($user_id);
 
         $symbols = $this->get_watchlist_symbols($target_watchlist_id);
 
-        return ['symbol' => $symbol, 'success' => true, 'watchlist_id' => $target_watchlist_id, 'symbols' => $symbols];
+        return ['symbol' => $symbol, 'success' => true, 'watchlist_id' => $target_watchlist_id, 'watchlist_name' => $watchlist_name, 'symbols' => $symbols];
     }
 
     public function remove_symbol($user_id, $symbol, $watchlist_id = 0) {

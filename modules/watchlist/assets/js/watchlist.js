@@ -88,14 +88,22 @@
     setTimeout(() => node.remove(), 2400);
   }
 
+
+  function renderWatchlistRowActionButton(symbol) {
+    const removeLabel = renderButtonContent('btn_watchlist_remove_symbol', 'Xóa');
+    return `<button type="button" class="lcni-watchlist-add lcni-btn lcni-btn-btn_watchlist_remove_symbol is-active" data-lcni-watchlist-add data-symbol="${esc(symbol)}">${removeLabel}</button>`;
+  }
+
   function setButtonState(button) {
     const symbol = button.getAttribute('data-symbol') || '';
     const icon = button.querySelector('i');
     const inWatchlist = WatchlistStore.has(symbol);
     button.classList.toggle('is-active', inWatchlist);
     button.setAttribute('aria-label', inWatchlist ? 'Remove from watchlist' : 'Add to watchlist');
+    button.classList.toggle('lcni-btn-btn_watchlist_remove_symbol', inWatchlist);
+    button.classList.toggle('lcni-btn-btn_watchlist_add', !inWatchlist);
     if (icon && !button.classList.contains('is-loading')) {
-      icon.className = inWatchlist ? 'fa-solid fa-trash' : String(getButtonConfig('btn_watchlist_add').icon_class || 'fa-solid fa-heart');
+      icon.className = inWatchlist ? String(getButtonConfig('btn_watchlist_remove_symbol').icon_class || 'fa-solid fa-trash') : String(getButtonConfig('btn_watchlist_add').icon_class || 'fa-solid fa-heart');
     }
   }
 
@@ -234,7 +242,7 @@
           const stickyCls = resolveStickyColumnClass(stickyColumn, c, idx);
           const cls = stickyCls ? ` class="${stickyCls}"` : '';
           if (c === 'symbol') {
-            return `<td${cls}><span class="lcni-watchlist-symbol">${esc(symbol)}</span><button type="button" class="lcni-watchlist-add lcni-btn lcni-btn-btn_watchlist_add is-active" data-lcni-watchlist-add data-symbol="${esc(symbol)}">${renderButtonContent('btn_watchlist_add', '')}</button></td>`;
+            return `<td${cls}><span class="lcni-watchlist-symbol">${esc(symbol)}</span>${renderWatchlistRowActionButton(symbol)}</td>`;
           }
           const valueStyle = resolveCellStyle(c, row[c], valueColorRules);
           return `<td${cls}${valueStyle ? ` style="${valueStyle}"` : ''}>${esc(formatCellValue(c, row[c]))}</td>`;
@@ -322,7 +330,7 @@
         if (submitIcon) submitIcon.className = 'fa-solid fa-spinner fa-spin';
         const payload = await toggleSymbol(symbol, 'add');
         const watchlistName = String((payload && (payload.watchlist_name || payload.name)) || resolveActiveWatchlistName() || '');
-        showToast('Đã thêm mã ' + symbol + ' vào Watchlist: ' + watchlistName);
+        showToast('Đã thêm mã ' + symbol + ' thành công vào watchlist: ' + watchlistName + '.');
         if (input) input.value = '';
         if (submitIcon) submitIcon.className = 'fa-solid fa-check-circle';
         window.setTimeout(() => {
@@ -331,7 +339,13 @@
         document.querySelectorAll('[data-lcni-watchlist]').forEach((host) => refreshTable(host).catch(() => {}));
       } catch (error) {
         if (submitIcon) submitIcon.className = 'fa-solid fa-exclamation-circle';
-        showToast((error && error.message) || 'Không thể thêm vào watchlist');
+        if (error && error.code === 'duplicate_symbol') {
+          const details = error && error.data ? error.data : {};
+          const inName = details.watchlist_name || resolveActiveWatchlistName();
+          showToast('Mã ' + symbol + ' đã có trong watchlist: ' + inName + '.');
+        } else {
+          showToast((error && error.message) || 'Không thể thêm vào watchlist');
+        }
       } finally {
         if (submitBtn) submitBtn.disabled = false;
       }
@@ -351,13 +365,19 @@
         try {
           const payload = await toggleSymbol(symbol, 'add');
           const watchlistName = String((payload && (payload.watchlist_name || payload.name)) || resolveActiveWatchlistName() || '');
-          showToast('Đã thêm mã ' + symbol + ' vào Watchlist: ' + watchlistName);
+          showToast('Đã thêm mã ' + symbol + ' thành công vào watchlist: ' + watchlistName + '.');
           if (input) input.value = '';
           if (host) {
             await refreshTable(host);
           }
         } catch (error) {
+          if (error && error.code === 'duplicate_symbol') {
+          const details = error && error.data ? error.data : {};
+          const inName = details.watchlist_name || resolveActiveWatchlistName();
+          showToast('Mã ' + symbol + ' đã có trong watchlist: ' + inName + '.');
+        } else {
           showToast((error && error.message) || 'Không thể thêm vào watchlist');
+        }
         } finally {
           quickAddBtn.disabled = false;
         }

@@ -165,9 +165,20 @@
       const selected = form.querySelector('input[name="watchlist_id"]:checked');
       const watchlistId = Number(selected ? selected.value : 0);
       if (!watchlistId) return;
-      await watchlistApi('/add-symbol', { method: 'POST', body: { symbol, watchlist_id: watchlistId } });
-      closeModal();
-      showToast('Đã thêm vào watchlist');
+      try {
+        const payload = await watchlistApi('/add-symbol', { method: 'POST', body: { symbol, watchlist_id: watchlistId } });
+        const name = String((payload && (payload.watchlist_name || payload.name)) || (selected && selected.parentElement ? selected.parentElement.textContent : '') || '').trim();
+        closeModal();
+        showToast('Đã thêm mã ' + symbol + ' thành công vào watchlist: ' + name + '.');
+      } catch (error) {
+        if (error && error.code === 'duplicate_symbol') {
+          const info = error && error.data ? error.data : {};
+          const inName = String(info.watchlist_name || '').trim();
+          showToast('Mã ' + symbol + ' đã có trong watchlist: ' + inName + '.');
+          return;
+        }
+        showToast((error && error.message) || 'Không thể thêm vào watchlist');
+      }
     }, { once: true });
   }
 

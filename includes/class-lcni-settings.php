@@ -250,7 +250,7 @@ class LCNI_Settings {
             }
         } elseif ($action === 'save_frontend_settings') {
             $module = isset($_POST['lcni_frontend_module']) ? sanitize_key(wp_unslash($_POST['lcni_frontend_module'])) : '';
-            $allowed_modules = ['signals', 'overview', 'chart', 'chart_analyst', 'watchlist', 'filter', 'column_labels', 'button_style'];
+            $allowed_modules = ['signals', 'overview', 'chart', 'chart_analyst', 'watchlist', 'filter', 'column_labels', 'button_style', 'data_format'];
 
             if (!in_array($module, $allowed_modules, true)) {
                 $this->set_notice('error', 'Module frontend không hợp lệ.');
@@ -358,10 +358,12 @@ class LCNI_Settings {
                             'sticky_column' => isset($_POST['lcni_frontend_watchlist_style_sticky_column']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_sticky_column']) : 'symbol',
                             'sticky_header' => isset($_POST['lcni_frontend_watchlist_style_sticky_header']) ? 1 : 0,
                             'dropdown_height' => isset($_POST['lcni_frontend_watchlist_style_dropdown_height']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_dropdown_height']) : 34,
+                            'dropdown_width' => isset($_POST['lcni_frontend_watchlist_style_dropdown_width']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_dropdown_width']) : 220,
                             'dropdown_font_size' => isset($_POST['lcni_frontend_watchlist_style_dropdown_font_size']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_dropdown_font_size']) : 13,
                             'dropdown_border_color' => isset($_POST['lcni_frontend_watchlist_style_dropdown_border_color']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_dropdown_border_color']) : '',
                             'dropdown_border_radius' => isset($_POST['lcni_frontend_watchlist_style_dropdown_border_radius']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_dropdown_border_radius']) : 8,
                             'input_height' => isset($_POST['lcni_frontend_watchlist_style_input_height']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_input_height']) : 34,
+                            'input_width' => isset($_POST['lcni_frontend_watchlist_style_input_width']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_input_width']) : 160,
                             'input_font_size' => isset($_POST['lcni_frontend_watchlist_style_input_font_size']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_input_font_size']) : 13,
                             'input_border_color' => isset($_POST['lcni_frontend_watchlist_style_input_border_color']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_input_border_color']) : '',
                             'input_border_radius' => isset($_POST['lcni_frontend_watchlist_style_input_border_radius']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_input_border_radius']) : 8,
@@ -410,6 +412,9 @@ class LCNI_Settings {
                     }
                 } elseif ($module === 'button_style') {
                     update_option('lcni_button_style_config', $this->sanitize_button_style_config(isset($_POST['lcni_button_style_config']) ? (array) wp_unslash($_POST['lcni_button_style_config']) : []));
+                } elseif ($module === 'data_format') {
+                    $input = isset($_POST[LCNI_Data_Format_Settings::OPTION_KEY]) ? (array) wp_unslash($_POST[LCNI_Data_Format_Settings::OPTION_KEY]) : [];
+                    update_option(LCNI_Data_Format_Settings::OPTION_KEY, LCNI_Data_Format_Settings::sanitize_settings($input));
                 } elseif ($module === 'column_labels') {
                     $keys = isset($_POST['lcni_global_column_label_key']) ? (array) wp_unslash($_POST['lcni_global_column_label_key']) : [];
                     $values = isset($_POST['lcni_global_column_label']) ? (array) wp_unslash($_POST['lcni_global_column_label']) : [];
@@ -470,7 +475,7 @@ class LCNI_Settings {
         $redirect_page = in_array($redirect_page, ['lcni-settings', 'lcni-data-viewer'], true) ? $redirect_page : 'lcni-settings';
         $redirect_url = admin_url('admin.php?page=' . $redirect_page);
 
-        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange', 'lcni-tab-update-runtime', 'lcni-tab-update-ohlc-latest', 'lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-column-label'], true)) {
+        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange', 'lcni-tab-update-runtime', 'lcni-tab-update-ohlc-latest', 'lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format'], true)) {
             $redirect_url = add_query_arg('tab', $redirect_tab, $redirect_url);
         }
 
@@ -699,7 +704,7 @@ class LCNI_Settings {
 
         $active_tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'general';
         $rule_sub_tabs = ['lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange'];
-        $frontend_sub_tabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label'];
+        $frontend_sub_tabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format'];
         $update_data_sub_tabs = ['lcni-tab-update-runtime', 'lcni-tab-update-ohlc-latest'];
         if (in_array($active_tab, $rule_sub_tabs, true)) {
             $active_tab = 'rule_settings';
@@ -1579,6 +1584,7 @@ private function sanitize_module_title($value, $fallback) {
             <button type="button" data-sub-tab="lcni-tab-frontend-filter">Filter</button>
             <button type="button" data-sub-tab="lcni-tab-frontend-style-config">Style Config</button>
             <button type="button" data-sub-tab="lcni-tab-frontend-column-label">Column Label</button>
+            <button type="button" data-sub-tab="lcni-tab-frontend-data-format">Data Format</button>
         </div>
         <?php $this->render_frontend_module_form('signals', 'lcni-tab-frontend-signals', $signals_labels, $signals); ?>
         <?php $this->render_frontend_module_form('overview', 'lcni-tab-frontend-overview', $overview_labels, $overview); ?>
@@ -1588,6 +1594,7 @@ private function sanitize_module_title($value, $fallback) {
         <?php LCNI_FilterAdmin::render_filter_form('lcni-tab-frontend-filter'); ?>
         <?php $this->render_frontend_button_style_form('button_style', 'lcni-tab-frontend-style-config'); ?>
         <?php $this->render_global_column_label_form('column_labels', 'lcni-tab-frontend-column-label', $watchlist); ?>
+        <?php $this->render_frontend_data_format_form('data_format', 'lcni-tab-frontend-data-format'); ?>
         <script>
             (function() {
                 const nav = document.getElementById('lcni-front-sub-tabs');
@@ -1598,18 +1605,43 @@ private function sanitize_module_title($value, $fallback) {
                 const activate = function(tabId){
                     buttons.forEach((btn) => btn.classList.toggle('active', btn.getAttribute('data-sub-tab') === tabId));
                     panes.forEach((pane) => {
-                        if (pane.id === 'lcni-tab-frontend-signals' || pane.id === 'lcni-tab-frontend-overview' || pane.id === 'lcni-tab-frontend-chart' || pane.id === 'lcni-tab-frontend-chart-analyst' || pane.id === 'lcni-tab-frontend-watchlist' || pane.id === 'lcni-tab-frontend-filter' || pane.id === 'lcni-tab-frontend-style-config' || pane.id === 'lcni-tab-frontend-column-label') {
+                        if (pane.id === 'lcni-tab-frontend-signals' || pane.id === 'lcni-tab-frontend-overview' || pane.id === 'lcni-tab-frontend-chart' || pane.id === 'lcni-tab-frontend-chart-analyst' || pane.id === 'lcni-tab-frontend-watchlist' || pane.id === 'lcni-tab-frontend-filter' || pane.id === 'lcni-tab-frontend-style-config' || pane.id === 'lcni-tab-frontend-column-label' || pane.id === 'lcni-tab-frontend-data-format') {
                             pane.classList.toggle('active', pane.id === tabId);
                         }
                     });
                 };
                 buttons.forEach((btn) => btn.addEventListener('click', () => activate(btn.getAttribute('data-sub-tab'))));
-                const validTabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label'];
+                const validTabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format'];
                 activate(validTabs.includes(current) ? current : 'lcni-tab-frontend-signals');
             })();
         </script>
         <?php
     }
+
+    private function render_frontend_data_format_form($module, $tab_id) {
+        $settings = LCNI_Data_Format_Settings::get_settings();
+        ?>
+        <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
+                <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                <h3>Data Format</h3>
+                <p><label><input type="checkbox" name="<?php echo esc_attr(LCNI_Data_Format_Settings::OPTION_KEY); ?>[use_intl]" value="1" <?php checked(!empty($settings['use_intl'])); ?>> Use Intl.NumberFormat</label></p>
+                <p><label>Locale <select name="<?php echo esc_attr(LCNI_Data_Format_Settings::OPTION_KEY); ?>[locale]"><option value="vi-VN" <?php selected($settings['locale'], 'vi-VN'); ?>>vi-VN</option><option value="en-US" <?php selected($settings['locale'], 'en-US'); ?>>en-US</option></select></label></p>
+                <p><label><input type="checkbox" name="<?php echo esc_attr(LCNI_Data_Format_Settings::OPTION_KEY); ?>[compact_numbers]" value="1" <?php checked(!empty($settings['compact_numbers'])); ?>> Use compact numbers</label></p>
+                <p><label>Compact threshold <input type="number" min="0" step="1" name="<?php echo esc_attr(LCNI_Data_Format_Settings::OPTION_KEY); ?>[compact_threshold]" value="<?php echo esc_attr((string) $settings['compact_threshold']); ?>"></label></p>
+                <h4>Decimals</h4>
+                <?php foreach ((array) ($settings['decimals'] ?? []) as $type => $precision) : ?>
+                    <p><label><?php echo esc_html(ucfirst(str_replace('_', ' ', (string) $type))); ?> <input type="number" min="0" max="8" step="1" name="<?php echo esc_attr(LCNI_Data_Format_Settings::OPTION_KEY); ?>[decimals][<?php echo esc_attr((string) $type); ?>]" value="<?php echo esc_attr((string) $precision); ?>"></label></p>
+                <?php endforeach; ?>
+                <?php submit_button('Save Data Format'); ?>
+            </form>
+        </div>
+        <?php
+    }
+
     public function sanitize_button_style_config($input) {
         return LCNI_Button_Style_Config::sanitize_config($input);
     }
@@ -1811,17 +1843,20 @@ private function sanitize_module_title($value, $fallback) {
                 'row_divider_color' => sanitize_hex_color($styles['row_divider_color'] ?? '#e5e7eb') ?: '#e5e7eb',
                 'row_divider_width' => max(1, min(6, (int) ($styles['row_divider_width'] ?? 1))),
                 'row_hover_bg' => sanitize_hex_color($styles['row_hover_bg'] ?? '#f3f4f6') ?: '#f3f4f6',
-                'head_height' => max(30, min(80, (int) ($styles['head_height'] ?? 40))),
+                'head_height' => max(24, min(240, (int) ($styles['head_height'] ?? 40))),
                 'sticky_column' => sanitize_key($styles['sticky_column'] ?? 'symbol'),
                 'sticky_header' => !empty($styles['sticky_header']) ? 1 : 0,
-                'dropdown_height' => max(28, min(60, (int) ($styles['dropdown_height'] ?? 34))),
+                'dropdown_height' => max(28, min(80, (int) ($styles['dropdown_height'] ?? 34))),
+                'dropdown_width' => max(120, min(520, (int) ($styles['dropdown_width'] ?? 220))),
                 'dropdown_font_size' => max(10, min(24, (int) ($styles['dropdown_font_size'] ?? 13))),
                 'dropdown_border_color' => sanitize_hex_color($styles['dropdown_border_color'] ?? '#d1d5db') ?: '#d1d5db',
                 'dropdown_border_radius' => max(0, min(24, (int) ($styles['dropdown_border_radius'] ?? 8))),
-                'input_height' => max(28, min(60, (int) ($styles['input_height'] ?? 34))),
+                'input_height' => max(28, min(80, (int) ($styles['input_height'] ?? 34))),
+                'input_width' => max(120, min(520, (int) ($styles['input_width'] ?? 160))),
                 'input_font_size' => max(10, min(24, (int) ($styles['input_font_size'] ?? 13))),
                 'input_border_color' => sanitize_hex_color($styles['input_border_color'] ?? '#d1d5db') ?: '#d1d5db',
                 'input_border_radius' => max(0, min(24, (int) ($styles['input_border_radius'] ?? 8))),
+                'scroll_speed' => max(1, min(5, (int) ($styles['scroll_speed'] ?? 1))),
                 'column_order' => array_values(array_map('sanitize_key', is_array($styles['column_order'] ?? null) ? $styles['column_order'] : [])),
             ],
             'value_color_rules' => array_slice($value_color_rules, 0, 100),
@@ -1982,12 +2017,14 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
                     </label></p>
                     <p><label><input type="checkbox" name="lcni_frontend_watchlist_style_sticky_header" value="1" <?php checked((int) ($settings['styles']['sticky_header'] ?? 1), 1); ?>> Sticky header row</label></p>
                     <h4>Watchlist dropdown style</h4>
-                    <p><label>Height <input type="number" min="28" max="60" name="lcni_frontend_watchlist_style_dropdown_height" value="<?php echo esc_attr((string) ($settings['styles']['dropdown_height'] ?? 34)); ?>"> px</label></p>
+                    <p><label>Height <input type="number" min="28" max="80" name="lcni_frontend_watchlist_style_dropdown_height" value="<?php echo esc_attr((string) ($settings['styles']['dropdown_height'] ?? 34)); ?>"> px</label></p>
+                    <p><label>Width <input type="number" min="120" max="520" name="lcni_frontend_watchlist_style_dropdown_width" value="<?php echo esc_attr((string) ($settings['styles']['dropdown_width'] ?? 220)); ?>"> px</label></p>
                     <p><label>Font size <input type="number" min="10" max="24" name="lcni_frontend_watchlist_style_dropdown_font_size" value="<?php echo esc_attr((string) ($settings['styles']['dropdown_font_size'] ?? 13)); ?>"> px</label></p>
                     <p><label>Border color <input type="color" name="lcni_frontend_watchlist_style_dropdown_border_color" value="<?php echo esc_attr((string) ($settings['styles']['dropdown_border_color'] ?? '#d1d5db')); ?>"></label></p>
                     <p><label>Border radius <input type="number" min="0" max="24" name="lcni_frontend_watchlist_style_dropdown_border_radius" value="<?php echo esc_attr((string) ($settings['styles']['dropdown_border_radius'] ?? 8)); ?>"> px</label></p>
                     <h4>Symbol input style</h4>
-                    <p><label>Height <input type="number" min="28" max="60" name="lcni_frontend_watchlist_style_input_height" value="<?php echo esc_attr((string) ($settings['styles']['input_height'] ?? 34)); ?>"> px</label></p>
+                    <p><label>Height <input type="number" min="28" max="80" name="lcni_frontend_watchlist_style_input_height" value="<?php echo esc_attr((string) ($settings['styles']['input_height'] ?? 34)); ?>"> px</label></p>
+                    <p><label>Width <input type="number" min="120" max="520" name="lcni_frontend_watchlist_style_input_width" value="<?php echo esc_attr((string) ($settings['styles']['input_width'] ?? 160)); ?>"> px</label></p>
                     <p><label>Font size <input type="number" min="10" max="24" name="lcni_frontend_watchlist_style_input_font_size" value="<?php echo esc_attr((string) ($settings['styles']['input_font_size'] ?? 13)); ?>"> px</label></p>
                     <p><label>Border color <input type="color" name="lcni_frontend_watchlist_style_input_border_color" value="<?php echo esc_attr((string) ($settings['styles']['input_border_color'] ?? '#d1d5db')); ?>"></label></p>
                     <p><label>Border radius <input type="number" min="0" max="24" name="lcni_frontend_watchlist_style_input_border_radius" value="<?php echo esc_attr((string) ($settings['styles']['input_border_radius'] ?? 8)); ?>"> px</label></p>
