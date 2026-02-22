@@ -153,10 +153,16 @@ document.addEventListener("DOMContentLoaded", () => {
       ? value
       : (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value)) ? Number(value) : null);
 
-    if (normalizedNumber !== null) {
-      if (key.includes("pct") || ["roe", "de_ratio", "pe_ratio", "pb_ratio", "ev_ebitda"].includes(key)) {
-        return normalizedNumber.toLocaleString("vi-VN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (normalizedNumber !== null && window.LCNIFormatter) {
+      if (typeof window.LCNIFormatter.formatByColumn === "function") {
+        return window.LCNIFormatter.formatByColumn(normalizedNumber, key);
       }
+      if (typeof window.LCNIFormatter.format === "function") {
+        return window.LCNIFormatter.format(normalizedNumber, "price");
+      }
+    }
+
+    if (normalizedNumber !== null) {
       return normalizedNumber.toLocaleString("vi-VN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
