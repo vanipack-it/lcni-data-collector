@@ -316,6 +316,24 @@ class LCNI_Settings {
                             'border_radius' => isset($_POST['lcni_frontend_watchlist_style_border_radius']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_border_radius']) : 8,
                             'label_font_size' => isset($_POST['lcni_frontend_watchlist_style_label_font_size']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_label_font_size']) : 12,
                             'row_font_size' => isset($_POST['lcni_frontend_watchlist_style_row_font_size']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_row_font_size']) : 13,
+                            'header_background' => isset($_POST['lcni_frontend_watchlist_style_header_background']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_header_background']) : '',
+                            'header_text_color' => isset($_POST['lcni_frontend_watchlist_style_header_text_color']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_header_text_color']) : '',
+                            'value_background' => isset($_POST['lcni_frontend_watchlist_style_value_background']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_value_background']) : '',
+                            'value_text_color' => isset($_POST['lcni_frontend_watchlist_style_value_text_color']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_value_text_color']) : '',
+                            'row_divider_color' => isset($_POST['lcni_frontend_watchlist_style_row_divider_color']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_row_divider_color']) : '',
+                            'row_divider_width' => isset($_POST['lcni_frontend_watchlist_style_row_divider_width']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_row_divider_width']) : 1,
+                            'row_hover_bg' => isset($_POST['lcni_frontend_watchlist_style_row_hover_bg']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_row_hover_bg']) : '',
+                            'head_height' => isset($_POST['lcni_frontend_watchlist_style_head_height']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_head_height']) : 40,
+                            'sticky_column' => isset($_POST['lcni_frontend_watchlist_style_sticky_column']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_sticky_column']) : 'symbol',
+                            'sticky_header' => isset($_POST['lcni_frontend_watchlist_style_sticky_header']) ? 1 : 0,
+                            'dropdown_height' => isset($_POST['lcni_frontend_watchlist_style_dropdown_height']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_dropdown_height']) : 34,
+                            'dropdown_font_size' => isset($_POST['lcni_frontend_watchlist_style_dropdown_font_size']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_dropdown_font_size']) : 13,
+                            'dropdown_border_color' => isset($_POST['lcni_frontend_watchlist_style_dropdown_border_color']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_dropdown_border_color']) : '',
+                            'dropdown_border_radius' => isset($_POST['lcni_frontend_watchlist_style_dropdown_border_radius']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_dropdown_border_radius']) : 8,
+                            'input_height' => isset($_POST['lcni_frontend_watchlist_style_input_height']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_input_height']) : 34,
+                            'input_font_size' => isset($_POST['lcni_frontend_watchlist_style_input_font_size']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_input_font_size']) : 13,
+                            'input_border_color' => isset($_POST['lcni_frontend_watchlist_style_input_border_color']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_input_border_color']) : '',
+                            'input_border_radius' => isset($_POST['lcni_frontend_watchlist_style_input_border_radius']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_input_border_radius']) : 8,
                         ];
                         $input['value_color_rule_columns'] = isset($_POST['lcni_watchlist_value_color_rule_column']) ? (array) wp_unslash($_POST['lcni_watchlist_value_color_rule_column']) : [];
                         $input['value_color_rule_operators'] = isset($_POST['lcni_watchlist_value_color_rule_operator']) ? (array) wp_unslash($_POST['lcni_watchlist_value_color_rule_operator']) : [];
@@ -1730,6 +1748,25 @@ private function sanitize_module_title($value, $fallback) {
                 'border_radius' => max(0, min(24, (int) ($styles['border_radius'] ?? 8))),
                 'label_font_size' => max(10, min(30, (int) ($styles['label_font_size'] ?? 12))),
                 'row_font_size' => max(10, min(30, (int) ($styles['row_font_size'] ?? 13))),
+                'header_background' => sanitize_hex_color($styles['header_background'] ?? '#ffffff') ?: '#ffffff',
+                'header_text_color' => sanitize_hex_color($styles['header_text_color'] ?? '#111827') ?: '#111827',
+                'value_background' => sanitize_hex_color($styles['value_background'] ?? '#ffffff') ?: '#ffffff',
+                'value_text_color' => sanitize_hex_color($styles['value_text_color'] ?? '#111827') ?: '#111827',
+                'row_divider_color' => sanitize_hex_color($styles['row_divider_color'] ?? '#e5e7eb') ?: '#e5e7eb',
+                'row_divider_width' => max(1, min(6, (int) ($styles['row_divider_width'] ?? 1))),
+                'row_hover_bg' => sanitize_hex_color($styles['row_hover_bg'] ?? '#f3f4f6') ?: '#f3f4f6',
+                'head_height' => max(30, min(80, (int) ($styles['head_height'] ?? 40))),
+                'sticky_column' => sanitize_key($styles['sticky_column'] ?? 'symbol'),
+                'sticky_header' => !empty($styles['sticky_header']) ? 1 : 0,
+                'dropdown_height' => max(28, min(60, (int) ($styles['dropdown_height'] ?? 34))),
+                'dropdown_font_size' => max(10, min(24, (int) ($styles['dropdown_font_size'] ?? 13))),
+                'dropdown_border_color' => sanitize_hex_color($styles['dropdown_border_color'] ?? '#d1d5db') ?: '#d1d5db',
+                'dropdown_border_radius' => max(0, min(24, (int) ($styles['dropdown_border_radius'] ?? 8))),
+                'input_height' => max(28, min(60, (int) ($styles['input_height'] ?? 34))),
+                'input_font_size' => max(10, min(24, (int) ($styles['input_font_size'] ?? 13))),
+                'input_border_color' => sanitize_hex_color($styles['input_border_color'] ?? '#d1d5db') ?: '#d1d5db',
+                'input_border_radius' => max(0, min(24, (int) ($styles['input_border_radius'] ?? 8))),
+                'column_order' => array_values(array_map('sanitize_key', is_array($styles['column_order'] ?? null) ? $styles['column_order'] : [])),
             ],
             'value_color_rules' => array_slice($value_color_rules, 0, 100),
             'add_button' => [
@@ -1871,6 +1908,33 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
                     <p><label>Border radius <input type="number" min="0" max="24" name="lcni_frontend_watchlist_style_border_radius" value="<?php echo esc_attr((string) ($settings['styles']['border_radius'] ?? 8)); ?>"></label></p>
                     <p><label>Header label font size <input type="number" min="10" max="30" name="lcni_frontend_watchlist_style_label_font_size" value="<?php echo esc_attr((string) ($settings['styles']['label_font_size'] ?? 12)); ?>"> px</label></p>
                     <p><label>Row font size <input type="number" min="10" max="30" name="lcni_frontend_watchlist_style_row_font_size" value="<?php echo esc_attr((string) ($settings['styles']['row_font_size'] ?? 13)); ?>"> px</label></p>
+                    <p><label>Header background <input type="color" name="lcni_frontend_watchlist_style_header_background" value="<?php echo esc_attr((string) ($settings['styles']['header_background'] ?? '#ffffff')); ?>"></label></p>
+                    <p><label>Header text color <input type="color" name="lcni_frontend_watchlist_style_header_text_color" value="<?php echo esc_attr((string) ($settings['styles']['header_text_color'] ?? '#111827')); ?>"></label></p>
+                    <p><label>Value background <input type="color" name="lcni_frontend_watchlist_style_value_background" value="<?php echo esc_attr((string) ($settings['styles']['value_background'] ?? '#ffffff')); ?>"></label></p>
+                    <p><label>Value text color <input type="color" name="lcni_frontend_watchlist_style_value_text_color" value="<?php echo esc_attr((string) ($settings['styles']['value_text_color'] ?? '#111827')); ?>"></label></p>
+                    <p><label>Row divider color <input type="color" name="lcni_frontend_watchlist_style_row_divider_color" value="<?php echo esc_attr((string) ($settings['styles']['row_divider_color'] ?? '#e5e7eb')); ?>"></label></p>
+                    <p><label>Row divider width <input type="number" min="1" max="6" name="lcni_frontend_watchlist_style_row_divider_width" value="<?php echo esc_attr((string) ($settings['styles']['row_divider_width'] ?? 1)); ?>"> px</label></p>
+                    <p><label>Row hover background <input type="color" name="lcni_frontend_watchlist_style_row_hover_bg" value="<?php echo esc_attr((string) ($settings['styles']['row_hover_bg'] ?? '#f3f4f6')); ?>"></label></p>
+                    <p><label>Header row height <input type="number" min="30" max="80" name="lcni_frontend_watchlist_style_head_height" value="<?php echo esc_attr((string) ($settings['styles']['head_height'] ?? 40)); ?>"> px</label></p>
+                    <p><label>Sticky column
+                        <select name="lcni_frontend_watchlist_style_sticky_column">
+                            <option value="first" <?php selected((string) ($settings['styles']['sticky_column'] ?? 'symbol'), 'first'); ?>>First column</option>
+                            <?php foreach ((array) ($settings['allowed_columns'] ?? []) as $sticky_col) : ?>
+                                <option value="<?php echo esc_attr($sticky_col); ?>" <?php selected((string) ($settings['styles']['sticky_column'] ?? 'symbol'), (string) $sticky_col); ?>><?php echo esc_html($sticky_col); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label></p>
+                    <p><label><input type="checkbox" name="lcni_frontend_watchlist_style_sticky_header" value="1" <?php checked((int) ($settings['styles']['sticky_header'] ?? 1), 1); ?>> Sticky header row</label></p>
+                    <h4>Watchlist dropdown style</h4>
+                    <p><label>Height <input type="number" min="28" max="60" name="lcni_frontend_watchlist_style_dropdown_height" value="<?php echo esc_attr((string) ($settings['styles']['dropdown_height'] ?? 34)); ?>"> px</label></p>
+                    <p><label>Font size <input type="number" min="10" max="24" name="lcni_frontend_watchlist_style_dropdown_font_size" value="<?php echo esc_attr((string) ($settings['styles']['dropdown_font_size'] ?? 13)); ?>"> px</label></p>
+                    <p><label>Border color <input type="color" name="lcni_frontend_watchlist_style_dropdown_border_color" value="<?php echo esc_attr((string) ($settings['styles']['dropdown_border_color'] ?? '#d1d5db')); ?>"></label></p>
+                    <p><label>Border radius <input type="number" min="0" max="24" name="lcni_frontend_watchlist_style_dropdown_border_radius" value="<?php echo esc_attr((string) ($settings['styles']['dropdown_border_radius'] ?? 8)); ?>"> px</label></p>
+                    <h4>Symbol input style</h4>
+                    <p><label>Height <input type="number" min="28" max="60" name="lcni_frontend_watchlist_style_input_height" value="<?php echo esc_attr((string) ($settings['styles']['input_height'] ?? 34)); ?>"> px</label></p>
+                    <p><label>Font size <input type="number" min="10" max="24" name="lcni_frontend_watchlist_style_input_font_size" value="<?php echo esc_attr((string) ($settings['styles']['input_font_size'] ?? 13)); ?>"> px</label></p>
+                    <p><label>Border color <input type="color" name="lcni_frontend_watchlist_style_input_border_color" value="<?php echo esc_attr((string) ($settings['styles']['input_border_color'] ?? '#d1d5db')); ?>"></label></p>
+                    <p><label>Border radius <input type="number" min="0" max="24" name="lcni_frontend_watchlist_style_input_border_radius" value="<?php echo esc_attr((string) ($settings['styles']['input_border_radius'] ?? 8)); ?>"> px</label></p>
 
                     <h3>Conditional value colors</h3>
                     <p class="description">Mặc định hiển thị 5 rule. Nếu cần thêm, bấm nút "Thêm rule".</p>
