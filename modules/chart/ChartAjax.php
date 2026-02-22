@@ -100,7 +100,7 @@ class LCNI_Chart_Ajax {
     }
 
     public function get_admin_config() {
-        $default = ['default_mode' => 'line', 'allowed_panels' => ['volume', 'macd', 'rsi', 'rs'], 'compact_mode' => true, 'default_visible_bars' => 120, 'chart_sync_enabled' => true, 'fit_to_screen_on_load' => true, 'title' => 'Stock Chart'];
+        $default = ['default_mode' => 'line', 'allowed_panels' => ['volume', 'macd', 'rsi', 'rs'], 'compact_mode' => true, 'default_visible_bars' => 120, 'chart_sync_enabled' => true, 'fit_to_screen_on_load' => true, 'title' => 'Stock Chart', 'default_indicators' => ['ma20' => true, 'ma50' => true, 'ma100' => false, 'ma200' => false, 'rsi' => true, 'macd' => false, 'rs_1w_by_exchange' => true, 'rs_1m_by_exchange' => true, 'rs_3m_by_exchange' => false]];
         $saved = get_option('lcni_frontend_settings_chart', []);
         if (!is_array($saved)) {
             return $default;
@@ -126,6 +126,17 @@ class LCNI_Chart_Ajax {
             'chart_sync_enabled' => !array_key_exists('chart_sync_enabled', $saved) || (bool) $saved['chart_sync_enabled'],
             'fit_to_screen_on_load' => !array_key_exists('fit_to_screen_on_load', $saved) || (bool) $saved['fit_to_screen_on_load'],
             'title' => sanitize_text_field((string) get_option('lcni_frontend_chart_title', $default['title'])),
+            'default_indicators' => [
+                'ma20' => !array_key_exists('default_ma20', $saved) || (bool) $saved['default_ma20'],
+                'ma50' => !array_key_exists('default_ma50', $saved) || (bool) $saved['default_ma50'],
+                'ma100' => !empty($saved['default_ma100']),
+                'ma200' => !empty($saved['default_ma200']),
+                'rsi' => !array_key_exists('default_rsi', $saved) || (bool) $saved['default_rsi'],
+                'macd' => !empty($saved['default_macd']),
+                'rs_1w_by_exchange' => !array_key_exists('default_rs_1w_by_exchange', $saved) || (bool) $saved['default_rs_1w_by_exchange'],
+                'rs_1m_by_exchange' => !array_key_exists('default_rs_1m_by_exchange', $saved) || (bool) $saved['default_rs_1m_by_exchange'],
+                'rs_3m_by_exchange' => !empty($saved['default_rs_3m_by_exchange']),
+            ],
         ];
     }
 
@@ -163,6 +174,9 @@ class LCNI_Chart_Ajax {
         $lows = isset($payload['l']) && is_array($payload['l']) ? $payload['l'] : [];
         $closes = isset($payload['c']) && is_array($payload['c']) ? $payload['c'] : [];
         $volumes = isset($payload['v']) && is_array($payload['v']) ? $payload['v'] : [];
+        $rs1wValues = isset($payload['rs_1w_by_exchange']) && is_array($payload['rs_1w_by_exchange']) ? $payload['rs_1w_by_exchange'] : [];
+        $rs1mValues = isset($payload['rs_1m_by_exchange']) && is_array($payload['rs_1m_by_exchange']) ? $payload['rs_1m_by_exchange'] : [];
+        $rs3mValues = isset($payload['rs_3m_by_exchange']) && is_array($payload['rs_3m_by_exchange']) ? $payload['rs_3m_by_exchange'] : [];
 
         $count = min(count($timestamps), count($opens), count($highs), count($lows), count($closes));
         if ($count <= 0) {
@@ -190,6 +204,9 @@ class LCNI_Chart_Ajax {
                 'low' => $low,
                 'close' => $close,
                 'volume' => max(0, $volume),
+                'rs_1w_by_exchange' => isset($rs1wValues[$i]) && is_numeric($rs1wValues[$i]) ? (float) $rs1wValues[$i] : null,
+                'rs_1m_by_exchange' => isset($rs1mValues[$i]) && is_numeric($rs1mValues[$i]) ? (float) $rs1mValues[$i] : null,
+                'rs_3m_by_exchange' => isset($rs3mValues[$i]) && is_numeric($rs3mValues[$i]) ? (float) $rs3mValues[$i] : null,
             ];
         }
 
