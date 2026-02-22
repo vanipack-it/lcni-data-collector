@@ -7,7 +7,9 @@
   windowObject.__lcniChartInitialized = true;
 
   const MAX_LIMIT = 500;
+  const ECHARTS_CDN_URL = 'https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js';
   const stateMap = new WeakMap();
+  let echartsLoaderPromise = null;
 
   const parseLimit = function parseLimit(rawLimit) {
     const parsed = Number.parseInt(rawLimit, 10);
@@ -25,6 +27,61 @@
     }
 
     return Math.min(parsed, 1200);
+  };
+
+  const loadEchartsRuntime = function loadEchartsRuntime() {
+    if (windowObject.echarts && typeof windowObject.echarts.init === 'function') {
+      return Promise.resolve(windowObject.echarts);
+    }
+
+    if (echartsLoaderPromise) {
+      return echartsLoaderPromise;
+    }
+
+    echartsLoaderPromise = new Promise(function (resolve, reject) {
+      const script = documentObject.createElement('script');
+      script.src = ECHARTS_CDN_URL;
+      script.async = true;
+      script.onload = function onLoad() {
+        if (windowObject.echarts && typeof windowObject.echarts.init === 'function') {
+          resolve(windowObject.echarts);
+          return;
+        }
+
+        reject(new Error('ECharts runtime unavailable after loading script.'));
+      };
+      script.onerror = function onError() {
+        reject(new Error('Failed to load ECharts runtime.'));
+      };
+
+      documentObject.head.appendChild(script);
+    }).catch(function (error) {
+      echartsLoaderPromise = null;
+      throw error;
+    });
+
+    return echartsLoaderPromise;
+  };
+
+  const unwrapCandlesPayload = function unwrapCandlesPayload(payload) {
+    if (Array.isArray(payload)) {
+      return payload;
+    }
+
+    if (Array.isArray(payload && payload.candles)) {
+      return payload.candles;
+    }
+
+    const payloadData = payload && typeof payload === 'object' ? payload.data : null;
+    if (Array.isArray(payloadData)) {
+      return payloadData;
+    }
+
+    if (Array.isArray(payloadData && payloadData.candles)) {
+      return payloadData.candles;
+    }
+
+    return [];
   };
 
   const ensureState = function ensureState(container) {
@@ -111,7 +168,7 @@
     if (context && typeof context.fetchJson === 'function') {
       const cacheKey = 'candles:' + symbol + ':' + safeLimit;
       const payload = await context.fetchJson(cacheKey, endpoint, { signal: signal });
-      return Array.isArray(payload) ? payload : (Array.isArray(payload && payload.candles) ? payload.candles : []);
+      return unwrapCandlesPayload(payload);
     }
 
     const response = await windowObject.fetch(endpoint, { signal: signal });
@@ -120,10 +177,11 @@
     }
 
     const payload = await response.json();
-    return Array.isArray(payload) ? payload : (Array.isArray(payload && payload.candles) ? payload.candles : []);
+    return unwrapCandlesPayload(payload);
   };
 
   const renderContainer = async function renderContainer(container, symbol) {
+    await loadEchartsRuntime();
     const engineFactory = windowObject.LCNIChartEchartsEngine;
     const echarts = windowObject.echarts;
     if (!engineFactory || typeof engineFactory.createChart !== 'function' || !echarts) {
