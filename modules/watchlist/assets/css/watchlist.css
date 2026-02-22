@@ -23,6 +23,7 @@
 }
 .lcni-watchlist-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:8px; flex-wrap:wrap; }
 .lcni-watchlist-list-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.lcni-watchlist-action-buttons{display:flex;align-items:center;gap:8px;}
 .lcni-watchlist .lcni-watchlist-table-wrap{scrollbar-gutter:stable;}
 .lcni-watchlist-list-controls select{height:var(--lcni-watchlist-dropdown-height);width:var(--lcni-watchlist-dropdown-width);font-size:var(--lcni-watchlist-dropdown-font-size);border:1px solid var(--lcni-watchlist-dropdown-border-color);border-radius:var(--lcni-watchlist-dropdown-radius);}
 .lcni-watchlist-symbol-input{height:var(--lcni-watchlist-input-height);width:var(--lcni-watchlist-input-width);font-size:var(--lcni-watchlist-input-font-size);border:1px solid var(--lcni-watchlist-input-border-color);border-radius:var(--lcni-watchlist-input-radius);padding:0 10px;}
@@ -39,10 +40,12 @@
 .lcni-watchlist-table th, .lcni-watchlist-table td { border:0; border-bottom:var(--lcni-watchlist-row-divider-width) solid var(--lcni-watchlist-row-divider-color); padding:8px; white-space:nowrap; word-break:keep-all; }
 .lcni-watchlist-table th { font-size:var(--lcni-watchlist-label-font-size); background:var(--lcni-watchlist-header-bg); color:var(--lcni-watchlist-header-color); height:var(--lcni-watchlist-head-height); }
 .lcni-watchlist-table td { font-size:var(--lcni-watchlist-row-font-size); background:var(--lcni-watchlist-value-bg); color:var(--lcni-watchlist-value-color); }
-.lcni-watchlist-table .is-sticky-col { position:sticky; left:0; z-index:2; box-shadow:2px 0 0 rgba(229,231,235,.7); background:inherit; }
-.lcni-watchlist-table.has-sticky-header thead th{position:sticky;top:0;z-index:20;}
+.lcni-watchlist-table .is-sticky-col { position:sticky; left:0; z-index:3; background:var(--lcni-watchlist-value-bg); box-shadow:2px 0 0 rgba(229,231,235,.7); }
+.lcni-watchlist-table.has-sticky-header thead th{position:sticky;top:0;z-index:20;background:var(--lcni-watchlist-header-bg);box-shadow:inset 0 -1px 0 var(--lcni-watchlist-row-divider-color);border-left:0 !important;border-right:0 !important;}
+.lcni-watchlist-table.has-sticky-header thead .is-sticky-col{z-index:25;background:var(--lcni-watchlist-header-bg);box-shadow:2px 0 0 rgba(229,231,235,.7), inset 0 -1px 0 var(--lcni-watchlist-row-divider-color);}
 .lcni-watchlist-table tbody tr { cursor:pointer; transition:background-color .18s ease; }
 .lcni-watchlist-table tbody tr:hover td { background:var(--row-hover-bg, var(--lcni-watchlist-row-hover-bg)); }
+.lcni-watchlist-table tbody tr:hover .is-sticky-col { background:var(--row-hover-bg, var(--lcni-watchlist-row-hover-bg)); }
 .lcni-watchlist-symbol { margin-right:6px; font-weight:600; }
 .lcni-watchlist-overlay { position:absolute; inset:0; background:rgba(255,255,255,.65); display:flex; align-items:center; justify-content:center; z-index:20; }
 .lcni-watchlist-overlay[hidden] { display:none; }
@@ -58,11 +61,13 @@
 
 @media (max-width: 767px) {
   .lcni-watchlist-header{align-items:flex-start;}
-  .lcni-watchlist-list-controls{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px;width:100%;}
-  .lcni-watchlist-list-controls > *{flex:0 0 auto;}
+  .lcni-watchlist-list-controls{width:100%;display:grid;grid-template-columns:minmax(0,1fr);gap:8px;}
+  .lcni-watchlist-list-controls select,.lcni-watchlist-symbol-input{width:100%;}
+  .lcni-watchlist-action-buttons{display:flex;flex-wrap:nowrap;gap:6px;overflow-x:auto;padding-bottom:4px;}
+  .lcni-watchlist-action-buttons > *{flex:0 0 auto;}
   .lcni-watchlist-dropdown{align-self:flex-start;}
   .lcni-watchlist-controls{position:fixed;top:12px;right:12px;left:12px;max-width:none;width:auto;max-height:80vh;overflow:auto;z-index:9999;}
   .lcni-watchlist-table-wrap{max-height:calc(100vh - 220px);}
-  .lcni-btn-btn_watchlist_new span,.lcni-btn-btn_watchlist_delete span,.lcni-btn-btn_watchlist_add_symbol span{display:none;}
-  .lcni-btn-btn_watchlist_new,.lcni-btn-btn_watchlist_delete,.lcni-btn-btn_watchlist_add_symbol{padding:0 10px;}
+  .lcni-btn-btn_watchlist_new span,.lcni-btn-btn_watchlist_delete span,.lcni-btn-btn_watchlist_add_symbol span,.lcni-btn-btn_watchlist_setting span{display:none;}
+  .lcni-btn-btn_watchlist_new,.lcni-btn-btn_watchlist_delete,.lcni-btn-btn_watchlist_add_symbol,.lcni-btn-btn_watchlist_setting{padding:0 10px;}
 }

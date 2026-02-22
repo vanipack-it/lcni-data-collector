@@ -109,7 +109,7 @@ class LCNI_WatchlistController {
             foreach ($columns as $index => $column) {
                 $sticky = ($index === 0 && $column === 'symbol') ? ' class="is-sticky-col"' : '';
                 if ($column === 'symbol') {
-                    $html .= '<td' . $sticky . '><span class="lcni-watchlist-symbol">' . esc_html($symbol) . '</span><button type="button" class="lcni-watchlist-add lcni-btn lcni-btn-btn_watchlist_remove_symbol is-active" data-lcni-watchlist-add data-symbol="' . esc_attr($symbol) . '" aria-label="Remove from watchlist">' . LCNI_Button_Style_Config::build_button_content('btn_watchlist_remove_symbol', 'Xóa') . '</button></td>';
+                    $html .= '<td' . $sticky . '><span class="lcni-watchlist-symbol">' . esc_html($symbol) . '</span><button type="button" class="lcni-watchlist-row-remove lcni-btn lcni-btn-btn_watchlist_remove_symbol_row" data-watchlist-row-remove data-symbol="' . esc_attr($symbol) . '" aria-label="Remove from watchlist">' . LCNI_Button_Style_Config::build_button_content('btn_watchlist_remove_symbol_row', 'Xóa') . '</button></td>';
                     continue;
                 }
                 $value = isset($row[$column]) ? (string) $row[$column] : '';
