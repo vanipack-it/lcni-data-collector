@@ -142,6 +142,29 @@
   }
 
 
+
+  function inferFormatType(column) {
+    const key = String(column || '').toLowerCase();
+    if (key.indexOf('volume') !== -1 || key === 'vol') return 'volume';
+    if (key.indexOf('rsi') !== -1) return 'rsi';
+    if (key.indexOf('macd') !== -1) return 'macd';
+    if (key.indexOf('percent') !== -1 || key.indexOf('_pct') !== -1 || key.indexOf('change') !== -1) return 'percent';
+    if (key.indexOf('rs') !== -1) return 'rs';
+    if (key === 'pe' || key.indexOf('pe_') === 0) return 'pe';
+    if (key === 'pb' || key.indexOf('pb_') === 0) return 'pb';
+    return 'price';
+  }
+
+  function formatCellValue(column, value) {
+    if (value === null || value === undefined || value === '') return '-';
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return String(value);
+    if (window.LCNIFormatter && typeof window.LCNIFormatter.format === 'function') {
+      return window.LCNIFormatter.format(numeric, inferFormatType(column));
+    }
+    return String(numeric);
+  }
+
   function resolveStickyColumnClass(stickyColumn, column, index) {
     if (!stickyColumn) return '';
     if (stickyColumn === column) return 'is-sticky-col';
@@ -214,7 +237,7 @@
             return `<td${cls}><span class="lcni-watchlist-symbol">${esc(symbol)}</span><button type="button" class="lcni-watchlist-add lcni-btn lcni-btn-btn_watchlist_add is-active" data-lcni-watchlist-add data-symbol="${esc(symbol)}">${renderButtonContent('btn_watchlist_add', '')}</button></td>`;
           }
           const valueStyle = resolveCellStyle(c, row[c], valueColorRules);
-          return `<td${cls}${valueStyle ? ` style="${valueStyle}"` : ''}>${esc(row[c])}</td>`;
+          return `<td${cls}${valueStyle ? ` style="${valueStyle}"` : ''}>${esc(formatCellValue(c, row[c]))}</td>`;
         }).join('')}</tr>`;
       }).join('')}</tbody></table><div class="lcni-watchlist-overlay" data-watchlist-overlay hidden>Loading...</div></div>`;
     bindHorizontalScrollLock(host);

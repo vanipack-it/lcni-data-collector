@@ -26,7 +26,7 @@ class LCNI_FilterShortcode {
         $version = file_exists($js) ? (string) filemtime($js) : self::VERSION;
         $css_version = file_exists($css) ? (string) filemtime($css) : self::VERSION;
 
-        wp_register_script('lcni-filter', LCNI_URL . 'modules/filter/filter.js', ['lcni-watchlist'], $version, true);
+        wp_register_script('lcni-filter', LCNI_URL . 'modules/filter/filter.js', ['lcni-main-js', 'lcni-watchlist'], $version, true);
         wp_register_style('lcni-filter', LCNI_URL . 'modules/filter/filter.css', [], $css_version);
     }
 
