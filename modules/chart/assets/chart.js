@@ -36,6 +36,61 @@
     el.innerHTML = '<div class="lcni-chart-error">No data available</div>';
   }
 
+  function setStatusMessage(el, message) {
+    if (!el) {
+      return;
+    }
+
+    el.textContent = message || '';
+  }
+
+  function setLoading(el, isLoading) {
+    if (!el) {
+      return;
+    }
+
+    el.hidden = !isLoading;
+  }
+
+  function parseApiResponse(payload) {
+    if (Array.isArray(payload)) {
+      return payload;
+    }
+
+    if (!payload || typeof payload !== 'object') {
+      return [];
+    }
+
+    if (Array.isArray(payload.data)) {
+      return payload.data;
+    }
+
+    if (payload.data && Array.isArray(payload.data.candles)) {
+      return payload.data.candles;
+    }
+
+    if (Array.isArray(payload.candles)) {
+      return payload.candles;
+    }
+
+    if (payload.success === true && payload.data && typeof payload.data === 'object') {
+      if (Array.isArray(payload.data.rows)) {
+        return payload.data.rows;
+      }
+
+      if (Array.isArray(payload.data.ohlc)) {
+        return payload.data.ohlc;
+      }
+    }
+
+    if (Array.isArray(payload.ohlc)) {
+      return payload.ohlc;
+    }
+
+    const fallbackKey = Object.keys(payload).find((key) => Array.isArray(payload[key]));
+    return fallbackKey ? payload[fallbackKey] : [];
+  }
+
   function fetchData(apiBase, symbol, limit) {
     const base = String(apiBase || '').trim();
     if (!base || !symbol) {
@@ -44,13 +99,18 @@
 
     let endpoint;
     try {
-      endpoint = new URL(base, window.location.origin);
+      if (/^https?:\/\//i.test(base)) {
+        endpoint = new URL(base);
+      } else {
+        endpoint = new URL(base, window.location.origin);
+      }
     } catch (_error) {
       return Promise.reject(new Error('Invalid endpoint'));
     }
 
     endpoint.searchParams.set('symbol', symbol);
     endpoint.searchParams.set('limit', String(limit));
+    console.log(endpoint.toString());
 
     return fetch(endpoint.toString(), {
       method: 'GET',
@@ -65,26 +125,23 @@
         return response.json();
       })
       .then((payload) => {
-        if (!payload || !Array.isArray(payload.data) || !payload.data.length) {
-          throw new Error('No rows');
+        console.log('API response:', payload);
+
+        const rows = parseApiResponse(payload);
+        console.log('Parsed rows:', rows);
+
+        if (!Array.isArray(rows) || !rows.length) {
+          throw new Error('No rows returned from API. Please verify symbol and endpoint format.');
         }
 
         return {
           symbol: sanitizeSymbol(payload.symbol) || symbol,
-          rows: payload.data
+          rows
         };
       });
   }
 
-  function renderChart(el, symbol, rows) {
-    if (!window.echarts || typeof window.echarts.init !== 'function') {
-      throw new Error('ECharts unavailable');
-    }
-
-    if (!Array.isArray(rows) || !rows.length) {
-      throw new Error('No rows');
-    }
-
+  function toSeriesData(rows) {
     const categoryData = [];
     const values = [];
     const volumes = [];
@@ -106,16 +163,33 @@
       volumes.push(Number.isFinite(volume) ? volume : 0);
     });
 
-    if (!categoryData.length) {
+    return { categoryData, values, volumes };
+  }
+
+  function renderChart(el, symbol, rows) {
+    console.log('renderChart() rows:', rows);
+
+    if (!window.echarts || typeof window.echarts.init !== 'function') {
+      throw new Error('ECharts unavailable');
+    }
+
+    if (!Array.isArray(rows) || !rows.length) {
+      throw new Error('No rows');
+    }
+
+    const seriesData = toSeriesData(rows);
+    console.log('seriesData:', seriesData);
+
+    if (!seriesData.categoryData.length) {
       throw new Error('Invalid data');
     }
 
-    let chart = window.echarts.getInstanceByDom(el);
-    if (chart) {
-      chart.dispose();
+    const existingChart = window.echarts.getInstanceByDom(el);
+    if (existingChart && (!existingChart.isDisposed || !existingChart.isDisposed())) {
+      existingChart.dispose();
     }
 
-    chart = window.echarts.init(el);
+    const chart = window.echarts.init(el);
 
     const option = {
       animation: true,
@@ -149,7 +223,7 @@
       xAxis: [
         {
           type: 'category',
-          data: categoryData,
+          data: seriesData.categoryData,
           boundaryGap: false,
           axisLine: { onZero: false },
           splitLine: { show: false },
@@ -159,7 +233,7 @@
         {
           type: 'category',
           gridIndex: 1,
-          data: categoryData,
+          data: seriesData.categoryData,
           boundaryGap: false,
           axisLine: { onZero: false },
           axisTick: { show: false },
@@ -202,7 +276,7 @@
         {
           name: symbol,
           type: 'candlestick',
-          data: values,
+          data: seriesData.values,
           itemStyle: {
             color: '#16a34a',
             color0: '#dc2626',
@@ -215,7 +289,7 @@
           type: 'bar',
           xAxisIndex: 1,
           yAxisIndex: 1,
-          data: volumes,
+          data: seriesData.volumes,
           barMaxWidth: 12,
           itemStyle: {
             color: '#94a3b8'
@@ -251,8 +325,13 @@
     chartEl.className = 'lcni-chart-canvas';
     chartEl.style.width = '100%';
     chartEl.style.height = `${height}px`;
-    chartEl.textContent = 'Loading chart...';
     el.appendChild(chartEl);
+
+    const statusEl = document.createElement('div');
+    statusEl.className = 'lcni-chart-status';
+    setStatusMessage(statusEl, 'Loading chart...');
+    setLoading(statusEl, true);
+    el.appendChild(statusEl);
 
     let disposed = false;
 
@@ -276,20 +355,35 @@
         }
 
         const chart = renderChart(chartEl, result.symbol, result.rows);
-        chartEl.textContent = '';
-        instances.set(el, { initialized: true, chartEl, chart, resizeHandler });
+        setStatusMessage(statusEl, '');
+        setLoading(statusEl, false);
+        instances.set(el, { initialized: true, chartEl, chart, resizeHandler, statusEl });
       })
-      .catch(() => {
+      .catch((error) => {
         if (disposed) {
           return;
         }
 
-        setError(el);
+        console.error('Chart load error:', error);
+        const message = error && error.message ? error.message : 'Unable to load chart data.';
+        setStatusMessage(statusEl, message);
+        setLoading(statusEl, true);
+      })
+      .finally(() => {
+        if (disposed) {
+          return;
+        }
+
+        if (statusEl.textContent === 'Loading chart...') {
+          setStatusMessage(statusEl, 'No chart data available for this symbol.');
+          setLoading(statusEl, true);
+        }
       });
 
     instances.set(el, {
       initialized: true,
       chartEl,
+      statusEl,
       resizeHandler,
       destroy: () => {
         disposed = true;
