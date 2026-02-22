@@ -177,6 +177,7 @@ register_activation_hook(__FILE__, 'lcni_activate_plugin');
 register_deactivation_hook(__FILE__, 'lcni_deactivate_plugin');
 
 new LCNI_Settings();
+new LCNI_Chart_Ajax();
 new LCNI_Chart_Shortcode();
 new LCNI_Overview_Shortcode();
 new LCNI_Stock_Signals_Shortcodes();

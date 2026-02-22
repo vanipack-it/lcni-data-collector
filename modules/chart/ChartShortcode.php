@@ -8,14 +8,9 @@ class LCNI_Chart_Shortcode {
 
     const VERSION = '2.0.8';
 
-    private $ajax;
-
     public function __construct() {
-        $this->ajax = new LCNI_Chart_Ajax();
-
         add_action('init', [$this, 'register_shortcodes']);
         add_action('wp_enqueue_scripts', [$this, 'register_assets']);
-        add_action('rest_api_init', [$this->ajax, 'register_routes']);
     }
 
     public function register_shortcodes() {
