@@ -83,7 +83,7 @@
     if (key.indexOf('volume') !== -1 || key === 'vol') return 'volume';
     if (key.indexOf('rsi') !== -1) return 'rsi';
     if (key.indexOf('macd') !== -1) return 'macd';
-    if (key.indexOf('percent') !== -1 || key.indexOf('_pct') !== -1 || key.indexOf('change') !== -1) return 'percent';
+    if (key.indexOf('percent') !== -1 || key.indexOf('_pct') !== -1 || key.indexOf('pct_') !== -1 || key.indexOf('change') !== -1) return 'percent';
     if (key.indexOf('rs') !== -1) return 'rs';
     if (key === 'pe' || key.indexOf('pe_') === 0) return 'pe';
     if (key === 'pb' || key.indexOf('pb_') === 0) return 'pb';

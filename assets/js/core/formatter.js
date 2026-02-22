@@ -115,11 +115,18 @@
       return '-';
     }
 
-    const decimals = getDecimals(type || 'price');
-    const abs = Math.abs(numeric);
+    const normalizedType = String(type || 'price').toLowerCase();
+    const isPercentType = normalizedType === 'percent';
+    const normalizedValue = isPercentType ? numeric * 100 : numeric;
+    const decimals = getDecimals(normalizedType);
+    const abs = Math.abs(normalizedValue);
+
+    if (isPercentType) {
+      return `${formatStandard(normalizedValue, decimals)}%`;
+    }
 
     if (!activeConfig.compact_numbers || abs < activeConfig.compact_threshold) {
-      return formatStandard(numeric, decimals);
+      return formatStandard(normalizedValue, decimals);
     }
 
     if (!activeConfig.use_intl) {
@@ -130,19 +137,19 @@
       ];
       for (let i = 0; i < units.length; i += 1) {
         if (abs >= units[i].value) {
-          return `${(numeric / units[i].value).toFixed(decimals)}${units[i].symbol}`;
+          return `${(normalizedValue / units[i].value).toFixed(decimals)}${units[i].symbol}`;
         }
       }
 
-      return formatFixed(numeric, decimals);
+      return formatFixed(normalizedValue, decimals);
     }
 
     const formatter = getIntlFormatter(decimals, true);
     if (!formatter) {
-      return formatStandard(numeric, decimals);
+      return formatStandard(normalizedValue, decimals);
     }
 
-    return formatter.format(numeric);
+    return formatter.format(normalizedValue);
   }
 
   const api = {
