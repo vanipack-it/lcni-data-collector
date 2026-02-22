@@ -90,8 +90,23 @@
 
 
   function renderWatchlistRowActionButton(symbol) {
-    const removeLabel = renderButtonContent('btn_watchlist_remove_symbol', 'Xóa');
-    return `<button type="button" class="lcni-watchlist-add lcni-btn lcni-btn-btn_watchlist_remove_symbol is-active" data-lcni-watchlist-add data-symbol="${esc(symbol)}">${removeLabel}</button>`;
+    const removeLabel = renderButtonContent('btn_watchlist_remove_symbol_row', 'Xóa');
+    return `<button type="button" class="lcni-watchlist-row-remove lcni-btn lcni-btn-btn_watchlist_remove_symbol_row" data-watchlist-row-remove data-symbol="${esc(symbol)}" aria-label="Remove from watchlist">${removeLabel}</button>`;
+  }
+
+  function renderRowsMarkup(orderedColumns, items, stickyColumn, valueColorRules) {
+    return (Array.isArray(items) ? items : []).map((row) => {
+      const symbol = row.symbol || '';
+      return `<tr data-row-symbol="${esc(symbol)}">${orderedColumns.map((c, idx) => {
+        const stickyCls = resolveStickyColumnClass(stickyColumn, c, idx);
+        const cls = stickyCls ? ` class="${stickyCls}"` : '';
+        if (c === 'symbol') {
+          return `<td${cls}><span class="lcni-watchlist-symbol">${esc(symbol)}</span>${renderWatchlistRowActionButton(symbol)}</td>`;
+        }
+        const valueStyle = resolveCellStyle(c, row[c], valueColorRules);
+        return `<td${cls}${valueStyle ? ` style="${valueStyle}"` : ''}>${esc(formatCellValue(c, row[c]))}</td>`;
+      }).join('')}</tr>`;
+    }).join('');
   }
 
   function setButtonState(button) {
@@ -232,22 +247,11 @@
     watchlistDatasetByHost.set(host, items);
     host.innerHTML = `
       <div class="lcni-watchlist-header"><strong>Watchlist</strong>
-      <div class="lcni-watchlist-list-controls"><select data-watchlist-select>${(Array.isArray(data.watchlists)?data.watchlists:[]).map((w)=>`<option value="${Number(w.id||0)}" ${(Number(w.id||0)===Number(data.active_watchlist_id||0))?'selected':''}>${esc(w.name||'')}</option>`).join('')}</select><input type="text" class="lcni-watchlist-symbol-input" data-watchlist-symbol-input placeholder="Nhập mã" /><button type="button" class="lcni-btn lcni-btn-btn_watchlist_add_symbol lcni-watchlist-add-btn" data-watchlist-add-btn>${renderButtonContent('btn_watchlist_add_symbol', 'Thêm')}</button><button type="button" class="lcni-btn lcni-btn-btn_watchlist_new" data-watchlist-create>${renderButtonContent('btn_watchlist_new', '+ New')}</button><button type="button" class="lcni-btn lcni-btn-btn_watchlist_delete" data-watchlist-delete>${renderButtonContent('btn_watchlist_delete', 'Delete')}</button></div>
-      <div class="lcni-watchlist-dropdown"><button type="button" class="lcni-watchlist-settings-btn lcni-btn lcni-btn-btn_watchlist_setting" data-watchlist-settings aria-expanded="false">${renderButtonContent('btn_watchlist_setting', '')}</button>
+      <div class="lcni-watchlist-list-controls"><select data-watchlist-select>${(Array.isArray(data.watchlists)?data.watchlists:[]).map((w)=>`<option value="${Number(w.id||0)}" ${(Number(w.id||0)===Number(data.active_watchlist_id||0))?'selected':''}>${esc(w.name||'')}</option>`).join('')}</select><input type="text" class="lcni-watchlist-symbol-input" data-watchlist-symbol-input placeholder="Nhập mã" /><div class="lcni-watchlist-action-buttons"><button type="button" class="lcni-btn lcni-btn-btn_watchlist_add_symbol lcni-watchlist-add-btn" data-watchlist-add-btn>${renderButtonContent('btn_watchlist_add_symbol', 'Thêm')}</button><button type="button" class="lcni-btn lcni-btn-btn_watchlist_new" data-watchlist-create>${renderButtonContent('btn_watchlist_new', '+ New')}</button><button type="button" class="lcni-btn lcni-btn-btn_watchlist_delete" data-watchlist-delete>${renderButtonContent('btn_watchlist_delete', 'Delete')}</button><button type="button" class="lcni-watchlist-settings-btn lcni-btn lcni-btn-btn_watchlist_setting" data-watchlist-settings aria-expanded="false">${renderButtonContent('btn_watchlist_setting', '')}</button></div></div>
+      <div class="lcni-watchlist-dropdown">
       <div class="lcni-watchlist-controls"><div class="lcni-watchlist-col-grid">${allowed.map((c) => `<label class="lcni-watchlist-col-item"><input type="checkbox" data-col-toggle value="${esc(c)}" ${orderedColumns.includes(c) ? 'checked' : ''}><span>${esc(labels[c] || c)}</span></label>`).join('')}</div><button type="button" class="lcni-btn lcni-btn-btn_watchlist_save" data-watchlist-save>${renderButtonContent('btn_watchlist_save', 'Lưu')}</button></div></div></div>
       <div class="lcni-watchlist-table-wrap lcni-table-scroll lcni-table-wrapper" data-scroll-speed="${esc(scrollSpeed)}" style="--row-hover-bg:${esc(rowHoverBg)};"><table class="lcni-watchlist-table lcni-table ${stickyHeader ? 'has-sticky-header' : ''}"><thead><tr>${orderedColumns.map((c, idx) => { const stickyCls = resolveStickyColumnClass(stickyColumn, c, idx); return `<th data-sort-key="${esc(c)}" class="${esc(stickyCls)}">${esc(labels[c] || c)} <span class="lcni-sort-icon">${watchlistSortKey===c?(watchlistSortDir==='asc'?'↑':'↓'):""}</span></th>`; }).join('')}</tr></thead>
-      <tbody>${items.map((row) => {
-        const symbol = row.symbol || '';
-        return `<tr data-row-symbol="${esc(symbol)}">${orderedColumns.map((c, idx) => {
-          const stickyCls = resolveStickyColumnClass(stickyColumn, c, idx);
-          const cls = stickyCls ? ` class="${stickyCls}"` : '';
-          if (c === 'symbol') {
-            return `<td${cls}><span class="lcni-watchlist-symbol">${esc(symbol)}</span>${renderWatchlistRowActionButton(symbol)}</td>`;
-          }
-          const valueStyle = resolveCellStyle(c, row[c], valueColorRules);
-          return `<td${cls}${valueStyle ? ` style="${valueStyle}"` : ''}>${esc(formatCellValue(c, row[c]))}</td>`;
-        }).join('')}</tr>`;
-      }).join('')}</tbody></table><div class="lcni-watchlist-overlay" data-watchlist-overlay hidden>Loading...</div></div>`;
+      <tbody>${renderRowsMarkup(orderedColumns, items, stickyColumn, valueColorRules)}</tbody></table><div class="lcni-watchlist-overlay" data-watchlist-overlay hidden>Loading...</div></div>`;
     bindHorizontalScrollLock(host);
     host.querySelectorAll('[data-lcni-watchlist-add]').forEach(setButtonState);
   }
@@ -269,10 +273,15 @@
     const selected = Array.from(host.querySelectorAll('[data-col-toggle]:checked')).map((i) => i.value);
     const queryCols = selected.length ? '&' + selected.map((v) => `columns[]=${encodeURIComponent(v)}`).join('&') : '';
     const queryWatchlist = activeWatchlistId ? '&watchlist_id=' + encodeURIComponent(activeWatchlistId) : '';
-    const data = await api('/list?mode=refresh&device=' + encodeURIComponent(device) + queryCols + queryWatchlist);
+    const data = await api('/list?device=' + encodeURIComponent(device) + queryCols + queryWatchlist);
     const tbody = host.querySelector('tbody');
     if (tbody) {
-      tbody.innerHTML = data.rows || '';
+      const settings = data.settings || cfg.settingsOption || {};
+      const styles = settings.styles || {};
+      const stickyColumn = String(styles.sticky_column || 'symbol');
+      const valueColorRules = Array.isArray(settings.value_color_rules) ? settings.value_color_rules : [];
+      const orderedColumns = Array.isArray(data.columns) ? data.columns : [];
+      tbody.innerHTML = renderRowsMarkup(orderedColumns, data.items || [], stickyColumn, valueColorRules);
     }
     if (Array.isArray(data.symbols)) {
       WatchlistStore.setSymbols(data.symbols);
@@ -400,12 +409,8 @@
         if (icon) icon.className = 'fa-solid fa-spinner fa-spin';
 
         try {
-          const removeFromTable = addBtn.closest('[data-lcni-watchlist]') && WatchlistStore.has(symbol);
           await toggleSymbol(symbol);
-          if (removeFromTable) {
-            const row = addBtn.closest('tr[data-row-symbol]');
-            if (row) row.remove();
-          }
+          document.querySelectorAll('[data-lcni-watchlist]').forEach((host) => refreshTable(host).catch(() => {}));
           syncAllButtons();
         } catch (error) {
           showToast((error && error.message) || 'Không thể cập nhật watchlist');
@@ -413,6 +418,28 @@
           addBtn.disabled = false;
           addBtn.classList.remove('is-loading');
           setButtonState(addBtn);
+        }
+        return;
+      }
+
+      const removeRowBtn = event.target.closest('[data-watchlist-row-remove]');
+      if (removeRowBtn) {
+        event.preventDefault();
+        event.stopPropagation();
+        const symbol = removeRowBtn.getAttribute('data-symbol') || '';
+        if (!symbol) return;
+        if (!activeWatchlistId) { showToast('Vui lòng chọn watchlist'); return; }
+
+        removeRowBtn.disabled = true;
+        try {
+          await toggleSymbol(symbol, 'remove');
+          const host = removeRowBtn.closest('[data-lcni-watchlist]');
+          if (host) await refreshRowsOnly(host);
+          showToast('Đã xoá mã khỏi watchlist');
+        } catch (error) {
+          showToast((error && error.message) || 'Không thể xoá mã khỏi watchlist');
+        } finally {
+          removeRowBtn.disabled = false;
         }
         return;
       }

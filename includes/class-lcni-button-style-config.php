@@ -81,6 +81,7 @@ class LCNI_Button_Style_Config {
             'btn_stock_view' => ['Stock Detail: View', 'chart'],
             'btn_watchlist_add' => ['Watchlist: Add Symbol', 'watchlist'],
             'btn_watchlist_remove_symbol' => ['Watchlist: Remove Symbol', 'watchlist'],
+            'btn_watchlist_remove_symbol_row' => ['Watchlist: Remove Symbol (Row)', 'watchlist'],
             'btn_watchlist_save' => ['Watchlist: Save', 'watchlist'],
             'btn_watchlist_new' => ['Watchlist: New', 'watchlist'],
             'btn_watchlist_delete' => ['Watchlist: Delete', 'watchlist'],
