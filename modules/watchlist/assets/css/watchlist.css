@@ -10,10 +10,12 @@
   --lcni-watchlist-row-hover-bg: #f3f4f6;
   --lcni-watchlist-head-height: 40px;
   --lcni-watchlist-dropdown-height: 34px;
+  --lcni-watchlist-dropdown-width: 220px;
   --lcni-watchlist-dropdown-font-size: 13px;
   --lcni-watchlist-dropdown-border-color: #d1d5db;
   --lcni-watchlist-dropdown-radius: 8px;
   --lcni-watchlist-input-height: 34px;
+  --lcni-watchlist-input-width: 160px;
   --lcni-watchlist-input-font-size: 13px;
   --lcni-watchlist-input-border-color: #d1d5db;
   --lcni-watchlist-input-radius: 8px;
@@ -22,8 +24,8 @@
 .lcni-watchlist-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:8px; flex-wrap:wrap; }
 .lcni-watchlist-list-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 .lcni-watchlist .lcni-watchlist-table-wrap{scrollbar-gutter:stable;}
-.lcni-watchlist-list-controls select{height:var(--lcni-watchlist-dropdown-height);font-size:var(--lcni-watchlist-dropdown-font-size);border:1px solid var(--lcni-watchlist-dropdown-border-color);border-radius:var(--lcni-watchlist-dropdown-radius);}
-.lcni-watchlist-symbol-input{height:var(--lcni-watchlist-input-height);font-size:var(--lcni-watchlist-input-font-size);border:1px solid var(--lcni-watchlist-input-border-color);border-radius:var(--lcni-watchlist-input-radius);padding:0 10px;}
+.lcni-watchlist-list-controls select{height:var(--lcni-watchlist-dropdown-height);width:var(--lcni-watchlist-dropdown-width);font-size:var(--lcni-watchlist-dropdown-font-size);border:1px solid var(--lcni-watchlist-dropdown-border-color);border-radius:var(--lcni-watchlist-dropdown-radius);}
+.lcni-watchlist-symbol-input{height:var(--lcni-watchlist-input-height);width:var(--lcni-watchlist-input-width);font-size:var(--lcni-watchlist-input-font-size);border:1px solid var(--lcni-watchlist-input-border-color);border-radius:var(--lcni-watchlist-input-radius);padding:0 10px;}
 .lcni-watchlist-dropdown { position: relative; }
 .lcni-watchlist-settings-btn { border:none; background:transparent; cursor:pointer; font-size:18px; line-height:1; }
 .lcni-watchlist-controls { position:absolute; top:28px; right:0; z-index:30; min-width:420px; max-width:min(90vw,680px); background:#fff; border:1px solid #d1d5db; border-radius:8px; box-shadow:0 10px 25px rgba(17,24,39,.12); padding:12px; display:none; flex-direction:column; gap:10px; }
@@ -34,10 +36,10 @@
 .lcni-watchlist-col-item.is-dragging { opacity:.5; border-color:#9ca3af; }
 .lcni-watchlist-table-wrap { position:relative; overflow:auto; overscroll-behavior:contain; overscroll-behavior-x:contain; max-height:calc(100vh - 180px); }
 .lcni-watchlist-table { width:100%; min-width:680px; border-collapse:collapse; table-layout:auto; }
-.lcni-watchlist-table th, .lcni-watchlist-table td { border:var(--lcni-watchlist-row-divider-width) solid var(--lcni-watchlist-row-divider-color); padding:8px; white-space:nowrap; word-break:keep-all; }
+.lcni-watchlist-table th, .lcni-watchlist-table td { border:0; border-bottom:var(--lcni-watchlist-row-divider-width) solid var(--lcni-watchlist-row-divider-color); padding:8px; white-space:nowrap; word-break:keep-all; }
 .lcni-watchlist-table th { font-size:var(--lcni-watchlist-label-font-size); background:var(--lcni-watchlist-header-bg); color:var(--lcni-watchlist-header-color); height:var(--lcni-watchlist-head-height); }
 .lcni-watchlist-table td { font-size:var(--lcni-watchlist-row-font-size); background:var(--lcni-watchlist-value-bg); color:var(--lcni-watchlist-value-color); }
-.lcni-watchlist-table .is-sticky-col { position:sticky; left:0; z-index:2; box-shadow:2px 0 0 rgba(229,231,235,.7); }
+.lcni-watchlist-table .is-sticky-col { position:sticky; left:0; z-index:2; box-shadow:2px 0 0 rgba(229,231,235,.7); background:inherit; }
 .lcni-watchlist-table.has-sticky-header thead th{position:sticky;top:0;z-index:20;}
 .lcni-watchlist-table tbody tr { cursor:pointer; transition:background-color .18s ease; }
 .lcni-watchlist-table tbody tr:hover td { background:var(--row-hover-bg, var(--lcni-watchlist-row-hover-bg)); }
@@ -61,4 +63,6 @@
   .lcni-watchlist-dropdown{align-self:flex-start;}
   .lcni-watchlist-controls{position:fixed;top:12px;right:12px;left:12px;max-width:none;width:auto;max-height:80vh;overflow:auto;z-index:9999;}
   .lcni-watchlist-table-wrap{max-height:calc(100vh - 220px);}
+  .lcni-btn-btn_watchlist_new span,.lcni-btn-btn_watchlist_delete span,.lcni-btn-btn_watchlist_add_symbol span{display:none;}
+  .lcni-btn-btn_watchlist_new,.lcni-btn-btn_watchlist_delete,.lcni-btn-btn_watchlist_add_symbol{padding:0 10px;}
 }

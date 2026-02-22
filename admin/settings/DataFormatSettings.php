@@ -11,7 +11,6 @@ class LCNI_Data_Format_Settings {
     const PAGE_SLUG = 'lcni-data-format-settings';
 
     public function __construct() {
-        add_action('admin_menu', [$this, 'register_menu']);
         add_action('admin_init', [$this, 'register_settings']);
     }
 
@@ -38,17 +37,6 @@ class LCNI_Data_Format_Settings {
         $saved = get_option(self::OPTION_KEY, []);
 
         return self::sanitize_settings($saved);
-    }
-
-    public function register_menu() {
-        add_submenu_page(
-            'lcni-settings',
-            'Frontend Setting - Data Format',
-            'Frontend Setting → Data Format',
-            'manage_options',
-            self::PAGE_SLUG,
-            [$this, 'render_page']
-        );
     }
 
     public function register_settings() {
@@ -93,7 +81,7 @@ class LCNI_Data_Format_Settings {
         $settings = self::get_settings();
         ?>
         <div class="wrap">
-            <h1><?php echo esc_html__('Frontend Setting: Data Format', 'lcni'); ?></h1>
+            <h1><?php echo esc_html__('Data Format', 'lcni'); ?></h1>
             <form method="post" action="options.php">
                 <?php settings_fields(self::SETTINGS_GROUP); ?>
 
