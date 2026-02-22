@@ -8,7 +8,17 @@ class LCNI_Chart_Ajax {
 
     const SETTINGS_META_KEY = 'lcni_stock_chart_settings';
 
+    public function __construct() {
+        add_action('rest_api_init', [$this, 'register_routes']);
+    }
+
     public function register_routes() {
+        register_rest_route('lcni/v1', '/chart', [
+            'methods' => WP_REST_Server::READABLE,
+            'callback' => [$this, 'handle_chart'],
+            'permission_callback' => '__return_true',
+        ]);
+
         register_rest_route('lcni/v1', '/stock-chart/settings', [
             [
                 'methods' => WP_REST_Server::READABLE,
@@ -24,6 +34,35 @@ class LCNI_Chart_Ajax {
                     return is_user_logged_in();
                 },
             ],
+        ]);
+    }
+
+    public function handle_chart(WP_REST_Request $request) {
+        $symbol = strtoupper(sanitize_text_field((string) $request->get_param('symbol')));
+        $limit = min(max(absint($request->get_param('limit')), 1), 500);
+
+        if ($symbol === '') {
+            return new WP_Error('invalid_symbol', 'Invalid symbol', ['status' => 400]);
+        }
+
+        $payload = LCNI_API::get_candles($symbol, '1D', max($limit * 2, 30));
+
+        if ($payload === false) {
+            return new WP_Error(
+                'chart_data_unavailable',
+                LCNI_API::get_last_request_error() ?: 'Unable to fetch chart data',
+                ['status' => 502]
+            );
+        }
+
+        $candles = $this->normalize_candles($payload);
+        if ($limit > 0 && count($candles) > $limit) {
+            $candles = array_slice($candles, -$limit);
+        }
+
+        return rest_ensure_response([
+            'symbol' => $symbol,
+            'data' => $candles,
         ]);
     }
 
@@ -115,5 +154,45 @@ class LCNI_Chart_Ajax {
         $nonce = $request->get_header('x_wp_nonce');
 
         return is_string($nonce) && wp_verify_nonce($nonce, 'wp_rest');
+    }
+
+    private function normalize_candles($payload) {
+        $timestamps = isset($payload['t']) && is_array($payload['t']) ? $payload['t'] : [];
+        $opens = isset($payload['o']) && is_array($payload['o']) ? $payload['o'] : [];
+        $highs = isset($payload['h']) && is_array($payload['h']) ? $payload['h'] : [];
+        $lows = isset($payload['l']) && is_array($payload['l']) ? $payload['l'] : [];
+        $closes = isset($payload['c']) && is_array($payload['c']) ? $payload['c'] : [];
+        $volumes = isset($payload['v']) && is_array($payload['v']) ? $payload['v'] : [];
+
+        $count = min(count($timestamps), count($opens), count($highs), count($lows), count($closes));
+        if ($count <= 0) {
+            return [];
+        }
+
+        $candles = [];
+        for ($i = 0; $i < $count; $i++) {
+            $timestamp = absint($timestamps[$i]);
+            if ($timestamp <= 0) {
+                continue;
+            }
+
+            $open = (float) $opens[$i];
+            $high = (float) $highs[$i];
+            $low = (float) $lows[$i];
+            $close = (float) $closes[$i];
+            $volume = isset($volumes[$i]) ? (int) $volumes[$i] : 0;
+
+            $candles[] = [
+                'date' => gmdate('Y-m-d', $timestamp),
+                'timestamp' => $timestamp,
+                'open' => $open,
+                'high' => $high,
+                'low' => $low,
+                'close' => $close,
+                'volume' => max(0, $volume),
+            ];
+        }
+
+        return $candles;
     }
 }
