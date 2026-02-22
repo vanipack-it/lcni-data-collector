@@ -92,7 +92,7 @@ class LCNI_Rest_API {
             'unchanged' => (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$table} WHERE timeframe='1D' AND event_time=%d AND (pct_t_1 = 0 OR pct_t_1 IS NULL)", $latest_event_time)),
         ];
 
-        return rest_ensure_response([
+        wp_send_json_success([
             'top_rs' => $top_rs,
             'rada' => [
                 'updated_at' => $latest_event_time,
@@ -136,7 +136,7 @@ class LCNI_Rest_API {
             ARRAY_A
         );
 
-        return rest_ensure_response([
+        wp_send_json_success([
             'filters' => [
                 'min_price' => $min_price,
                 'market_id' => $market_id,
@@ -155,7 +155,7 @@ class LCNI_Rest_API {
         $user_id = get_current_user_id();
         $package = get_user_meta($user_id, 'lcni_user_package', true);
 
-        return rest_ensure_response([
+        wp_send_json_success([
             'package' => $package ?: 'free',
             'features' => [
                 'dashboard' => true,
@@ -167,7 +167,7 @@ class LCNI_Rest_API {
     }
 
     public function get_watchlist() {
-        return rest_ensure_response([
+        wp_send_json_success([
             'symbols' => $this->read_watchlist(),
         ]);
     }
@@ -185,7 +185,7 @@ class LCNI_Rest_API {
 
         $this->save_watchlist($watchlist);
 
-        return rest_ensure_response(['symbols' => $watchlist]);
+        wp_send_json_success(['symbols' => $watchlist]);
     }
 
     public function remove_watchlist_symbol(WP_REST_Request $request) {
@@ -199,7 +199,7 @@ class LCNI_Rest_API {
 
         $this->save_watchlist($watchlist);
 
-        return rest_ensure_response(['symbols' => $watchlist]);
+        wp_send_json_success(['symbols' => $watchlist]);
     }
 
     private function read_watchlist() {

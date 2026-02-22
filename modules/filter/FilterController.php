@@ -32,7 +32,7 @@ class LCNI_FilterController {
             'filters' => $request->get_param('filters'),
         ]);
 
-        return rest_ensure_response([
+        wp_send_json_success([
             'settings' => $this->table->get_settings(),
             'data' => $data,
         ]);

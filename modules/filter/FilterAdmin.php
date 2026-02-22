@@ -52,7 +52,9 @@ class LCNI_FilterAdmin {
             return '';
         }
 
-        return wp_json_encode($decoded);
+        $encoded = wp_json_encode($decoded);
+
+        return is_string($encoded) ? $encoded : '{"filters":[]}';
     }
 
     public static function render_filter_form($tab_id) {

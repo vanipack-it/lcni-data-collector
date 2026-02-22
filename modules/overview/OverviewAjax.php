@@ -46,7 +46,7 @@ class LCNI_Overview_Ajax {
             $fields = $allowed_fields;
         }
 
-        return rest_ensure_response([
+        wp_send_json_success([
             'fields' => $fields,
             'version' => LCNI_Overview_Shortcode::VERSION,
         ]);
@@ -66,7 +66,7 @@ class LCNI_Overview_Ajax {
         }
         update_user_meta(get_current_user_id(), self::SETTINGS_META_KEY, $normalized);
 
-        return rest_ensure_response([
+        wp_send_json_success([
             'fields' => $normalized,
             'version' => LCNI_Overview_Shortcode::VERSION,
         ]);

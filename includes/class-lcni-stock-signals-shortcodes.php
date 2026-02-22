@@ -115,7 +115,7 @@ class LCNI_Stock_Signals_Shortcodes {
             $fields = $allowed_fields;
         }
 
-        return rest_ensure_response([
+        wp_send_json_success([
             'fields' => $fields,
             'version' => self::VERSION,
         ]);
@@ -137,7 +137,7 @@ class LCNI_Stock_Signals_Shortcodes {
 
         update_user_meta(get_current_user_id(), self::SETTINGS_META_KEY, $normalized);
 
-        return rest_ensure_response([
+        wp_send_json_success([
             'fields' => $normalized,
             'version' => self::VERSION,
         ]);

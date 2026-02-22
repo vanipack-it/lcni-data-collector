@@ -43,10 +43,10 @@ class LCNI_WatchlistController {
 
         $mode = sanitize_key((string) $request->get_param('mode'));
         if ($mode === 'refresh') {
-            return rest_ensure_response(['rows' => $this->render_tbody_rows($data['items'], $data['columns']), 'symbols' => $data['symbols']]);
+            wp_send_json_success(['rows' => $this->render_tbody_rows($data['items'], $data['columns']), 'symbols' => $data['symbols']]);
         }
 
-        return rest_ensure_response([
+        wp_send_json_success([
             'watchlists' => $this->service->list_watchlists($user_id),
             'active_watchlist_id' => $active_watchlist_id,
             'allowed_columns' => $this->service->get_allowed_columns(),
@@ -62,41 +62,41 @@ class LCNI_WatchlistController {
         if (!$this->verify_rest_nonce($request)) return new WP_Error('invalid_nonce', 'Nonce không hợp lệ.', ['status' => 403]);
         $result = $this->service->create_watchlist(get_current_user_id(), $request->get_param('name'));
         if (is_wp_error($result)) return $result;
-        return rest_ensure_response($result);
+        wp_send_json_success($result);
     }
 
     public function delete_watchlist(WP_REST_Request $request) {
         if (!$this->verify_rest_nonce($request)) return new WP_Error('invalid_nonce', 'Nonce không hợp lệ.', ['status' => 403]);
         $result = $this->service->delete_watchlist(get_current_user_id(), $request->get_param('watchlist_id'));
         if (is_wp_error($result)) return $result;
-        return rest_ensure_response($result);
+        wp_send_json_success($result);
     }
 
     public function add_symbol(WP_REST_Request $request) {
         if (!$this->verify_rest_nonce($request)) return new WP_Error('invalid_nonce', 'Nonce không hợp lệ.', ['status' => 403]);
         $result = $this->service->add_symbol(get_current_user_id(), $request->get_param('symbol'), absint($request->get_param('watchlist_id')));
         if (is_wp_error($result)) return $result;
-        return rest_ensure_response($result);
+        wp_send_json_success($result);
     }
 
     public function remove_symbol(WP_REST_Request $request) {
         if (!$this->verify_rest_nonce($request)) return new WP_Error('invalid_nonce', 'Nonce không hợp lệ.', ['status' => 403]);
         $result = $this->service->remove_symbol(get_current_user_id(), $request->get_param('symbol'), absint($request->get_param('watchlist_id')));
         if (is_wp_error($result)) return $result;
-        return rest_ensure_response($result);
+        wp_send_json_success($result);
     }
 
     public function get_settings(WP_REST_Request $request) {
         if (!$this->verify_rest_nonce($request)) return new WP_Error('invalid_nonce', 'Nonce không hợp lệ.', ['status' => 403]);
         $user_id = get_current_user_id();
-        return rest_ensure_response(['allowed_columns' => $this->service->get_allowed_columns(), 'columns' => $this->service->get_user_columns($user_id, $request->get_param('device') === 'mobile' ? 'mobile' : 'desktop'), 'settings' => $this->service->get_settings()]);
+        wp_send_json_success(['allowed_columns' => $this->service->get_allowed_columns(), 'columns' => $this->service->get_user_columns($user_id, $request->get_param('device') === 'mobile' ? 'mobile' : 'desktop'), 'settings' => $this->service->get_settings()]);
     }
 
     public function save_settings(WP_REST_Request $request) {
         if (!$this->verify_rest_nonce($request)) return new WP_Error('invalid_nonce', 'Nonce không hợp lệ.', ['status' => 403]);
         $columns = $request->get_param('columns');
         $saved = $this->service->save_user_columns(get_current_user_id(), is_array($columns) ? $columns : []);
-        return rest_ensure_response(['columns' => $saved, 'allowed_columns' => $this->service->get_allowed_columns()]);
+        wp_send_json_success(['columns' => $saved, 'allowed_columns' => $this->service->get_allowed_columns()]);
     }
 
     private function render_tbody_rows(array $items, array $columns) {
