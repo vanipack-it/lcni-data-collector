@@ -39,6 +39,10 @@
     'tang_truong_ln_quy_gan_nhat', 'tang_truong_ln_quy_gan_nhi'
   ]);
 
+  const RS_COLUMNS = new Set([
+    'rs_1m_by_exchange', 'rs_1w_by_exchange', 'rs_3m_by_exchange'
+  ]);
+
   function sanitizeNumber(value) {
     const number = Number(value);
     return Number.isFinite(number) ? number : null;
@@ -166,14 +170,13 @@
   }
 
   function inferColumnFormat(column) {
-    const key = String(column || '').toLowerCase();
+    const key = String(column || '').trim().toLowerCase();
     if (key.indexOf('volume') !== -1 || key === 'vol') return { type: 'volume' };
     if (key.indexOf('rsi') !== -1) return { type: 'rsi' };
     if (key.indexOf('macd') !== -1) return { type: 'macd' };
     if (PERCENT_COLUMNS_SCALE_100.has(key)) return { type: 'percent', scalePercent: true };
     if (PERCENT_COLUMNS_DIRECT.has(key)) return { type: 'percent', scalePercent: false };
-    if (key.indexOf('change') !== -1) return { type: 'percent', scalePercent: true };
-    if (key.indexOf('rs') !== -1) return { type: 'rs' };
+    if (RS_COLUMNS.has(key)) return { type: 'rs' };
     if (key === 'pe' || key.indexOf('pe_') === 0) return { type: 'pe' };
     if (key === 'pb' || key.indexOf('pb_') === 0) return { type: 'pb' };
     return { type: 'price' };
