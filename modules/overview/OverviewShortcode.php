@@ -6,7 +6,8 @@ if (!defined('ABSPATH')) {
 
 class LCNI_Overview_Shortcode {
 
-    const VERSION = '1.0.0';
+    const VERSION = '2.0.6';
+
     const DEFAULT_FIELDS = [
         'symbol',
         'exchange',
@@ -34,17 +35,6 @@ class LCNI_Overview_Shortcode {
         'tang_truong_ln_quy_gan_nhi',
     ];
 
-    const DEFAULT_STYLES = [
-        'label_color' => '#4b5563',
-        'value_color' => '#111827',
-        'item_background' => '#f9fafb',
-        'container_background' => '#ffffff',
-        'container_border' => '#e5e7eb',
-        'item_height' => 56,
-        'label_font_size' => 12,
-        'value_font_size' => 14,
-    ];
-
     private $ajax;
 
     public function __construct() {
@@ -57,94 +47,34 @@ class LCNI_Overview_Shortcode {
 
     public function register_shortcodes() {
         add_shortcode('lcni_stock_overview', [$this, 'render']);
-        add_shortcode('lcni_stock_overview_query', [$this, 'render_query']);
+        add_shortcode('lcni_stock_overview_query', [$this, 'render']);
     }
 
     public function register_assets() {
-        $sync_script_path = LCNI_PATH . 'assets/js/lcni-stock-sync.js';
-        $sync_version = file_exists($sync_script_path) ? (string) filemtime($sync_script_path) : self::VERSION;
-
-        wp_register_script('lcni-stock-sync', LCNI_URL . 'assets/js/lcni-stock-sync.js', [], $sync_version, true);
-
         $script_path = LCNI_PATH . 'modules/overview/assets/overview.js';
         $version = file_exists($script_path) ? (string) filemtime($script_path) : self::VERSION;
 
-        wp_register_script('lcni-stock-overview', LCNI_URL . 'modules/overview/assets/overview.js', ['lcni-stock-sync'], $version, true);
+        wp_register_script('lcni-stock-overview', LCNI_URL . 'modules/overview/assets/overview.js', [], $version, true);
         wp_register_style('lcni-stock-overview', LCNI_URL . 'modules/overview/assets/overview.css', [], $version);
     }
 
     public function render($atts = []) {
         $atts = shortcode_atts([
             'symbol' => '',
-            'version' => self::VERSION,
         ], $atts, 'lcni_stock_overview');
 
-        $symbol = $this->resolve_symbol($atts['symbol']);
-        if ($symbol === '') {
-            return $this->render_missing_symbol_notice();
-        }
-
-        return $this->render_container($symbol, '', (string) $atts['version']);
-    }
-
-    public function render_query($atts = []) {
-        $atts = shortcode_atts([
-            'param' => 'symbol',
-            'default_symbol' => '',
-            'version' => self::VERSION,
-        ], $atts, 'lcni_stock_overview_query');
-
-        $param = sanitize_key((string) $atts['param']);
-        $query_symbol = isset($_GET[$param]) ? wp_unslash((string) $_GET[$param]) : '';
-        $symbol = $this->sanitize_symbol($query_symbol);
-        if ($symbol === '') {
-            $symbol = $this->sanitize_symbol($atts['default_symbol']);
-        }
-
+        $symbol = $this->sanitize_symbol($atts['symbol']);
         if ($symbol === '') {
             return '';
         }
 
-        return $this->render_container($symbol, $param, (string) $atts['version']);
-    }
-
-    private function render_container($symbol, $query_param, $version) {
         wp_enqueue_script('lcni-stock-overview');
         wp_enqueue_style('lcni-stock-overview');
-        LCNI_Button_Style_Config::enqueue_frontend_assets('lcni-stock-overview');
-        $admin_config = $this->ajax->get_admin_config();
 
         return sprintf(
-            '<div data-lcni-stock-overview data-symbol="%1$s" data-query-param="%2$s" data-api-base="%3$s" data-settings-api="%4$s" data-admin-config="%5$s" data-button-config="%6$s" data-version="%7$s"></div>',
-            esc_attr($symbol),
-            esc_attr($query_param),
-            esc_url(rest_url('lcni/v1/stock-overview')),
-            esc_url(rest_url('lcni/v1/stock-overview/settings')),
-            esc_attr(wp_json_encode($admin_config)),
-            esc_attr(wp_json_encode(LCNI_Button_Style_Config::get_button('btn_overview_setting'))),
-            esc_attr($version)
+            '<div data-lcni-overview data-symbol="%1$s"></div>',
+            esc_attr($symbol)
         );
-    }
-
-    private function render_missing_symbol_notice() {
-        wp_enqueue_style('lcni-stock-overview');
-        wp_add_inline_style('lcni-stock-overview', '.lcni-module-empty{padding:24px;text-align:center;background:#fafafa;border:1px solid #eee;border-radius:6px;}.lcni-module-empty-inner{color:#777;font-size:14px;}');
-
-        return '<div class="lcni-module-empty"><div class="lcni-module-empty-inner">Vui lòng chọn mã cổ phiếu để xem dữ liệu.</div></div>';
-    }
-
-    private function resolve_symbol($symbol) {
-        $normalized = $this->sanitize_symbol($symbol);
-        if ($normalized !== '') {
-            return $normalized;
-        }
-
-        $query_symbol = get_query_var('symbol');
-        if (!is_string($query_symbol) || $query_symbol === '') {
-            $query_symbol = get_query_var('lcni_stock_symbol');
-        }
-
-        return $this->sanitize_symbol((string) $query_symbol);
     }
 
     private function sanitize_symbol($symbol) {

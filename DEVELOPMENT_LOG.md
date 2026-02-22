@@ -150,3 +150,11 @@
 - Plugin enqueue FontAwesome 6 riêng bằng handle `lcni-fa`, không phụ thuộc/remove asset FontAwesome của theme.
 - Giữ nguyên shortcode, layout tổng thể và hành vi nghiệp vụ hiện có; chỉ bổ sung lớp cấu hình style + icon cho button theo yêu cầu.
 - Nâng version plugin lên `2.0.1.1`.
+
+## 2026-02-22 (v2.0.6)
+- Refactor shortcode `[lcni_stock_overview]` và `[lcni_stock_chart]` để chỉ render container tối giản với `data-symbol`, không render dữ liệu trực tiếp từ PHP.
+- Frontend JS overview/chart chuyển sang fetch dữ liệu sau `DOMContentLoaded` qua REST tương ứng (`/wp-json/lcni/v1/stock-overview` và `/wp-json/lcni/v1/candles`) rồi render trong container.
+- Bổ sung xử lý lỗi/empty response chuẩn hóa về thông báo `No data` cho cả overview và chart.
+- Loại bỏ phụ thuộc router/query injection trong 2 shortcode trên: chỉ nhận symbol tường minh qua thuộc tính shortcode.
+- Thêm guard chống khởi tạo JS trùng lặp (`window.__lcniOverviewInitialized`, `window.__lcniChartInitialized` + cờ `data-lcni-initialized`).
+- Giữ nguyên nguyên tắc enqueue script chỉ khi shortcode xuất hiện (enqueue trong hàm render shortcode).
