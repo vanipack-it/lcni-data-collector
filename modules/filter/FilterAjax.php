@@ -41,7 +41,7 @@ class LCNI_FilterAjax {
         $response = ['rows' => $this->table->render_tbody_rows($result['items'] ?? [], $result['columns'] ?? [], $this->table->get_settings()['add_button'] ?? [])];
         if (sanitize_key((string) $request->get_param('mode')) !== 'refresh') $response['total'] = (int) ($result['total'] ?? 0);
 
-        return rest_ensure_response($response);
+        wp_send_json_success($response);
     }
 
     public function save_filter(WP_REST_Request $request) {
@@ -61,11 +61,11 @@ class LCNI_FilterAjax {
 
     public function list_saved_filters(WP_REST_Request $request) {
         if (!$this->verify_rest_nonce($request)) return new WP_Error('invalid_nonce', 'Nonce không hợp lệ.', ['status' => 403]);
-        if (!is_user_logged_in()) return rest_ensure_response(['items' => []]);
+        if (!is_user_logged_in()) wp_send_json_success(['items' => []]);
         $user_id = get_current_user_id();
         $sql = $this->wpdb->prepare("SELECT id, filter_name, created_at FROM {$this->saved_filters_table} WHERE user_id = %d ORDER BY id DESC", $user_id);
         $rows = $this->wpdb->get_results($sql, ARRAY_A);
-        return rest_ensure_response(['items' => is_array($rows) ? $rows : []]);
+        wp_send_json_success(['items' => is_array($rows) ? $rows : []]);
     }
 
     public function load_filter(WP_REST_Request $request) {
@@ -78,7 +78,7 @@ class LCNI_FilterAjax {
         $sql = $this->wpdb->prepare("SELECT filter_config FROM {$this->saved_filters_table} WHERE id = %d AND user_id = %d", $id, $user_id);
         $raw = $this->wpdb->get_var($sql);
         $decoded = json_decode(wp_unslash((string) $raw), true);
-        return rest_ensure_response(['id' => $id, 'config' => is_array($decoded) ? $decoded : ['filters' => []]]);
+        wp_send_json_success(['id' => $id, 'config' => is_array($decoded) ? $decoded : ['filters' => []]]);
     }
 
     public function delete_filter(WP_REST_Request $request) {

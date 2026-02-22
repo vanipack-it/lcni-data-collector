@@ -130,7 +130,7 @@ class LCNI_StockController {
             return new WP_Error('stock_not_found', 'Stock not found.', ['status' => 404]);
         }
 
-        return rest_ensure_response($stock);
+        wp_send_json_success($stock);
     }
 
     public function getStock(WP_REST_Request $request) {
@@ -140,7 +140,7 @@ class LCNI_StockController {
             return new WP_Error('stock_not_found', 'Stock not found.', ['status' => 404]);
         }
 
-        return rest_ensure_response($stock);
+        wp_send_json_success($stock);
     }
 
     public function getStockHistory(WP_REST_Request $request) {
@@ -150,13 +150,13 @@ class LCNI_StockController {
             return new WP_Error('stock_history_not_found', 'Stock history not found.', ['status' => 404]);
         }
 
-        return rest_ensure_response($result);
+        wp_send_json_success($result);
     }
 
     public function getCandles(WP_REST_Request $request) {
         $candles = $this->service->getCandles($request->get_param('symbol'), $request->get_param('limit'));
 
-        return rest_ensure_response($candles);
+        wp_send_json_success($candles);
     }
 
 
@@ -168,13 +168,13 @@ class LCNI_StockController {
             return new WP_Error('stock_signals_not_found', 'Stock signals not found.', ['status' => 404]);
         }
 
-        return rest_ensure_response($result);
+        wp_send_json_success($result);
     }
 
     public function getStocks(WP_REST_Request $request) {
         $result = $this->service->getStocks($request->get_param('page'), $request->get_param('per_page'));
 
-        return rest_ensure_response($result);
+        wp_send_json_success($result);
     }
 
     public function getStockOverview(WP_REST_Request $request) {
@@ -184,6 +184,6 @@ class LCNI_StockController {
             return new WP_Error('stock_overview_not_found', 'Stock overview not found.', ['status' => 404]);
         }
 
-        return rest_ensure_response($result);
+        wp_send_json_success($result);
     }
 }

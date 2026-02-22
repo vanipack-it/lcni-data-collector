@@ -41,7 +41,7 @@ class LCNI_Chart_Ajax {
             }
         }
 
-        return rest_ensure_response($this->sanitize_user_settings(is_array($saved) ? $saved : [], $admin_config));
+        wp_send_json_success($this->sanitize_user_settings(is_array($saved) ? $saved : [], $admin_config));
     }
 
     public function save_user_settings(WP_REST_Request $request) {
@@ -57,7 +57,7 @@ class LCNI_Chart_Ajax {
 
         update_user_meta(get_current_user_id(), self::SETTINGS_META_KEY, wp_json_encode($settings));
 
-        return rest_ensure_response($settings);
+        wp_send_json_success($settings);
     }
 
     public function get_admin_config() {
