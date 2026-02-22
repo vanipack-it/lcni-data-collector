@@ -51,18 +51,35 @@ class LCNI_Chart_Shortcode {
         wp_register_style('lcni-chart-ui', LCNI_URL . 'modules/chart/assets/chart.css', [], $chart_style_version);
     }
 
-    public function render($atts = []) {
-        $atts = shortcode_atts(['symbol' => ''], $atts, 'lcni_stock_chart');
+    public function render($atts = [], $content = '', $shortcode_tag = 'lcni_stock_chart') {
+        $defaults = [
+            'symbol' => '',
+            'limit' => 200,
+            'height' => 420,
+            'param' => 'symbol',
+            'default_symbol' => '',
+        ];
+        $atts = shortcode_atts($defaults, $atts, $shortcode_tag);
 
-        $symbol = lcni_get_current_symbol($atts['symbol']);
+        $symbol = $shortcode_tag === 'lcni_stock_chart_query'
+            ? $this->resolve_query_symbol($atts['param'], $atts['default_symbol'])
+            : lcni_get_current_symbol($atts['symbol']);
         if ($symbol === '') {
             return '';
         }
 
+        $limit = $this->sanitize_limit($atts['limit']);
+        $height = $this->sanitize_height($atts['height']);
+
         wp_enqueue_script('lcni-chart');
         wp_enqueue_style('lcni-chart-ui');
 
-        return '<div data-lcni-chart></div>';
+        return sprintf(
+            '<div data-lcni-chart data-lcni-symbol="%1$s" data-lcni-limit="%2$d" data-lcni-height="%3$d"></div>',
+            esc_attr($symbol),
+            (int) $limit,
+            (int) $height
+        );
     }
 
     public function render_query_form($atts = []) {
@@ -91,6 +108,39 @@ class LCNI_Chart_Shortcode {
         }
 
         return preg_match('/^[A-Z0-9._-]{1,15}$/', $symbol) === 1 ? $symbol : '';
+    }
+
+    private function sanitize_limit($limit) {
+        $value = (int) $limit;
+        if ($value <= 0) {
+            return 200;
+        }
+
+        return min($value, 500);
+    }
+
+    private function sanitize_height($height) {
+        $value = (int) $height;
+        if ($value < 240) {
+            return 420;
+        }
+
+        return min($value, 1200);
+    }
+
+    private function resolve_query_symbol($param, $default_symbol) {
+        $query_param = sanitize_key((string) $param);
+        if ($query_param === '') {
+            $query_param = 'symbol';
+        }
+
+        $query_value = isset($_GET[$query_param]) ? wp_unslash((string) $_GET[$query_param]) : '';
+        $symbol = $this->sanitize_symbol($query_value);
+        if ($symbol !== '') {
+            return $symbol;
+        }
+
+        return lcni_get_current_symbol($default_symbol);
     }
 
 }
