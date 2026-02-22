@@ -18,6 +18,15 @@
     return Math.min(parsed, MAX_LIMIT);
   };
 
+  const parseHeight = function parseHeight(rawHeight) {
+    const parsed = Number.parseInt(rawHeight, 10);
+    if (Number.isNaN(parsed) || parsed < 240) {
+      return 420;
+    }
+
+    return Math.min(parsed, 1200);
+  };
+
   const ensureState = function ensureState(container) {
     let state = stateMap.get(container);
     if (state) {
@@ -34,12 +43,14 @@
       loadingNode: null
     };
 
+    const chartHeight = parseHeight(container.dataset.lcniHeight || '420');
+
     const overlay = documentObject.createElement('div');
     overlay.style.position = 'relative';
-    overlay.style.minHeight = '420px';
+    overlay.style.minHeight = chartHeight + 'px';
 
     const chartNode = documentObject.createElement('div');
-    chartNode.style.height = '420px';
+    chartNode.style.height = chartHeight + 'px';
     chartNode.style.width = '100%';
 
     const loadingNode = documentObject.createElement('div');
@@ -172,15 +183,16 @@
       return;
     }
 
-    const symbol = context && typeof context.getCurrentSymbol === 'function'
-      ? context.getCurrentSymbol()
-      : '';
+    containers.forEach(function (container) {
+      const containerSymbol = context && typeof context.normalizeSymbol === 'function'
+        ? context.normalizeSymbol(container.dataset.lcniSymbol || '')
+        : String(container.dataset.lcniSymbol || '').trim().toUpperCase();
+      const initialSymbol = containerSymbol || (context && typeof context.getCurrentSymbol === 'function' ? context.getCurrentSymbol() : '');
 
-    if (symbol) {
-      containers.forEach(function (container) {
-        renderContainer(container, symbol);
-      });
-    }
+      if (initialSymbol) {
+        renderContainer(container, initialSymbol);
+      }
+    });
 
     documentObject.addEventListener('lcni:symbolChange', function onSymbolChange(event) {
       const raw = event && event.detail ? event.detail.symbol : '';
