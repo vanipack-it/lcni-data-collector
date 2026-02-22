@@ -26,22 +26,33 @@ class LCNI_FilterAjax {
         register_rest_route('lcni/v1', '/filter/save', ['methods' => WP_REST_Server::CREATABLE, 'callback' => [$this, 'save_filter'], 'permission_callback' => '__return_true']);
         register_rest_route('lcni/v1', '/filter/load', ['methods' => WP_REST_Server::READABLE, 'callback' => [$this, 'load_filter'], 'permission_callback' => '__return_true']);
         register_rest_route('lcni/v1', '/filter/delete', ['methods' => WP_REST_Server::CREATABLE, 'callback' => [$this, 'delete_filter'], 'permission_callback' => '__return_true']);
+        register_rest_route('lcni/v1', '/filter/default', ['methods' => WP_REST_Server::CREATABLE, 'callback' => [$this, 'set_default_filter'], 'permission_callback' => '__return_true']);
     }
 
     public function list_items(WP_REST_Request $request) {
         if (!$this->verify_rest_nonce($request)) return new WP_Error('invalid_nonce', 'Nonce không hợp lệ.', ['status' => 403]);
 
+        $filters = $this->service->sanitizeFiltersPublic($request->get_param('filters'), $this->table->get_settings()['criteria_columns'] ?? []);
+        if (empty($filters)) {
+            $filters = $this->table->get_effective_default_saved_filters(is_user_logged_in() ? get_current_user_id() : 0);
+        }
+
         $result = $this->service->getFilterResult([
             'visible_columns' => $request->get_param('visible_columns'),
             'page' => $request->get_param('page'),
             'limit' => $request->get_param('limit'),
-            'filters' => $request->get_param('filters'),
+            'filters' => $filters,
         ]);
 
-        $response = ['rows' => $this->table->render_tbody_rows($result['items'] ?? [], $result['columns'] ?? [], $this->table->get_settings()['add_button'] ?? [])];
+        $response = [
+            'rows' => $this->table->render_tbody_rows($result['items'] ?? [], $result['columns'] ?? [], $this->table->get_settings()['add_button'] ?? []),
+            'items' => $result['items'] ?? [],
+            'columns' => $result['columns'] ?? [],
+            'applied_filters' => $filters,
+        ];
         if (sanitize_key((string) $request->get_param('mode')) !== 'refresh') $response['total'] = (int) ($result['total'] ?? 0);
 
-        wp_send_json_success($response);
+        return rest_ensure_response($response);
     }
 
     public function save_filter(WP_REST_Request $request) {
@@ -56,16 +67,22 @@ class LCNI_FilterAjax {
         if (!is_string($config_json) || $config_json === '') return new WP_Error('invalid_config', 'Không thể xử lý JSON.', ['status' => 400]);
 
         $this->wpdb->insert($this->saved_filters_table, ['user_id' => $user_id, 'filter_name' => $filter_name ?: 'Saved ' . current_time('mysql'), 'filter_config' => wp_slash($config_json)], ['%d', '%s', '%s']);
+
+        $default_id = absint(get_user_meta($user_id, 'lcni_filter_default_saved_filter_id', true));
+        if ($default_id <= 0) {
+            update_user_meta($user_id, 'lcni_filter_default_saved_filter_id', (int) $this->wpdb->insert_id);
+        }
+
         return $this->list_saved_filters($request);
     }
 
     public function list_saved_filters(WP_REST_Request $request) {
         if (!$this->verify_rest_nonce($request)) return new WP_Error('invalid_nonce', 'Nonce không hợp lệ.', ['status' => 403]);
-        if (!is_user_logged_in()) wp_send_json_success(['items' => []]);
+        if (!is_user_logged_in()) return rest_ensure_response(['items' => [], 'default_filter_id' => 0]);
         $user_id = get_current_user_id();
         $sql = $this->wpdb->prepare("SELECT id, filter_name, created_at FROM {$this->saved_filters_table} WHERE user_id = %d ORDER BY id DESC", $user_id);
         $rows = $this->wpdb->get_results($sql, ARRAY_A);
-        wp_send_json_success(['items' => is_array($rows) ? $rows : []]);
+        return rest_ensure_response(['items' => is_array($rows) ? $rows : [], 'default_filter_id' => absint(get_user_meta($user_id, 'lcni_filter_default_saved_filter_id', true))]);
     }
 
     public function load_filter(WP_REST_Request $request) {
@@ -78,7 +95,7 @@ class LCNI_FilterAjax {
         $sql = $this->wpdb->prepare("SELECT filter_config FROM {$this->saved_filters_table} WHERE id = %d AND user_id = %d", $id, $user_id);
         $raw = $this->wpdb->get_var($sql);
         $decoded = json_decode(wp_unslash((string) $raw), true);
-        wp_send_json_success(['id' => $id, 'config' => is_array($decoded) ? $decoded : ['filters' => []]]);
+        return rest_ensure_response(['id' => $id, 'config' => is_array($decoded) ? $decoded : ['filters' => []]]);
     }
 
     public function delete_filter(WP_REST_Request $request) {
@@ -89,7 +106,33 @@ class LCNI_FilterAjax {
         $user_id = get_current_user_id();
         if ($user_id <= 0) return new WP_Error('forbidden', 'Bạn cần đăng nhập.', ['status' => 403]);
         $this->wpdb->delete($this->saved_filters_table, ['id' => $id, 'user_id' => $user_id], ['%d', '%d']);
+
+        $default_id = absint(get_user_meta($user_id, 'lcni_filter_default_saved_filter_id', true));
+        if ($default_id === $id) {
+            delete_user_meta($user_id, 'lcni_filter_default_saved_filter_id');
+        }
+
         return $this->list_saved_filters($request);
+    }
+
+    public function set_default_filter(WP_REST_Request $request) {
+        if (!$this->verify_rest_nonce($request)) return new WP_Error('invalid_nonce', 'Nonce không hợp lệ.', ['status' => 403]);
+        if (!is_user_logged_in()) return new WP_Error('forbidden', 'Bạn cần đăng nhập.', ['status' => 403]);
+
+        $id = absint($request->get_param('id'));
+        $user_id = get_current_user_id();
+        if ($user_id <= 0) return new WP_Error('forbidden', 'Bạn cần đăng nhập.', ['status' => 403]);
+
+        if ($id > 0) {
+            $sql = $this->wpdb->prepare("SELECT id FROM {$this->saved_filters_table} WHERE id = %d AND user_id = %d", $id, $user_id);
+            $exists = (int) $this->wpdb->get_var($sql);
+            if ($exists <= 0) return new WP_Error('not_found', 'Không tìm thấy bộ lọc.', ['status' => 404]);
+            update_user_meta($user_id, 'lcni_filter_default_saved_filter_id', $id);
+        } else {
+            delete_user_meta($user_id, 'lcni_filter_default_saved_filter_id');
+        }
+
+        return rest_ensure_response(['default_filter_id' => $id]);
     }
 
     private function verify_rest_nonce(WP_REST_Request $request) {

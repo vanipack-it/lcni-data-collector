@@ -64,7 +64,43 @@ class LCNI_FilterTable {
                 'conditional_value_colors' => is_string($style['conditional_value_colors'] ?? null) ? (string) $style['conditional_value_colors'] : '[]',
             ],
             'default_filter_values' => $this->get_default_filter_values($criteria),
+            'default_saved_filters' => $this->get_effective_default_saved_filters(),
         ];
+    }
+
+    public function get_effective_default_saved_filters($user_id = 0) {
+        global $wpdb;
+        $table = $wpdb->prefix . 'lcni_saved_filters';
+
+        $user_id = (int) $user_id;
+        if ($user_id <= 0 && is_user_logged_in()) {
+            $user_id = (int) get_current_user_id();
+        }
+
+        $filter_id = 0;
+        if ($user_id > 0) {
+            $filter_id = absint(get_user_meta($user_id, 'lcni_filter_default_saved_filter_id', true));
+        }
+        if ($filter_id <= 0) {
+            $filter_id = absint(get_option('lcni_filter_default_admin_saved_filter_id', 0));
+        }
+        if ($filter_id <= 0) {
+            return [];
+        }
+
+        $raw = $wpdb->get_var($wpdb->prepare("SELECT filter_config FROM {$table} WHERE id = %d", $filter_id));
+        $decoded = json_decode(wp_unslash((string) $raw), true);
+        if (!is_array($decoded) || !is_array($decoded['filters'] ?? null)) {
+            return [];
+        }
+
+        $all_columns = $this->watchlist_service->get_all_columns();
+        $criteria = $this->normalize_columns(get_option('lcni_filter_criteria_columns', []), $all_columns);
+        if (empty($criteria)) {
+            $criteria = array_slice($all_columns, 0, 8);
+        }
+
+        return $this->sanitize_filters($decoded['filters'], $criteria);
     }
 
     public function query($args = []) {

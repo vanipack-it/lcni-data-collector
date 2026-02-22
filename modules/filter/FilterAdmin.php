@@ -74,6 +74,21 @@ class LCNI_FilterAdmin {
         return is_string($encoded) ? $encoded : '{"filters":[]}';
     }
 
+
+    public static function get_saved_filters_by_user($user_id) {
+        global $wpdb;
+        $user_id = (int) $user_id;
+        if ($user_id <= 0) {
+            return [];
+        }
+
+        $table = $wpdb->prefix . 'lcni_saved_filters';
+        $sql = $wpdb->prepare("SELECT id, filter_name FROM {$table} WHERE user_id = %d ORDER BY id DESC", $user_id);
+        $rows = $wpdb->get_results($sql, ARRAY_A);
+
+        return is_array($rows) ? $rows : [];
+    }
+
     public static function render_filter_form($tab_id) {
         $service = new LCNI_WatchlistService(new LCNI_WatchlistRepository());
         $all_columns = $service->get_all_columns();
@@ -81,6 +96,8 @@ class LCNI_FilterAdmin {
         $table_columns = self::sanitize_columns(get_option('lcni_filter_table_columns', []));
         $style = self::sanitize_style(get_option('lcni_filter_style_config', get_option('lcni_filter_style', [])));
         $default_filter_values = (string) get_option('lcni_filter_default_values', '');
+        $admin_saved_filters = self::get_saved_filters_by_user(get_current_user_id());
+        $default_admin_saved_filter_id = absint(get_option('lcni_filter_default_admin_saved_filter_id', 0));
         ?>
         <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
             <div class="lcni-sub-tab-nav" id="lcni-filter-sub-tabs">
@@ -88,6 +105,7 @@ class LCNI_FilterAdmin {
                 <button type="button" data-filter-sub-tab="table_columns">Table Columns</button>
                 <button type="button" data-filter-sub-tab="style">Style</button>
                 <button type="button" data-filter-sub-tab="default_values">Default Values</button>
+                <button type="button" data-filter-sub-tab="default_criteria">Filter Criteria Default</button>
             </div>
 
             <div data-filter-sub-pane="criteria">
@@ -173,6 +191,27 @@ class LCNI_FilterAdmin {
                     <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
                     <h3>Default filter values (JSON)</h3>
                     <p><textarea name="lcni_filter_default_values" rows="8" class="large-text code" placeholder='{"exchange":["HOSE"],"volume":[100000,5000000]}'><?php echo esc_textarea($default_filter_values); ?></textarea></p>
+                    <?php submit_button('Save'); ?>
+                </form>
+            </div>
+
+            <div data-filter-sub-pane="default_criteria" style="display:none">
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                    <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                    <input type="hidden" name="lcni_frontend_module" value="filter">
+                    <input type="hidden" name="lcni_filter_section" value="default_criteria">
+                    <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                    <h3>Default filter from admin saved filter</h3>
+                    <p>Chọn bộ lọc đã lưu của admin để làm mặc định cho khách chưa đăng nhập.</p>
+                    <p>
+                        <select name="lcni_filter_default_admin_saved_filter_id">
+                            <option value="0">-- None --</option>
+                            <?php foreach ($admin_saved_filters as $filter) : ?>
+                                <option value="<?php echo esc_attr((string) absint($filter['id'] ?? 0)); ?>" <?php selected(absint($filter['id'] ?? 0), $default_admin_saved_filter_id); ?>><?php echo esc_html((string) ($filter['filter_name'] ?? '')); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </p>
                     <?php submit_button('Save'); ?>
                 </form>
             </div>
