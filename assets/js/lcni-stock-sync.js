@@ -13,17 +13,22 @@
     return globalSymbol || getDomSymbol() || '';
   };
 
-  const fetchJson = async (cacheKey, url) => {
+  const fetchJson = async (cacheKey, url, options = {}) => {
+    const signal = options && options.signal ? options.signal : undefined;
+
     if (lcniCache[cacheKey]) {
       return lcniCache[cacheKey];
     }
 
-    lcniCache[cacheKey] = fetch(url, { credentials: 'same-origin' }).then(async (response) => {
+    lcniCache[cacheKey] = fetch(url, { credentials: 'same-origin', signal }).then(async (response) => {
       if (!response.ok) {
         throw new Error('Request failed');
       }
 
       return response.json();
+    }).catch((error) => {
+      delete lcniCache[cacheKey];
+      throw error;
     });
 
     return lcniCache[cacheKey];
