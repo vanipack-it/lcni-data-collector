@@ -2,7 +2,7 @@
   'use strict';
 
   const win = windowObject;
-  if (!win || !win.echarts) {
+  if (!win) {
     return;
   }
 
@@ -95,7 +95,7 @@
   };
 
   const createChart = function createChart(container) {
-    if (!container) {
+    if (!container || !win.echarts || typeof win.echarts.init !== 'function') {
       return null;
     }
 
