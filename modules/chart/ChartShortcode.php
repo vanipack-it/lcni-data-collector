@@ -93,10 +93,10 @@ class LCNI_Chart_Shortcode {
         ?>
         <div
             data-lcni-chart
-            data-symbol="<?php echo esc_attr($symbol); ?>"
-            data-limit="<?php echo esc_attr((string) $limit); ?>"
-            data-height="<?php echo esc_attr((string) $height); ?>"
-            data-api-base="<?php echo esc_url(rest_url('lcni/v1/chart')); ?>"
+            data-lcni-symbol="<?php echo esc_attr($symbol); ?>"
+            data-lcni-limit="<?php echo esc_attr((string) $limit); ?>"
+            data-lcni-height="<?php echo esc_attr((string) $height); ?>"
+            data-lcni-candles-endpoint="<?php echo esc_url(rest_url('lcni/v1/candles')); ?>"
             style="height:<?php echo esc_attr((string) $height); ?>px"
         ></div>
         <?php
