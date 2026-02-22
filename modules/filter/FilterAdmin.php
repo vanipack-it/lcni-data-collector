@@ -24,6 +24,7 @@ class LCNI_FilterAdmin {
 
         return [
             'inherit_style' => !empty($input['inherit_style']),
+            'enable_hide_button' => !empty($input['enable_hide_button']),
             'font_size' => max(10, min(24, (int) ($input['font_size'] ?? 13))),
             'text_color' => sanitize_hex_color((string) ($input['text_color'] ?? '')) ?: '',
             'background_color' => sanitize_hex_color((string) ($input['background_color'] ?? '')) ?: '',
@@ -33,6 +34,22 @@ class LCNI_FilterAdmin {
             'header_label_font_size' => is_numeric($input['header_label_font_size'] ?? '') ? max(10, min(30, (int) $input['header_label_font_size'])) : '',
             'row_font_size' => is_numeric($input['row_font_size'] ?? '') ? max(10, min(30, (int) $input['row_font_size'])) : '',
             'row_height' => max(24, min(64, (int) ($input['row_height'] ?? 36))),
+            'saved_filter_label' => sanitize_text_field((string) ($input['saved_filter_label'] ?? 'Saved filters')),
+            'panel_label_font_size' => is_numeric($input['panel_label_font_size'] ?? '') ? max(10, min(30, (int) $input['panel_label_font_size'])) : '',
+            'panel_value_font_size' => is_numeric($input['panel_value_font_size'] ?? '') ? max(10, min(30, (int) $input['panel_value_font_size'])) : '',
+            'panel_label_color' => sanitize_hex_color((string) ($input['panel_label_color'] ?? '')) ?: '',
+            'panel_value_color' => sanitize_hex_color((string) ($input['panel_value_color'] ?? '')) ?: '',
+            'table_header_font_size' => is_numeric($input['table_header_font_size'] ?? '') ? max(10, min(30, (int) $input['table_header_font_size'])) : '',
+            'table_header_text_color' => sanitize_hex_color((string) ($input['table_header_text_color'] ?? '')) ?: '',
+            'table_header_background' => sanitize_hex_color((string) ($input['table_header_background'] ?? '')) ?: '',
+            'table_value_font_size' => is_numeric($input['table_value_font_size'] ?? '') ? max(10, min(30, (int) $input['table_value_font_size'])) : '',
+            'table_value_text_color' => sanitize_hex_color((string) ($input['table_value_text_color'] ?? '')) ?: '',
+            'table_value_background' => sanitize_hex_color((string) ($input['table_value_background'] ?? '')) ?: '',
+            'table_row_divider_color' => sanitize_hex_color((string) ($input['table_row_divider_color'] ?? '')) ?: '',
+            'table_row_divider_width' => is_numeric($input['table_row_divider_width'] ?? '') ? max(0, min(6, (int) $input['table_row_divider_width'])) : '',
+            'sticky_column_count' => is_numeric($input['sticky_column_count'] ?? '') ? max(0, min(5, (int) $input['sticky_column_count'])) : 1,
+            'sticky_header_rows' => is_numeric($input['sticky_header_rows'] ?? '') ? max(0, min(2, (int) $input['sticky_header_rows'])) : 1,
+            'row_hover_background' => sanitize_hex_color((string) ($input['row_hover_background'] ?? '')) ?: '',
             'conditional_value_colors' => is_string($rules) ? $rules : '[]',
         ];
     }
@@ -116,6 +133,8 @@ class LCNI_FilterAdmin {
                     <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
                     <h3>Style</h3>
                     <p><label><input type="checkbox" name="lcni_filter_style_config[inherit_style]" value="1" <?php checked(!empty($style['inherit_style'])); ?>> Inherit global style</label></p>
+                    <p><label><input type="checkbox" name="lcni_filter_style_config[enable_hide_button]" value="1" <?php checked(!empty($style['enable_hide_button'])); ?>> Enable panel hide button</label></p>
+                    <p><label>Saved filter label <input type="text" name="lcni_filter_style_config[saved_filter_label]" value="<?php echo esc_attr((string) ($style['saved_filter_label'] ?? 'Saved filters')); ?>"></label></p>
                     <p><label>Font size <input type="number" name="lcni_filter_style_config[font_size]" value="<?php echo esc_attr((string) $style['font_size']); ?>"></label></p>
                     <p><label>Text color <input type="color" name="lcni_filter_style_config[text_color]" value="<?php echo esc_attr((string) $style['text_color']); ?>"></label></p>
                     <p><label>Background color <input type="color" name="lcni_filter_style_config[background_color]" value="<?php echo esc_attr((string) $style['background_color']); ?>"></label></p>
@@ -125,6 +144,21 @@ class LCNI_FilterAdmin {
                     <p><label>Header label font size <input type="number" name="lcni_filter_style_config[header_label_font_size]" value="<?php echo esc_attr((string) ($style['header_label_font_size'] ?? 12)); ?>"></label></p>
                     <p><label>Row font size <input type="number" name="lcni_filter_style_config[row_font_size]" value="<?php echo esc_attr((string) ($style['row_font_size'] ?? 13)); ?>"></label></p>
                     <p><label>Row height <input type="number" name="lcni_filter_style_config[row_height]" value="<?php echo esc_attr((string) $style['row_height']); ?>"></label></p>
+                    <p><label>Panel label font size <input type="number" name="lcni_filter_style_config[panel_label_font_size]" value="<?php echo esc_attr((string) ($style['panel_label_font_size'] ?? 13)); ?>"></label></p>
+                    <p><label>Panel label color <input type="color" name="lcni_filter_style_config[panel_label_color]" value="<?php echo esc_attr((string) ($style['panel_label_color'] ?? '#111827')); ?>"></label></p>
+                    <p><label>Panel value font size <input type="number" name="lcni_filter_style_config[panel_value_font_size]" value="<?php echo esc_attr((string) ($style['panel_value_font_size'] ?? 13)); ?>"></label></p>
+                    <p><label>Panel value color <input type="color" name="lcni_filter_style_config[panel_value_color]" value="<?php echo esc_attr((string) ($style['panel_value_color'] ?? '#374151')); ?>"></label></p>
+                    <p><label>Table header font size <input type="number" name="lcni_filter_style_config[table_header_font_size]" value="<?php echo esc_attr((string) ($style['table_header_font_size'] ?? 12)); ?>"></label></p>
+                    <p><label>Table header text color <input type="color" name="lcni_filter_style_config[table_header_text_color]" value="<?php echo esc_attr((string) ($style['table_header_text_color'] ?? '#111827')); ?>"></label></p>
+                    <p><label>Table header background <input type="color" name="lcni_filter_style_config[table_header_background]" value="<?php echo esc_attr((string) ($style['table_header_background'] ?? '#f3f4f6')); ?>"></label></p>
+                    <p><label>Table value font size <input type="number" name="lcni_filter_style_config[table_value_font_size]" value="<?php echo esc_attr((string) ($style['table_value_font_size'] ?? 13)); ?>"></label></p>
+                    <p><label>Table value text color <input type="color" name="lcni_filter_style_config[table_value_text_color]" value="<?php echo esc_attr((string) ($style['table_value_text_color'] ?? '#111827')); ?>"></label></p>
+                    <p><label>Table value background <input type="color" name="lcni_filter_style_config[table_value_background]" value="<?php echo esc_attr((string) ($style['table_value_background'] ?? '#ffffff')); ?>"></label></p>
+                    <p><label>Row divider color <input type="color" name="lcni_filter_style_config[table_row_divider_color]" value="<?php echo esc_attr((string) ($style['table_row_divider_color'] ?? '#e5e7eb')); ?>"></label></p>
+                    <p><label>Row divider width <input type="number" name="lcni_filter_style_config[table_row_divider_width]" value="<?php echo esc_attr((string) ($style['table_row_divider_width'] ?? 1)); ?>"></label></p>
+                    <p><label>Sticky column count <input type="number" name="lcni_filter_style_config[sticky_column_count]" value="<?php echo esc_attr((string) ($style['sticky_column_count'] ?? 1)); ?>"></label></p>
+                    <p><label>Sticky header rows <input type="number" name="lcni_filter_style_config[sticky_header_rows]" value="<?php echo esc_attr((string) ($style['sticky_header_rows'] ?? 1)); ?>"></label></p>
+                    <p><label>Row hover background <input type="color" name="lcni_filter_style_config[row_hover_background]" value="<?php echo esc_attr((string) ($style['row_hover_background'] ?? '#eef2ff')); ?>"></label></p>
                     <p><label>Conditional value colors JSON <textarea name="lcni_filter_style_config[conditional_value_colors]" rows="5" class="large-text code"><?php echo esc_textarea((string) ($style['conditional_value_colors'] ?? '[]')); ?></textarea></label></p>
                     <?php submit_button('Save'); ?>
                 </form>

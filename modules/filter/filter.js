@@ -15,7 +15,9 @@
     lastAppliedTotal: 0,
     sortKey: '',
     sortDir: 'asc',
-    dataset: []
+    dataset: [],
+    activeCriteriaColumn: '',
+    panelHidden: false
   };
 
   const sessionKey = cfg.tableSettingsStorageKey || 'lcni_filter_visible_columns_v1';
@@ -24,7 +26,7 @@
   function getButtonConfig(key) { return (cfg.buttonConfig || {})[key] || {}; }
   function renderButtonContent(key, fallbackLabel, forceLabel) {
     const conf = getButtonConfig(key);
-    const icon = conf.icon_class ? `<i class=\"${esc(conf.icon_class)}\" aria-hidden=\"true\"></i>` : '';
+    const icon = conf.icon_class ? `<i class="${esc(conf.icon_class)}" aria-hidden="true"></i>` : '';
     const text = typeof forceLabel === 'string' ? forceLabel : (conf.label_text || fallbackLabel || '');
     const label = `<span>${esc(text)}</span>`;
     return conf.icon_position === 'right' ? `${label}${icon}` : `${icon}${label}`;
@@ -66,6 +68,14 @@
     });
   }
 
+  function loadVisibleColumns(defaultColumns) {
+    try {
+      const raw = JSON.parse(sessionStorage.getItem(sessionKey) || '[]');
+      return Array.isArray(raw) && raw.length ? raw : defaultColumns;
+    } catch (e) { return defaultColumns; }
+  }
+  function saveVisibleColumns(cols) { try { sessionStorage.setItem(sessionKey, JSON.stringify(cols)); } catch (e) {} }
+
   function showToast(message) {
     const node = document.createElement('div');
     node.className = 'lcni-filter-toast';
@@ -74,10 +84,7 @@
     setTimeout(() => node.remove(), 2500);
   }
 
-  function closeModal() {
-    const existing = document.querySelector('.lcni-filter-modal-backdrop');
-    if (existing) existing.remove();
-  }
+  function closeModal() { const existing = document.querySelector('.lcni-filter-modal-backdrop'); if (existing) existing.remove(); }
 
   function showModal(html) {
     closeModal();
@@ -93,11 +100,7 @@
   }
 
   async function openWatchlistSelector(symbol) {
-    if (!cfg.isLoggedIn) {
-      showAuthModal('Vui lòng đăng nhập hoặc đăng ký để thêm vào watchlist');
-      return;
-    }
-
+    if (!cfg.isLoggedIn) return showAuthModal('Vui lòng đăng nhập hoặc đăng ký để thêm vào watchlist');
     const data = await watchlistApi('/list?device=desktop', { method: 'GET' });
     const watchlists = Array.isArray(data.watchlists) ? data.watchlists : [];
     const activeId = Number(data.active_watchlist_id || 0);
@@ -105,17 +108,15 @@
     if (!watchlists.length) {
       showModal(`<h3>Tạo watchlist mới</h3><form data-create-watchlist-form><input type="text" name="name" placeholder="Tên watchlist" required><div class="lcni-filter-modal-actions"><button type="submit" class="lcni-btn lcni-btn-btn_popup_confirm">${renderButtonContent('btn_popup_confirm', '+ New')}</button><button type="button" class="lcni-btn lcni-btn-btn_popup_close" data-modal-close>Close</button></div></form>`);
       const form = document.querySelector('[data-create-watchlist-form]');
-      if (form) {
-        form.addEventListener('submit', async (e) => {
-          e.preventDefault();
-          const input = form.querySelector('input[name="name"]');
-          const name = String(input && input.value || '').trim();
-          if (!name) return;
-          await watchlistApi('/create', { method: 'POST', body: { name } });
-          closeModal();
-          openWatchlistSelector(symbol).catch(() => {});
-        }, { once: true });
-      }
+      if (!form) return;
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const name = String((form.querySelector('input[name="name"]') || {}).value || '').trim();
+        if (!name) return;
+        await watchlistApi('/create', { method: 'POST', body: { name } });
+        closeModal();
+        openWatchlistSelector(symbol).catch(() => {});
+      }, { once: true });
       return;
     }
 
@@ -133,27 +134,15 @@
     }, { once: true });
   }
 
-  function loadVisibleColumns(defaultColumns) {
-    try {
-      const raw = JSON.parse(sessionStorage.getItem(sessionKey) || '[]');
-      return Array.isArray(raw) && raw.length ? raw : defaultColumns;
-    } catch (e) { return defaultColumns; }
-  }
-  function saveVisibleColumns(cols) { try { sessionStorage.setItem(sessionKey, JSON.stringify(cols)); } catch (e) {} }
-
   function collectFilters(host) {
     return state.criteria.map((item) => {
       if (item.type === 'number') {
         return {
           column: item.column,
           operator: 'between',
-          value: [
-            (host.querySelector(`[data-range-min="${item.column}"]`) || {}).value || '',
-            (host.querySelector(`[data-range-max="${item.column}"]`) || {}).value || ''
-          ]
+          value: [(host.querySelector(`[data-range-min="${item.column}"]`) || {}).value || '', (host.querySelector(`[data-range-max="${item.column}"]`) || {}).value || '']
         };
       }
-
       return {
         column: item.column,
         operator: 'in',
@@ -162,11 +151,19 @@
     }).filter((f) => Array.isArray(f.value) ? f.value.join('') !== '' : String(f.value || '') !== '');
   }
 
-  async function loadSavedFilters() {
-    if (!cfg.isLoggedIn) {
-      state.savedFilters = [];
-      return;
+  function hasSelection(column, host) {
+    const criterion = state.criteria.find((item) => item.column === column);
+    if (!criterion) return false;
+    if (criterion.type === 'number') {
+      const min = (host.querySelector(`[data-range-min="${column}"]`) || {}).value || '';
+      const max = (host.querySelector(`[data-range-max="${column}"]`) || {}).value || '';
+      return String(min).trim() !== '' || String(max).trim() !== '';
     }
+    return host.querySelectorAll(`[data-text-check="${column}"]:checked`).length > 0;
+  }
+
+  async function loadSavedFilters() {
+    if (!cfg.isLoggedIn) return (state.savedFilters = []);
     const payload = await savedFilterApi('/list', { method: 'GET' });
     state.savedFilters = Array.isArray(payload.items) ? payload.items : [];
   }
@@ -177,9 +174,9 @@
     state.criteria.forEach((item) => {
       const found = filters.find((f) => f.column === item.column);
       if (item.type === 'number') {
+        const range = found && Array.isArray(found.value) ? found.value : ['', ''];
         const min = host.querySelector(`[data-range-min="${item.column}"]`);
         const max = host.querySelector(`[data-range-max="${item.column}"]`);
-        const range = found && Array.isArray(found.value) ? found.value : ['', ''];
         if (min) min.value = range[0] || '';
         if (max) max.value = range[1] || '';
       } else {
@@ -187,24 +184,25 @@
         host.querySelectorAll(`[data-text-check="${item.column}"]`).forEach((i) => { i.checked = selected.includes(String(i.value)); });
       }
     });
+    updateCriteriaSelectionState(host);
   }
 
   function applyDefaultFilterConfig(host) {
     const defaults = cfg.defaultFilterValues || {};
     state.criteria.forEach((item) => {
       const value = defaults[item.column];
-      if (item.type === 'number') {
+      if (item.type === 'number' && Array.isArray(value)) {
         const min = host.querySelector(`[data-range-min="${item.column}"]`);
         const max = host.querySelector(`[data-range-max="${item.column}"]`);
-        if (Array.isArray(value)) {
-          if (min) min.value = value[0] || '';
-          if (max) max.value = value[1] || '';
-        }
-      } else if (Array.isArray(value)) {
+        if (min) min.value = value[0] || '';
+        if (max) max.value = value[1] || '';
+      }
+      if (item.type !== 'number' && Array.isArray(value)) {
         const selected = value.map(String);
         host.querySelectorAll(`[data-text-check="${item.column}"]`).forEach((i) => { i.checked = selected.includes(String(i.value)); });
       }
     });
+    updateCriteriaSelectionState(host);
   }
 
   function getApplyLabel() {
@@ -212,13 +210,44 @@
     return `${fallback} (${Number(state.lastAppliedTotal || 0)})`;
   }
 
+  function criteriaControlHtml(item) {
+    if (item.type === 'number') {
+      return `<div class="lcni-filter-range-wrap"><input type="number" data-range-min="${esc(item.column)}" value="" placeholder="Min"><input type="number" data-range-max="${esc(item.column)}" value="" placeholder="Max"></div>`;
+    }
+    return `<div class="lcni-filter-check-list">${(item.values || []).map((v) => `<label><input type="checkbox" data-text-check="${esc(item.column)}" value="${esc(v)}"> ${esc(v)}</label>`).join('')}</div>`;
+  }
+
+  function renderCriteriaPanel() {
+    const active = state.activeCriteriaColumn || (state.criteria[0] && state.criteria[0].column) || '';
+    return `<div class="lcni-filter-criteria-grid"><div class="lcni-filter-criteria-tabs">${state.criteria.map((item) => `<button type="button" class="lcni-filter-tab ${item.column === active ? 'is-active' : ''}" data-criteria-tab="${esc(item.column)}"><span class="lcni-filter-tab-check" data-criteria-check="${esc(item.column)}">\u2713</span><span>${esc(item.label)}</span></button>`).join('')}</div><div class="lcni-filter-criteria-values">${state.criteria.map((item) => `<div class="lcni-filter-value-panel ${item.column === active ? 'is-active' : ''}" data-criteria-content="${esc(item.column)}"><strong>${esc(item.label)}</strong>${criteriaControlHtml(item)}</div>`).join('')}</div></div>`;
+  }
+
   function renderStatic(host) {
     const settings = cfg.settings || {};
+    const style = settings.style || {};
     const labels = settings.column_labels || {};
     const columns = state.visibleColumns;
     const selectedId = Number(state.selectedSavedFilterId || 0);
 
-    host.innerHTML = `<div class="lcni-filter-toolbar"><button type="button" class="lcni-btn lcni-btn-btn_filter_open" data-filter-toggle>${renderButtonContent('btn_filter_open', 'Filter')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_setting" data-column-toggle-btn>${renderButtonContent('btn_filter_setting', '')}</button></div><div class="lcni-filter-panel" data-filter-panel hidden><div class="lcni-filter-criteria">${state.criteria.map((item) => item.type === 'number' ? `<div><strong>${esc(item.label)}</strong><div><input type="number" data-range-min="${esc(item.column)}" value=""> - <input type="number" data-range-max="${esc(item.column)}" value=""></div></div>` : `<div><strong>${esc(item.label)}</strong><div class="lcni-filter-check-list">${(item.values || []).map((v) => `<label><input type="checkbox" data-text-check="${esc(item.column)}" value="${esc(v)}"> ${esc(v)}</label>`).join('')}</div></div>`).join('')}</div><div class="lcni-filter-panel-actions"><select data-saved-filter-select><option value="">Saved filters</option>${(state.savedFilters || []).map((f) => `<option value="${Number(f.id || 0)}" ${Number(f.id || 0) === selectedId ? 'selected' : ''}>${esc(f.filter_name || '')}</option>`).join('')}</select><button type="button" class="lcni-btn lcni-btn-btn_filter_reload" data-reload-filter>${renderButtonContent('btn_filter_reload', 'Reload')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_save" data-save-current-filter>${renderButtonContent('btn_filter_save', 'Save')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_delete" data-delete-current-filter>${renderButtonContent('btn_filter_delete', 'Delete')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_apply" data-apply-filter>${renderButtonContent('btn_filter_apply', 'Apply Filter', getApplyLabel())}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_hide lcni-filter-hide-btn" data-filter-hide>Ẩn</button></div></div><div class="lcni-column-pop" data-column-pop hidden></div><div class="lcni-table-scroll"><table class="lcni-table"><thead><tr>${columns.map((c) => `<th data-sort-key="${esc(c)}">${esc(labels[c] || c)} <span data-sort-icon>${state.sortKey===c?(state.sortDir==='asc'?'↑':'↓'):''}</span></th>`).join('')}</tr></thead><tbody></tbody></table></div><div data-filter-pagination></div>`;
+    host.style.setProperty('--lcni-panel-label-size', `${Number(style.panel_label_font_size || 13)}px`);
+    host.style.setProperty('--lcni-panel-value-size', `${Number(style.panel_value_font_size || 13)}px`);
+    host.style.setProperty('--lcni-panel-label-color', String(style.panel_label_color || '#111827'));
+    host.style.setProperty('--lcni-panel-value-color', String(style.panel_value_color || '#374151'));
+    host.style.setProperty('--lcni-table-header-size', `${Number(style.table_header_font_size || 12)}px`);
+    host.style.setProperty('--lcni-table-header-color', String(style.table_header_text_color || '#111827'));
+    host.style.setProperty('--lcni-table-header-bg', String(style.table_header_background || '#f3f4f6'));
+    host.style.setProperty('--lcni-table-value-size', `${Number(style.table_value_font_size || 13)}px`);
+    host.style.setProperty('--lcni-table-value-color', String(style.table_value_text_color || '#111827'));
+    host.style.setProperty('--lcni-table-value-bg', String(style.table_value_background || '#ffffff'));
+    host.style.setProperty('--lcni-row-divider-color', String(style.table_row_divider_color || '#e5e7eb'));
+    host.style.setProperty('--lcni-row-divider-width', `${Number(style.table_row_divider_width || 1)}px`);
+    host.style.setProperty('--lcni-row-hover-bg', String(style.row_hover_background || '#eef2ff'));
+    host.classList.toggle('lcni-disable-sticky-header', Number(style.sticky_header_rows || 1) < 1);
+
+    const hideBtn = style.enable_hide_button ? `<button type="button" class="lcni-btn lcni-btn-btn_filter_hide lcni-filter-hide-btn" data-filter-hide>Ẩn</button>` : '';
+    const savedFilterLabel = esc(style.saved_filter_label || 'Saved filters');
+
+    host.innerHTML = `<div class="lcni-filter-toolbar"><button type="button" class="lcni-btn lcni-btn-btn_filter_open" data-filter-toggle>${renderButtonContent('btn_filter_open', 'Filter')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_setting" data-column-toggle-btn>${renderButtonContent('btn_filter_setting', '')}</button></div><div class="lcni-filter-panel ${state.panelHidden ? 'is-collapsed' : ''}" data-filter-panel><div class="lcni-filter-panel-body">${renderCriteriaPanel()}</div><div class="lcni-filter-panel-actions"><label class="lcni-saved-filter-label">${savedFilterLabel}</label><select data-saved-filter-select><option value="">${savedFilterLabel}</option>${(state.savedFilters || []).map((f) => `<option value="${Number(f.id || 0)}" ${Number(f.id || 0) === selectedId ? 'selected' : ''}>${esc(f.filter_name || '')}</option>`).join('')}</select><button type="button" class="lcni-btn lcni-btn-btn_filter_reload" data-reload-filter>${renderButtonContent('btn_filter_reload', 'Reload')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_save" data-save-current-filter>${renderButtonContent('btn_filter_save', 'Save')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_delete" data-delete-current-filter>${renderButtonContent('btn_filter_delete', 'Delete')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_apply" data-apply-filter>${renderButtonContent('btn_filter_apply', 'Apply Filter', getApplyLabel())}</button>${hideBtn}</div></div><div class="lcni-column-pop" data-column-pop hidden></div><div class="lcni-table-scroll"><table class="lcni-table"><thead><tr>${columns.map((c, idx) => `<th data-sort-key="${esc(c)}" class="${idx < Number(style.sticky_column_count || 1) ? 'is-sticky-col' : ''}">${esc(labels[c] || c)} <span data-sort-icon>${state.sortKey === c ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</span></th>`).join('')}</tr></thead><tbody></tbody></table></div><div data-filter-pagination></div>`;
 
     const selectable = settings.table_columns || columns;
     host.querySelector('[data-column-pop]').innerHTML = `${selectable.map((c) => `<label><input type="checkbox" data-visible-col value="${esc(c)}" ${state.visibleColumns.includes(c) ? 'checked' : ''}> ${esc(labels[c] || c)}</label>`).join('')}<button type="button" class="lcni-btn lcni-btn-btn_save_filter" data-save-columns>${renderButtonContent('btn_save_filter', 'Save')}</button>`;
@@ -227,10 +256,16 @@
     if (state.filters.length) applySavedFilterConfig(host, { filters: state.filters });
   }
 
+  function updateCriteriaSelectionState(host) {
+    host.querySelectorAll('[data-criteria-check]').forEach((node) => {
+      const col = node.getAttribute('data-criteria-check') || '';
+      node.classList.toggle('is-visible', hasSelection(col, host));
+    });
+  }
+
   function updateApplyButtonLabel(host) {
     const btn = host.querySelector('[data-apply-filter]');
-    if (!btn) return;
-    btn.innerHTML = renderButtonContent('btn_filter_apply', 'Apply Filter', getApplyLabel());
+    if (btn) btn.innerHTML = renderButtonContent('btn_filter_apply', 'Apply Filter', getApplyLabel());
   }
 
   function sortDataset(items) {
@@ -253,9 +288,11 @@
       if (payload.rows && !state.sortKey) {
         tbody.innerHTML = payload.rows;
       } else {
+        const style = ((cfg.settings || {}).style || {});
+        const stickyCount = Number(style.sticky_column_count || 1);
         const columns = state.visibleColumns.length ? state.visibleColumns : ((cfg.settings && cfg.settings.table_columns) || []);
         const sorted = sortDataset(state.dataset);
-        tbody.innerHTML = sorted.map((row) => `<tr>${columns.map((column) => `<td>${esc(row[column])}</td>`).join('')}</tr>`).join('');
+        tbody.innerHTML = sorted.map((row) => `<tr>${columns.map((column, idx) => `<td class="${idx < stickyCount ? 'is-sticky-col' : ''}">${esc(row[column])}</td>`).join('')}</tr>`).join('');
       }
     }
     state.total = Number(payload.total || state.total || 0);
@@ -265,11 +302,7 @@
     host.querySelector('[data-filter-pagination]').innerHTML = `<button type="button" class="lcni-btn lcni-btn-btn_filter_open" data-prev ${state.page <= 1 ? 'disabled' : ''}>Prev</button> <span>${state.page}/${totalPages}</span> <button type="button" class="lcni-btn lcni-btn-btn_filter_open" data-next ${state.page >= totalPages ? 'disabled' : ''}>Next</button>`;
   }
 
-  async function load(host) {
-    const payload = await api({ mode: 'filter', page: state.page, limit: state.limit, filters: state.filters, visible_columns: state.visibleColumns });
-    renderTbody(host, payload || {});
-  }
-
+  async function load(host) { renderTbody(host, await api({ mode: 'filter', page: state.page, limit: state.limit, filters: state.filters, visible_columns: state.visibleColumns }) || {}); }
   async function refreshOnly(host) {
     const tbody = host.querySelector('tbody');
     if (!tbody) return;
@@ -280,11 +313,21 @@
   function bind(host) {
     host.addEventListener('click', async (event) => {
       if (event.target.closest('[data-filter-hide]')) {
-        host.classList.toggle('is-hidden');
+        state.panelHidden = true;
+        const panel = host.querySelector('[data-filter-panel]');
+        if (panel) panel.classList.add('is-collapsed');
         return;
       }
       if (event.target.closest('[data-filter-toggle]')) {
-        host.querySelector('[data-filter-panel]').hidden = !host.querySelector('[data-filter-panel]').hidden;
+        state.panelHidden = !state.panelHidden;
+        const panel = host.querySelector('[data-filter-panel]');
+        if (panel) panel.classList.toggle('is-collapsed', state.panelHidden);
+        return;
+      }
+      if (event.target.closest('[data-criteria-tab]')) {
+        state.activeCriteriaColumn = event.target.closest('[data-criteria-tab]').getAttribute('data-criteria-tab') || '';
+        host.querySelectorAll('[data-criteria-tab]').forEach((btn) => btn.classList.toggle('is-active', btn.getAttribute('data-criteria-tab') === state.activeCriteriaColumn));
+        host.querySelectorAll('[data-criteria-content]').forEach((pane) => pane.classList.toggle('is-active', pane.getAttribute('data-criteria-content') === state.activeCriteriaColumn));
         return;
       }
       if (event.target.closest('[data-column-toggle-btn]')) {
@@ -300,12 +343,8 @@
         await load(host);
         return;
       }
-
       if (event.target.closest('[data-save-current-filter]')) {
-        if (!cfg.isLoggedIn) {
-          showAuthModal('Vui lòng đăng nhập hoặc đăng ký để lưu bộ lọc');
-          return;
-        }
+        if (!cfg.isLoggedIn) return showAuthModal('Vui lòng đăng nhập hoặc đăng ký để lưu bộ lọc');
         const name = window.prompt('Tên bộ lọc');
         if (!name) return;
         state.filters = collectFilters(host);
@@ -315,12 +354,8 @@
         await load(host);
         return;
       }
-
       if (event.target.closest('[data-delete-current-filter]')) {
-        if (!cfg.isLoggedIn) {
-          showAuthModal('Vui lòng đăng nhập hoặc đăng ký để lưu bộ lọc');
-          return;
-        }
+        if (!cfg.isLoggedIn) return showAuthModal('Vui lòng đăng nhập hoặc đăng ký để lưu bộ lọc');
         const id = Number(state.selectedSavedFilterId || 0);
         if (!id) return;
         await savedFilterApi('/delete', { method: 'POST', body: { id } });
@@ -329,19 +364,14 @@
         renderStatic(host);
         return;
       }
-
       if (event.target.closest('[data-reload-filter]')) {
-        if (!cfg.isLoggedIn) {
-          showAuthModal('Vui lòng đăng nhập hoặc đăng ký để lưu bộ lọc');
-          return;
-        }
+        if (!cfg.isLoggedIn) return showAuthModal('Vui lòng đăng nhập hoặc đăng ký để lưu bộ lọc');
         const id = Number(state.selectedSavedFilterId || 0);
         if (!id) return;
         const payload = await savedFilterApi('/load?id=' + encodeURIComponent(id), { method: 'GET' });
         applySavedFilterConfig(host, payload.config || {});
         return;
       }
-
       if (event.target.closest('[data-apply-filter]')) {
         state.filters = collectFilters(host);
         state.page = 1;
@@ -351,13 +381,10 @@
       if (event.target.closest('[data-prev]')) { state.page = Math.max(1, state.page - 1); await load(host); return; }
       if (event.target.closest('[data-next]')) { state.page += 1; await load(host); return; }
 
-
       const sortTh = event.target.closest('th[data-sort-key]');
       if (sortTh) {
         const key = sortTh.getAttribute('data-sort-key');
-        if (key === 'actions') return;
-        if (state.sortKey === key) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
-        else { state.sortKey = key; state.sortDir = 'asc'; }
+        if (state.sortKey === key) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc'; else { state.sortKey = key; state.sortDir = 'asc'; }
         renderStatic(host);
         renderTbody(host, { items: state.dataset, total: state.total });
         return;
@@ -366,38 +393,27 @@
       if (addBtn) {
         const symbol = String(addBtn.getAttribute('data-symbol') || '').trim().toUpperCase();
         if (!symbol) return;
-        try {
-          await openWatchlistSelector(symbol);
-          addBtn.classList.add('is-active');
-        } catch (e) {
-          showToast((e && e.message) || 'Không thể cập nhật watchlist');
-        }
+        try { await openWatchlistSelector(symbol); addBtn.classList.add('is-active'); } catch (e) { showToast((e && e.message) || 'Không thể cập nhật watchlist'); }
       }
     });
 
     host.addEventListener('change', (event) => {
       const select = event.target.closest('[data-saved-filter-select]');
-      if (!select) return;
-      state.selectedSavedFilterId = Number(select.value || 0);
+      if (select) state.selectedSavedFilterId = Number(select.value || 0);
+      if (event.target.matches('input[type="checkbox"], input[type="number"]')) updateCriteriaSelectionState(host);
     });
   }
 
   function bindRowNavigation() {
     if (document.body.dataset.lcniFilterRowNavBound === '1') return;
     document.body.dataset.lcniFilterRowNavBound = '1';
-
     document.addEventListener('click', function (e) {
       if (e.target.closest('.lcni-btn')) return;
-
       const row = e.target.closest('tr[data-symbol]');
       if (!row || !row.closest('[data-lcni-stock-filter]')) return;
-
       const detailBase = String((window.lcniData && window.lcniData.stockDetailUrl) || cfg.stockDetailUrl || '');
-      if (!detailBase) return;
-
       const symbol = encodeURIComponent(row.dataset.symbol || '');
-      if (!symbol) return;
-      window.location.href = detailBase + '?symbol=' + symbol;
+      if (detailBase && symbol) window.location.href = detailBase + '?symbol=' + symbol;
     });
   }
 
@@ -406,11 +422,13 @@
     const defaultColumns = ((cfg.settings || {}).table_columns || []).slice();
     state.visibleColumns = loadVisibleColumns(defaultColumns);
     if (!state.visibleColumns.includes('symbol')) state.visibleColumns.unshift('symbol');
+    state.activeCriteriaColumn = (state.criteria[0] && state.criteria[0].column) || '';
 
     document.querySelectorAll('[data-lcni-stock-filter]').forEach(async (host) => {
       await loadSavedFilters();
       renderStatic(host);
       bind(host);
+      updateCriteriaSelectionState(host);
       state.filters = collectFilters(host);
       await load(host);
       window.clearInterval(host._lcniRefreshTimer);
