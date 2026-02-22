@@ -27,6 +27,18 @@
     compact: new Map()
   };
 
+  const PERCENT_COLUMNS_SCALE_100 = new Set([
+    'pct_t_1', 'pct_t_3', 'pct_1w', 'pct_1m', 'pct_3m', 'pct_6m', 'pct_1y',
+    'gia_sv_ma10', 'gia_sv_ma20', 'gia_sv_ma50', 'gia_sv_ma100', 'gia_sv_ma200',
+    'vol_sv_vol_ma10', 'vol_sv_vol_ma20'
+  ]);
+
+  const PERCENT_COLUMNS_DIRECT = new Set([
+    'eps_1y_pct', 'dt_1y_pct', 'bien_ln_gop', 'bien_ln_rong', 'roe', 'co_tuc_pct',
+    'so_huu_nn_pct', 'tang_truong_dt_quy_gan_nhat', 'tang_truong_dt_quy_gan_nhi',
+    'tang_truong_ln_quy_gan_nhat', 'tang_truong_ln_quy_gan_nhi'
+  ]);
+
   function sanitizeNumber(value) {
     const number = Number(value);
     return Number.isFinite(number) ? number : null;
@@ -109,7 +121,7 @@
     return formatter.format(numeric);
   }
 
-  function formatCompact(value, type) {
+  function formatCompact(value, type, options) {
     const numeric = sanitizeNumber(value);
     if (numeric === null) {
       return '-';
@@ -117,7 +129,8 @@
 
     const normalizedType = String(type || 'price').toLowerCase();
     const isPercentType = normalizedType === 'percent';
-    const normalizedValue = isPercentType ? numeric * 100 : numeric;
+    const shouldScalePercent = !isPercentType || !options || options.scalePercent !== false;
+    const normalizedValue = isPercentType && shouldScalePercent ? numeric * 100 : numeric;
     const decimals = getDecimals(normalizedType);
     const abs = Math.abs(normalizedValue);
 
@@ -152,19 +165,42 @@
     return formatter.format(normalizedValue);
   }
 
+  function inferColumnFormat(column) {
+    const key = String(column || '').toLowerCase();
+    if (key.indexOf('volume') !== -1 || key === 'vol') return { type: 'volume' };
+    if (key.indexOf('rsi') !== -1) return { type: 'rsi' };
+    if (key.indexOf('macd') !== -1) return { type: 'macd' };
+    if (PERCENT_COLUMNS_SCALE_100.has(key)) return { type: 'percent', scalePercent: true };
+    if (PERCENT_COLUMNS_DIRECT.has(key)) return { type: 'percent', scalePercent: false };
+    if (key.indexOf('percent') !== -1 || key.indexOf('_pct') !== -1 || key.indexOf('pct_') !== -1 || key.indexOf('change') !== -1) {
+      return { type: 'percent', scalePercent: false };
+    }
+    if (key.indexOf('rs') !== -1) return { type: 'rs' };
+    if (key === 'pe' || key.indexOf('pe_') === 0) return { type: 'pe' };
+    if (key === 'pb' || key.indexOf('pb_') === 0) return { type: 'pb' };
+    return { type: 'price' };
+  }
+
   const api = {
     format(value, type) {
       const valueType = String(type || 'price').toLowerCase();
       return formatCompact(value, valueType);
     },
-    formatPercent(value) {
-      return formatCompact(value, 'percent');
+    formatPercent(value, options) {
+      return formatCompact(value, 'percent', options || {});
     },
     formatCompact(value, type) {
       return formatCompact(value, type || 'price');
     },
     formatFull(value, type) {
       return formatStandard(value, getDecimals(type || 'price'));
+    },
+    inferColumnFormat(column) {
+      return Object.assign({}, inferColumnFormat(column));
+    },
+    formatByColumn(value, column) {
+      const format = inferColumnFormat(column);
+      return formatCompact(value, format.type, format);
     },
     getConfig() {
       return Object.assign({}, activeConfig, { decimals: Object.assign({}, activeConfig.decimals) });
