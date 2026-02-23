@@ -493,6 +493,28 @@ class LCNI_DB {
         }
     }
 
+
+    public static function get_mysql_event_scheduler_status() {
+        global $wpdb;
+
+        $row = $wpdb->get_row("SHOW VARIABLES LIKE 'event_scheduler'", ARRAY_A);
+        if (!is_array($row)) {
+            return [
+                'available' => false,
+                'value' => 'unknown',
+                'enabled' => false,
+            ];
+        }
+
+        $value = isset($row['Value']) ? strtolower((string) $row['Value']) : 'unknown';
+
+        return [
+            'available' => true,
+            'value' => $value,
+            'enabled' => in_array($value, ['on', '1'], true),
+        ];
+    }
+
     public static function refresh_ohlc_latest_snapshot() {
         global $wpdb;
 
