@@ -345,15 +345,18 @@
     const tbody = host.querySelector('tbody');
     state.dataset = Array.isArray(payload.items) ? payload.items : state.dataset;
     if (tbody) {
-      if (payload.rows && !state.sortKey) {
-        tbody.innerHTML = payload.rows;
-      } else {
-        const style = ((cfg.settings || {}).style || {});
-        const stickyCount = Number(style.sticky_column_count || 1);
-        const columns = state.visibleColumns.length ? state.visibleColumns : ((cfg.settings && cfg.settings.table_columns) || []);
-        const sorted = sortDataset(state.dataset);
-        tbody.innerHTML = sorted.map((row) => `<tr data-symbol="${esc(row.symbol || '')}">${columns.map((column, idx) => `<td class="${idx < stickyCount ? 'is-sticky-col' : ''}">${esc(column === 'symbol' ? row[column] : formatCellValue(column, row[column]))}</td>`).join('')}</tr>`).join('');
-      }
+      const style = ((cfg.settings || {}).style || {});
+      const stickyCount = Number(style.sticky_column_count || 1);
+      const columns = state.visibleColumns.length ? state.visibleColumns : ((cfg.settings && cfg.settings.table_columns) || []);
+      const sorted = sortDataset(state.dataset);
+
+      tbody.innerHTML = sorted.map((row) => `<tr data-symbol="${esc(row.symbol || '')}">${columns.map((column, idx) => {
+        const stickyClass = idx < stickyCount ? 'is-sticky-col' : '';
+        if (column === 'symbol') {
+          return `<td class="${stickyClass}"><span>${esc(row[column] || '')}</span> <button type="button" class="lcni-btn lcni-btn-btn_add_filter_row" data-lcni-watchlist-add data-symbol="${esc(row.symbol || '')}" aria-label="Add to watchlist">${renderButtonContent('btn_add_filter_row', '')}</button></td>`;
+        }
+        return `<td class="${stickyClass}">${esc(formatCellValue(column, row[column]))}</td>`;
+      }).join('')}</tr>`).join('');
     }
     state.total = Number(payload.total || state.total || 0);
     state.lastAppliedTotal = state.total;
@@ -365,7 +368,7 @@
     const tbody = host.querySelector('tbody');
     if (!tbody) return;
     const payload = await api({ mode: 'refresh', page: state.page, limit: state.limit, filters: state.filters, visible_columns: state.visibleColumns });
-    tbody.innerHTML = payload.rows || '';
+    renderTbody(host, payload || {});
   }
 
 
