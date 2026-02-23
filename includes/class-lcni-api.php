@@ -11,6 +11,7 @@ class LCNI_API {
     const SECDEF_URL = self::BASE_URL . self::SECDEF_ENDPOINT;
 
     private static $last_request_error = '';
+    private static $supported_symbol_map = null;
 
     public static function get_candles($symbol, $resolution = '1D', $days = 365) {
         if (empty($symbol)) {
@@ -27,16 +28,41 @@ class LCNI_API {
     }
 
     public static function get_candles_by_range($symbol, $resolution, $from, $to) {
-        if (empty($symbol)) {
+        $normalized_symbol = strtoupper(trim((string) $symbol));
+
+        if ($normalized_symbol === '') {
             self::$last_request_error = 'Symbol is required.';
 
             return false;
+        }
+
+        if (!self::is_valid_symbol_format($normalized_symbol)) {
+            self::$last_request_error = sprintf('Symbol format invalid for Entrade API: %s', $normalized_symbol);
+            LCNI_DB::log_change('api_error', self::$last_request_error);
+
+            return new WP_Error('invalid_symbol', 'Symbol format invalid for Entrade API');
+        }
+
+        if (!self::is_symbol_supported_for_entrade($normalized_symbol)) {
+            self::$last_request_error = sprintf('Unsupported symbol for Entrade chart-api: %s', $normalized_symbol);
+            LCNI_DB::log_change('api_error', self::$last_request_error, ['symbol' => $normalized_symbol]);
+
+            return new WP_Error('unsupported_symbol', 'Symbol is not supported by Entrade chart-api');
         }
 
         $normalized_resolution = self::normalize_resolution($resolution);
 
         $from = (int) $from;
         $to = (int) $to;
+
+        // Entrade chart-api expects UNIX timestamps in milliseconds.
+        if ($from < 1000000000000) {
+            $from *= 1000;
+        }
+
+        if ($to < 1000000000000) {
+            $to *= 1000;
+        }
 
         if ($from <= 0 || $to <= 0 || $from >= $to) {
             self::$last_request_error = sprintf('Invalid range from=%d to=%d', $from, $to);
@@ -46,7 +72,7 @@ class LCNI_API {
 
         $url = add_query_arg(
             [
-                'symbol' => strtoupper($symbol),
+                'symbol' => $normalized_symbol,
                 'resolution' => $normalized_resolution,
                 'from' => $from,
                 'to' => $to,
@@ -188,6 +214,70 @@ class LCNI_API {
         }
 
         return '1D';
+    }
+
+    private static function is_valid_symbol_format($symbol) {
+        if (preg_match('/^[A-Z]{2,5}$/', $symbol)) {
+            return true;
+        }
+
+        return in_array($symbol, ['VNINDEX', 'HNXINDEX', 'UPCOMINDEX'], true);
+    }
+
+    private static function is_symbol_supported_for_entrade($symbol) {
+        if (in_array($symbol, ['VNINDEX', 'HNXINDEX', 'UPCOMINDEX'], true)) {
+            return true;
+        }
+
+        $symbol_map = self::get_supported_symbol_map();
+        if (!is_array($symbol_map) || empty($symbol_map)) {
+            self::$last_request_error = 'Unable to validate supported symbols for Entrade chart-api.';
+            LCNI_DB::log_change('api_error', self::$last_request_error, ['symbol' => $symbol]);
+
+            return false;
+        }
+
+        return isset($symbol_map[$symbol]);
+    }
+
+    private static function get_supported_symbol_map() {
+        if (is_array(self::$supported_symbol_map)) {
+            return self::$supported_symbol_map;
+        }
+
+        $cache_key = 'lcni_entrade_supported_symbols';
+        $cached = get_transient($cache_key);
+        if (is_array($cached) && !empty($cached)) {
+            self::$supported_symbol_map = $cached;
+
+            return self::$supported_symbol_map;
+        }
+
+        $definitions = self::get_security_definitions();
+        if (!is_array($definitions) || empty($definitions['data']) || !is_array($definitions['data'])) {
+            self::$supported_symbol_map = [];
+
+            return self::$supported_symbol_map;
+        }
+
+        $map = [];
+        foreach ($definitions['data'] as $row) {
+            if (empty($row['symbol'])) {
+                continue;
+            }
+
+            $normalized = strtoupper(trim((string) $row['symbol']));
+            if ($normalized === '') {
+                continue;
+            }
+
+            $map[$normalized] = true;
+        }
+
+        self::$supported_symbol_map = $map;
+        set_transient($cache_key, $map, HOUR_IN_SECONDS);
+
+        return self::$supported_symbol_map;
     }
 
 }
