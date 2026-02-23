@@ -9,10 +9,9 @@ class LCNI_API {
     const BASE_URL = 'https://services.entrade.com.vn';
     const SECDEF_ENDPOINT = '/open-api/market/v2/securities';
     const SECDEF_URL = self::BASE_URL . self::SECDEF_ENDPOINT;
+    const CANDLE_URL = 'https://services.entrade.com.vn/chart-api/v2/ohlcs';
 
     private static $last_request_error = '';
-    private static $supported_symbol_map = null;
-
     public static function get_candles($symbol, $resolution = '1D', $days = 365) {
         if (empty($symbol)) {
             self::$last_request_error = 'Symbol is required.';
@@ -43,13 +42,6 @@ class LCNI_API {
             return new WP_Error('invalid_symbol', 'Symbol format invalid for Entrade API');
         }
 
-        if (!self::is_symbol_supported_for_entrade($normalized_symbol)) {
-            self::$last_request_error = sprintf('Unsupported symbol for Entrade chart-api: %s', $normalized_symbol);
-            LCNI_DB::log_change('api_error', self::$last_request_error, ['symbol' => $normalized_symbol]);
-
-            return new WP_Error('unsupported_symbol', 'Symbol is not supported by Entrade chart-api');
-        }
-
         $normalized_resolution = self::normalize_resolution($resolution);
 
         $from = (int) $from;
@@ -77,7 +69,7 @@ class LCNI_API {
                 'from' => $from,
                 'to' => $to,
             ],
-            'https://services.entrade.com.vn/chart-api/v2/ohlcs'
+            self::CANDLE_URL
         );
 
         return self::request_json($url);
@@ -140,7 +132,6 @@ class LCNI_API {
 
         if (is_wp_error($response)) {
             self::$last_request_error = 'HTTP request error: ' . implode('; ', $response->get_error_messages());
-            LCNI_DB::log_change('api_error', 'HTTP request error.', $response->get_error_messages());
 
             return false;
         }
@@ -150,21 +141,12 @@ class LCNI_API {
 
         if ($status_code !== 200) {
             self::$last_request_error = sprintf('HTTP %d from %s', $status_code, $url);
-            LCNI_DB::log_change(
-                'api_error',
-                sprintf('API returned HTTP %d for %s', $status_code, $url),
-                [
-                    'status' => $status_code,
-                    'body' => $body,
-                ]
-            );
 
             return false;
         }
 
         if ($body === '') {
             self::$last_request_error = 'Empty response body from ' . $url;
-            LCNI_DB::log_change('api_error', 'API returned empty body.', ['url' => $url]);
 
             return false;
         }
@@ -173,14 +155,12 @@ class LCNI_API {
 
         if (json_last_error() !== JSON_ERROR_NONE) {
             self::$last_request_error = 'Invalid JSON response from ' . $url;
-            LCNI_DB::log_change('api_error', 'API returned invalid JSON.', ['body' => $body]);
 
             return false;
         }
 
         if (empty($decoded)) {
             self::$last_request_error = 'Empty decoded payload from ' . $url;
-            LCNI_DB::log_change('api_error', 'API returned empty payload.', ['url' => $url]);
 
             return false;
         }
@@ -222,62 +202,6 @@ class LCNI_API {
         }
 
         return in_array($symbol, ['VNINDEX', 'HNXINDEX', 'UPCOMINDEX'], true);
-    }
-
-    private static function is_symbol_supported_for_entrade($symbol) {
-        if (in_array($symbol, ['VNINDEX', 'HNXINDEX', 'UPCOMINDEX'], true)) {
-            return true;
-        }
-
-        $symbol_map = self::get_supported_symbol_map();
-        if (!is_array($symbol_map) || empty($symbol_map)) {
-            self::$last_request_error = 'Unable to validate supported symbols for Entrade chart-api. Fallback to symbol format validation.';
-            LCNI_DB::log_change('api_error', self::$last_request_error, ['symbol' => $symbol]);
-
-            return (bool) preg_match('/^[A-Z]{2,5}$/', $symbol);
-        }
-
-        return isset($symbol_map[$symbol]);
-    }
-
-    private static function get_supported_symbol_map() {
-        if (is_array(self::$supported_symbol_map)) {
-            return self::$supported_symbol_map;
-        }
-
-        $cache_key = 'lcni_entrade_supported_symbols';
-        $cached = get_transient($cache_key);
-        if (is_array($cached) && !empty($cached)) {
-            self::$supported_symbol_map = $cached;
-
-            return self::$supported_symbol_map;
-        }
-
-        $definitions = self::get_security_definitions();
-        if (!is_array($definitions) || empty($definitions['data']) || !is_array($definitions['data'])) {
-            self::$supported_symbol_map = [];
-
-            return self::$supported_symbol_map;
-        }
-
-        $map = [];
-        foreach ($definitions['data'] as $row) {
-            if (empty($row['symbol'])) {
-                continue;
-            }
-
-            $normalized = strtoupper(trim((string) $row['symbol']));
-            if ($normalized === '') {
-                continue;
-            }
-
-            $map[$normalized] = true;
-        }
-
-        self::$supported_symbol_map = $map;
-        set_transient($cache_key, $map, HOUR_IN_SECONDS);
-
-        return self::$supported_symbol_map;
     }
 
 }
