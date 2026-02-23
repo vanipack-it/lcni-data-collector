@@ -8,6 +8,8 @@ class LCNI_SeedScheduler {
 
     const BATCH_REQUESTS_PER_RUN = 5;
     const RATE_LIMIT_MICROSECONDS = 100000;
+    const OPTION_BATCH_REQUESTS_PER_RUN = 'lcni_seed_batch_requests_per_run';
+    const OPTION_RATE_LIMIT_MICROSECONDS = 'lcni_seed_rate_limit_microseconds';
 
     public static function start_seed($constraints = []) {
         $seeded = self::create_seed_tasks($constraints);
@@ -62,7 +64,10 @@ class LCNI_SeedScheduler {
         $min_from = self::resolve_min_from_for_task($task, $seed_constraints, $to);
         $requests = 0;
 
-        while ($requests < self::BATCH_REQUESTS_PER_RUN) {
+        $batch_requests_per_run = self::get_batch_requests_per_run();
+        $rate_limit_microseconds = self::get_rate_limit_microseconds();
+
+        while ($requests < $batch_requests_per_run) {
             $requests++;
 
             if ($to <= $min_from) {
@@ -91,7 +96,7 @@ class LCNI_SeedScheduler {
 
                 LCNI_SeedRepository::mark_failed((int) $task['id'], $to, $error_message);
 
-                usleep(self::RATE_LIMIT_MICROSECONDS);
+                usleep($rate_limit_microseconds);
                 continue;
             }
 
@@ -127,7 +132,7 @@ class LCNI_SeedScheduler {
 
             LCNI_SeedRepository::update_progress((int) $task['id'], $to);
 
-            usleep(self::RATE_LIMIT_MICROSECONDS);
+            usleep($rate_limit_microseconds);
         }
 
         return [
@@ -136,6 +141,20 @@ class LCNI_SeedScheduler {
             'requests' => $requests,
             'next_to' => $to,
         ];
+    }
+
+
+    public static function get_batch_requests_per_run() {
+        return max(1, (int) get_option(self::OPTION_BATCH_REQUESTS_PER_RUN, self::BATCH_REQUESTS_PER_RUN));
+    }
+
+    public static function get_rate_limit_microseconds() {
+        return max(0, (int) get_option(self::OPTION_RATE_LIMIT_MICROSECONDS, self::RATE_LIMIT_MICROSECONDS));
+    }
+
+    public static function save_runtime_settings($batch_requests_per_run, $rate_limit_microseconds) {
+        update_option(self::OPTION_BATCH_REQUESTS_PER_RUN, max(1, (int) $batch_requests_per_run));
+        update_option(self::OPTION_RATE_LIMIT_MICROSECONDS, max(0, (int) $rate_limit_microseconds));
     }
 
     public static function pause() {

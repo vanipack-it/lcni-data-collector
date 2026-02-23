@@ -29,6 +29,8 @@ class LCNI_Settings {
         register_setting('lcni_settings_group', 'lcni_seed_from_date', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_seed_date'], 'default' => '']);
         register_setting('lcni_settings_group', 'lcni_seed_to_date', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_seed_date'], 'default' => '']);
         register_setting('lcni_settings_group', 'lcni_seed_session_count', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_seed_session_count'], 'default' => 300]);
+        register_setting('lcni_settings_group', LCNI_SeedScheduler::OPTION_BATCH_REQUESTS_PER_RUN, ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_seed_runtime_batch_requests'], 'default' => LCNI_SeedScheduler::BATCH_REQUESTS_PER_RUN]);
+        register_setting('lcni_settings_group', LCNI_SeedScheduler::OPTION_RATE_LIMIT_MICROSECONDS, ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_seed_runtime_rate_limit'], 'default' => LCNI_SeedScheduler::RATE_LIMIT_MICROSECONDS]);
         register_setting('lcni_settings_group', 'lcni_api_key', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_api_credential'], 'default' => '']);
         register_setting('lcni_settings_group', 'lcni_api_secret', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_api_credential'], 'default' => '']);
         register_setting('lcni_settings_group', 'lcni_access_token', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_api_credential'], 'default' => '']);
@@ -48,7 +50,6 @@ class LCNI_Settings {
         register_setting('lcni_settings_group', 'lcni_filter_style', ['type' => 'array', 'sanitize_callback' => ['LCNI_FilterAdmin', 'sanitize_style'], 'default' => []]);
         register_setting('lcni_settings_group', 'lcni_filter_style_config', ['type' => 'array', 'sanitize_callback' => ['LCNI_FilterAdmin', 'sanitize_style'], 'default' => []]);
         register_setting('lcni_settings_group', 'lcni_filter_default_values', ['type' => 'string', 'sanitize_callback' => ['LCNI_FilterAdmin', 'sanitize_default_filter_values'], 'default' => '']);
-        register_setting('lcni_settings_group', 'lcni_button_style_config', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_button_style_config'], 'default' => []]);
         register_setting('lcni_settings_group', 'lcni_column_labels', ['type' => 'array', 'default' => []]);
     }
 
@@ -92,6 +93,14 @@ class LCNI_Settings {
 
     public function sanitize_seed_session_count($value) {
         return max(1, (int) $value);
+    }
+
+    public function sanitize_seed_runtime_batch_requests($value) {
+        return max(1, (int) $value);
+    }
+
+    public function sanitize_seed_runtime_rate_limit($value) {
+        return max(0, (int) $value);
     }
 
     public function sanitize_api_credential($value) {
@@ -202,6 +211,11 @@ class LCNI_Settings {
         } elseif ($action === 'resume_seed') {
             LCNI_SeedScheduler::resume();
             $this->set_notice('success', 'Đã resume seed queue.');
+        } elseif ($action === 'save_seed_runtime_settings') {
+            $batch_requests_per_run = isset($_POST['lcni_seed_batch_requests_per_run']) ? $this->sanitize_seed_runtime_batch_requests(wp_unslash($_POST['lcni_seed_batch_requests_per_run'])) : LCNI_SeedScheduler::BATCH_REQUESTS_PER_RUN;
+            $rate_limit_microseconds = isset($_POST['lcni_seed_rate_limit_microseconds']) ? $this->sanitize_seed_runtime_rate_limit(wp_unslash($_POST['lcni_seed_rate_limit_microseconds'])) : LCNI_SeedScheduler::RATE_LIMIT_MICROSECONDS;
+            LCNI_SeedScheduler::save_runtime_settings($batch_requests_per_run, $rate_limit_microseconds);
+            $this->set_notice('success', 'Đã lưu cấu hình tốc độ seed runtime.');
         } elseif ($action === 'save_rule_settings') {
             $raw_rules = isset($_POST['lcni_rule_settings']) ? (array) wp_unslash($_POST['lcni_rule_settings']) : [];
             $force_recalculate = !empty($_POST['lcni_rule_execute']);
@@ -251,7 +265,7 @@ class LCNI_Settings {
             }
         } elseif ($action === 'save_frontend_settings') {
             $module = isset($_POST['lcni_frontend_module']) ? sanitize_key(wp_unslash($_POST['lcni_frontend_module'])) : '';
-            $allowed_modules = ['signals', 'overview', 'chart', 'chart_analyst', 'watchlist', 'filter', 'column_labels', 'button_style', 'data_format'];
+            $allowed_modules = ['signals', 'overview', 'chart', 'chart_analyst', 'watchlist', 'filter', 'column_labels', 'data_format'];
 
             if (!in_array($module, $allowed_modules, true)) {
                 $this->set_notice('error', 'Module frontend không hợp lệ.');
@@ -401,8 +415,6 @@ class LCNI_Settings {
                     } elseif ($section === 'default_criteria') {
                         update_option('lcni_filter_default_admin_saved_filter_id', absint(isset($_POST['lcni_filter_default_admin_saved_filter_id']) ? wp_unslash($_POST['lcni_filter_default_admin_saved_filter_id']) : 0));
                     }
-                } elseif ($module === 'button_style') {
-                    update_option('lcni_button_style_config', $this->sanitize_button_style_config(isset($_POST['lcni_button_style_config']) ? (array) wp_unslash($_POST['lcni_button_style_config']) : []));
                 } elseif ($module === 'data_format') {
                     $input = isset($_POST[LCNI_Data_Format_Settings::OPTION_KEY]) ? (array) wp_unslash($_POST[LCNI_Data_Format_Settings::OPTION_KEY]) : [];
                     update_option(LCNI_Data_Format_Settings::OPTION_KEY, LCNI_Data_Format_Settings::sanitize_settings($input));
@@ -575,7 +587,7 @@ class LCNI_Settings {
         }
 
         $time_suffix = $end_of_day ? ' 23:59:59' : ' 00:00:00';
-        $timezone = wp_timezone();
+        $timezone = lcni_get_market_timezone();
 
         try {
             $date_time = new DateTimeImmutable($date . $time_suffix, $timezone);
@@ -836,7 +848,7 @@ class LCNI_Settings {
 
         $active_tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'general';
         $rule_sub_tabs = ['lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange'];
-        $frontend_sub_tabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format'];
+        $frontend_sub_tabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format'];
         $update_data_sub_tabs = ['lcni-tab-update-runtime', 'lcni-tab-update-ohlc-latest'];
         if (in_array($active_tab, $rule_sub_tabs, true)) {
             $active_tab = 'rule_settings';
@@ -899,6 +911,8 @@ class LCNI_Settings {
                 <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_redirect_tab" value="general"><input type="hidden" name="lcni_admin_action" value="test_api_multi_symbol"><?php submit_button('Test nhiều symbol', 'secondary', 'submit', false); ?></form>
             <?php elseif ($active_tab === 'seed_dashboard') : ?>
                 <h2>Seed Manager</h2>
+                <?php $seed_batch_requests_per_run = LCNI_SeedScheduler::get_batch_requests_per_run(); ?>
+                <?php $seed_rate_limit_microseconds = LCNI_SeedScheduler::get_rate_limit_microseconds(); ?>
                 <form method="post" enctype="multipart/form-data" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="margin-bottom:12px;padding:10px;background:#fff;border:1px solid #dcdcde;border-radius:6px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
                     <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
                     <input type="hidden" name="lcni_redirect_tab" value="seed_dashboard">
@@ -964,6 +978,14 @@ class LCNI_Settings {
                 <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_redirect_tab" value="seed_dashboard"><input type="hidden" name="lcni_admin_action" value="run_seed_batch"><?php submit_button('Run 1 Batch', 'secondary', 'submit', false); ?></form>
                 <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_redirect_tab" value="seed_dashboard"><input type="hidden" name="lcni_admin_action" value="pause_seed"><?php submit_button('Pause Seed', 'secondary', 'submit', false); ?></form>
                 <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_redirect_tab" value="seed_dashboard"><input type="hidden" name="lcni_admin_action" value="resume_seed"><?php submit_button('Resume Seed', 'secondary', 'submit', false); ?></form>
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="margin-top:12px;margin-bottom:12px;padding:10px;background:#fff;border:1px solid #dcdcde;border-radius:6px;display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
+                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                    <input type="hidden" name="lcni_redirect_tab" value="seed_dashboard">
+                    <input type="hidden" name="lcni_admin_action" value="save_seed_runtime_settings">
+                    <p style="margin:0;"><label><strong>BATCH_REQUESTS_PER_RUN</strong><br><input type="number" min="1" name="lcni_seed_batch_requests_per_run" value="<?php echo esc_attr((string) $seed_batch_requests_per_run); ?>" style="width:140px;"></label></p>
+                    <p style="margin:0;"><label><strong>RATE_LIMIT_MICROSECONDS</strong><br><input type="number" min="0" step="1000" name="lcni_seed_rate_limit_microseconds" value="<?php echo esc_attr((string) $seed_rate_limit_microseconds); ?>" style="width:180px;"></label></p>
+                    <p style="margin:0;"><?php submit_button('Save Seed Runtime Settings', 'secondary', 'submit', false); ?></p>
+                </form>
 
                 <h2 style="margin-top:20px;">Seed Dashboard</h2>
                 <p id="lcni-dashboard-updated-at" style="margin-top:0;color:#50575e;">Cập nhật realtime mỗi 5 giây.</p>
@@ -1780,7 +1802,6 @@ private function sanitize_module_title($value, $fallback) {
             <button type="button" data-sub-tab="lcni-tab-frontend-chart-analyst">Chart Analyst</button>
             <button type="button" data-sub-tab="lcni-tab-frontend-watchlist">Watchlist</button>
             <button type="button" data-sub-tab="lcni-tab-frontend-filter">Filter</button>
-            <button type="button" data-sub-tab="lcni-tab-frontend-style-config">Style Config</button>
             <button type="button" data-sub-tab="lcni-tab-frontend-column-label">Column Label</button>
             <button type="button" data-sub-tab="lcni-tab-frontend-data-format">Data Format</button>
         </div>
@@ -1790,7 +1811,6 @@ private function sanitize_module_title($value, $fallback) {
         <?php $this->render_frontend_chart_analyst_form('chart_analyst', 'lcni-tab-frontend-chart-analyst', $chart_analyst); ?>
         <?php $this->render_frontend_watchlist_form('watchlist', 'lcni-tab-frontend-watchlist', $watchlist); ?>
         <?php LCNI_FilterAdmin::render_filter_form('lcni-tab-frontend-filter'); ?>
-        <?php $this->render_frontend_button_style_form('button_style', 'lcni-tab-frontend-style-config'); ?>
         <?php $this->render_global_column_label_form('column_labels', 'lcni-tab-frontend-column-label', $watchlist); ?>
         <?php $this->render_frontend_data_format_form('data_format', 'lcni-tab-frontend-data-format'); ?>
         <script>
@@ -1803,13 +1823,13 @@ private function sanitize_module_title($value, $fallback) {
                 const activate = function(tabId){
                     buttons.forEach((btn) => btn.classList.toggle('active', btn.getAttribute('data-sub-tab') === tabId));
                     panes.forEach((pane) => {
-                        if (pane.id === 'lcni-tab-frontend-signals' || pane.id === 'lcni-tab-frontend-overview' || pane.id === 'lcni-tab-frontend-chart' || pane.id === 'lcni-tab-frontend-chart-analyst' || pane.id === 'lcni-tab-frontend-watchlist' || pane.id === 'lcni-tab-frontend-filter' || pane.id === 'lcni-tab-frontend-style-config' || pane.id === 'lcni-tab-frontend-column-label' || pane.id === 'lcni-tab-frontend-data-format') {
+                        if (pane.id === 'lcni-tab-frontend-signals' || pane.id === 'lcni-tab-frontend-overview' || pane.id === 'lcni-tab-frontend-chart' || pane.id === 'lcni-tab-frontend-chart-analyst' || pane.id === 'lcni-tab-frontend-watchlist' || pane.id === 'lcni-tab-frontend-filter' || pane.id === 'lcni-tab-frontend-column-label' || pane.id === 'lcni-tab-frontend-data-format') {
                             pane.classList.toggle('active', pane.id === tabId);
                         }
                     });
                 };
                 buttons.forEach((btn) => btn.addEventListener('click', () => activate(btn.getAttribute('data-sub-tab'))));
-                const validTabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format'];
+                const validTabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format'];
                 activate(validTabs.includes(current) ? current : 'lcni-tab-frontend-signals');
             })();
         </script>
@@ -1876,50 +1896,6 @@ private function sanitize_module_title($value, $fallback) {
                     <?php endforeach; ?>
                 </fieldset>
                 <?php submit_button('Save Data Format'); ?>
-            </form>
-        </div>
-        <?php
-    }
-
-    public function sanitize_button_style_config($input) {
-        return LCNI_Button_Style_Config::sanitize_config($input);
-    }
-
-    private function render_frontend_button_style_form($module, $tab_id) {
-        $settings = LCNI_Button_Style_Config::get_config();
-        $button_keys = LCNI_Button_Style_Config::get_button_keys();
-        ?>
-        <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
-            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
-                <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
-                <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
-                <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
-                <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
-
-                <h3>Button Settings</h3>
-                <?php foreach ($button_keys as $button_key => $button_label) : $button = $settings[$button_key] ?? []; ?>
-                    <fieldset style="border:1px solid #dcdcde;padding:12px;margin:0 0 12px;">
-                        <legend><strong><?php echo esc_html($button_label . ' (' . $button_key . ')'); ?></strong></legend>
-                        <p><label>label_text <input type="text" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][label_text]" value="<?php echo esc_attr((string) ($button['label_text'] ?? '')); ?>" class="regular-text"></label></p>
-                        <p><label>icon_class <input type="text" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][icon_class]" value="<?php echo esc_attr((string) ($button['icon_class'] ?? '')); ?>" class="regular-text" placeholder="fa-solid fa-filter"></label></p>
-                        <p><label>icon_position
-                            <select name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][icon_position]">
-                                <option value="left" <?php selected((string) ($button['icon_position'] ?? 'left'), 'left'); ?>>left</option>
-                                <option value="right" <?php selected((string) ($button['icon_position'] ?? 'left'), 'right'); ?>>right</option>
-                            </select>
-                        </label></p>
-                        <p><label>background_color <input type="color" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][background_color]" value="<?php echo esc_attr((string) ($button['background_color'] ?? '#2563eb')); ?>"></label></p>
-                        <p><label>text_color <input type="color" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][text_color]" value="<?php echo esc_attr((string) ($button['text_color'] ?? '#ffffff')); ?>"></label></p>
-                        <p><label>hover_background_color <input type="color" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][hover_background_color]" value="<?php echo esc_attr((string) ($button['hover_background_color'] ?? '#1d4ed8')); ?>"></label></p>
-                        <p><label>hover_text_color <input type="color" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][hover_text_color]" value="<?php echo esc_attr((string) ($button['hover_text_color'] ?? '#ffffff')); ?>"></label></p>
-                        <p><label>border <input type="text" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][border]" value="<?php echo esc_attr((string) ($button['border'] ?? '0')); ?>" placeholder="1px solid #d1d5db"></label></p>
-                        <p><label>height <input type="text" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][height]" value="<?php echo esc_attr((string) ($button['height'] ?? '36px')); ?>" placeholder="36px"></label></p>
-                        <p><label>border_radius <input type="text" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][border_radius]" value="<?php echo esc_attr((string) ($button['border_radius'] ?? '8px')); ?>" placeholder="8px"></label></p>
-                        <p><label>padding_left_right <input type="text" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][padding_left_right]" value="<?php echo esc_attr((string) ($button['padding_left_right'] ?? '12px')); ?>" placeholder="12px"></label></p>
-                        <p><label>font_size <input type="text" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][font_size]" value="<?php echo esc_attr((string) ($button['font_size'] ?? '14px')); ?>" placeholder="14px"></label></p>
-                    </fieldset>
-                <?php endforeach; ?>
-                <?php submit_button('Save'); ?>
             </form>
         </div>
         <?php

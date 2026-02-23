@@ -1989,6 +1989,38 @@ class LCNI_DB {
             ];
         }
 
+        $latest_rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT latest.symbol, latest.event_time, latest.close_price
+                FROM {$ohlc_table} latest
+                INNER JOIN (
+                    SELECT symbol, MAX(event_time) AS event_time
+                    FROM {$ohlc_table}
+                    WHERE timeframe = %s
+                    GROUP BY symbol
+                ) max_rows
+                    ON max_rows.symbol = latest.symbol
+                    AND max_rows.event_time = latest.event_time
+                WHERE latest.timeframe = %s",
+                $timeframe,
+                $timeframe
+            ),
+            ARRAY_A
+        );
+
+        $latest_by_symbol = [];
+        foreach ((array) $latest_rows as $latest_row) {
+            $latest_symbol = strtoupper(trim((string) ($latest_row['symbol'] ?? '')));
+            if ($latest_symbol === '') {
+                continue;
+            }
+
+            $latest_by_symbol[$latest_symbol] = [
+                'event_time' => (int) ($latest_row['event_time'] ?? 0),
+                'close_price' => (float) ($latest_row['close_price'] ?? 0),
+            ];
+        }
+
         $timezone = lcni_get_market_timezone();
         $now = new DateTimeImmutable('now', $timezone);
         $day_start = $now->setTime(0, 0, 0)->getTimestamp();
@@ -2023,31 +2055,20 @@ class LCNI_DB {
                 continue;
             }
 
-            $latest_row = $wpdb->get_row(
-                $wpdb->prepare(
-                    "SELECT event_time, close_price FROM {$ohlc_table}
-                    WHERE symbol = %s AND timeframe = %s
-                    ORDER BY event_time DESC LIMIT 1",
-                    $symbol,
-                    $timeframe
-                ),
-                ARRAY_A
-            );
-
-            if (empty($latest_row)) {
+            if (!isset($latest_by_symbol[$symbol])) {
                 $processed_symbols++;
                 usleep(100000);
                 continue;
             }
 
-            $latest_db_event_time = (int) ($latest_row['event_time'] ?? 0);
+            $latest_db_event_time = (int) ($latest_by_symbol[$symbol]['event_time'] ?? 0);
             if ($latest_db_event_time <= 0) {
                 $processed_symbols++;
                 usleep(100000);
                 continue;
             }
 
-            $latest_close_before = (float) ($latest_row['close_price'] ?? 0);
+            $latest_close_before = (float) ($latest_by_symbol[$symbol]['close_price'] ?? 0);
             $new_close_price = self::normalize_price($latest_candle['close'] ?? 0);
 
             $updated = $wpdb->update(
@@ -2108,9 +2129,9 @@ class LCNI_DB {
     public static function get_all_symbols() {
         global $wpdb;
 
-        $table = $wpdb->prefix . 'lcni_symbols';
+        $table = $wpdb->prefix . 'lcni_symbol_tongquan';
 
-        return $wpdb->get_col("SELECT symbol FROM {$table} ORDER BY symbol ASC");
+        return $wpdb->get_col("SELECT symbol FROM {$table} WHERE symbol IS NOT NULL AND symbol <> '' ORDER BY symbol ASC");
     }
 
     public static function upsert_ohlc_rows($rows) {
