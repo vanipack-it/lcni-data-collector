@@ -199,7 +199,10 @@ class LCNI_API {
     }
 
     private static function is_valid_symbol_format($symbol) {
-        if (preg_match('/^[A-Z]{2,5}$/', $symbol)) {
+        // Entrade symbols can include digits (for example: A32, VN30F1M).
+        // Keep this validation broad enough for listed tickers while still
+        // rejecting unsafe characters before building remote API URLs.
+        if (preg_match('/^[A-Z0-9]{2,12}$/', $symbol)) {
             return true;
         }
 
