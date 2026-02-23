@@ -677,6 +677,10 @@ class LCNI_Settings {
 
         check_ajax_referer('lcni_seed_dashboard_nonce', 'nonce');
 
+        // Tăng tốc seed khi đang mở dashboard: mỗi lần refresh realtime sẽ xử lý thêm 1 batch,
+        // thay vì chỉ chờ cron mỗi phút chạy.
+        $batch_summary = LCNI_SeedScheduler::run_batch();
+
         $stats = LCNI_SeedRepository::get_dashboard_stats();
         $tasks = LCNI_SeedRepository::get_recent_tasks(30);
 
@@ -692,6 +696,7 @@ class LCNI_Settings {
             ],
             'rows_html' => $this->render_task_rows($tasks),
             'updated_at' => current_time('mysql'),
+            'batch_summary' => $batch_summary,
         ]);
     }
 
@@ -1009,7 +1014,14 @@ class LCNI_Settings {
                             }
                         };
 
+                        let refreshing = false;
+
                         const refreshDashboard = function() {
+                            if (refreshing) {
+                                return;
+                            }
+
+                            refreshing = true;
                             const body = new URLSearchParams();
                             body.append('action', 'lcni_seed_dashboard_snapshot');
                             body.append('nonce', nonce);
@@ -1039,6 +1051,12 @@ class LCNI_Settings {
                                 updateStatValue('paused', stats.paused ? String(stats.paused) : 'NO');
 
                                 updatedHint.textContent = 'Cập nhật realtime mỗi 5 giây. Lần cập nhật gần nhất: ' + (payload.data.updated_at || 'N/A');
+                            })
+                            .catch(function() {
+                                // noop
+                            })
+                            .finally(function() {
+                                refreshing = false;
                             });
                         };
 
