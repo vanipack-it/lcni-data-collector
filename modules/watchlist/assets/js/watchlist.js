@@ -170,11 +170,18 @@
     if (value === null || value === undefined || value === '') return '-';
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) return String(value);
-    if (window.LCNIFormatter && typeof window.LCNIFormatter.formatByColumn === 'function') {
-      return window.LCNIFormatter.formatByColumn(numeric, column);
-    }
-    if (window.LCNIFormatter && typeof window.LCNIFormatter.format === 'function') {
-      return window.LCNIFormatter.format(numeric, 'price');
+    if (window.LCNIFormatter) {
+      const canApply = typeof window.LCNIFormatter.shouldApply !== 'function' || window.LCNIFormatter.shouldApply('watchlist');
+      if (!canApply) return String(numeric);
+      if (typeof window.LCNIFormatter.formatByField === 'function') {
+        return window.LCNIFormatter.formatByField(numeric, column);
+      }
+      if (typeof window.LCNIFormatter.formatByColumn === 'function') {
+        return window.LCNIFormatter.formatByColumn(numeric, column);
+      }
+      if (typeof window.LCNIFormatter.format === 'function') {
+        return window.LCNIFormatter.format(numeric, 'price');
+      }
     }
     return String(numeric);
   }

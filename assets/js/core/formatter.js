@@ -19,6 +19,17 @@
       pb: 2,
       rs: 1,
       volume: 1
+    },
+    percent_normalization: {
+      multiply_100_fields: [],
+      already_percent_fields: []
+    },
+    module_scope: {
+      dashboard: true,
+      stock_detail: true,
+      screener: true,
+      watchlist: true,
+      market_overview: true
     }
   };
 
@@ -26,18 +37,6 @@
     standard: new Map(),
     compact: new Map()
   };
-
-  const PERCENT_COLUMNS_SCALE_100 = new Set([
-    'pct_t_1', 'pct_t_3', 'pct_1w', 'pct_1m', 'pct_3m', 'pct_6m', 'pct_1y',
-    'gia_sv_ma10', 'gia_sv_ma20', 'gia_sv_ma50', 'gia_sv_ma100', 'gia_sv_ma200',
-    'vol_sv_vol_ma10', 'vol_sv_vol_ma20'
-  ]);
-
-  const PERCENT_COLUMNS_DIRECT = new Set([
-    'eps_1y_pct', 'dt_1y_pct', 'bien_ln_gop', 'bien_ln_rong', 'roe', 'co_tuc_pct',
-    'so_huu_nn_pct', 'tang_truong_dt_quy_gan_nhat', 'tang_truong_dt_quy_gan_nhi',
-    'tang_truong_ln_quy_gan_nhat', 'tang_truong_ln_quy_gan_nhi'
-  ]);
 
   const RS_COLUMNS = new Set([
     'rs_1m_by_exchange', 'rs_1w_by_exchange', 'rs_3m_by_exchange'
@@ -48,6 +47,26 @@
     return Number.isFinite(number) ? number : null;
   }
 
+  function normalizeFieldName(field) {
+    return String(field || '').trim().toLowerCase();
+  }
+
+  function sanitizeFieldList(rawList) {
+    if (!Array.isArray(rawList)) {
+      return [];
+    }
+
+    const unique = new Set();
+    for (let i = 0; i < rawList.length; i += 1) {
+      const fieldName = normalizeFieldName(rawList[i]);
+      if (fieldName) {
+        unique.add(fieldName);
+      }
+    }
+
+    return Array.from(unique);
+  }
+
   function sanitizeConfig(raw) {
     const config = raw && typeof raw === 'object' ? raw : {};
     const merged = {
@@ -55,7 +74,12 @@
       locale: typeof config.locale === 'string' && config.locale ? config.locale : DEFAULT_CONFIG.locale,
       compact_numbers: config.compact_numbers !== undefined ? !!config.compact_numbers : DEFAULT_CONFIG.compact_numbers,
       compact_threshold: Number.isFinite(Number(config.compact_threshold)) ? Math.max(0, Number(config.compact_threshold)) : DEFAULT_CONFIG.compact_threshold,
-      decimals: Object.assign({}, DEFAULT_CONFIG.decimals)
+      decimals: Object.assign({}, DEFAULT_CONFIG.decimals),
+      percent_normalization: {
+        multiply_100_fields: DEFAULT_CONFIG.percent_normalization.multiply_100_fields.slice(),
+        already_percent_fields: DEFAULT_CONFIG.percent_normalization.already_percent_fields.slice()
+      },
+      module_scope: Object.assign({}, DEFAULT_CONFIG.module_scope)
     };
 
     const decimals = config.decimals && typeof config.decimals === 'object' ? config.decimals : {};
@@ -64,10 +88,33 @@
       merged.decimals[key] = Number.isFinite(decimal) ? Math.max(0, Math.min(8, Math.floor(decimal))) : DEFAULT_CONFIG.decimals[key];
     });
 
+    const percentNormalization = config.percent_normalization && typeof config.percent_normalization === 'object'
+      ? config.percent_normalization
+      : {};
+
+    merged.percent_normalization.multiply_100_fields = sanitizeFieldList(percentNormalization.multiply_100_fields);
+    merged.percent_normalization.already_percent_fields = sanitizeFieldList(percentNormalization.already_percent_fields);
+
+    const moduleScope = config.module_scope && typeof config.module_scope === 'object' ? config.module_scope : {};
+    Object.keys(DEFAULT_CONFIG.module_scope).forEach((moduleKey) => {
+      merged.module_scope[moduleKey] = moduleScope[moduleKey] !== undefined
+        ? !!moduleScope[moduleKey]
+        : DEFAULT_CONFIG.module_scope[moduleKey];
+    });
+
     return merged;
   }
 
   let activeConfig = sanitizeConfig(windowObj.LCNI_FORMAT_CONFIG);
+
+  function buildFieldSets() {
+    return {
+      multiply100Fields: new Set(activeConfig.percent_normalization.multiply_100_fields),
+      alreadyPercentFields: new Set(activeConfig.percent_normalization.already_percent_fields)
+    };
+  }
+
+  let fieldSets = buildFieldSets();
 
   function getDecimals(type) {
     const key = String(type || '').toLowerCase();
@@ -170,16 +217,29 @@
   }
 
   function inferColumnFormat(column) {
-    const key = String(column || '').trim().toLowerCase();
+    const key = normalizeFieldName(column);
     if (key.indexOf('volume') !== -1 || key === 'vol') return { type: 'volume' };
     if (key.indexOf('rsi') !== -1) return { type: 'rsi' };
     if (key.indexOf('macd') !== -1) return { type: 'macd' };
-    if (PERCENT_COLUMNS_SCALE_100.has(key)) return { type: 'percent', scalePercent: true };
-    if (PERCENT_COLUMNS_DIRECT.has(key)) return { type: 'percent', scalePercent: false };
+    if (fieldSets.multiply100Fields.has(key)) return { type: 'percent', scalePercent: true };
+    if (fieldSets.alreadyPercentFields.has(key)) return { type: 'percent', scalePercent: false };
     if (RS_COLUMNS.has(key)) return { type: 'rs' };
     if (key === 'pe' || key.indexOf('pe_') === 0) return { type: 'pe' };
     if (key === 'pb' || key.indexOf('pb_') === 0) return { type: 'pb' };
     return { type: 'price' };
+  }
+
+  function shouldApply(moduleName) {
+    const key = normalizeFieldName(moduleName);
+    if (!key) {
+      return true;
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(activeConfig.module_scope, key)) {
+      return true;
+    }
+
+    return !!activeConfig.module_scope[key];
   }
 
   const api = {
@@ -199,15 +259,29 @@
     inferColumnFormat(column) {
       return Object.assign({}, inferColumnFormat(column));
     },
-    formatByColumn(value, column) {
-      const format = inferColumnFormat(column);
+    formatByField(value, fieldName) {
+      const format = inferColumnFormat(fieldName);
       return formatCompact(value, format.type, format);
     },
+    formatByColumn(value, column) {
+      return api.formatByField(value, column);
+    },
+    shouldApply(moduleName) {
+      return shouldApply(moduleName);
+    },
     getConfig() {
-      return Object.assign({}, activeConfig, { decimals: Object.assign({}, activeConfig.decimals) });
+      return Object.assign({}, activeConfig, {
+        decimals: Object.assign({}, activeConfig.decimals),
+        percent_normalization: {
+          multiply_100_fields: activeConfig.percent_normalization.multiply_100_fields.slice(),
+          already_percent_fields: activeConfig.percent_normalization.already_percent_fields.slice()
+        },
+        module_scope: Object.assign({}, activeConfig.module_scope)
+      });
     },
     setConfig(nextConfig) {
       activeConfig = sanitizeConfig(nextConfig);
+      fieldSets = buildFieldSets();
       CACHE.standard.clear();
       CACHE.compact.clear();
     }
