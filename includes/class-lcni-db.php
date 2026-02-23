@@ -3263,9 +3263,14 @@ if (!function_exists('lcni_convert_candles')) {
                 $timestamp = (int) floor($timestamp / 1000);
             }
 
+            if ($timestamp <= 0) {
+                continue;
+            }
+
             $rows[] = [
                 'symbol' => strtoupper((string) $symbol),
                 'timeframe' => strtoupper((string) $tf),
+                'event_time' => $timestamp,
                 'candle_time' => gmdate('Y-m-d H:i:s', $timestamp),
                 'open' => isset($data['o'][$i]) ? (float) $data['o'][$i] : 0,
                 'high' => isset($data['h'][$i]) ? (float) $data['h'][$i] : 0,
