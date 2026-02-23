@@ -72,6 +72,7 @@ class LCNI_DB {
         self::ensure_symbol_market_icb_columns();
         self::ensure_symbol_tongquan_columns();
         self::ensure_ohlc_indexes();
+        self::ensure_symbol_tongquan_indexes();
         self::ensure_ohlc_latest_snapshot_infrastructure();
         self::normalize_ohlc_numeric_columns();
         self::sync_symbol_market_icb_mapping();
@@ -92,6 +93,7 @@ class LCNI_DB {
         self::backfill_ohlc_rs_exchange_signals();
         self::backfill_ohlc_rs_recommend_status();
         self::ensure_ohlc_indexes();
+        self::ensure_symbol_tongquan_indexes();
         self::ensure_ohlc_latest_snapshot_infrastructure();
     }
 
@@ -754,6 +756,23 @@ class LCNI_DB {
 
         if ($index_exists === null) {
             $wpdb->query("CREATE INDEX {$index_name} ON {$table} (symbol, trading_index)");
+        }
+    }
+
+
+    private static function ensure_symbol_tongquan_indexes() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_symbol_tongquan';
+        $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+        if ($exists !== $table) {
+            return;
+        }
+
+        $index_name = 'idx_symbol';
+        $index_exists = $wpdb->get_var($wpdb->prepare("SHOW INDEX FROM {$table} WHERE Key_name = %s", $index_name));
+        if ($index_exists === null) {
+            $wpdb->query("ALTER TABLE {$table} ADD INDEX {$index_name} (symbol)");
         }
     }
 

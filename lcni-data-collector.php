@@ -52,6 +52,7 @@ require_once LCNI_PATH . 'modules/watchlist/WatchlistController.php';
 require_once LCNI_PATH . 'modules/watchlist/WatchlistShortcode.php';
 require_once LCNI_PATH . 'modules/watchlist/class-lcni-watchlist-module.php';
 require_once LCNI_PATH . 'repositories/SnapshotRepository.php';
+require_once LCNI_PATH . 'repositories/SymbolRepository.php';
 require_once LCNI_PATH . 'services/CacheService.php';
 require_once LCNI_PATH . 'services/FilterService.php';
 require_once LCNI_PATH . 'modules/filter/FilterTable.php';
