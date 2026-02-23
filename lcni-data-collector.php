@@ -21,6 +21,7 @@ require_once LCNI_PATH . 'includes/class-lcni-api.php';
 require_once LCNI_PATH . 'includes/class-lcni-seed-repository.php';
 require_once LCNI_PATH . 'includes/class-lcni-history-fetcher.php';
 require_once LCNI_PATH . 'includes/class-lcni-seed-scheduler.php';
+require_once LCNI_PATH . 'includes/lcni-time-functions.php';
 require_once LCNI_PATH . 'includes/class-lcni-settings.php';
 require_once LCNI_PATH . 'admin/settings/DataFormatSettings.php';
 require_once LCNI_PATH . 'admin/update-data/UpdateDataPage.php';
@@ -84,15 +85,17 @@ function lcni_ensure_plugin_tables() {
 
 function lcni_ensure_cron_scheduled() {
     if (!wp_next_scheduled(LCNI_CRON_HOOK)) {
-        wp_schedule_event(time() + 300, 'hourly', LCNI_CRON_HOOK);
+        wp_schedule_event(current_time('timestamp') + 300, 'hourly', LCNI_CRON_HOOK);
     }
 
     if (!wp_next_scheduled(LCNI_SEED_CRON_HOOK)) {
-        wp_schedule_event(time() + MINUTE_IN_SECONDS, 'lcni_every_minute', LCNI_SEED_CRON_HOOK);
+        wp_schedule_event(current_time('timestamp') + MINUTE_IN_SECONDS, 'lcni_every_minute', LCNI_SEED_CRON_HOOK);
     }
 
     if (!wp_next_scheduled(LCNI_SECDEF_DAILY_CRON_HOOK)) {
-        wp_schedule_event(strtotime('tomorrow 08:00:00'), 'daily', LCNI_SECDEF_DAILY_CRON_HOOK);
+        $timezone = wp_timezone();
+        $tomorrow_start = new DateTimeImmutable('tomorrow 08:00:00', $timezone);
+        wp_schedule_event($tomorrow_start->getTimestamp(), 'daily', LCNI_SECDEF_DAILY_CRON_HOOK);
     }
 }
 

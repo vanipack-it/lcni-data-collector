@@ -35,12 +35,12 @@ class LCNI_OHLC_Latest_Manager {
 
         $snapshot_timestamp = wp_next_scheduled(self::CRON_HOOK);
         if (!$snapshot_timestamp) {
-            wp_schedule_event(time() + MINUTE_IN_SECONDS, 'lcni_every_minute', self::CRON_HOOK);
+            wp_schedule_event(current_time('timestamp') + MINUTE_IN_SECONDS, 'lcni_every_minute', self::CRON_HOOK);
         }
 
         $watchdog_timestamp = wp_next_scheduled(self::WATCHDOG_HOOK);
         if (!$watchdog_timestamp) {
-            wp_schedule_event(time() + (2 * MINUTE_IN_SECONDS), 'lcni_every_minute', self::WATCHDOG_HOOK);
+            wp_schedule_event(current_time('timestamp') + (2 * MINUTE_IN_SECONDS), 'lcni_every_minute', self::WATCHDOG_HOOK);
         }
     }
 

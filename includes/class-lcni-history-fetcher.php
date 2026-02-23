@@ -30,7 +30,14 @@ class LCNI_HistoryFetcher {
 
         $timestamps = [];
         foreach ($rows as $row) {
-            $event_time = strtotime($row['candle_time']);
+            $event_time = 0;
+            if (!empty($row['candle_time'])) {
+                try {
+                    $event_time = (new DateTimeImmutable((string) $row['candle_time'], wp_timezone()))->getTimestamp();
+                } catch (Exception $e) {
+                    $event_time = 0;
+                }
+            }
             if ($event_time !== false && $event_time > 0 && $event_time <= $to) {
                 $timestamps[] = $event_time;
             }

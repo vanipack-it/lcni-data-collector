@@ -20,7 +20,7 @@ class LCNI_API {
         }
 
         $days = max(1, (int) $days);
-        $to = time();
+        $to = current_time('timestamp');
         $from = max(0, $to - ($days * DAY_IN_SECONDS));
 
         return self::get_candles_by_range($symbol, $resolution, $from, $to);

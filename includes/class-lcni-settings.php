@@ -517,7 +517,7 @@ class LCNI_Settings {
             return new WP_Error('mkdir_failed', 'Không thể tạo thư mục tạm cho import CSV.');
         }
 
-        $saved_file = trailingslashit($target_dir) . 'import-' . get_current_user_id() . '-' . time() . '-' . wp_generate_password(8, false, false) . '.csv';
+        $saved_file = trailingslashit($target_dir) . 'import-' . get_current_user_id() . '-' . current_time('timestamp') . '-' . wp_generate_password(8, false, false) . '.csv';
         if (!@copy($tmp_file_path, $saved_file)) {
             return new WP_Error('copy_failed', 'Không thể lưu file CSV tạm thời để map cột.');
         }
@@ -529,7 +529,7 @@ class LCNI_Settings {
             'file_path' => $saved_file,
             'headers' => $headers,
             'suggested_mapping' => $suggested_mapping,
-            'created_at' => time(),
+            'created_at' => current_time('timestamp'),
         ];
     }
 
@@ -581,13 +581,20 @@ class LCNI_Settings {
     private function seed_date_to_timestamp($date, $end_of_day = false) {
         $date = trim((string) $date);
         if ($date === '') {
-            return $end_of_day ? time() : 1;
+            return $end_of_day ? current_time('timestamp') : 1;
         }
 
         $time_suffix = $end_of_day ? ' 23:59:59' : ' 00:00:00';
-        $timestamp = strtotime($date . $time_suffix);
+        $timezone = wp_timezone();
 
-        return $timestamp === false ? ($end_of_day ? time() : 1) : (int) $timestamp;
+        try {
+            $date_time = new DateTimeImmutable($date . $time_suffix, $timezone);
+            $timestamp = $date_time->getTimestamp();
+        } catch (Exception $e) {
+            $timestamp = false;
+        }
+
+        return $timestamp === false ? ($end_of_day ? current_time('timestamp') : 1) : (int) $timestamp;
     }
 
     private function format_task_progress($task) {
@@ -598,7 +605,7 @@ class LCNI_Settings {
         }
 
         $seed_constraints = LCNI_SeedScheduler::get_seed_constraints();
-        $seed_to_time = max(1, (int) ($seed_constraints['to_time'] ?? time()));
+        $seed_to_time = max(1, (int) ($seed_constraints['to_time'] ?? current_time('timestamp')));
         $task_to_time = isset($task['last_to_time']) ? max(1, (int) $task['last_to_time']) : $seed_to_time;
 
         $min_from = max(1, (int) ($seed_constraints['from_time'] ?? 1));
@@ -727,6 +734,12 @@ class LCNI_Settings {
 
     private function normalize_runtime_status_for_display($status) {
         $status = is_array($status) ? $status : [];
+        $diagnostics = LCNI_Update_Manager::get_runtime_diagnostics();
+
+        $message = (string) ($status['message'] ?? '-');
+        if (!empty($status['waiting_for_trading_session'])) {
+            $message = 'Waiting for trading session';
+        }
 
         return [
             'running_label' => !empty($status['running']) ? 'Đang chạy' : 'Đã dừng',
@@ -737,8 +750,13 @@ class LCNI_Settings {
             'started_at' => $this->format_mysql_datetime_to_gmt7($status['started_at'] ?? ''),
             'ended_at' => $this->format_mysql_datetime_to_gmt7($status['ended_at'] ?? ''),
             'next_run_at' => $this->format_timestamp_to_gmt7($status['next_run_ts'] ?? 0),
-            'message' => (string) ($status['message'] ?? '-'),
+            'message' => $message,
             'error' => (string) ($status['error'] ?? ''),
+            'wordpress_timezone' => (string) ($diagnostics['wordpress_timezone'] ?? '-'),
+            'server_timezone' => (string) ($diagnostics['server_timezone'] ?? '-'),
+            'current_time_mysql' => (string) ($diagnostics['current_time_mysql'] ?? '-'),
+            'php_date_now' => (string) ($diagnostics['php_date_now'] ?? '-'),
+            'is_trading_time' => !empty($diagnostics['is_trading_time']) ? 'true' : 'false',
         ];
     }
 
@@ -1032,6 +1050,11 @@ class LCNI_Settings {
                             <tr><th>Dự kiến phiên cập nhật tiếp theo</th><td data-lcni-runtime-status="next_run_at"><?php echo esc_html((string) ($update_status['next_run_at'] ?? '-')); ?></td></tr>
                             <tr><th>Thông báo</th><td data-lcni-runtime-status="message"><?php echo esc_html((string) ($update_status['message'] ?? '-')); ?></td></tr>
                             <tr><th>Lỗi</th><td data-lcni-runtime-status="error"><?php echo esc_html((string) ($update_status['error'] ?? '')); ?></td></tr>
+                            <tr><th>WordPress timezone</th><td data-lcni-runtime-status="wordpress_timezone"><?php echo esc_html((string) ($update_status['wordpress_timezone'] ?? '-')); ?></td></tr>
+                            <tr><th>Server timezone</th><td data-lcni-runtime-status="server_timezone"><?php echo esc_html((string) ($update_status['server_timezone'] ?? '-')); ?></td></tr>
+                            <tr><th>current_time('mysql')</th><td data-lcni-runtime-status="current_time_mysql"><?php echo esc_html((string) ($update_status['current_time_mysql'] ?? '-')); ?></td></tr>
+                            <tr><th>PHP date('Y-m-d H:i:s')</th><td data-lcni-runtime-status="php_date_now"><?php echo esc_html((string) ($update_status['php_date_now'] ?? '-')); ?></td></tr>
+                            <tr><th>Trading check</th><td data-lcni-runtime-status="is_trading_time"><?php echo esc_html((string) ($update_status['is_trading_time'] ?? 'false')); ?></td></tr>
                         </tbody>
                     </table>
                 </div>

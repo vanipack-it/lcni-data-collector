@@ -38,7 +38,7 @@ class LCNI_Update_Manager {
 
     public static function ensure_cron() {
         if (!wp_next_scheduled(self::CRON_HOOK)) {
-            wp_schedule_event(time() + MINUTE_IN_SECONDS, 'lcni_every_minute', self::CRON_HOOK);
+            wp_schedule_event(current_time('timestamp') + MINUTE_IN_SECONDS, 'lcni_every_minute', self::CRON_HOOK);
         }
     }
 
@@ -65,7 +65,7 @@ class LCNI_Update_Manager {
 
         $status = self::get_status();
         $next_run_ts = isset($status['next_run_ts']) ? (int) $status['next_run_ts'] : 0;
-        if ($next_run_ts > time()) {
+        if ($next_run_ts > current_time('timestamp')) {
             return;
         }
 
@@ -110,8 +110,9 @@ class LCNI_Update_Manager {
         $status['total_symbols'] = (int) ($result['total_symbols'] ?? 0);
         $status['changed_symbols'] = (int) ($result['changed_symbols'] ?? 0);
         $status['indicators_done'] = !empty($result['indicators_done']);
+        $status['waiting_for_trading_session'] = !empty($result['waiting_for_trading_session']);
         $status['message'] = (string) ($result['message'] ?? 'Runtime update completed.');
-        $status['error'] = '';
+        $status['error'] = !empty($result['error']) ? (string) $result['error'] : '';
         $status['next_run_ts'] = self::calculate_next_run_ts();
 
         self::save_status($status);
@@ -129,9 +130,29 @@ class LCNI_Update_Manager {
         update_option(self::OPTION_STATUS, $status);
     }
 
+    public static function get_runtime_diagnostics() {
+        $wp_timezone = wp_timezone();
+        $now = new DateTimeImmutable('now', $wp_timezone);
+
+        return [
+            'wordpress_timezone' => $wp_timezone->getName(),
+            'server_timezone' => (string) date_default_timezone_get(),
+            'current_time_mysql' => (string) current_time('mysql'),
+            'php_date_now' => (new DateTimeImmutable('now', new DateTimeZone((string) date_default_timezone_get())))->format('Y-m-d H:i:s'),
+            'is_trading_time' => lcni_is_trading_time($now),
+        ];
+    }
+
     private static function calculate_next_run_ts() {
         $settings = self::get_settings();
+        $now = new DateTimeImmutable('now', wp_timezone());
 
-        return time() + (max(1, (int) $settings['interval_minutes']) * MINUTE_IN_SECONDS);
+        if (!lcni_is_trading_time($now)) {
+            return lcni_get_next_trading_time($now)->getTimestamp();
+        }
+
+        $candidate = $now->modify('+' . max(1, (int) $settings['interval_minutes']) . ' minutes');
+
+        return lcni_get_next_trading_time($candidate)->getTimestamp();
     }
 }
