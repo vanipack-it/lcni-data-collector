@@ -231,10 +231,10 @@ class LCNI_API {
 
         $symbol_map = self::get_supported_symbol_map();
         if (!is_array($symbol_map) || empty($symbol_map)) {
-            self::$last_request_error = 'Unable to validate supported symbols for Entrade chart-api.';
+            self::$last_request_error = 'Unable to validate supported symbols for Entrade chart-api. Fallback to symbol format validation.';
             LCNI_DB::log_change('api_error', self::$last_request_error, ['symbol' => $symbol]);
 
-            return false;
+            return (bool) preg_match('/^[A-Z]{2,5}$/', $symbol);
         }
 
         return isset($symbol_map[$symbol]);
