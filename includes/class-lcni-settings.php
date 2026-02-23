@@ -753,6 +753,7 @@ class LCNI_Settings {
             'message' => $message,
             'error' => (string) ($status['error'] ?? ''),
             'wordpress_timezone' => (string) ($diagnostics['wordpress_timezone'] ?? '-'),
+            'market_timezone' => (string) ($diagnostics['market_timezone'] ?? '-'),
             'server_timezone' => (string) ($diagnostics['server_timezone'] ?? '-'),
             'current_time_mysql' => (string) ($diagnostics['current_time_mysql'] ?? '-'),
             'php_date_now' => (string) ($diagnostics['php_date_now'] ?? '-'),
@@ -1051,6 +1052,7 @@ class LCNI_Settings {
                             <tr><th>Thông báo</th><td data-lcni-runtime-status="message"><?php echo esc_html((string) ($update_status['message'] ?? '-')); ?></td></tr>
                             <tr><th>Lỗi</th><td data-lcni-runtime-status="error"><?php echo esc_html((string) ($update_status['error'] ?? '')); ?></td></tr>
                             <tr><th>WordPress timezone</th><td data-lcni-runtime-status="wordpress_timezone"><?php echo esc_html((string) ($update_status['wordpress_timezone'] ?? '-')); ?></td></tr>
+                            <tr><th>Market timezone</th><td data-lcni-runtime-status="market_timezone"><?php echo esc_html((string) ($update_status['market_timezone'] ?? '-')); ?></td></tr>
                             <tr><th>Server timezone</th><td data-lcni-runtime-status="server_timezone"><?php echo esc_html((string) ($update_status['server_timezone'] ?? '-')); ?></td></tr>
                             <tr><th>current_time('mysql')</th><td data-lcni-runtime-status="current_time_mysql"><?php echo esc_html((string) ($update_status['current_time_mysql'] ?? '-')); ?></td></tr>
                             <tr><th>PHP date('Y-m-d H:i:s')</th><td data-lcni-runtime-status="php_date_now"><?php echo esc_html((string) ($update_status['php_date_now'] ?? '-')); ?></td></tr>
