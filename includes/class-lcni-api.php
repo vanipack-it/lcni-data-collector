@@ -27,7 +27,7 @@ class LCNI_API {
     }
 
     public static function get_candles_by_range($symbol, $resolution, $from, $to) {
-        $normalized_symbol = strtoupper(trim((string) $symbol));
+        $normalized_symbol = self::normalize_symbol_for_chart_api($symbol);
 
         if ($normalized_symbol === '') {
             self::$last_request_error = 'Symbol is required.';
@@ -202,11 +202,40 @@ class LCNI_API {
         // Entrade symbols can include digits (for example: A32, VN30F1M).
         // Keep this validation broad enough for listed tickers while still
         // rejecting unsafe characters before building remote API URLs.
-        if (preg_match('/^[A-Z0-9]{2,12}$/', $symbol)) {
+        if (preg_match('/^[A-Z0-9]{1,15}$/', $symbol)) {
             return true;
         }
 
         return in_array($symbol, ['VNINDEX', 'HNXINDEX', 'UPCOMINDEX'], true);
+    }
+
+    private static function normalize_symbol_for_chart_api($symbol) {
+        $normalized = strtoupper(trim((string) $symbol));
+
+        if ($normalized === '') {
+            return '';
+        }
+
+        // Support exchange-prefixed inputs from chart widgets (e.g. HOSE:FPT).
+        if (strpos($normalized, ':') !== false) {
+            $parts = explode(':', $normalized);
+            $candidate = trim((string) end($parts));
+            if ($candidate !== '') {
+                $normalized = $candidate;
+            }
+        }
+
+        // Support dotted symbols frequently emitted by third-party chart inputs
+        // (e.g. FPT.VN) while preserving index symbols such as VNINDEX.
+        if (strpos($normalized, '.') !== false) {
+            $parts = explode('.', $normalized);
+            $candidate = trim((string) reset($parts));
+            if ($candidate !== '') {
+                $normalized = $candidate;
+            }
+        }
+
+        return preg_replace('/[^A-Z0-9]/', '', $normalized);
     }
 
 }
