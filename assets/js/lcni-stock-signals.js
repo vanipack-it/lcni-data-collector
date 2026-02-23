@@ -20,7 +20,7 @@ document.addEventListener("DOMContentLoaded", () => {
     smart_money: "Tín hiệu smart",
     rs_exchange_status: "Trạng thái sức mạnh giá",
     rs_exchange_recommend: "Gợi ý sức mạnh giá",
-    rs_recommend_status: "Gợi ý trạng thái sức mạnh giá"
+    rs_recommend_status: "Gợi ý trạng thái sức mạnh giá",
   };
 
   const defaultFields = Object.keys(labels);
@@ -43,13 +43,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const leftNumber = Number(value);
     const rightNumber = Number(ruleValue);
-    const hasNumeric = Number.isFinite(leftNumber) && Number.isFinite(rightNumber);
+    const hasNumeric =
+      Number.isFinite(leftNumber) && Number.isFinite(rightNumber);
     const leftString = String(value ?? "").toLowerCase();
     const rightString = ruleValue.toLowerCase();
 
     switch (operator) {
       case "equals":
-        return hasNumeric ? leftNumber === rightNumber : leftString === rightString;
+        return hasNumeric
+          ? leftNumber === rightNumber
+          : leftString === rightString;
       case "contains":
         return leftString.includes(rightString);
       case "gt":
@@ -77,12 +80,34 @@ document.addEventListener("DOMContentLoaded", () => {
     return styles?.value_color || "#111827";
   };
 
-  const formatValue = (value) => {
+  const formatValue = (field, value) => {
     if (value === null || value === undefined || value === "") {
       return "-";
     }
 
     if (typeof value === "number") {
+      if (window.LCNIFormatter) {
+        const canApply =
+          typeof window.LCNIFormatter.shouldApply !== "function" ||
+          window.LCNIFormatter.shouldApply("signals");
+
+        if (!canApply) {
+          return String(value);
+        }
+
+        if (typeof window.LCNIFormatter.formatByField === "function") {
+          return window.LCNIFormatter.formatByField(value, field);
+        }
+
+        if (typeof window.LCNIFormatter.formatByColumn === "function") {
+          return window.LCNIFormatter.formatByColumn(value, field);
+        }
+
+        if (typeof window.LCNIFormatter.format === "function") {
+          return window.LCNIFormatter.format(value, "price");
+        }
+      }
+
       return value.toLocaleString("vi-VN", { maximumFractionDigits: 2 });
     }
 
@@ -105,8 +130,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
-
-
   const parseButtonConfig = (rawConfig) => {
     if (!rawConfig) {
       return null;
@@ -123,12 +146,25 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
-  const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
+  const escapeHtml = (value) =>
+    String(value ?? "").replace(
+      /[&<>"']/g,
+      (char) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#039;",
+        })[char],
+    );
 
   const renderButtonContent = (buttonConfig) => {
     const iconClass = String(buttonConfig?.icon_class || "").trim();
     const label = String(buttonConfig?.label_text || "").trim();
-    const icon = iconClass ? `<i class="${escapeHtml(iconClass)}" aria-hidden="true"></i>` : "";
+    const icon = iconClass
+      ? `<i class="${escapeHtml(iconClass)}" aria-hidden="true"></i>`
+      : "";
     const text = label ? `<span>${escapeHtml(label)}</span>` : "";
 
     if ((buttonConfig?.icon_position || "left") === "right") {
@@ -144,7 +180,9 @@ document.addEventListener("DOMContentLoaded", () => {
         return fallbackFields;
       }
       const payload = await response.json();
-      return Array.isArray(payload.fields) && payload.fields.length ? payload.fields : fallbackFields;
+      return Array.isArray(payload.fields) && payload.fields.length
+        ? payload.fields
+        : fallbackFields;
     } catch (error) {
       return fallbackFields;
     }
@@ -155,7 +193,7 @@ document.addEventListener("DOMContentLoaded", () => {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fields })
+      body: JSON.stringify({ fields }),
     });
   };
 
@@ -179,7 +217,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const valueElement = document.createElement("div");
     const valueStrong = document.createElement("strong");
-    valueStrong.textContent = formatValue(value);
+    valueStrong.textContent = formatValue(key, value);
     valueStrong.style.color = resolveValueColor(key, value, styles);
     valueStrong.style.fontSize = `${styles.value_font_size || 14}px`;
 
@@ -195,19 +233,24 @@ document.addEventListener("DOMContentLoaded", () => {
     const fixedSymbol = sanitizeSymbol(container.dataset.symbol);
     const settingsApi = container.dataset.settingsApi;
     const adminConfig = parseAdminConfig(container.dataset.adminConfig);
-    const buttonConfig = parseButtonConfig(container.dataset.buttonConfig) || {};
-    const allowedFields = Array.isArray(adminConfig?.allowed_fields) && adminConfig.allowed_fields.length
-      ? adminConfig.allowed_fields.filter((field) => labels[field])
-      : defaultFields;
+    const buttonConfig =
+      parseButtonConfig(container.dataset.buttonConfig) || {};
+    const allowedFields =
+      Array.isArray(adminConfig?.allowed_fields) &&
+      adminConfig.allowed_fields.length
+        ? adminConfig.allowed_fields.filter((field) => labels[field])
+        : defaultFields;
     const styles = adminConfig?.styles || {};
 
     let selectedFields = await loadSettings(settingsApi, allowedFields);
-    selectedFields = selectedFields.filter((field) => allowedFields.includes(field));
+    selectedFields = selectedFields.filter((field) =>
+      allowedFields.includes(field),
+    );
     if (!selectedFields.length) {
       selectedFields = allowedFields;
     }
 
-    const resolveSymbol = () => fixedSymbol || context.getCurrentSymbol() || '';
+    const resolveSymbol = () => fixedSymbol || context.getCurrentSymbol() || "";
 
     const render = async (symbol) => {
       if (!symbol || !apiBase) {
@@ -216,7 +259,10 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       try {
-        const payload = await context.fetchJson(`signals:${symbol}`, `${apiBase}?symbol=${encodeURIComponent(symbol)}`);
+        const payload = await context.fetchJson(
+          `signals:${symbol}`,
+          `${apiBase}?symbol=${encodeURIComponent(symbol)}`,
+        );
 
         container.innerHTML = "";
         const wrap = document.createElement("div");
@@ -269,7 +315,9 @@ document.addEventListener("DOMContentLoaded", () => {
         saveBtn.style.marginLeft = "8px";
 
         saveBtn.addEventListener("click", async () => {
-          selectedFields = Array.from(panel.querySelectorAll('input[type="checkbox"]:checked')).map((input) => input.value);
+          selectedFields = Array.from(
+            panel.querySelectorAll('input[type="checkbox"]:checked'),
+          ).map((input) => input.value);
           if (!selectedFields.length) {
             selectedFields = allowedFields;
           }
@@ -280,7 +328,8 @@ document.addEventListener("DOMContentLoaded", () => {
         panel.appendChild(saveBtn);
 
         settingBtn.addEventListener("click", () => {
-          panel.style.display = panel.style.display === "none" ? "block" : "none";
+          panel.style.display =
+            panel.style.display === "none" ? "block" : "none";
         });
 
         header.appendChild(title);
@@ -308,12 +357,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
     render(resolveSymbol());
 
-    document.addEventListener('lcni:symbolChange', (event) => {
+    document.addEventListener("lcni:symbolChange", (event) => {
       if (fixedSymbol) {
         return;
       }
 
-      const nextSymbol = sanitizeSymbol(event?.detail?.symbol || '');
+      const nextSymbol = sanitizeSymbol(event?.detail?.symbol || "");
       if (!nextSymbol) {
         return;
       }
