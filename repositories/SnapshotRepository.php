@@ -105,9 +105,10 @@ class SnapshotRepository {
             return $cached;
         }
 
-        $query = "SELECT o.symbol\nFROM {$this->ohlc_latest_table} o\nWHERE o.symbol IS NOT NULL AND o.symbol <> ''\nORDER BY o.symbol ASC";
-        $symbols = $this->wpdb->get_col($query);
-        $result = is_array($symbols) ? array_values($symbols) : [];
+        $symbol_repository = new SymbolRepository();
+        $symbols = $symbol_repository->getAllSymbols();
+        $result = is_array($symbols) ? array_values(array_unique(array_map('strtoupper', $symbols))) : [];
+        sort($result);
         $this->cache->set('all_symbols', $result, 300);
 
         return $result;

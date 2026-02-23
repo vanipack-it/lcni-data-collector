@@ -45,6 +45,11 @@ class LCNI_Chart_Ajax {
             return new WP_Error('invalid_symbol', 'Invalid symbol', ['status' => 400]);
         }
 
+        $symbol_repository = new SymbolRepository();
+        if (!$symbol_repository->isValid($symbol)) {
+            return new WP_Error('invalid_symbol', 'Symbol not found', ['status' => 404]);
+        }
+
         $payload = LCNI_API::get_candles($symbol, '1D', max($limit * 2, 30));
 
         if ($payload === false) {
