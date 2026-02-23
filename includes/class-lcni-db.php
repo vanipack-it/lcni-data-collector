@@ -1991,7 +1991,7 @@ class LCNI_DB {
             ];
         }
 
-        $timezone = wp_timezone();
+        $timezone = lcni_get_market_timezone();
         $now = new DateTimeImmutable('now', $timezone);
         $day_start = $now->setTime(0, 0, 0)->getTimestamp();
         $current_timestamp = $now->getTimestamp();

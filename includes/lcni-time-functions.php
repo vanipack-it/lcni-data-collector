@@ -4,9 +4,26 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+if (!function_exists('lcni_get_market_timezone')) {
+    function lcni_get_market_timezone() {
+        $default_timezone = 'Asia/Ho_Chi_Minh';
+        $timezone_name = apply_filters('lcni_market_timezone', $default_timezone);
+
+        if (!is_string($timezone_name) || trim($timezone_name) === '') {
+            $timezone_name = $default_timezone;
+        }
+
+        try {
+            return new DateTimeZone($timezone_name);
+        } catch (Exception $e) {
+            return new DateTimeZone($default_timezone);
+        }
+    }
+}
+
 if (!function_exists('lcni_is_trading_time')) {
     function lcni_is_trading_time(?DateTimeImmutable $now = null) {
-        $timezone = wp_timezone();
+        $timezone = lcni_get_market_timezone();
         $current_time = $now instanceof DateTimeImmutable ? $now->setTimezone($timezone) : new DateTimeImmutable('now', $timezone);
 
         $day_of_week = (int) $current_time->format('N');
@@ -31,7 +48,7 @@ if (!function_exists('lcni_is_trading_time')) {
 
 if (!function_exists('lcni_get_next_trading_time')) {
     function lcni_get_next_trading_time(?DateTimeImmutable $now = null) {
-        $timezone = wp_timezone();
+        $timezone = lcni_get_market_timezone();
         $current_time = $now instanceof DateTimeImmutable ? $now->setTimezone($timezone) : new DateTimeImmutable('now', $timezone);
 
         $candidate_day = $current_time;

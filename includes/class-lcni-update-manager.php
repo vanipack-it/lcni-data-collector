@@ -132,10 +132,12 @@ class LCNI_Update_Manager {
 
     public static function get_runtime_diagnostics() {
         $wp_timezone = wp_timezone();
-        $now = new DateTimeImmutable('now', $wp_timezone);
+        $market_timezone = lcni_get_market_timezone();
+        $now = new DateTimeImmutable('now', $market_timezone);
 
         return [
             'wordpress_timezone' => $wp_timezone->getName(),
+            'market_timezone' => $market_timezone->getName(),
             'server_timezone' => (string) date_default_timezone_get(),
             'current_time_mysql' => (string) current_time('mysql'),
             'php_date_now' => (new DateTimeImmutable('now', new DateTimeZone((string) date_default_timezone_get())))->format('Y-m-d H:i:s'),
@@ -145,7 +147,7 @@ class LCNI_Update_Manager {
 
     private static function calculate_next_run_ts() {
         $settings = self::get_settings();
-        $now = new DateTimeImmutable('now', wp_timezone());
+        $now = new DateTimeImmutable('now', lcni_get_market_timezone());
 
         if (!lcni_is_trading_time($now)) {
             return lcni_get_next_trading_time($now)->getTimestamp();
