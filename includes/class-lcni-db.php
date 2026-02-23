@@ -1975,8 +1975,7 @@ class LCNI_DB {
 
         $timeframe = strtoupper((string) get_option('lcni_timeframe', '1D'));
         $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
-        $symbol_table = $wpdb->prefix . 'lcni_symbol_tongquan';
-        $symbols = $wpdb->get_col("SELECT DISTINCT symbol FROM {$symbol_table} WHERE symbol IS NOT NULL AND symbol <> '' ORDER BY symbol ASC");
+        $symbols = $wpdb->get_col("SELECT symbol FROM {$wpdb->prefix}lcni_symbol_tongquan");
 
         $total_symbols = count($symbols);
         if ($total_symbols === 0) {
@@ -2004,7 +2003,7 @@ class LCNI_DB {
             }
 
             $payload = LCNI_API::get_candles_by_range($symbol, $timeframe, $day_start, $current_timestamp);
-            if (!is_array($payload) || (($payload['s'] ?? '') !== 'ok')) {
+            if (!is_array($payload) || !isset($payload['s']) || $payload['s'] !== 'ok') {
                 $processed_symbols++;
                 usleep(100000);
                 continue;
@@ -2024,32 +2023,32 @@ class LCNI_DB {
                 continue;
             }
 
-            $latest_db_event_time = (int) $wpdb->get_var(
+            $latest_row = $wpdb->get_row(
                 $wpdb->prepare(
-                    "SELECT event_time FROM {$ohlc_table}
+                    "SELECT event_time, close_price FROM {$ohlc_table}
                     WHERE symbol = %s AND timeframe = %s
                     ORDER BY event_time DESC LIMIT 1",
                     $symbol,
                     $timeframe
-                )
+                ),
+                ARRAY_A
             );
 
+            if (empty($latest_row)) {
+                $processed_symbols++;
+                usleep(100000);
+                continue;
+            }
+
+            $latest_db_event_time = (int) ($latest_row['event_time'] ?? 0);
             if ($latest_db_event_time <= 0) {
                 $processed_symbols++;
                 usleep(100000);
                 continue;
             }
 
-            $latest_close_before = (float) $wpdb->get_var(
-                $wpdb->prepare(
-                    "SELECT close_price FROM {$ohlc_table}
-                    WHERE symbol = %s AND timeframe = %s AND event_time = %d
-                    LIMIT 1",
-                    $symbol,
-                    $timeframe,
-                    $latest_db_event_time
-                )
-            );
+            $latest_close_before = (float) ($latest_row['close_price'] ?? 0);
+            $new_close_price = self::normalize_price($latest_candle['close'] ?? 0);
 
             $updated = $wpdb->update(
                 $ohlc_table,
@@ -2057,7 +2056,7 @@ class LCNI_DB {
                     'open_price' => self::normalize_price($latest_candle['open'] ?? 0),
                     'high_price' => self::normalize_price($latest_candle['high'] ?? 0),
                     'low_price' => self::normalize_price($latest_candle['low'] ?? 0),
-                    'close_price' => self::normalize_price($latest_candle['close'] ?? 0),
+                    'close_price' => $new_close_price,
                 ],
                 [
                     'symbol' => $symbol,
@@ -2068,21 +2067,8 @@ class LCNI_DB {
                 ['%s', '%s', '%d']
             );
 
-            if ($updated !== false) {
-                $latest_close_after = (float) $wpdb->get_var(
-                    $wpdb->prepare(
-                        "SELECT close_price FROM {$ohlc_table}
-                        WHERE symbol = %s AND timeframe = %s AND event_time = %d
-                        LIMIT 1",
-                        $symbol,
-                        $timeframe,
-                        $latest_db_event_time
-                    )
-                );
-
-                if ($latest_close_after !== $latest_close_before) {
-                    $changed_symbols++;
-                }
+            if ($updated !== false && $new_close_price !== $latest_close_before) {
+                $changed_symbols++;
             }
 
             $processed_symbols++;

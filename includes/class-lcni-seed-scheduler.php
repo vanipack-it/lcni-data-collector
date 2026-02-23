@@ -7,20 +7,16 @@ if (!defined('ABSPATH')) {
 class LCNI_SeedScheduler {
 
     const BATCH_REQUESTS_PER_RUN = 5;
-    const RATE_LIMIT_MICROSECONDS = 300000;
+    const RATE_LIMIT_MICROSECONDS = 100000;
 
     public static function start_seed($constraints = []) {
         $seeded = self::create_seed_tasks($constraints);
 
         if (is_wp_error($seeded)) {
-            LCNI_DB::log_change('seed_failed', 'Seed initialization failed: ' . $seeded->get_error_message());
-
             return $seeded;
         }
 
         update_option('lcni_seed_paused', 'no');
-
-        LCNI_DB::log_change('seed_started', sprintf('Seed initialized with %d tasks.', $seeded));
 
         return $seeded;
     }
@@ -31,14 +27,10 @@ class LCNI_SeedScheduler {
         $seed_constraints = self::resolve_seed_constraints($constraints);
 
         if (empty($symbols)) {
-            LCNI_DB::log_change('seed_skipped', 'Seed queue skipped: no symbols in database.');
-
             return new WP_Error('no_symbols', 'Không có symbol trong database. Vui lòng sync securities trước.');
         }
 
         if (empty($timeframes)) {
-            LCNI_DB::log_change('seed_skipped', 'No symbols/timeframes available to create seed tasks.');
-
             return 0;
         }
 
@@ -75,7 +67,6 @@ class LCNI_SeedScheduler {
 
             if ($to <= $min_from) {
                 LCNI_SeedRepository::mark_done((int) $task['id']);
-                LCNI_DB::log_change('seed_task_done', sprintf('Task %d done for %s-%s at from_time boundary.', (int) $task['id'], $task['symbol'], $task['timeframe']));
 
                 return [
                     'status' => 'done',
@@ -90,7 +81,6 @@ class LCNI_SeedScheduler {
 
                 if (self::is_non_retryable_task_error($error_message)) {
                     LCNI_SeedRepository::mark_done((int) $task['id']);
-                    LCNI_DB::log_change('seed_task_skipped', sprintf('Task %d skipped for %s-%s due to non-retryable error: %s', (int) $task['id'], $task['symbol'], $task['timeframe'], $error_message));
 
                     return [
                         'status' => 'skipped',
@@ -99,14 +89,10 @@ class LCNI_SeedScheduler {
                     ];
                 }
 
-                LCNI_DB::log_change('seed_task_failed', sprintf('Task %d fetch failed for %s-%s: %s', (int) $task['id'], $task['symbol'], $task['timeframe'], $error_message));
                 LCNI_SeedRepository::mark_failed((int) $task['id'], $to, $error_message);
 
-                return [
-                    'status' => 'error',
-                    'message' => $error_message,
-                    'task_id' => (int) $task['id'],
-                ];
+                usleep(self::RATE_LIMIT_MICROSECONDS);
+                continue;
             }
 
             $rows = isset($result['rows']) && is_array($result['rows']) ? $result['rows'] : [];
@@ -114,7 +100,6 @@ class LCNI_SeedScheduler {
 
             if (empty($rows) || $oldest_event_time <= 0 || $oldest_event_time >= $to) {
                 LCNI_SeedRepository::mark_done((int) $task['id']);
-                LCNI_DB::log_change('seed_task_done', sprintf('Task %d done for %s-%s.', (int) $task['id'], $task['symbol'], $task['timeframe']));
 
                 return [
                     'status' => 'done',
@@ -132,7 +117,6 @@ class LCNI_SeedScheduler {
 
             if ($to <= $min_from) {
                 LCNI_SeedRepository::mark_done((int) $task['id']);
-                LCNI_DB::log_change('seed_task_done', sprintf('Task %d done for %s-%s (reached configured from_time).', (int) $task['id'], $task['symbol'], $task['timeframe']));
 
                 return [
                     'status' => 'done',
@@ -156,12 +140,10 @@ class LCNI_SeedScheduler {
 
     public static function pause() {
         update_option('lcni_seed_paused', 'yes');
-        LCNI_DB::log_change('seed_paused', 'Seed queue paused from admin dashboard.');
     }
 
     public static function resume() {
         update_option('lcni_seed_paused', 'no');
-        LCNI_DB::log_change('seed_resumed', 'Seed queue resumed from admin dashboard.');
     }
 
     public static function is_paused() {

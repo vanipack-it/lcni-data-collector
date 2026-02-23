@@ -128,7 +128,9 @@ class LCNI_API {
             $request_args['body'] = wp_json_encode($body);
         }
 
-        $response = wp_remote_request($url, $request_args);
+        $response = $request_args['method'] === 'GET'
+            ? wp_remote_get($url, $request_args)
+            : wp_remote_request($url, $request_args);
 
         if (is_wp_error($response)) {
             self::$last_request_error = 'HTTP request error: ' . implode('; ', $response->get_error_messages());

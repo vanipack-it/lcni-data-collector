@@ -384,7 +384,7 @@
   }
 
   const colorEngine = {
-    config: sanitizeColorConfig(windowObj.LCNI_COLOR_FORMAT_CONFIG || COLOR_DEFAULT),
+    config: sanitizeColorConfig(COLOR_DEFAULT),
     byColumn: new Map(),
     buildIndex() {
       this.byColumn.clear();

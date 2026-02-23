@@ -24,7 +24,6 @@ require_once LCNI_PATH . 'includes/class-lcni-seed-scheduler.php';
 require_once LCNI_PATH . 'includes/lcni-time-functions.php';
 require_once LCNI_PATH . 'includes/class-lcni-settings.php';
 require_once LCNI_PATH . 'admin/settings/DataFormatSettings.php';
-require_once LCNI_PATH . 'admin/settings/ColorFormatSettings.php';
 require_once LCNI_PATH . 'admin/update-data/UpdateDataPage.php';
 require_once LCNI_PATH . 'includes/Admin/class-lcni-chart-analyst-settings.php';
 require_once LCNI_PATH . 'includes/class-lcni-button-registry.php';
@@ -142,24 +141,12 @@ function lcni_register_frontend_core_assets() {
     wp_enqueue_style('lcni-main-style');
 
     $settings = LCNI_Data_Format_Settings::get_settings();
-    $color_rules = LCNI_Color_Format_Settings::get_settings();
-
     wp_localize_script(
         'lcni-main-js',
         'LCNI_FORMAT_CONFIG',
         $settings
     );
 
-    wp_localize_script(
-        'lcni-main-js',
-        'LCNI_COLOR_FORMAT_CONFIG',
-        $color_rules
-    );
-
-    $color_css = LCNI_Color_Format_Settings::build_flat_css($color_rules);
-    if ($color_css !== '') {
-        wp_add_inline_style('lcni-main-style', $color_css);
-    }
 }
 
 function lcni_deactivate_plugin() {
