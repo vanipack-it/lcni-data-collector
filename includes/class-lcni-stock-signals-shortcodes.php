@@ -29,7 +29,7 @@ class LCNI_Stock_Signals_Shortcodes {
         $script_path = LCNI_PATH . 'assets/js/lcni-stock-signals.js';
         $version = file_exists($script_path) ? (string) filemtime($script_path) : self::VERSION;
 
-        wp_register_script('lcni-stock-signals', LCNI_URL . 'assets/js/lcni-stock-signals.js', ['lcni-stock-sync'], $version, true);
+        wp_register_script('lcni-stock-signals', LCNI_URL . 'assets/js/lcni-stock-signals.js', ['lcni-main-js', 'lcni-stock-sync'], $version, true);
         wp_register_style('lcni-stock-signals', false, [], $version);
     }
 

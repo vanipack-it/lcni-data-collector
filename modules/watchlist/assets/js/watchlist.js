@@ -94,7 +94,7 @@
     return `<button type="button" class="lcni-watchlist-row-remove lcni-btn lcni-btn-btn_watchlist_remove_symbol_row" data-watchlist-row-remove data-symbol="${esc(symbol)}" aria-label="Remove from watchlist">${removeLabel}</button>`;
   }
 
-  function renderRowsMarkup(orderedColumns, items, stickyColumn, valueColorRules) {
+  function renderRowsMarkup(orderedColumns, items, stickyColumn) {
     return (Array.isArray(items) ? items : []).map((row) => {
       const symbol = row.symbol || '';
       return `<tr data-row-symbol="${esc(symbol)}">${orderedColumns.map((c, idx) => {
@@ -103,8 +103,8 @@
         if (c === 'symbol') {
           return `<td${cls}><span class="lcni-watchlist-symbol">${esc(symbol)}</span>${renderWatchlistRowActionButton(symbol)}</td>`;
         }
-        const valueStyle = resolveCellStyle(c, row[c], valueColorRules);
-        return `<td${cls}${valueStyle ? ` style="${valueStyle}"` : ''}>${esc(formatCellValue(c, row[c]))}</td>`;
+        const rawValue = row[c];
+        return `<td${cls} data-lcni-color-field="${esc(c)}" data-lcni-color-value="${esc(rawValue)}">${esc(formatCellValue(c, rawValue))}</td>`;
       }).join('')}</tr>`;
     }).join('');
   }
@@ -137,34 +137,14 @@
     return slug && encoded ? `/${slug}/?symbol=${encoded}` : '';
   }
 
-  function resolveOperatorMatch(rawValue, operator, expected) {
-    const numericRaw = Number(rawValue);
-    const numericExpected = Number(expected);
-    const bothNumeric = Number.isFinite(numericRaw) && Number.isFinite(numericExpected);
-    const left = bothNumeric ? numericRaw : String(rawValue);
-    const right = bothNumeric ? numericExpected : String(expected);
-
-    if (operator === '>') return left > right;
-    if (operator === '>=') return left >= right;
-    if (operator === '<') return left < right;
-    if (operator === '<=') return left <= right;
-    if (operator === '=') return left === right;
-    if (operator === '!=') return left !== right;
-    return false;
+  function applyColorEngineToHost(host) {
+    if (!host || !window.LCNIColorEngine || typeof window.LCNIColorEngine.apply !== 'function') return;
+    host.querySelectorAll('td[data-lcni-color-field]').forEach((cell) => {
+      const field = cell.getAttribute('data-lcni-color-field') || '';
+      const raw = cell.getAttribute('data-lcni-color-value');
+      window.LCNIColorEngine.apply(cell, field, raw);
+    });
   }
-
-  function resolveCellStyle(column, value, rules) {
-    for (let i = 0; i < rules.length; i += 1) {
-      const rule = rules[i] || {};
-      if (rule.column !== column) continue;
-      if (!resolveOperatorMatch(value, rule.operator, rule.value)) continue;
-      return `background:${esc(rule.bg_color || '')};color:${esc(rule.text_color || '')};`;
-    }
-
-    return '';
-  }
-
-
 
   function formatCellValue(column, value) {
     if (value === null || value === undefined || value === '') return '-';
@@ -239,8 +219,7 @@
     const scrollSpeed = Number(styles.scroll_speed || 1);
     const columnOrder = parseColumnOrder(styles.column_order || [], columns, allowed);
     const orderedColumns = columnOrder.length ? columnOrder : columns;
-    const valueColorRules = Array.isArray(settings.value_color_rules) ? settings.value_color_rules : [];
-    activeWatchlistId = Number(data.active_watchlist_id || activeWatchlistId || 0);
+        activeWatchlistId = Number(data.active_watchlist_id || activeWatchlistId || 0);
 
     watchlistDatasetByHost.set(host, items);
     host.innerHTML = `
@@ -249,7 +228,8 @@
       <div class="lcni-watchlist-dropdown">
       <div class="lcni-watchlist-controls"><div class="lcni-watchlist-col-grid">${allowed.map((c) => `<label class="lcni-watchlist-col-item"><input type="checkbox" data-col-toggle value="${esc(c)}" ${orderedColumns.includes(c) ? 'checked' : ''}><span>${esc(labels[c] || c)}</span></label>`).join('')}</div><button type="button" class="lcni-btn lcni-btn-btn_watchlist_save" data-watchlist-save>${renderButtonContent('btn_watchlist_save', 'Lưu')}</button></div></div></div>
       <div class="lcni-watchlist-table-wrap lcni-table-scroll lcni-table-wrapper" data-scroll-speed="${esc(scrollSpeed)}" style="--row-hover-bg:${esc(rowHoverBg)};"><table class="lcni-watchlist-table lcni-table ${stickyHeader ? 'has-sticky-header' : ''}"><thead><tr>${orderedColumns.map((c, idx) => { const stickyCls = resolveStickyColumnClass(stickyColumn, c, idx); return `<th data-sort-key="${esc(c)}" class="${esc(stickyCls)}">${esc(labels[c] || c)} <span class="lcni-sort-icon">${watchlistSortKey===c?(watchlistSortDir==='asc'?'↑':'↓'):""}</span></th>`; }).join('')}</tr></thead>
-      <tbody>${renderRowsMarkup(orderedColumns, items, stickyColumn, valueColorRules)}</tbody></table><div class="lcni-watchlist-overlay" data-watchlist-overlay hidden>Loading...</div></div>`;
+      <tbody>${renderRowsMarkup(orderedColumns, items, stickyColumn)}</tbody></table><div class="lcni-watchlist-overlay" data-watchlist-overlay hidden>Loading...</div></div>`;
+    applyColorEngineToHost(host);
     bindHorizontalScrollLock(host);
     host.querySelectorAll('[data-lcni-watchlist-add]').forEach(setButtonState);
   }
@@ -277,9 +257,9 @@
       const settings = data.settings || cfg.settingsOption || {};
       const styles = settings.styles || {};
       const stickyColumn = String(styles.sticky_column || 'symbol');
-      const valueColorRules = Array.isArray(settings.value_color_rules) ? settings.value_color_rules : [];
-      const orderedColumns = Array.isArray(data.columns) ? data.columns : [];
-      tbody.innerHTML = renderRowsMarkup(orderedColumns, data.items || [], stickyColumn, valueColorRules);
+            const orderedColumns = Array.isArray(data.columns) ? data.columns : [];
+      tbody.innerHTML = renderRowsMarkup(orderedColumns, data.items || [], stickyColumn);
+      applyColorEngineToHost(host);
     }
     if (Array.isArray(data.symbols)) {
       WatchlistStore.setSymbols(data.symbols);

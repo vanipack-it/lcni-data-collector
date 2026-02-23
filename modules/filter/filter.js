@@ -98,6 +98,14 @@
     return String(numeric);
   }
 
+
+  function applyColorEngineToTable(host) {
+    if (!host || !window.LCNIColorEngine || typeof window.LCNIColorEngine.apply !== 'function') return;
+    host.querySelectorAll('td[data-lcni-color-field]').forEach((cell) => {
+      window.LCNIColorEngine.apply(cell, cell.getAttribute('data-lcni-color-field') || '', cell.getAttribute('data-lcni-color-value'));
+    });
+  }
+
   function renderColumnPositionItems(columns, labels) {
     return columns.map((column) => {
       const checked = state.visibleColumns.includes(column);
@@ -355,8 +363,10 @@
         if (column === 'symbol') {
           return `<td class="${stickyClass}"><span>${esc(row[column] || '')}</span> <button type="button" class="lcni-btn lcni-btn-btn_add_filter_row" data-lcni-watchlist-add data-symbol="${esc(row.symbol || '')}" aria-label="Add to watchlist">${renderButtonContent('btn_add_filter_row', '')}</button></td>`;
         }
-        return `<td class="${stickyClass}">${esc(formatCellValue(column, row[column]))}</td>`;
+        const rawValue = row[column];
+        return `<td class="${stickyClass}" data-lcni-color-field="${esc(column)}" data-lcni-color-value="${esc(rawValue)}">${esc(formatCellValue(column, rawValue))}</td>`;
       }).join('')}</tr>`).join('');
+      applyColorEngineToTable(host);
     }
     state.total = Number(payload.total || state.total || 0);
     state.lastAppliedTotal = state.total;

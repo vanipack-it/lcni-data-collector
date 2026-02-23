@@ -100,8 +100,6 @@ class LCNI_WatchlistController {
     }
 
     private function render_tbody_rows(array $items, array $columns) {
-        $settings = $this->service->get_settings();
-        $rules = isset($settings['value_color_rules']) && is_array($settings['value_color_rules']) ? $settings['value_color_rules'] : [];
         $html = '';
         foreach ($items as $row) {
             $symbol = isset($row['symbol']) ? (string) $row['symbol'] : '';
@@ -113,38 +111,11 @@ class LCNI_WatchlistController {
                     continue;
                 }
                 $value = isset($row[$column]) ? (string) $row[$column] : '';
-                $style = $this->resolve_cell_style($column, $value, $rules);
-                $html .= '<td' . $sticky . ($style ? ' style="' . esc_attr($style) . '"' : '') . '>' . esc_html($value) . '</td>';
+                $html .= '<td' . $sticky . ' data-lcni-color-field="' . esc_attr($column) . '" data-lcni-color-value="' . esc_attr($value) . '">' . esc_html($value) . '</td>';
             }
             $html .= '</tr>';
         }
         return $html;
-    }
-
-    private function resolve_cell_style($column, $value, array $rules) {
-        foreach ($rules as $rule) {
-            if (!is_array($rule) || ($rule['column'] ?? '') !== $column) continue;
-            if (!$this->match_rule($value, (string) ($rule['operator'] ?? ''), $rule['value'] ?? '')) continue;
-            $bg = sanitize_hex_color((string) ($rule['bg_color'] ?? ''));
-            $text = sanitize_hex_color((string) ($rule['text_color'] ?? ''));
-            if (!$bg || !$text) return '';
-            return 'background:' . $bg . ';color:' . $text . ';';
-        }
-        return '';
-    }
-
-    private function match_rule($raw_value, $operator, $expected) {
-        $left_num = is_numeric($raw_value) ? (float) $raw_value : null;
-        $right_num = is_numeric($expected) ? (float) $expected : null;
-        $left = $left_num !== null && $right_num !== null ? $left_num : (string) $raw_value;
-        $right = $left_num !== null && $right_num !== null ? $right_num : (string) $expected;
-        if ($operator === '>') return $left > $right;
-        if ($operator === '>=') return $left >= $right;
-        if ($operator === '<') return $left < $right;
-        if ($operator === '<=') return $left <= $right;
-        if ($operator === '=') return $left === $right;
-        if ($operator === '!=') return $left !== $right;
-        return false;
     }
 
     private function verify_rest_nonce(WP_REST_Request $request) {

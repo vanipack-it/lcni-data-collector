@@ -182,7 +182,6 @@ class LCNI_WatchlistShortcode {
                 'scroll_speed' => 1,
                 'column_order' => [],
             ],
-            'value_color_rules' => [],
             'add_button' => [
                 'icon' => 'fas fa-heart',
                 'background' => '#dc2626',

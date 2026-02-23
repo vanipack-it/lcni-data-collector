@@ -41,58 +41,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const defaultFields = Object.keys(labels);
 
-  const evaluateRule = (field, value, rule) => {
-    if (!rule || typeof rule !== "object") {
-      return false;
-    }
-
-    const targetField = String(rule.field || "*");
-    if (targetField !== "*" && targetField !== field) {
-      return false;
-    }
-
-    const operator = String(rule.operator || "");
-    const ruleValue = String(rule.value ?? "").trim();
-    if (!operator || !ruleValue) {
-      return false;
-    }
-
-    const leftNumber = Number(value);
-    const rightNumber = Number(ruleValue);
-    const hasNumeric = Number.isFinite(leftNumber) && Number.isFinite(rightNumber);
-    const leftString = String(value ?? "").toLowerCase();
-    const rightString = ruleValue.toLowerCase();
-
-    switch (operator) {
-      case "equals":
-        return hasNumeric ? leftNumber === rightNumber : leftString === rightString;
-      case "contains":
-        return leftString.includes(rightString);
-      case "gt":
-        return hasNumeric && leftNumber > rightNumber;
-      case "gte":
-        return hasNumeric && leftNumber >= rightNumber;
-      case "lt":
-        return hasNumeric && leftNumber < rightNumber;
-      case "lte":
-        return hasNumeric && leftNumber <= rightNumber;
-      default:
-        return false;
-    }
-  };
-
-  const resolveValueColor = (field, value, styles) => {
-    const rules = Array.isArray(styles?.value_rules) ? styles.value_rules : [];
-    for (let index = 0; index < rules.length; index += 1) {
-      const rule = rules[index];
-      if (evaluateRule(field, value, rule) && rule.color) {
-        return rule.color;
-      }
-    }
-
-    return styles?.value_color || "#111827";
-  };
-
   const parseAdminConfig = (rawConfig) => {
     if (!rawConfig) {
       return null;
@@ -339,7 +287,9 @@ document.addEventListener("DOMContentLoaded", () => {
           const valueWrap = document.createElement("div");
           const valueStrong = document.createElement("strong");
           valueStrong.textContent = formatValue(field, payload[field]);
-          valueStrong.style.color = resolveValueColor(field, payload[field], styles);
+          valueStrong.style.color = styles.value_color || "#111827";
+          valueStrong.setAttribute("data-lcni-color-field", field);
+          valueStrong.setAttribute("data-lcni-color-value", String(payload[field] ?? ""));
           valueStrong.style.fontSize = `${styles.value_font_size || 14}px`;
 
           valueWrap.appendChild(valueStrong);
@@ -347,6 +297,12 @@ document.addEventListener("DOMContentLoaded", () => {
           item.appendChild(valueWrap);
           grid.appendChild(item);
         });
+
+        if (window.LCNIColorEngine && typeof window.LCNIColorEngine.apply === 'function') {
+          grid.querySelectorAll('[data-lcni-color-field]').forEach((node) => {
+            window.LCNIColorEngine.apply(node, node.getAttribute('data-lcni-color-field'), node.getAttribute('data-lcni-color-value'));
+          });
+        }
 
         wrap.appendChild(header);
         wrap.appendChild(panel);
