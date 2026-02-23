@@ -1959,8 +1959,6 @@ class LCNI_DB {
         self::ensure_tables_exist();
 
         if (!self::is_trading_session_open()) {
-            self::log_change('intraday_skipped', 'Intraday update skipped because market is out of trading session.');
-
             return [
                 'processed_symbols' => 0,
                 'pending_symbols' => 0,
@@ -1976,8 +1974,9 @@ class LCNI_DB {
         global $wpdb;
 
         $timeframe = strtoupper((string) get_option('lcni_timeframe', '1D'));
-        $symbol_table = $wpdb->prefix . 'lcni_symbols';
-        $symbols = $wpdb->get_col("SELECT symbol FROM {$symbol_table} ORDER BY symbol ASC");
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $symbol_table = $wpdb->prefix . 'lcni_symbol_tongquan';
+        $symbols = $wpdb->get_col("SELECT DISTINCT symbol FROM {$symbol_table} WHERE symbol IS NOT NULL AND symbol <> '' ORDER BY symbol ASC");
 
         $total_symbols = count($symbols);
         if ($total_symbols === 0) {
@@ -1998,73 +1997,96 @@ class LCNI_DB {
         $processed_symbols = 0;
         $changed_symbols = 0;
 
-        foreach ($symbols as $symbol) {
-            $symbol = strtoupper((string) $symbol);
-            $latest_today_event_time = (int) $wpdb->get_var(
-                $wpdb->prepare(
-                    "SELECT MAX(event_time)
-                    FROM {$wpdb->prefix}lcni_ohlc
-                    WHERE symbol = %s AND timeframe = %s AND event_time >= %d",
-                    $symbol,
-                    $timeframe,
-                    $day_start
-                )
-            );
+        foreach ($symbols as $raw_symbol) {
+            $symbol = strtoupper(trim((string) $raw_symbol));
+            if ($symbol === '') {
+                continue;
+            }
 
-            $from_timestamp = $latest_today_event_time > 0 ? max($day_start, $latest_today_event_time - 3600) : $day_start;
-            $payload = LCNI_API::get_candles_by_range($symbol, $timeframe, $from_timestamp, $current_timestamp);
-
-            if (!is_array($payload)) {
+            $payload = LCNI_API::get_candles_by_range($symbol, $timeframe, $day_start, $current_timestamp);
+            if (!is_array($payload) || (($payload['s'] ?? '') !== 'ok')) {
+                $processed_symbols++;
+                usleep(100000);
                 continue;
             }
 
             $rows = lcni_convert_candles($payload, $symbol, $timeframe);
             if (empty($rows)) {
                 $processed_symbols++;
+                usleep(100000);
                 continue;
             }
 
-            $rows = array_values(array_filter(
-                $rows,
-                static function ($row) use ($day_start) {
-                    $event_time = isset($row['event_time']) ? (int) $row['event_time'] : 0;
-
-                    return $event_time >= $day_start;
-                }
-            ));
-
-            if (empty($rows)) {
+            $latest_candle = end($rows);
+            if (!is_array($latest_candle)) {
                 $processed_symbols++;
+                usleep(100000);
+                continue;
+            }
+
+            $latest_db_event_time = (int) $wpdb->get_var(
+                $wpdb->prepare(
+                    "SELECT event_time FROM {$ohlc_table}
+                    WHERE symbol = %s AND timeframe = %s
+                    ORDER BY event_time DESC LIMIT 1",
+                    $symbol,
+                    $timeframe
+                )
+            );
+
+            if ($latest_db_event_time <= 0) {
+                $processed_symbols++;
+                usleep(100000);
                 continue;
             }
 
             $latest_close_before = (float) $wpdb->get_var(
                 $wpdb->prepare(
-                    "SELECT close_price FROM {$wpdb->prefix}lcni_ohlc
-                    WHERE symbol = %s AND timeframe = %s
-                    ORDER BY event_time DESC LIMIT 1",
+                    "SELECT close_price FROM {$ohlc_table}
+                    WHERE symbol = %s AND timeframe = %s AND event_time = %d
+                    LIMIT 1",
                     $symbol,
-                    $timeframe
+                    $timeframe,
+                    $latest_db_event_time
                 )
             );
 
-            self::upsert_ohlc_rows($rows);
-
-            $latest_close_after = (float) $wpdb->get_var(
-                $wpdb->prepare(
-                    "SELECT close_price FROM {$wpdb->prefix}lcni_ohlc
-                    WHERE symbol = %s AND timeframe = %s
-                    ORDER BY event_time DESC LIMIT 1",
-                    $symbol,
-                    $timeframe
-                )
+            $updated = $wpdb->update(
+                $ohlc_table,
+                [
+                    'open_price' => self::normalize_price($latest_candle['open'] ?? 0),
+                    'high_price' => self::normalize_price($latest_candle['high'] ?? 0),
+                    'low_price' => self::normalize_price($latest_candle['low'] ?? 0),
+                    'close_price' => self::normalize_price($latest_candle['close'] ?? 0),
+                ],
+                [
+                    'symbol' => $symbol,
+                    'timeframe' => $timeframe,
+                    'event_time' => $latest_db_event_time,
+                ],
+                ['%f', '%f', '%f', '%f'],
+                ['%s', '%s', '%d']
             );
 
-            if ($latest_close_after !== $latest_close_before) {
-                $changed_symbols++;
+            if ($updated !== false) {
+                $latest_close_after = (float) $wpdb->get_var(
+                    $wpdb->prepare(
+                        "SELECT close_price FROM {$ohlc_table}
+                        WHERE symbol = %s AND timeframe = %s AND event_time = %d
+                        LIMIT 1",
+                        $symbol,
+                        $timeframe,
+                        $latest_db_event_time
+                    )
+                );
+
+                if ($latest_close_after !== $latest_close_before) {
+                    $changed_symbols++;
+                }
             }
 
             $processed_symbols++;
+            usleep(100000);
         }
 
         return [
@@ -2074,6 +2096,7 @@ class LCNI_DB {
             'changed_symbols' => $changed_symbols,
             'indicators_done' => true,
             'message' => 'Cập nhật dữ liệu trong phiên hoàn tất.',
+            'error' => '',
         ];
     }
 
