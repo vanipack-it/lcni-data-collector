@@ -1744,6 +1744,10 @@ private function sanitize_module_title($value, $fallback) {
 
     private function render_frontend_data_format_form($module, $tab_id) {
         $settings = LCNI_Data_Format_Settings::get_settings();
+        $option_key = LCNI_Data_Format_Settings::OPTION_KEY;
+        $multiply_100_fields = LCNI_Data_Format_Settings::get_multiply_100_fields();
+        $already_percent_fields = LCNI_Data_Format_Settings::get_already_percent_fields();
+        $module_scope_labels = LCNI_Data_Format_Settings::get_module_scope_labels();
         ?>
         <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
             <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
@@ -1752,14 +1756,51 @@ private function sanitize_module_title($value, $fallback) {
                 <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
                 <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
                 <h3>Data Format</h3>
-                <p><label><input type="checkbox" name="<?php echo esc_attr(LCNI_Data_Format_Settings::OPTION_KEY); ?>[use_intl]" value="1" <?php checked(!empty($settings['use_intl'])); ?>> Use Intl.NumberFormat</label></p>
-                <p><label>Locale <select name="<?php echo esc_attr(LCNI_Data_Format_Settings::OPTION_KEY); ?>[locale]"><option value="vi-VN" <?php selected($settings['locale'], 'vi-VN'); ?>>vi-VN</option><option value="en-US" <?php selected($settings['locale'], 'en-US'); ?>>en-US</option></select></label></p>
-                <p><label><input type="checkbox" name="<?php echo esc_attr(LCNI_Data_Format_Settings::OPTION_KEY); ?>[compact_numbers]" value="1" <?php checked(!empty($settings['compact_numbers'])); ?>> Use compact numbers</label></p>
-                <p><label>Compact threshold <input type="number" min="0" step="1" name="<?php echo esc_attr(LCNI_Data_Format_Settings::OPTION_KEY); ?>[compact_threshold]" value="<?php echo esc_attr((string) $settings['compact_threshold']); ?>"></label></p>
+                <p><label><input type="checkbox" name="<?php echo esc_attr($option_key); ?>[use_intl]" value="1" <?php checked(!empty($settings['use_intl'])); ?>> Use Intl.NumberFormat</label></p>
+                <p><label>Locale <select name="<?php echo esc_attr($option_key); ?>[locale]"><option value="vi-VN" <?php selected($settings['locale'], 'vi-VN'); ?>>vi-VN</option><option value="en-US" <?php selected($settings['locale'], 'en-US'); ?>>en-US</option></select></label></p>
+                <p><label><input type="checkbox" name="<?php echo esc_attr($option_key); ?>[compact_numbers]" value="1" <?php checked(!empty($settings['compact_numbers'])); ?>> Use compact numbers</label></p>
+                <p><label>Compact threshold <input type="number" min="0" step="1" name="<?php echo esc_attr($option_key); ?>[compact_threshold]" value="<?php echo esc_attr((string) $settings['compact_threshold']); ?>"></label></p>
                 <h4>Decimals</h4>
                 <?php foreach ((array) ($settings['decimals'] ?? []) as $type => $precision) : ?>
-                    <p><label><?php echo esc_html(ucfirst(str_replace('_', ' ', (string) $type))); ?> <input type="number" min="0" max="8" step="1" name="<?php echo esc_attr(LCNI_Data_Format_Settings::OPTION_KEY); ?>[decimals][<?php echo esc_attr((string) $type); ?>]" value="<?php echo esc_attr((string) $precision); ?>"></label></p>
+                    <p><label><?php echo esc_html(ucfirst(str_replace('_', ' ', (string) $type))); ?> <input type="number" min="0" max="8" step="1" name="<?php echo esc_attr($option_key); ?>[decimals][<?php echo esc_attr((string) $type); ?>]" value="<?php echo esc_attr((string) $precision); ?>"></label></p>
                 <?php endforeach; ?>
+
+                <h4>Percent Normalization</h4>
+                <fieldset style="border:1px solid #dcdcde;padding:12px;margin:0 0 12px;">
+                    <legend><strong>Fields require *100</strong></legend>
+                    <?php foreach ($multiply_100_fields as $field_key) : ?>
+                        <p>
+                            <label>
+                                <input type="checkbox" name="<?php echo esc_attr($option_key); ?>[percent_normalization][multiply_100_fields][]" value="<?php echo esc_attr($field_key); ?>" <?php checked(in_array($field_key, (array) ($settings['percent_normalization']['multiply_100_fields'] ?? []), true)); ?>>
+                                <?php echo esc_html($field_key); ?>
+                            </label>
+                        </p>
+                    <?php endforeach; ?>
+                </fieldset>
+
+                <fieldset style="border:1px solid #dcdcde;padding:12px;margin:0 0 12px;">
+                    <legend><strong>Already percent (NO *100)</strong></legend>
+                    <?php foreach ($already_percent_fields as $field_key) : ?>
+                        <p>
+                            <label>
+                                <input type="checkbox" name="<?php echo esc_attr($option_key); ?>[percent_normalization][already_percent_fields][]" value="<?php echo esc_attr($field_key); ?>" <?php checked(in_array($field_key, (array) ($settings['percent_normalization']['already_percent_fields'] ?? []), true)); ?>>
+                                <?php echo esc_html($field_key); ?>
+                            </label>
+                        </p>
+                    <?php endforeach; ?>
+                </fieldset>
+
+                <h4>Module Scope</h4>
+                <fieldset style="border:1px solid #dcdcde;padding:12px;margin:0 0 12px;">
+                    <?php foreach ($module_scope_labels as $module_key => $module_label) : ?>
+                        <p>
+                            <label>
+                                <input type="checkbox" name="<?php echo esc_attr($option_key); ?>[module_scope][<?php echo esc_attr($module_key); ?>]" value="1" <?php checked(!empty($settings['module_scope'][$module_key])); ?>>
+                                <?php echo esc_html($module_label); ?>
+                            </label>
+                        </p>
+                    <?php endforeach; ?>
+                </fieldset>
                 <?php submit_button('Save Data Format'); ?>
             </form>
         </div>

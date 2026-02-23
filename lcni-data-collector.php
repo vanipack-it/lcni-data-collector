@@ -128,10 +128,12 @@ function lcni_register_frontend_core_assets() {
         true
     );
 
+    $settings = LCNI_Data_Format_Settings::get_settings();
+
     wp_localize_script(
         'lcni-main-js',
         'LCNI_FORMAT_CONFIG',
-        LCNI_Data_Format_Settings::get_settings()
+        $settings
     );
 }
 

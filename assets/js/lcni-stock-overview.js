@@ -154,6 +154,13 @@ document.addEventListener("DOMContentLoaded", () => {
       : (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value)) ? Number(value) : null);
 
     if (normalizedNumber !== null && window.LCNIFormatter) {
+      const canApply = typeof window.LCNIFormatter.shouldApply !== "function" || window.LCNIFormatter.shouldApply("stock_detail");
+      if (!canApply) {
+        return String(normalizedNumber);
+      }
+      if (typeof window.LCNIFormatter.formatByField === "function") {
+        return window.LCNIFormatter.formatByField(normalizedNumber, key);
+      }
       if (typeof window.LCNIFormatter.formatByColumn === "function") {
         return window.LCNIFormatter.formatByColumn(normalizedNumber, key);
       }

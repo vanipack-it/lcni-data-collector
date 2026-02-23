@@ -10,6 +10,53 @@ class LCNI_Data_Format_Settings {
     const SETTINGS_GROUP = 'lcni_data_format_settings_group';
     const PAGE_SLUG = 'lcni-data-format-settings';
 
+    const MODULE_SCOPE_KEYS = [
+        'dashboard',
+        'stock_detail',
+        'screener',
+        'watchlist',
+        'market_overview',
+    ];
+
+    const MODULE_SCOPE_LABELS = [
+        'dashboard' => 'Dashboard',
+        'stock_detail' => 'Stock Detail',
+        'screener' => 'Screener',
+        'watchlist' => 'Watchlist',
+        'market_overview' => 'Market Overview',
+    ];
+
+    const MULTIPLY_100_FIELDS = [
+        'pct_t_1',
+        'pct_t_3',
+        'pct_1w',
+        'pct_1m',
+        'pct_3m',
+        'pct_6m',
+        'pct_1y',
+        'gia_sv_ma10',
+        'gia_sv_ma20',
+        'gia_sv_ma50',
+        'gia_sv_ma100',
+        'gia_sv_ma200',
+        'vol_sv_vol_ma10',
+        'vol_sv_vol_ma20',
+    ];
+
+    const ALREADY_PERCENT_FIELDS = [
+        'eps_1y_pct',
+        'dt_1y_pct',
+        'bien_ln_gop',
+        'bien_ln_rong',
+        'roe',
+        'co_tuc_pct',
+        'so_huu_nn_pct',
+        'tang_truong_dt_quy_gan_nhat',
+        'tang_truong_dt_quy_gan_nhi',
+        'tang_truong_ln_quy_gan_nhat',
+        'tang_truong_ln_quy_gan_nhi',
+    ];
+
     public function __construct() {
         add_action('admin_init', [$this, 'register_settings']);
     }
@@ -30,6 +77,11 @@ class LCNI_Data_Format_Settings {
                 'rs' => 1,
                 'volume' => 1,
             ],
+            'percent_normalization' => [
+                'multiply_100_fields' => self::MULTIPLY_100_FIELDS,
+                'already_percent_fields' => self::ALREADY_PERCENT_FIELDS,
+            ],
+            'module_scope' => array_fill_keys(self::MODULE_SCOPE_KEYS, true),
         ];
     }
 
@@ -37,6 +89,18 @@ class LCNI_Data_Format_Settings {
         $saved = get_option(self::OPTION_KEY, []);
 
         return self::sanitize_settings($saved);
+    }
+
+    public static function get_multiply_100_fields() {
+        return self::MULTIPLY_100_FIELDS;
+    }
+
+    public static function get_already_percent_fields() {
+        return self::ALREADY_PERCENT_FIELDS;
+    }
+
+    public static function get_module_scope_labels() {
+        return self::MODULE_SCOPE_LABELS;
     }
 
     public function register_settings() {
@@ -51,6 +115,24 @@ class LCNI_Data_Format_Settings {
         );
     }
 
+    private static function sanitize_field_selection($value, $allowed_fields) {
+        if (!is_array($value)) {
+            return [];
+        }
+
+        $allowed_map = array_fill_keys($allowed_fields, true);
+        $sanitized = [];
+
+        foreach ($value as $field) {
+            $normalized_field = sanitize_key((string) $field);
+            if ($normalized_field !== '' && isset($allowed_map[$normalized_field])) {
+                $sanitized[] = $normalized_field;
+            }
+        }
+
+        return array_values(array_unique($sanitized));
+    }
+
     public static function sanitize_settings($value) {
         $defaults = self::get_defaults();
         $input = is_array($value) ? $value : [];
@@ -61,6 +143,11 @@ class LCNI_Data_Format_Settings {
             'compact_numbers' => !empty($input['compact_numbers']),
             'compact_threshold' => max(0, absint($input['compact_threshold'] ?? $defaults['compact_threshold'])),
             'decimals' => $defaults['decimals'],
+            'percent_normalization' => [
+                'multiply_100_fields' => $defaults['percent_normalization']['multiply_100_fields'],
+                'already_percent_fields' => $defaults['percent_normalization']['already_percent_fields'],
+            ],
+            'module_scope' => $defaults['module_scope'],
         ];
 
         $decimals = isset($input['decimals']) && is_array($input['decimals']) ? $input['decimals'] : [];
@@ -68,6 +155,28 @@ class LCNI_Data_Format_Settings {
         foreach ($defaults['decimals'] as $type => $default_value) {
             $raw = isset($decimals[$type]) ? $decimals[$type] : $default_value;
             $sanitized['decimals'][$type] = min(8, max(0, absint($raw)));
+        }
+
+        $normalization_input = isset($input['percent_normalization']) && is_array($input['percent_normalization'])
+            ? $input['percent_normalization']
+            : [];
+
+        $sanitized['percent_normalization']['multiply_100_fields'] = self::sanitize_field_selection(
+            $normalization_input['multiply_100_fields'] ?? [],
+            self::MULTIPLY_100_FIELDS
+        );
+
+        $sanitized['percent_normalization']['already_percent_fields'] = self::sanitize_field_selection(
+            $normalization_input['already_percent_fields'] ?? [],
+            self::ALREADY_PERCENT_FIELDS
+        );
+
+        $module_scope_input = isset($input['module_scope']) && is_array($input['module_scope'])
+            ? $input['module_scope']
+            : [];
+
+        foreach (self::MODULE_SCOPE_KEYS as $module_key) {
+            $sanitized['module_scope'][$module_key] = !empty($module_scope_input[$module_key]);
         }
 
         return $sanitized;
@@ -119,25 +228,6 @@ class LCNI_Data_Format_Settings {
                             <input type="number" min="0" step="1" name="<?php echo esc_attr(self::OPTION_KEY); ?>[compact_threshold]" value="<?php echo esc_attr((string) $settings['compact_threshold']); ?>" />
                         </td>
                     </tr>
-                </table>
-
-                <h2><?php echo esc_html__('Decimal precision by data type', 'lcni'); ?></h2>
-                <table class="form-table" role="presentation">
-                    <?php foreach ($settings['decimals'] as $type => $precision) : ?>
-                        <tr>
-                            <th scope="row"><?php echo esc_html(ucfirst(str_replace('_', ' ', (string) $type))); ?></th>
-                            <td>
-                                <input
-                                    type="number"
-                                    min="0"
-                                    max="8"
-                                    step="1"
-                                    name="<?php echo esc_attr(self::OPTION_KEY); ?>[decimals][<?php echo esc_attr((string) $type); ?>]"
-                                    value="<?php echo esc_attr((string) $precision); ?>"
-                                />
-                            </td>
-                        </tr>
-                    <?php endforeach; ?>
                 </table>
 
                 <?php submit_button(__('Save Data Format Settings', 'lcni')); ?>
