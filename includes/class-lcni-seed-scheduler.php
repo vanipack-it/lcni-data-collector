@@ -66,7 +66,7 @@ class LCNI_SeedScheduler {
         }
 
         $seed_constraints = self::get_seed_constraints();
-        $to = !empty($task['last_to_time']) ? (int) $task['last_to_time'] : (int) ($seed_constraints['to_time'] ?? time());
+        $to = !empty($task['last_to_time']) ? (int) $task['last_to_time'] : (int) ($seed_constraints['to_time'] ?? current_time('timestamp'));
         $min_from = self::resolve_min_from_for_task($task, $seed_constraints, $to);
         $requests = 0;
 
@@ -180,7 +180,7 @@ class LCNI_SeedScheduler {
         return [
             'mode' => (string) get_option('lcni_seed_range_mode', 'full'),
             'from_time' => max(1, (int) get_option('lcni_seed_from_time', 1)),
-            'to_time' => max(1, (int) get_option('lcni_seed_to_time', time())),
+            'to_time' => max(1, (int) get_option('lcni_seed_to_time', current_time('timestamp'))),
             'sessions' => max(1, (int) get_option('lcni_seed_session_count', 300)),
         ];
     }
@@ -191,7 +191,7 @@ class LCNI_SeedScheduler {
             $mode = 'full';
         }
 
-        $to_time = isset($constraints['to_time']) ? (int) $constraints['to_time'] : time();
+        $to_time = isset($constraints['to_time']) ? (int) $constraints['to_time'] : current_time('timestamp');
         $to_time = max(1, $to_time);
         $from_time = 1;
         $sessions = isset($constraints['sessions']) ? max(1, (int) $constraints['sessions']) : max(1, (int) get_option('lcni_seed_session_count', 300));
@@ -221,7 +221,7 @@ class LCNI_SeedScheduler {
     private static function persist_seed_constraints($constraints) {
         update_option('lcni_seed_range_mode', (string) ($constraints['mode'] ?? 'full'));
         update_option('lcni_seed_from_time', (int) ($constraints['from_time'] ?? 1));
-        update_option('lcni_seed_to_time', (int) ($constraints['to_time'] ?? time()));
+        update_option('lcni_seed_to_time', (int) ($constraints['to_time'] ?? current_time('timestamp')));
         update_option('lcni_seed_session_count', max(1, (int) ($constraints['sessions'] ?? 300)));
     }
 
@@ -244,13 +244,26 @@ class LCNI_SeedScheduler {
 
         $filtered = [];
         foreach ($rows as $row) {
-            $event_time = isset($row['event_time']) ? (int) $row['event_time'] : (int) strtotime((string) ($row['candle_time'] ?? ''));
+            $event_time = isset($row['event_time']) ? (int) $row['event_time'] : self::parse_candle_time_to_timestamp((string) ($row['candle_time'] ?? ''));
             if ($event_time >= $from_time) {
                 $filtered[] = $row;
             }
         }
 
         return $filtered;
+    }
+
+    private static function parse_candle_time_to_timestamp($candle_time) {
+        $raw = trim((string) $candle_time);
+        if ($raw === '') {
+            return 0;
+        }
+
+        try {
+            return (new DateTimeImmutable($raw, wp_timezone()))->getTimestamp();
+        } catch (Exception $e) {
+            return 0;
+        }
     }
 
     private static function is_non_retryable_task_error($message) {

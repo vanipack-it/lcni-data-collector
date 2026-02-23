@@ -962,7 +962,7 @@ class LCNI_DB {
 
         if (!empty($tasks) && defined('LCNI_RULE_REBUILD_CRON_HOOK')) {
             wp_clear_scheduled_hook(LCNI_RULE_REBUILD_CRON_HOOK);
-            wp_schedule_single_event(time() + 1, LCNI_RULE_REBUILD_CRON_HOOK);
+            wp_schedule_single_event(current_time('timestamp') + 1, LCNI_RULE_REBUILD_CRON_HOOK);
         }
 
         return count($tasks);
@@ -1030,7 +1030,7 @@ class LCNI_DB {
             self::log_change('rule_rebuild_completed', sprintf('Background rule rebuild completed for %d symbol/timeframe series.', $processed));
             wp_clear_scheduled_hook(LCNI_RULE_REBUILD_CRON_HOOK);
         } elseif (defined('LCNI_RULE_REBUILD_CRON_HOOK')) {
-            wp_schedule_single_event(time() + 1, LCNI_RULE_REBUILD_CRON_HOOK);
+            wp_schedule_single_event(current_time('timestamp') + 1, LCNI_RULE_REBUILD_CRON_HOOK);
         }
 
         return ['processed_in_batch' => $processed_in_batch, 'remaining' => count($tasks), 'done' => $done];
@@ -1896,7 +1896,7 @@ class LCNI_DB {
 
                 if ($latest_event_time > 0) {
                     $from_timestamp = max(1, $latest_event_time - DAY_IN_SECONDS);
-                    $to_timestamp = time();
+                    $to_timestamp = current_time('timestamp');
                     $payload = LCNI_API::get_candles_by_range($symbol, $timeframe, $from_timestamp, $to_timestamp);
                 } else {
                     $payload = LCNI_API::get_candles($symbol, $timeframe, $days);
@@ -1918,7 +1918,14 @@ class LCNI_DB {
                 $rows = array_filter(
                     $rows,
                     static function ($row) use ($latest_db_event_time) {
-                        $event_time = strtotime($row['candle_time']);
+                        $event_time = false;
+                        if (!empty($row['candle_time'])) {
+                            try {
+                                $event_time = (new DateTimeImmutable((string) $row['candle_time'], wp_timezone()))->getTimestamp();
+                            } catch (Exception $e) {
+                                $event_time = false;
+                            }
+                        }
 
                         return $event_time !== false && $event_time > $latest_db_event_time;
                     }
@@ -1954,7 +1961,16 @@ class LCNI_DB {
         if (!self::is_trading_session_open()) {
             self::log_change('intraday_skipped', 'Intraday update skipped because market is out of trading session.');
 
-            return new WP_Error('out_of_trading_session', 'Ngoài giờ giao dịch.');
+            return [
+                'processed_symbols' => 0,
+                'pending_symbols' => 0,
+                'total_symbols' => 0,
+                'changed_symbols' => 0,
+                'indicators_done' => true,
+                'waiting_for_trading_session' => true,
+                'message' => 'Waiting for trading session.',
+                'error' => '',
+            ];
         }
 
         global $wpdb;
@@ -1975,8 +1991,10 @@ class LCNI_DB {
             ];
         }
 
-        $day_start = strtotime(current_time('Y-m-d 00:00:00'));
-        $now = time();
+        $timezone = wp_timezone();
+        $now = new DateTimeImmutable('now', $timezone);
+        $day_start = $now->setTime(0, 0, 0)->getTimestamp();
+        $current_timestamp = $now->getTimestamp();
         $processed_symbols = 0;
         $changed_symbols = 0;
 
@@ -1994,7 +2012,7 @@ class LCNI_DB {
             );
 
             $from_timestamp = $latest_today_event_time > 0 ? max($day_start, $latest_today_event_time - 3600) : $day_start;
-            $payload = LCNI_API::get_candles_by_range($symbol, $timeframe, $from_timestamp, $now);
+            $payload = LCNI_API::get_candles_by_range($symbol, $timeframe, $from_timestamp, $current_timestamp);
 
             if (!is_array($payload)) {
                 continue;
@@ -2060,19 +2078,7 @@ class LCNI_DB {
     }
 
     public static function is_trading_session_open() {
-        $timestamp = current_time('timestamp');
-        $day_of_week = (int) gmdate('N', $timestamp + (get_option('gmt_offset', 0) * HOUR_IN_SECONDS));
-
-        if ($day_of_week >= 6) {
-            return false;
-        }
-
-        $time_text = current_time('H:i');
-        if ($time_text < '09:00' || $time_text > '15:00') {
-            return false;
-        }
-
-        return true;
+        return lcni_is_trading_time();
     }
 
     public static function get_latest_event_time($symbol, $timeframe) {
@@ -2116,7 +2122,7 @@ class LCNI_DB {
         $touched_timeframes = [];
 
         foreach ($rows as $row) {
-            $event_time = isset($row['event_time']) ? (int) $row['event_time'] : strtotime((string) ($row['candle_time'] ?? ''));
+            $event_time = isset($row['event_time']) ? (int) $row['event_time'] : 0;
             if ($event_time <= 0) {
                 continue;
             }

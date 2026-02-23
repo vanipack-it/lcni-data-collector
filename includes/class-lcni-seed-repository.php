@@ -41,7 +41,7 @@ class LCNI_SeedRepository {
                             updated_at = NOW()",
                         strtoupper((string) $symbol),
                         strtoupper((string) $timeframe),
-                        $initial_to_time === null ? time() : max(1, (int) $initial_to_time)
+                        $initial_to_time === null ? current_time('timestamp') : max(1, (int) $initial_to_time)
                     )
                 );
 
