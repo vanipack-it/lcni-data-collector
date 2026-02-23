@@ -1,5 +1,5 @@
 (function initLcniFormatter(windowObj) {
-  'use strict';
+  "use strict";
 
   if (!windowObj || windowObj.LCNIFormatter) {
     return;
@@ -7,7 +7,7 @@
 
   const DEFAULT_CONFIG = {
     use_intl: true,
-    locale: 'vi-VN',
+    locale: "vi-VN",
     compact_numbers: true,
     compact_threshold: 1000,
     decimals: {
@@ -18,28 +18,31 @@
       pe: 2,
       pb: 2,
       rs: 1,
-      volume: 1
+      volume: 1,
     },
     percent_normalization: {
       multiply_100_fields: [],
-      already_percent_fields: []
+      already_percent_fields: [],
     },
     module_scope: {
       dashboard: true,
       stock_detail: true,
+      signals: true,
       screener: true,
       watchlist: true,
-      market_overview: true
-    }
+      market_overview: true,
+    },
   };
 
   const CACHE = {
     standard: new Map(),
-    compact: new Map()
+    compact: new Map(),
   };
 
   const RS_COLUMNS = new Set([
-    'rs_1m_by_exchange', 'rs_1w_by_exchange', 'rs_3m_by_exchange'
+    "rs_1m_by_exchange",
+    "rs_1w_by_exchange",
+    "rs_3m_by_exchange",
   ]);
 
   function sanitizeNumber(value) {
@@ -48,7 +51,9 @@
   }
 
   function normalizeFieldName(field) {
-    return String(field || '').trim().toLowerCase();
+    return String(field || "")
+      .trim()
+      .toLowerCase();
   }
 
   function sanitizeFieldList(rawList) {
@@ -68,38 +73,66 @@
   }
 
   function sanitizeConfig(raw) {
-    const config = raw && typeof raw === 'object' ? raw : {};
+    const config = raw && typeof raw === "object" ? raw : {};
     const merged = {
-      use_intl: config.use_intl !== undefined ? !!config.use_intl : DEFAULT_CONFIG.use_intl,
-      locale: typeof config.locale === 'string' && config.locale ? config.locale : DEFAULT_CONFIG.locale,
-      compact_numbers: config.compact_numbers !== undefined ? !!config.compact_numbers : DEFAULT_CONFIG.compact_numbers,
-      compact_threshold: Number.isFinite(Number(config.compact_threshold)) ? Math.max(0, Number(config.compact_threshold)) : DEFAULT_CONFIG.compact_threshold,
+      use_intl:
+        config.use_intl !== undefined
+          ? !!config.use_intl
+          : DEFAULT_CONFIG.use_intl,
+      locale:
+        typeof config.locale === "string" && config.locale
+          ? config.locale
+          : DEFAULT_CONFIG.locale,
+      compact_numbers:
+        config.compact_numbers !== undefined
+          ? !!config.compact_numbers
+          : DEFAULT_CONFIG.compact_numbers,
+      compact_threshold: Number.isFinite(Number(config.compact_threshold))
+        ? Math.max(0, Number(config.compact_threshold))
+        : DEFAULT_CONFIG.compact_threshold,
       decimals: Object.assign({}, DEFAULT_CONFIG.decimals),
       percent_normalization: {
-        multiply_100_fields: DEFAULT_CONFIG.percent_normalization.multiply_100_fields.slice(),
-        already_percent_fields: DEFAULT_CONFIG.percent_normalization.already_percent_fields.slice()
+        multiply_100_fields:
+          DEFAULT_CONFIG.percent_normalization.multiply_100_fields.slice(),
+        already_percent_fields:
+          DEFAULT_CONFIG.percent_normalization.already_percent_fields.slice(),
       },
-      module_scope: Object.assign({}, DEFAULT_CONFIG.module_scope)
+      module_scope: Object.assign({}, DEFAULT_CONFIG.module_scope),
     };
 
-    const decimals = config.decimals && typeof config.decimals === 'object' ? config.decimals : {};
+    const decimals =
+      config.decimals && typeof config.decimals === "object"
+        ? config.decimals
+        : {};
     Object.keys(DEFAULT_CONFIG.decimals).forEach((key) => {
       const decimal = Number(decimals[key]);
-      merged.decimals[key] = Number.isFinite(decimal) ? Math.max(0, Math.min(8, Math.floor(decimal))) : DEFAULT_CONFIG.decimals[key];
+      merged.decimals[key] = Number.isFinite(decimal)
+        ? Math.max(0, Math.min(8, Math.floor(decimal)))
+        : DEFAULT_CONFIG.decimals[key];
     });
 
-    const percentNormalization = config.percent_normalization && typeof config.percent_normalization === 'object'
-      ? config.percent_normalization
-      : {};
+    const percentNormalization =
+      config.percent_normalization &&
+      typeof config.percent_normalization === "object"
+        ? config.percent_normalization
+        : {};
 
-    merged.percent_normalization.multiply_100_fields = sanitizeFieldList(percentNormalization.multiply_100_fields);
-    merged.percent_normalization.already_percent_fields = sanitizeFieldList(percentNormalization.already_percent_fields);
+    merged.percent_normalization.multiply_100_fields = sanitizeFieldList(
+      percentNormalization.multiply_100_fields,
+    );
+    merged.percent_normalization.already_percent_fields = sanitizeFieldList(
+      percentNormalization.already_percent_fields,
+    );
 
-    const moduleScope = config.module_scope && typeof config.module_scope === 'object' ? config.module_scope : {};
+    const moduleScope =
+      config.module_scope && typeof config.module_scope === "object"
+        ? config.module_scope
+        : {};
     Object.keys(DEFAULT_CONFIG.module_scope).forEach((moduleKey) => {
-      merged.module_scope[moduleKey] = moduleScope[moduleKey] !== undefined
-        ? !!moduleScope[moduleKey]
-        : DEFAULT_CONFIG.module_scope[moduleKey];
+      merged.module_scope[moduleKey] =
+        moduleScope[moduleKey] !== undefined
+          ? !!moduleScope[moduleKey]
+          : DEFAULT_CONFIG.module_scope[moduleKey];
     });
 
     return merged;
@@ -109,15 +142,19 @@
 
   function buildFieldSets() {
     return {
-      multiply100Fields: new Set(activeConfig.percent_normalization.multiply_100_fields),
-      alreadyPercentFields: new Set(activeConfig.percent_normalization.already_percent_fields)
+      multiply100Fields: new Set(
+        activeConfig.percent_normalization.multiply_100_fields,
+      ),
+      alreadyPercentFields: new Set(
+        activeConfig.percent_normalization.already_percent_fields,
+      ),
     };
   }
 
   let fieldSets = buildFieldSets();
 
   function getDecimals(type) {
-    const key = String(type || '').toLowerCase();
+    const key = String(type || "").toLowerCase();
     return Object.prototype.hasOwnProperty.call(activeConfig.decimals, key)
       ? activeConfig.decimals[key]
       : activeConfig.decimals.price;
@@ -135,8 +172,8 @@
       const formatter = new Intl.NumberFormat(activeConfig.locale, {
         minimumFractionDigits: decimals,
         maximumFractionDigits: decimals,
-        notation: compact ? 'compact' : 'standard',
-        compactDisplay: compact ? 'short' : undefined
+        notation: compact ? "compact" : "standard",
+        compactDisplay: compact ? "short" : undefined,
       });
       target.set(cacheKey, formatter);
       return formatter;
@@ -148,7 +185,7 @@
   function formatFixed(value, decimals) {
     const numeric = sanitizeNumber(value);
     if (numeric === null) {
-      return '-';
+      return "-";
     }
 
     return numeric.toFixed(decimals);
@@ -157,7 +194,7 @@
   function formatStandard(value, decimals) {
     const numeric = sanitizeNumber(value);
     if (numeric === null) {
-      return '-';
+      return "-";
     }
 
     if (!activeConfig.use_intl) {
@@ -175,13 +212,15 @@
   function formatCompact(value, type, options) {
     const numeric = sanitizeNumber(value);
     if (numeric === null) {
-      return '-';
+      return "-";
     }
 
-    const normalizedType = String(type || 'price').toLowerCase();
-    const isPercentType = normalizedType === 'percent';
-    const shouldScalePercent = !isPercentType || !options || options.scalePercent !== false;
-    const normalizedValue = isPercentType && shouldScalePercent ? numeric * 100 : numeric;
+    const normalizedType = String(type || "price").toLowerCase();
+    const isPercentType = normalizedType === "percent";
+    const shouldScalePercent =
+      !isPercentType || !options || options.scalePercent !== false;
+    const normalizedValue =
+      isPercentType && shouldScalePercent ? numeric * 100 : numeric;
     const decimals = getDecimals(normalizedType);
     const abs = Math.abs(normalizedValue);
 
@@ -195,9 +234,9 @@
 
     if (!activeConfig.use_intl) {
       const units = [
-        { value: 1e9, symbol: 'B' },
-        { value: 1e6, symbol: 'M' },
-        { value: 1e3, symbol: 'K' }
+        { value: 1e9, symbol: "B" },
+        { value: 1e6, symbol: "M" },
+        { value: 1e3, symbol: "K" },
       ];
       for (let i = 0; i < units.length; i += 1) {
         if (abs >= units[i].value) {
@@ -218,15 +257,18 @@
 
   function inferColumnFormat(column) {
     const key = normalizeFieldName(column);
-    if (key.indexOf('volume') !== -1 || key === 'vol') return { type: 'volume' };
-    if (key.indexOf('rsi') !== -1) return { type: 'rsi' };
-    if (key.indexOf('macd') !== -1) return { type: 'macd' };
-    if (fieldSets.multiply100Fields.has(key)) return { type: 'percent', scalePercent: true };
-    if (fieldSets.alreadyPercentFields.has(key)) return { type: 'percent', scalePercent: false };
-    if (RS_COLUMNS.has(key)) return { type: 'rs' };
-    if (key === 'pe' || key.indexOf('pe_') === 0) return { type: 'pe' };
-    if (key === 'pb' || key.indexOf('pb_') === 0) return { type: 'pb' };
-    return { type: 'price' };
+    if (key.indexOf("volume") !== -1 || key === "vol")
+      return { type: "volume" };
+    if (key.indexOf("rsi") !== -1) return { type: "rsi" };
+    if (key.indexOf("macd") !== -1) return { type: "macd" };
+    if (fieldSets.multiply100Fields.has(key))
+      return { type: "percent", scalePercent: true };
+    if (fieldSets.alreadyPercentFields.has(key))
+      return { type: "percent", scalePercent: false };
+    if (RS_COLUMNS.has(key)) return { type: "rs" };
+    if (key === "pe" || key.indexOf("pe_") === 0) return { type: "pe" };
+    if (key === "pb" || key.indexOf("pb_") === 0) return { type: "pb" };
+    return { type: "price" };
   }
 
   function shouldApply(moduleName) {
@@ -244,17 +286,17 @@
 
   const api = {
     format(value, type) {
-      const valueType = String(type || 'price').toLowerCase();
+      const valueType = String(type || "price").toLowerCase();
       return formatCompact(value, valueType);
     },
     formatPercent(value, options) {
-      return formatCompact(value, 'percent', options || {});
+      return formatCompact(value, "percent", options || {});
     },
     formatCompact(value, type) {
-      return formatCompact(value, type || 'price');
+      return formatCompact(value, type || "price");
     },
     formatFull(value, type) {
-      return formatStandard(value, getDecimals(type || 'price'));
+      return formatStandard(value, getDecimals(type || "price"));
     },
     inferColumnFormat(column) {
       return Object.assign({}, inferColumnFormat(column));
@@ -273,10 +315,12 @@
       return Object.assign({}, activeConfig, {
         decimals: Object.assign({}, activeConfig.decimals),
         percent_normalization: {
-          multiply_100_fields: activeConfig.percent_normalization.multiply_100_fields.slice(),
-          already_percent_fields: activeConfig.percent_normalization.already_percent_fields.slice()
+          multiply_100_fields:
+            activeConfig.percent_normalization.multiply_100_fields.slice(),
+          already_percent_fields:
+            activeConfig.percent_normalization.already_percent_fields.slice(),
         },
-        module_scope: Object.assign({}, activeConfig.module_scope)
+        module_scope: Object.assign({}, activeConfig.module_scope),
       });
     },
     setConfig(nextConfig) {
@@ -284,7 +328,7 @@
       fieldSets = buildFieldSets();
       CACHE.standard.clear();
       CACHE.compact.clear();
-    }
+    },
   };
 
   windowObj.LCNIFormatter = Object.freeze(api);

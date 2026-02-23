@@ -13,6 +13,7 @@ class LCNI_Data_Format_Settings {
     const MODULE_SCOPE_KEYS = [
         'dashboard',
         'stock_detail',
+        'signals',
         'screener',
         'watchlist',
         'market_overview',
@@ -21,6 +22,7 @@ class LCNI_Data_Format_Settings {
     const MODULE_SCOPE_LABELS = [
         'dashboard' => 'Dashboard',
         'stock_detail' => 'Stock Detail',
+        'signals' => 'Signals',
         'screener' => 'Screener',
         'watchlist' => 'Watchlist',
         'market_overview' => 'Market Overview',
