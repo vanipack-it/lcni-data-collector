@@ -6,9 +6,14 @@ if (!defined('ABSPATH')) {
 
 class LCNI_FilterAdmin {
 
-    public static function sanitize_columns($columns) {
+    public static function available_columns() {
         $service = new LCNI_WatchlistService(new LCNI_WatchlistRepository());
-        $all = $service->get_all_columns();
+
+        return $service->get_all_columns();
+    }
+
+    public static function sanitize_columns($columns) {
+        $all = self::available_columns();
         $columns = is_array($columns) ? array_map('sanitize_key', $columns) : [];
 
         return array_values(array_intersect($all, $columns));

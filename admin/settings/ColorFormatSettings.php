@@ -108,7 +108,7 @@ class LCNI_Color_Format_Settings {
             $columns = array_merge($columns, $service->get_all_columns());
         }
 
-        if (class_exists('LCNI_FilterAdmin')) {
+        if (class_exists('LCNI_FilterAdmin') && method_exists('LCNI_FilterAdmin', 'available_columns')) {
             $columns = array_merge($columns, LCNI_FilterAdmin::available_columns());
         }
 
