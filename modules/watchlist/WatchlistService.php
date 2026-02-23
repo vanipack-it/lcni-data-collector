@@ -265,8 +265,6 @@ class LCNI_WatchlistService {
         }
 
         $styles = isset($settings['styles']) && is_array($settings['styles']) ? $settings['styles'] : [];
-        $rules = isset($settings['value_color_rules']) && is_array($settings['value_color_rules']) ? $settings['value_color_rules'] : [];
-
         return [
             'allowed_columns' => $this->get_allowed_columns(),
             'default_columns_desktop' => $this->get_default_columns('desktop'),
@@ -296,20 +294,6 @@ class LCNI_WatchlistService {
                 'scroll_speed' => max(1, min(5, (int) ($styles['scroll_speed'] ?? 1))),
                 'column_order' => array_values(array_map('sanitize_key', is_array($styles['column_order'] ?? null) ? $styles['column_order'] : [])),
             ],
-            'value_color_rules' => array_values(array_filter(array_map(static function ($rule) {
-                if (!is_array($rule)) {
-                    return null;
-                }
-                $column = sanitize_key($rule['column'] ?? '');
-                $operator = sanitize_text_field((string) ($rule['operator'] ?? ''));
-                $value = $rule['value'] ?? '';
-                $bg_color = sanitize_hex_color((string) ($rule['bg_color'] ?? ''));
-                $text_color = sanitize_hex_color((string) ($rule['text_color'] ?? ''));
-                if ($column === '' || !in_array($operator, ['>', '>=', '<', '<=', '=', '!='], true) || !$bg_color || !$text_color || $value === '') {
-                    return null;
-                }
-                return ['column' => $column, 'operator' => $operator, 'value' => $value, 'bg_color' => $bg_color, 'text_color' => $text_color];
-            }, $rules))),
         ];
     }
 

@@ -331,5 +331,157 @@
     },
   };
 
+
+
+  const COLOR_DEFAULT = { enabled: false, rules: [] };
+
+  function sanitizeColorConfig(raw) {
+    const config = raw && typeof raw === "object" ? raw : {};
+    const rules = Array.isArray(config.rules) ? config.rules : [];
+    return {
+      enabled: !!config.enabled,
+      rules: rules
+        .map((rule) => {
+          if (!rule || typeof rule !== "object") return null;
+          const column = normalizeFieldName(rule.column);
+          const id = normalizeFieldName(rule.id || "");
+          const styleMode = ["flat", "bar", "gradient"].includes(rule.style_mode)
+            ? rule.style_mode
+            : "flat";
+          const type = rule.type === "text" ? "text" : "number";
+          const operator = String(rule.operator || "=");
+          const value = rule.value;
+          if (!column || !id) return null;
+          return {
+            id,
+            column,
+            type,
+            operator,
+            value,
+            style_mode: styleMode,
+            background_color: String(rule.background_color || ""),
+            text_color: String(rule.text_color || ""),
+            bar_color: String(rule.bar_color || ""),
+            show_value_overlay: !!rule.show_value_overlay,
+            gradient_min: sanitizeNumber(rule.gradient_min),
+            gradient_max: sanitizeNumber(rule.gradient_max),
+            gradient_start_color: String(rule.gradient_start_color || "#f8d7da"),
+            gradient_end_color: String(rule.gradient_end_color || "#d1e7dd"),
+          };
+        })
+        .filter(Boolean),
+    };
+  }
+
+  function toRgb(hexColor) {
+    const normalized = String(hexColor || "").replace("#", "").trim();
+    if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return null;
+    return {
+      r: parseInt(normalized.slice(0, 2), 16),
+      g: parseInt(normalized.slice(2, 4), 16),
+      b: parseInt(normalized.slice(4, 6), 16),
+    };
+  }
+
+  const colorEngine = {
+    config: sanitizeColorConfig(windowObj.LCNI_COLOR_FORMAT_CONFIG || COLOR_DEFAULT),
+    byColumn: new Map(),
+    buildIndex() {
+      this.byColumn.clear();
+      this.config.rules.forEach((rule) => {
+        const list = this.byColumn.get(rule.column) || [];
+        list.push(rule);
+        this.byColumn.set(rule.column, list);
+      });
+    },
+    evaluate(field, value) {
+      if (!this.config.enabled) return null;
+      const key = normalizeFieldName(field);
+      const rules = this.byColumn.get(key) || [];
+      for (let i = 0; i < rules.length; i += 1) {
+        const rule = rules[i];
+        if (this.matchRule(rule, value)) return rule;
+      }
+      return null;
+    },
+    matchRule(rule, value) {
+      if (rule.type === "text") {
+        const left = String(value == null ? "" : value).toLowerCase();
+        const right = String(rule.value == null ? "" : rule.value).toLowerCase();
+        if (rule.operator === "contains") return left.includes(right);
+        if (rule.operator === "equals") return left === right;
+        if (rule.operator === "starts_with") return left.startsWith(right);
+        if (rule.operator === "ends_with") return left.endsWith(right);
+        return false;
+      }
+
+      const left = sanitizeNumber(value);
+      if (left === null) return false;
+      if (rule.operator === "between" && Array.isArray(rule.value) && rule.value.length === 2) {
+        const min = sanitizeNumber(rule.value[0]);
+        const max = sanitizeNumber(rule.value[1]);
+        return min !== null && max !== null && left >= min && left <= max;
+      }
+
+      const right = sanitizeNumber(rule.value);
+      if (right === null) return false;
+      if (rule.operator === ">") return left > right;
+      if (rule.operator === "<") return left < right;
+      if (rule.operator === ">=") return left >= right;
+      if (rule.operator === "<=") return left <= right;
+      if (rule.operator === "=") return left === right;
+      return false;
+    },
+    apply(element, field, value) {
+      if (!element) return;
+      const matched = this.evaluate(field, value);
+      if (!matched) return;
+      if (matched.style_mode === "flat") {
+        element.classList.add(`lcni-rule-${matched.id}`);
+        return;
+      }
+      if (matched.style_mode === "bar") {
+        this.applyBar(element, value, matched);
+        return;
+      }
+      if (matched.style_mode === "gradient") {
+        this.applyGradient(element, value, matched);
+      }
+    },
+    applyBar(element, value, rule) {
+      const numeric = sanitizeNumber(value);
+      if (numeric === null) return;
+      const percent = Math.max(0, Math.min(100, Math.abs(numeric)));
+      const currentText = element.textContent;
+      element.innerHTML = `<span class="lcni-color-bar" style="position:absolute;left:0;top:0;bottom:0;width:${percent}%;background:${rule.bar_color};opacity:0.18;pointer-events:none;"></span><span style="position:relative;z-index:1;">${currentText}</span>`;
+      element.style.position = "relative";
+      if (rule.show_value_overlay) {
+        element.style.fontWeight = "600";
+      }
+    },
+    applyGradient(element, value, rule) {
+      const numeric = sanitizeNumber(value);
+      if (numeric === null) return;
+      const min = rule.gradient_min;
+      const max = rule.gradient_max;
+      if (min === null || max === null || max <= min) return;
+      const start = toRgb(rule.gradient_start_color);
+      const end = toRgb(rule.gradient_end_color);
+      if (!start || !end) return;
+      const normalized = Math.max(0, Math.min(1, (numeric - min) / (max - min)));
+      const r = Math.round(start.r + (end.r - start.r) * normalized);
+      const g = Math.round(start.g + (end.g - start.g) * normalized);
+      const b = Math.round(start.b + (end.b - start.b) * normalized);
+      element.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
+    },
+    setConfig(next) {
+      this.config = sanitizeColorConfig(next);
+      this.buildIndex();
+    },
+  };
+
+  colorEngine.buildIndex();
+
   windowObj.LCNIFormatter = Object.freeze(api);
+  windowObj.LCNIColorEngine = colorEngine;
 })(window);

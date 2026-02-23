@@ -12,25 +12,9 @@
       .replace(/'/g, '&#39;');
   }
 
-  function applyCellStyle(column, value, rules) {
-    const numericValue = Number(value);
-    for (const rule of rules || []) {
-      if (!rule || rule.column !== column) continue;
-      const compare = Number(rule.value);
-      let ok = false;
-      if (!Number.isNaN(numericValue) && !Number.isNaN(compare)) {
-        if (rule.operator === '>') ok = numericValue > compare;
-        if (rule.operator === '>=') ok = numericValue >= compare;
-        if (rule.operator === '<') ok = numericValue < compare;
-        if (rule.operator === '<=') ok = numericValue <= compare;
-        if (rule.operator === '=') ok = numericValue === compare;
-        if (rule.operator === '!=') ok = numericValue !== compare;
-      } else if (rule.operator === '=') {
-        ok = String(value) === String(rule.value);
-      }
-      if (ok) return `background:${esc(rule.bg_color)};color:${esc(rule.text_color)};`;
-    }
-    return '';
+  function applyColor(cell, column, value) {
+    if (!cell || !window.LCNIColorEngine || typeof window.LCNIColorEngine.apply !== 'function') return;
+    window.LCNIColorEngine.apply(cell, column, value);
   }
 
   async function api(body) {
@@ -114,10 +98,14 @@
           const style = `background:${esc(addBtn.background || '#dc2626')};color:${esc(addBtn.text_color || '#fff')};font-size:${Number(addBtn.font_size || 14)}px;width:${Number(addBtn.size || 26)}px;height:${Number(addBtn.size || 26)}px;`;
           return `<td class="${index === 0 ? 'is-sticky-col' : ''}"><span class="lcni-watchlist-symbol">${esc(symbol)}</span> <button type="button" class="lcni-watchlist-add" data-lcni-watchlist-add data-symbol="${esc(symbol)}" style="${style}" aria-label="Add to watchlist"><i class="${esc(addBtn.icon || 'fa-solid fa-heart-circle-plus')}" aria-hidden="true"></i></button></td>`;
         }
-        const cellStyle = applyCellStyle(column, row[column], settings.value_color_rules || []);
-        return `<td style="${cellStyle}">${esc(formatCellValue(column, row[column]))}</td>`;
+        const rawValue = row[column];
+        return `<td data-lcni-color-field="${esc(column)}" data-lcni-color-value="${esc(rawValue)}">${esc(formatCellValue(column, rawValue))}</td>`;
       }).join('')}</tr>`;
     }).join('');
+
+    tbody.querySelectorAll('td[data-lcni-color-field]').forEach((cell) => {
+      applyColor(cell, cell.getAttribute('data-lcni-color-field'), cell.getAttribute('data-lcni-color-value'));
+    });
 
     const totalPages = Math.max(1, Math.ceil((data.total || 0) / (data.limit || 1)));
     pagination.innerHTML = `<button type="button" data-page-prev ${data.page <= 1 ? 'disabled' : ''}>Prev</button> <span>Page ${data.page}/${totalPages}</span> <button type="button" data-page-next ${data.page >= totalPages ? 'disabled' : ''}>Next</button>`;
