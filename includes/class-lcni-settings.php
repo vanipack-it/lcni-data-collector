@@ -735,6 +735,7 @@ class LCNI_Settings {
     private function normalize_runtime_status_for_display($status) {
         $status = is_array($status) ? $status : [];
         $diagnostics = LCNI_Update_Manager::get_runtime_diagnostics();
+        $runtime_symbol = $this->get_latest_symbol_price_snapshot('lcni_ohlc', 'CEO');
 
         $message = (string) ($status['message'] ?? '-');
         if (!empty($status['waiting_for_trading_session'])) {
@@ -752,6 +753,9 @@ class LCNI_Settings {
             'next_run_at' => $this->format_timestamp_to_gmt7($status['next_run_ts'] ?? 0),
             'message' => $message,
             'error' => (string) ($status['error'] ?? ''),
+            'symbol_check_label' => (string) $runtime_symbol['label'],
+            'symbol_check_close_price' => (string) $runtime_symbol['close_price'],
+            'symbol_check_event_time' => (string) $runtime_symbol['event_time'],
             'wordpress_timezone' => (string) ($diagnostics['wordpress_timezone'] ?? '-'),
             'market_timezone' => (string) ($diagnostics['market_timezone'] ?? '-'),
             'server_timezone' => (string) ($diagnostics['server_timezone'] ?? '-'),
@@ -763,6 +767,7 @@ class LCNI_Settings {
 
     private function normalize_ohlc_latest_status_for_display($status) {
         $status = is_array($status) ? $status : [];
+        $latest_symbol = $this->get_latest_symbol_price_snapshot('lcni_ohlc_latest', 'CEO');
 
         return [
             'running_label' => !empty($status['running']) ? 'Đang chạy' : 'Đã dừng',
@@ -771,6 +776,54 @@ class LCNI_Settings {
             'ended_at' => $this->format_mysql_datetime_to_gmt7($status['ended_at'] ?? ''),
             'message' => (string) ($status['message'] ?? '-'),
             'error' => (string) ($status['error'] ?? ''),
+            'symbol_check_label' => (string) $latest_symbol['label'],
+            'symbol_check_close_price' => (string) $latest_symbol['close_price'],
+            'symbol_check_event_time' => (string) $latest_symbol['event_time'],
+        ];
+    }
+
+    private function get_latest_symbol_price_snapshot($table_suffix, $symbol) {
+        global $wpdb;
+
+        $table_name = $wpdb->prefix . $table_suffix;
+        $safe_symbol = strtoupper(sanitize_text_field((string) $symbol));
+        if ($safe_symbol === '') {
+            $safe_symbol = 'CEO';
+        }
+
+        $table_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table_name));
+        if ($table_exists !== $table_name) {
+            return [
+                'label' => sprintf('%s (chưa có bảng %s)', $safe_symbol, $table_name),
+                'close_price' => '-',
+                'event_time' => '-',
+            ];
+        }
+
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT symbol, close_price, event_time
+                FROM {$table_name}
+                WHERE symbol = %s
+                ORDER BY event_time DESC
+                LIMIT 1",
+                $safe_symbol
+            ),
+            ARRAY_A
+        );
+
+        if (empty($row)) {
+            return [
+                'label' => sprintf('%s (không có dữ liệu)', $safe_symbol),
+                'close_price' => '-',
+                'event_time' => '-',
+            ];
+        }
+
+        return [
+            'label' => strtoupper((string) ($row['symbol'] ?? $safe_symbol)),
+            'close_price' => (string) ($row['close_price'] ?? '-'),
+            'event_time' => $this->format_mysql_datetime_to_gmt7($row['event_time'] ?? ''),
         ];
     }
 
@@ -1051,6 +1104,9 @@ class LCNI_Settings {
                             <tr><th>Dự kiến phiên cập nhật tiếp theo</th><td data-lcni-runtime-status="next_run_at"><?php echo esc_html((string) ($update_status['next_run_at'] ?? '-')); ?></td></tr>
                             <tr><th>Thông báo</th><td data-lcni-runtime-status="message"><?php echo esc_html((string) ($update_status['message'] ?? '-')); ?></td></tr>
                             <tr><th>Lỗi</th><td data-lcni-runtime-status="error"><?php echo esc_html((string) ($update_status['error'] ?? '')); ?></td></tr>
+                            <tr><th>Symbol check</th><td data-lcni-runtime-status="symbol_check_label"><?php echo esc_html((string) ($update_status['symbol_check_label'] ?? 'CEO')); ?></td></tr>
+                            <tr><th>Giá mới nhất (close_price)</th><td data-lcni-runtime-status="symbol_check_close_price"><?php echo esc_html((string) ($update_status['symbol_check_close_price'] ?? '-')); ?></td></tr>
+                            <tr><th>Thời gian giá mới nhất</th><td data-lcni-runtime-status="symbol_check_event_time"><?php echo esc_html((string) ($update_status['symbol_check_event_time'] ?? '-')); ?></td></tr>
                             <tr><th>WordPress timezone</th><td data-lcni-runtime-status="wordpress_timezone"><?php echo esc_html((string) ($update_status['wordpress_timezone'] ?? '-')); ?></td></tr>
                             <tr><th>Market timezone</th><td data-lcni-runtime-status="market_timezone"><?php echo esc_html((string) ($update_status['market_timezone'] ?? '-')); ?></td></tr>
                             <tr><th>Server timezone</th><td data-lcni-runtime-status="server_timezone"><?php echo esc_html((string) ($update_status['server_timezone'] ?? '-')); ?></td></tr>
@@ -1098,6 +1154,9 @@ class LCNI_Settings {
                             <tr><th>Thời gian kết thúc</th><td data-lcni-snapshot-status="ended_at"><?php echo esc_html((string) ($ohlc_latest_status['ended_at'] ?? '-')); ?></td></tr>
                             <tr><th>Thông báo</th><td data-lcni-snapshot-status="message"><?php echo esc_html((string) ($ohlc_latest_status['message'] ?? '-')); ?></td></tr>
                             <tr><th>Lỗi</th><td data-lcni-snapshot-status="error"><?php echo esc_html((string) ($ohlc_latest_status['error'] ?? '')); ?></td></tr>
+                            <tr><th>Symbol check</th><td data-lcni-snapshot-status="symbol_check_label"><?php echo esc_html((string) ($ohlc_latest_status['symbol_check_label'] ?? 'CEO')); ?></td></tr>
+                            <tr><th>Giá mới nhất (close_price)</th><td data-lcni-snapshot-status="symbol_check_close_price"><?php echo esc_html((string) ($ohlc_latest_status['symbol_check_close_price'] ?? '-')); ?></td></tr>
+                            <tr><th>Thời gian giá mới nhất</th><td data-lcni-snapshot-status="symbol_check_event_time"><?php echo esc_html((string) ($ohlc_latest_status['symbol_check_event_time'] ?? '-')); ?></td></tr>
                         </tbody>
                     </table>
                 </div>
