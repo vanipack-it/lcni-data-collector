@@ -103,16 +103,41 @@ class LCNI_Color_Format_Settings {
             'rs_1w_by_exchange', 'rs_1m_by_exchange', 'rs_3m_by_exchange',
         ];
 
-        if (class_exists('LCNI_WatchlistService') && class_exists('LCNI_WatchlistRepository')) {
-            $service = new LCNI_WatchlistService(new LCNI_WatchlistRepository());
-            $columns = array_merge($columns, $service->get_all_columns());
-        }
-
-        if (class_exists('LCNI_FilterAdmin') && method_exists('LCNI_FilterAdmin', 'available_columns')) {
-            $columns = array_merge($columns, LCNI_FilterAdmin::available_columns());
+        $dynamic_columns = self::get_dynamic_columns();
+        if (!empty($dynamic_columns)) {
+            $columns = array_merge($columns, $dynamic_columns);
         }
 
         $columns = array_values(array_unique(array_filter(array_map('sanitize_key', $columns))));
+
+        return $columns;
+    }
+
+    private static function get_dynamic_columns() {
+        $columns = [];
+
+        if (class_exists('LCNI_WatchlistService') && class_exists('LCNI_WatchlistRepository')) {
+            try {
+                $service = new LCNI_WatchlistService(new LCNI_WatchlistRepository());
+                $watchlist_columns = $service->get_all_columns();
+                if (is_array($watchlist_columns)) {
+                    $columns = array_merge($columns, $watchlist_columns);
+                }
+            } catch (Throwable $exception) {
+                // Keep Color Format tab operational even if dynamic column providers fail.
+            }
+        }
+
+        if (class_exists('LCNI_FilterAdmin') && method_exists('LCNI_FilterAdmin', 'available_columns')) {
+            try {
+                $filter_columns = LCNI_FilterAdmin::available_columns();
+                if (is_array($filter_columns)) {
+                    $columns = array_merge($columns, $filter_columns);
+                }
+            } catch (Throwable $exception) {
+                // Keep Color Format tab operational even if dynamic column providers fail.
+            }
+        }
 
         return $columns;
     }
@@ -164,10 +189,10 @@ class LCNI_Color_Format_Settings {
         $columns = self::get_known_columns();
         ?>
         <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
-            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="lcni-front-form">
-                <?php wp_nonce_field('lcni_frontend_settings_save', 'lcni_frontend_settings_nonce'); ?>
-                <input type="hidden" name="action" value="lcni_save_frontend_settings">
-                <input type="hidden" name="module" value="<?php echo esc_attr($module); ?>">
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
                 <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
 
                 <h3>Enable Engine</h3>
