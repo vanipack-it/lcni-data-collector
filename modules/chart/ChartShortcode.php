@@ -35,11 +35,14 @@ class LCNI_Chart_Shortcode {
             ? (string) filemtime($chart_style_path)
             : self::VERSION;
 
+        $echarts_path = LCNI_PATH . 'assets/vendor/echarts.min.js';
+        $echarts_version = file_exists($echarts_path) ? (string) filemtime($echarts_path) : self::VERSION;
+
         wp_register_script(
             'lcni-echarts',
-            'https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js',
+            LCNI_URL . 'assets/vendor/echarts.min.js',
             [],
-            '5.x',
+            $echarts_version,
             true
         );
 
