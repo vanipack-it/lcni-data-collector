@@ -1958,11 +1958,16 @@ class LCNI_DB {
     public static function collect_intraday_data() {
         self::ensure_tables_exist();
 
+        $started_at_ts = current_time('timestamp');
+        $started_at_mysql = current_time('mysql');
+
         if (!self::is_trading_session_open()) {
             self::log_change('intraday_skipped', 'Intraday update skipped because market is out of trading session.');
 
             return [
                 'processed_symbols' => 0,
+                'success_symbols' => 0,
+                'error_symbols' => 0,
                 'pending_symbols' => 0,
                 'total_symbols' => 0,
                 'changed_symbols' => 0,
@@ -1970,110 +1975,143 @@ class LCNI_DB {
                 'waiting_for_trading_session' => true,
                 'message' => 'Waiting for trading session.',
                 'error' => '',
+                'started_at' => $started_at_mysql,
+                'ended_at' => current_time('mysql'),
+                'execution_seconds' => 0,
             ];
         }
 
         global $wpdb;
 
         $timeframe = strtoupper((string) get_option('lcni_timeframe', '1D'));
-        $symbol_table = $wpdb->prefix . 'lcni_symbols';
-        $symbols = $wpdb->get_col("SELECT symbol FROM {$symbol_table} ORDER BY symbol ASC");
+        $symbols = $wpdb->get_col("SELECT symbol FROM {$wpdb->prefix}lcni_symbol_tongquan");
+
+        $symbols = array_values(array_unique(array_filter(array_map(static function ($symbol) {
+            $value = strtoupper(trim((string) $symbol));
+            return $value;
+        }, (array) $symbols))));
 
         $total_symbols = count($symbols);
         if ($total_symbols === 0) {
             return [
                 'processed_symbols' => 0,
+                'success_symbols' => 0,
+                'error_symbols' => 0,
                 'pending_symbols' => 0,
                 'total_symbols' => 0,
                 'changed_symbols' => 0,
                 'indicators_done' => true,
                 'message' => 'Không có symbol để cập nhật.',
+                'started_at' => $started_at_mysql,
+                'ended_at' => current_time('mysql'),
+                'execution_seconds' => max(0, current_time('timestamp') - $started_at_ts),
             ];
         }
 
-        $timezone = lcni_get_market_timezone();
-        $now = new DateTimeImmutable('now', $timezone);
-        $day_start = $now->setTime(0, 0, 0)->getTimestamp();
-        $current_timestamp = $now->getTimestamp();
+        $current_timestamp = current_time('timestamp');
+        $from_timestamp = max(1, $current_timestamp - DAY_IN_SECONDS);
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
         $processed_symbols = 0;
-        $changed_symbols = 0;
+        $success_symbols = 0;
+        $error_symbols = 0;
 
         foreach ($symbols as $symbol) {
-            $symbol = strtoupper((string) $symbol);
-            $latest_today_event_time = (int) $wpdb->get_var(
-                $wpdb->prepare(
-                    "SELECT MAX(event_time)
-                    FROM {$wpdb->prefix}lcni_ohlc
-                    WHERE symbol = %s AND timeframe = %s AND event_time >= %d",
-                    $symbol,
-                    $timeframe,
-                    $day_start
-                )
+            $url = add_query_arg(
+                [
+                    'symbol' => $symbol,
+                    'resolution' => $timeframe,
+                    'from' => $from_timestamp,
+                    'to' => $current_timestamp,
+                ],
+                LCNI_API::CANDLE_URL
             );
 
-            $from_timestamp = $latest_today_event_time > 0 ? max($day_start, $latest_today_event_time - 3600) : $day_start;
-            $payload = LCNI_API::get_candles_by_range($symbol, $timeframe, $from_timestamp, $current_timestamp);
+            $response = wp_remote_get($url, [
+                'timeout' => 20,
+                'headers' => [
+                    'Accept' => 'application/json',
+                ],
+            ]);
 
-            if (!is_array($payload)) {
-                continue;
-            }
-
-            $rows = lcni_convert_candles($payload, $symbol, $timeframe);
-            if (empty($rows)) {
+            if (is_wp_error($response)) {
+                $error_symbols++;
                 $processed_symbols++;
+                usleep(100000);
                 continue;
             }
 
-            $rows = array_values(array_filter(
-                $rows,
-                static function ($row) use ($day_start) {
-                    $event_time = isset($row['event_time']) ? (int) $row['event_time'] : 0;
-
-                    return $event_time >= $day_start;
-                }
-            ));
-
-            if (empty($rows)) {
+            $status_code = (int) wp_remote_retrieve_response_code($response);
+            if ($status_code !== 200) {
+                $error_symbols++;
                 $processed_symbols++;
+                usleep(100000);
                 continue;
             }
 
-            $latest_close_before = (float) $wpdb->get_var(
-                $wpdb->prepare(
-                    "SELECT close_price FROM {$wpdb->prefix}lcni_ohlc
-                    WHERE symbol = %s AND timeframe = %s
-                    ORDER BY event_time DESC LIMIT 1",
-                    $symbol,
-                    $timeframe
-                )
+            $decoded = json_decode((string) wp_remote_retrieve_body($response), true);
+            if (!is_array($decoded) || !isset($decoded['s']) || $decoded['s'] !== 'ok') {
+                $error_symbols++;
+                $processed_symbols++;
+                usleep(100000);
+                continue;
+            }
+
+            $rows = lcni_convert_candles($decoded, $symbol, $timeframe);
+            if (empty($rows)) {
+                $error_symbols++;
+                $processed_symbols++;
+                usleep(100000);
+                continue;
+            }
+
+            $latest_row = end($rows);
+            if (!is_array($latest_row) || empty($latest_row['event_time'])) {
+                $error_symbols++;
+                $processed_symbols++;
+                usleep(100000);
+                continue;
+            }
+
+            $wpdb->update(
+                $ohlc_table,
+                [
+                    'open_price' => self::normalize_price($latest_row['open'] ?? 0),
+                    'high_price' => self::normalize_price($latest_row['high'] ?? 0),
+                    'low_price' => self::normalize_price($latest_row['low'] ?? 0),
+                    'close_price' => self::normalize_price($latest_row['close'] ?? 0),
+                    'updated_at' => current_time('mysql'),
+                ],
+                [
+                    'symbol' => $symbol,
+                    'timeframe' => $timeframe,
+                    'event_time' => (int) $latest_row['event_time'],
+                ],
+                ['%f', '%f', '%f', '%f', '%s'],
+                ['%s', '%s', '%d']
             );
 
-            self::upsert_ohlc_rows($rows);
-
-            $latest_close_after = (float) $wpdb->get_var(
-                $wpdb->prepare(
-                    "SELECT close_price FROM {$wpdb->prefix}lcni_ohlc
-                    WHERE symbol = %s AND timeframe = %s
-                    ORDER BY event_time DESC LIMIT 1",
-                    $symbol,
-                    $timeframe
-                )
-            );
-
-            if ($latest_close_after !== $latest_close_before) {
-                $changed_symbols++;
+            if ((int) $wpdb->rows_affected > 0) {
+                $success_symbols++;
+            } else {
+                $error_symbols++;
             }
 
             $processed_symbols++;
+            usleep(100000);
         }
 
         return [
             'processed_symbols' => $processed_symbols,
+            'success_symbols' => $success_symbols,
+            'error_symbols' => $error_symbols,
             'pending_symbols' => max(0, $total_symbols - $processed_symbols),
             'total_symbols' => $total_symbols,
-            'changed_symbols' => $changed_symbols,
+            'changed_symbols' => $success_symbols,
             'indicators_done' => true,
             'message' => 'Cập nhật dữ liệu trong phiên hoàn tất.',
+            'started_at' => $started_at_mysql,
+            'ended_at' => current_time('mysql'),
+            'execution_seconds' => max(0, current_time('timestamp') - $started_at_ts),
         ];
     }
 

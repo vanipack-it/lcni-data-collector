@@ -80,9 +80,12 @@ class LCNI_Update_Manager {
             'started_at' => $started_at,
             'ended_at' => '',
             'processed_symbols' => 0,
+            'success_symbols' => 0,
+            'error_symbols' => 0,
             'pending_symbols' => 0,
             'total_symbols' => 0,
             'changed_symbols' => 0,
+            'execution_seconds' => 0,
             'indicators_done' => false,
             'message' => '',
             'error' => '',
@@ -106,9 +109,12 @@ class LCNI_Update_Manager {
         $status['running'] = false;
         $status['ended_at'] = current_time('mysql');
         $status['processed_symbols'] = (int) ($result['processed_symbols'] ?? 0);
+        $status['success_symbols'] = (int) ($result['success_symbols'] ?? 0);
+        $status['error_symbols'] = (int) ($result['error_symbols'] ?? 0);
         $status['pending_symbols'] = (int) ($result['pending_symbols'] ?? 0);
         $status['total_symbols'] = (int) ($result['total_symbols'] ?? 0);
         $status['changed_symbols'] = (int) ($result['changed_symbols'] ?? 0);
+        $status['execution_seconds'] = (int) ($result['execution_seconds'] ?? 0);
         $status['indicators_done'] = !empty($result['indicators_done']);
         $status['waiting_for_trading_session'] = !empty($result['waiting_for_trading_session']);
         $status['message'] = (string) ($result['message'] ?? 'Runtime update completed.');
@@ -140,7 +146,7 @@ class LCNI_Update_Manager {
             'market_timezone' => $market_timezone->getName(),
             'server_timezone' => (string) date_default_timezone_get(),
             'current_time_mysql' => (string) current_time('mysql'),
-            'php_date_now' => (new DateTimeImmutable('now', new DateTimeZone((string) date_default_timezone_get())))->format('Y-m-d H:i:s'),
+            'current_time_timestamp' => (int) current_time('timestamp'),
             'is_trading_time' => lcni_is_trading_time($now),
         ];
     }

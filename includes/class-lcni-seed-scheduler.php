@@ -70,7 +70,10 @@ class LCNI_SeedScheduler {
         $min_from = self::resolve_min_from_for_task($task, $seed_constraints, $to);
         $requests = 0;
 
-        while ($requests < self::BATCH_REQUESTS_PER_RUN) {
+        $batch_requests_per_run = self::get_batch_requests_per_run();
+        $rate_limit_microseconds = self::get_rate_limit_microseconds();
+
+        while ($requests < $batch_requests_per_run) {
             $requests++;
 
             if ($to <= $min_from) {
@@ -143,7 +146,7 @@ class LCNI_SeedScheduler {
 
             LCNI_SeedRepository::update_progress((int) $task['id'], $to);
 
-            usleep(self::RATE_LIMIT_MICROSECONDS);
+            usleep($rate_limit_microseconds);
         }
 
         return [
@@ -174,6 +177,14 @@ class LCNI_SeedScheduler {
         $parts = array_values(array_unique(array_filter(array_map('trim', (array) $parts))));
 
         return $parts;
+    }
+
+    public static function get_batch_requests_per_run() {
+        return max(1, (int) get_option('lcni_seed_batch_requests_per_run', self::BATCH_REQUESTS_PER_RUN));
+    }
+
+    public static function get_rate_limit_microseconds() {
+        return max(1, (int) get_option('lcni_seed_rate_limit_microseconds', self::RATE_LIMIT_MICROSECONDS));
     }
 
     public static function get_seed_constraints() {

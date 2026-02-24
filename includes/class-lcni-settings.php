@@ -29,6 +29,8 @@ class LCNI_Settings {
         register_setting('lcni_settings_group', 'lcni_seed_from_date', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_seed_date'], 'default' => '']);
         register_setting('lcni_settings_group', 'lcni_seed_to_date', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_seed_date'], 'default' => '']);
         register_setting('lcni_settings_group', 'lcni_seed_session_count', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_seed_session_count'], 'default' => 300]);
+        register_setting('lcni_settings_group', 'lcni_seed_batch_requests_per_run', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_positive_int'], 'default' => 5]);
+        register_setting('lcni_settings_group', 'lcni_seed_rate_limit_microseconds', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_positive_int'], 'default' => 100000]);
         register_setting('lcni_settings_group', 'lcni_api_key', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_api_credential'], 'default' => '']);
         register_setting('lcni_settings_group', 'lcni_api_secret', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_api_credential'], 'default' => '']);
         register_setting('lcni_settings_group', 'lcni_access_token', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_api_credential'], 'default' => '']);
@@ -173,11 +175,15 @@ class LCNI_Settings {
             $seed_from_date = isset($_POST['lcni_seed_from_date']) ? $this->sanitize_seed_date(wp_unslash($_POST['lcni_seed_from_date'])) : '';
             $seed_to_date = isset($_POST['lcni_seed_to_date']) ? $this->sanitize_seed_date(wp_unslash($_POST['lcni_seed_to_date'])) : '';
             $seed_sessions = isset($_POST['lcni_seed_session_count']) ? $this->sanitize_seed_session_count(wp_unslash($_POST['lcni_seed_session_count'])) : (int) get_option('lcni_seed_session_count', 300);
+            $batch_requests_per_run = isset($_POST['lcni_seed_batch_requests_per_run']) ? $this->sanitize_positive_int(wp_unslash($_POST['lcni_seed_batch_requests_per_run'])) : (int) get_option('lcni_seed_batch_requests_per_run', 5);
+            $rate_limit_microseconds = isset($_POST['lcni_seed_rate_limit_microseconds']) ? $this->sanitize_positive_int(wp_unslash($_POST['lcni_seed_rate_limit_microseconds'])) : (int) get_option('lcni_seed_rate_limit_microseconds', 100000);
 
             update_option('lcni_seed_range_mode', $seed_mode);
             update_option('lcni_seed_from_date', $seed_from_date);
             update_option('lcni_seed_to_date', $seed_to_date);
             update_option('lcni_seed_session_count', $seed_sessions);
+            update_option('lcni_seed_batch_requests_per_run', $batch_requests_per_run);
+            update_option('lcni_seed_rate_limit_microseconds', $rate_limit_microseconds);
 
             $constraints = [
                 'mode' => $seed_mode,
@@ -745,8 +751,11 @@ class LCNI_Settings {
         return [
             'running_label' => !empty($status['running']) ? 'Đang chạy' : 'Đã dừng',
             'processed_symbols' => (int) ($status['processed_symbols'] ?? 0),
+            'success_symbols' => (int) ($status['success_symbols'] ?? 0),
+            'error_symbols' => (int) ($status['error_symbols'] ?? 0),
             'pending_symbols' => (int) ($status['pending_symbols'] ?? 0),
             'changed_symbols' => (int) ($status['changed_symbols'] ?? 0),
+            'execution_seconds' => (int) ($status['execution_seconds'] ?? 0),
             'indicators_done_label' => !empty($status['indicators_done']) ? 'Đã xong' : 'Chưa xong',
             'started_at' => $this->format_mysql_datetime_to_gmt7($status['started_at'] ?? ''),
             'ended_at' => $this->format_mysql_datetime_to_gmt7($status['ended_at'] ?? ''),
@@ -754,13 +763,16 @@ class LCNI_Settings {
             'message' => $message,
             'error' => (string) ($status['error'] ?? ''),
             'symbol_check_label' => (string) $runtime_symbol['label'],
+            'symbol_check_open_price' => (string) $runtime_symbol['open_price'],
+            'symbol_check_high_price' => (string) $runtime_symbol['high_price'],
+            'symbol_check_low_price' => (string) $runtime_symbol['low_price'],
             'symbol_check_close_price' => (string) $runtime_symbol['close_price'],
             'symbol_check_event_time' => (string) $runtime_symbol['event_time'],
             'wordpress_timezone' => (string) ($diagnostics['wordpress_timezone'] ?? '-'),
             'market_timezone' => (string) ($diagnostics['market_timezone'] ?? '-'),
             'server_timezone' => (string) ($diagnostics['server_timezone'] ?? '-'),
             'current_time_mysql' => (string) ($diagnostics['current_time_mysql'] ?? '-'),
-            'php_date_now' => (string) ($diagnostics['php_date_now'] ?? '-'),
+            'current_time_timestamp' => (string) ($diagnostics['current_time_timestamp'] ?? '-'),
             'is_trading_time' => !empty($diagnostics['is_trading_time']) ? 'true' : 'false',
         ];
     }
@@ -777,8 +789,12 @@ class LCNI_Settings {
             'message' => (string) ($status['message'] ?? '-'),
             'error' => (string) ($status['error'] ?? ''),
             'symbol_check_label' => (string) $latest_symbol['label'],
+            'symbol_check_open_price' => (string) $latest_symbol['open_price'],
+            'symbol_check_high_price' => (string) $latest_symbol['high_price'],
+            'symbol_check_low_price' => (string) $latest_symbol['low_price'],
             'symbol_check_close_price' => (string) $latest_symbol['close_price'],
             'symbol_check_event_time' => (string) $latest_symbol['event_time'],
+            'last_run_status' => empty($status['error']) ? 'Thành công' : 'Thất bại',
         ];
     }
 
@@ -795,6 +811,9 @@ class LCNI_Settings {
         if ($table_exists !== $table_name) {
             return [
                 'label' => sprintf('%s (chưa có bảng %s)', $safe_symbol, $table_name),
+                'open_price' => '-',
+                'high_price' => '-',
+                'low_price' => '-',
                 'close_price' => '-',
                 'event_time' => '-',
             ];
@@ -802,7 +821,7 @@ class LCNI_Settings {
 
         $row = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT symbol, close_price, event_time
+                "SELECT symbol, open_price, high_price, low_price, close_price, event_time
                 FROM {$table_name}
                 WHERE symbol = %s
                 ORDER BY event_time DESC
@@ -815,6 +834,9 @@ class LCNI_Settings {
         if (empty($row)) {
             return [
                 'label' => sprintf('%s (không có dữ liệu)', $safe_symbol),
+                'open_price' => '-',
+                'high_price' => '-',
+                'low_price' => '-',
                 'close_price' => '-',
                 'event_time' => '-',
             ];
@@ -822,6 +844,9 @@ class LCNI_Settings {
 
         return [
             'label' => strtoupper((string) ($row['symbol'] ?? $safe_symbol)),
+            'open_price' => (string) ($row['open_price'] ?? '-'),
+            'high_price' => (string) ($row['high_price'] ?? '-'),
+            'low_price' => (string) ($row['low_price'] ?? '-'),
             'close_price' => (string) ($row['close_price'] ?? '-'),
             'event_time' => $this->format_mysql_datetime_to_gmt7($row['event_time'] ?? ''),
         ];
@@ -969,6 +994,8 @@ class LCNI_Settings {
                     <input type="date" name="lcni_seed_from_date" value="<?php echo esc_attr(get_option('lcni_seed_from_date', '')); ?>" style="margin-right:6px;">
                     <input type="date" name="lcni_seed_to_date" value="<?php echo esc_attr(get_option('lcni_seed_to_date', '')); ?>" style="margin-right:6px;">
                     <input type="number" name="lcni_seed_session_count" value="<?php echo esc_attr((string) get_option('lcni_seed_session_count', 300)); ?>" min="1" style="width:90px;margin-right:6px;" title="Số phiên khi chọn mode sessions">
+                    <input type="number" name="lcni_seed_batch_requests_per_run" value="<?php echo esc_attr((string) get_option('lcni_seed_batch_requests_per_run', 5)); ?>" min="1" style="width:90px;margin-right:6px;" title="BATCH_REQUESTS_PER_RUN">
+                    <input type="number" name="lcni_seed_rate_limit_microseconds" value="<?php echo esc_attr((string) get_option('lcni_seed_rate_limit_microseconds', 100000)); ?>" min="1" style="width:130px;margin-right:6px;" title="RATE_LIMIT_MICROSECONDS">
                     <?php submit_button('Start Seed', 'primary', 'submit', false); ?>
                 </form>
                 <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_redirect_tab" value="seed_dashboard"><input type="hidden" name="lcni_admin_action" value="run_seed_batch"><?php submit_button('Run 1 Batch', 'secondary', 'submit', false); ?></form>
@@ -1096,22 +1123,28 @@ class LCNI_Settings {
                         <tbody>
                             <tr><th>Đang chạy</th><td data-lcni-runtime-status="running_label"><?php echo esc_html((string) $update_status['running_label']); ?></td></tr>
                             <tr><th>Số symbol đã cập nhật</th><td data-lcni-runtime-status="processed_symbols"><?php echo esc_html((string) ($update_status['processed_symbols'] ?? 0)); ?></td></tr>
+                            <tr><th>Số symbol thành công</th><td data-lcni-runtime-status="success_symbols"><?php echo esc_html((string) ($update_status['success_symbols'] ?? 0)); ?></td></tr>
+                            <tr><th>Số symbol lỗi</th><td data-lcni-runtime-status="error_symbols"><?php echo esc_html((string) ($update_status['error_symbols'] ?? 0)); ?></td></tr>
                             <tr><th>Số symbol chờ cập nhật</th><td data-lcni-runtime-status="pending_symbols"><?php echo esc_html((string) ($update_status['pending_symbols'] ?? 0)); ?></td></tr>
                             <tr><th>Số symbol thay đổi giá</th><td data-lcni-runtime-status="changed_symbols"><?php echo esc_html((string) ($update_status['changed_symbols'] ?? 0)); ?></td></tr>
                             <tr><th>Cột tính toán hoàn tất</th><td data-lcni-runtime-status="indicators_done_label"><?php echo esc_html((string) $update_status['indicators_done_label']); ?></td></tr>
                             <tr><th>Thời gian bắt đầu</th><td data-lcni-runtime-status="started_at"><?php echo esc_html((string) ($update_status['started_at'] ?? '-')); ?></td></tr>
                             <tr><th>Thời gian kết thúc</th><td data-lcni-runtime-status="ended_at"><?php echo esc_html((string) ($update_status['ended_at'] ?? '-')); ?></td></tr>
+                            <tr><th>Thời gian chạy (giây)</th><td data-lcni-runtime-status="execution_seconds"><?php echo esc_html((string) ($update_status['execution_seconds'] ?? 0)); ?></td></tr>
                             <tr><th>Dự kiến phiên cập nhật tiếp theo</th><td data-lcni-runtime-status="next_run_at"><?php echo esc_html((string) ($update_status['next_run_at'] ?? '-')); ?></td></tr>
                             <tr><th>Thông báo</th><td data-lcni-runtime-status="message"><?php echo esc_html((string) ($update_status['message'] ?? '-')); ?></td></tr>
                             <tr><th>Lỗi</th><td data-lcni-runtime-status="error"><?php echo esc_html((string) ($update_status['error'] ?? '')); ?></td></tr>
                             <tr><th>Symbol check</th><td data-lcni-runtime-status="symbol_check_label"><?php echo esc_html((string) ($update_status['symbol_check_label'] ?? 'CEO')); ?></td></tr>
-                            <tr><th>Giá mới nhất (close_price)</th><td data-lcni-runtime-status="symbol_check_close_price"><?php echo esc_html((string) ($update_status['symbol_check_close_price'] ?? '-')); ?></td></tr>
-                            <tr><th>Thời gian giá mới nhất</th><td data-lcni-runtime-status="symbol_check_event_time"><?php echo esc_html((string) ($update_status['symbol_check_event_time'] ?? '-')); ?></td></tr>
+                            <tr><th>Open</th><td data-lcni-runtime-status="symbol_check_open_price"><?php echo esc_html((string) ($update_status['symbol_check_open_price'] ?? '-')); ?></td></tr>
+                            <tr><th>High</th><td data-lcni-runtime-status="symbol_check_high_price"><?php echo esc_html((string) ($update_status['symbol_check_high_price'] ?? '-')); ?></td></tr>
+                            <tr><th>Low</th><td data-lcni-runtime-status="symbol_check_low_price"><?php echo esc_html((string) ($update_status['symbol_check_low_price'] ?? '-')); ?></td></tr>
+                            <tr><th>Close</th><td data-lcni-runtime-status="symbol_check_close_price"><?php echo esc_html((string) ($update_status['symbol_check_close_price'] ?? '-')); ?></td></tr>
+                            <tr><th>Updated_at (GMT+7)</th><td data-lcni-runtime-status="symbol_check_event_time"><?php echo esc_html((string) ($update_status['symbol_check_event_time'] ?? '-')); ?></td></tr>
                             <tr><th>WordPress timezone</th><td data-lcni-runtime-status="wordpress_timezone"><?php echo esc_html((string) ($update_status['wordpress_timezone'] ?? '-')); ?></td></tr>
                             <tr><th>Market timezone</th><td data-lcni-runtime-status="market_timezone"><?php echo esc_html((string) ($update_status['market_timezone'] ?? '-')); ?></td></tr>
                             <tr><th>Server timezone</th><td data-lcni-runtime-status="server_timezone"><?php echo esc_html((string) ($update_status['server_timezone'] ?? '-')); ?></td></tr>
                             <tr><th>current_time('mysql')</th><td data-lcni-runtime-status="current_time_mysql"><?php echo esc_html((string) ($update_status['current_time_mysql'] ?? '-')); ?></td></tr>
-                            <tr><th>PHP date('Y-m-d H:i:s')</th><td data-lcni-runtime-status="php_date_now"><?php echo esc_html((string) ($update_status['php_date_now'] ?? '-')); ?></td></tr>
+                            <tr><th>current_time('timestamp')</th><td data-lcni-runtime-status="current_time_timestamp"><?php echo esc_html((string) ($update_status['current_time_timestamp'] ?? '-')); ?></td></tr>
                             <tr><th>Trading check</th><td data-lcni-runtime-status="is_trading_time"><?php echo esc_html((string) ($update_status['is_trading_time'] ?? 'false')); ?></td></tr>
                         </tbody>
                     </table>
@@ -1153,10 +1186,14 @@ class LCNI_Settings {
                             <tr><th>Thời gian bắt đầu</th><td data-lcni-snapshot-status="started_at"><?php echo esc_html((string) ($ohlc_latest_status['started_at'] ?? '-')); ?></td></tr>
                             <tr><th>Thời gian kết thúc</th><td data-lcni-snapshot-status="ended_at"><?php echo esc_html((string) ($ohlc_latest_status['ended_at'] ?? '-')); ?></td></tr>
                             <tr><th>Thông báo</th><td data-lcni-snapshot-status="message"><?php echo esc_html((string) ($ohlc_latest_status['message'] ?? '-')); ?></td></tr>
+                            <tr><th>Trạng thái lần chạy gần nhất</th><td data-lcni-snapshot-status="last_run_status"><?php echo esc_html((string) ($ohlc_latest_status['last_run_status'] ?? '-')); ?></td></tr>
                             <tr><th>Lỗi</th><td data-lcni-snapshot-status="error"><?php echo esc_html((string) ($ohlc_latest_status['error'] ?? '')); ?></td></tr>
                             <tr><th>Symbol check</th><td data-lcni-snapshot-status="symbol_check_label"><?php echo esc_html((string) ($ohlc_latest_status['symbol_check_label'] ?? 'CEO')); ?></td></tr>
-                            <tr><th>Giá mới nhất (close_price)</th><td data-lcni-snapshot-status="symbol_check_close_price"><?php echo esc_html((string) ($ohlc_latest_status['symbol_check_close_price'] ?? '-')); ?></td></tr>
-                            <tr><th>Thời gian giá mới nhất</th><td data-lcni-snapshot-status="symbol_check_event_time"><?php echo esc_html((string) ($ohlc_latest_status['symbol_check_event_time'] ?? '-')); ?></td></tr>
+                            <tr><th>Open</th><td data-lcni-snapshot-status="symbol_check_open_price"><?php echo esc_html((string) ($ohlc_latest_status['symbol_check_open_price'] ?? '-')); ?></td></tr>
+                            <tr><th>High</th><td data-lcni-snapshot-status="symbol_check_high_price"><?php echo esc_html((string) ($ohlc_latest_status['symbol_check_high_price'] ?? '-')); ?></td></tr>
+                            <tr><th>Low</th><td data-lcni-snapshot-status="symbol_check_low_price"><?php echo esc_html((string) ($ohlc_latest_status['symbol_check_low_price'] ?? '-')); ?></td></tr>
+                            <tr><th>Close</th><td data-lcni-snapshot-status="symbol_check_close_price"><?php echo esc_html((string) ($ohlc_latest_status['symbol_check_close_price'] ?? '-')); ?></td></tr>
+                            <tr><th>Thời gian cập nhật</th><td data-lcni-snapshot-status="symbol_check_event_time"><?php echo esc_html((string) ($ohlc_latest_status['symbol_check_event_time'] ?? '-')); ?></td></tr>
                         </tbody>
                     </table>
                 </div>
