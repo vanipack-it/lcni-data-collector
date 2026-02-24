@@ -8,8 +8,10 @@ class LCNI_SeedScheduler {
 
     const BATCH_REQUESTS_PER_RUN = 5;
     const RATE_LIMIT_MICROSECONDS = 300000;
+    const MAX_CANDLES_PER_SYMBOL = 500;
     const START_SEED_CRON_HOOK = 'lcni_seed_start_cron';
     const OPTION_PENDING_START = 'lcni_seed_pending_start_constraints';
+    const OPTION_SYMBOL_OFFSET = 'lcni_seed_symbol_offset';
 
     public static function init() {
         add_action(self::START_SEED_CRON_HOOK, [__CLASS__, 'handle_scheduled_seed_start']);
@@ -70,25 +72,46 @@ class LCNI_SeedScheduler {
 
         self::persist_seed_constraints($seed_constraints);
 
+        $batch_symbols = self::slice_symbols_for_batch($symbols);
+        if (empty($batch_symbols)) {
+            return 0;
+        }
+
         LCNI_SeedRepository::reset_tasks();
 
-        return LCNI_SeedRepository::create_seed_tasks($symbols, $timeframes, (int) $seed_constraints['to_time']);
+        $created = LCNI_SeedRepository::create_seed_tasks_for_symbols($batch_symbols, $timeframes, (int) $seed_constraints['to_time']);
+        LCNI_DB::log_change('seed_batch_symbols', sprintf('Prepared %d symbols for this seed run (offset=%d).', count($batch_symbols), (int) get_option(self::OPTION_SYMBOL_OFFSET, 0)));
+
+        return $created;
     }
 
     public static function run_batch() {
+        $started_at = microtime(true);
+
+        @set_time_limit(0);
+        @ini_set('memory_limit', '512M');
+
+        $summary = [
+            'status' => 'idle',
+            'processed' => 0,
+            'success' => 0,
+            'failed' => 0,
+            'execution_time' => 0,
+        ];
+
         if (self::is_paused()) {
-            return [
-                'status' => 'paused',
-                'message' => 'Seed queue is paused.',
-            ];
+            $summary['status'] = 'paused';
+            $summary['message'] = 'Seed queue is paused.';
+
+            return self::finalize_summary($summary, $started_at);
         }
 
         $task = LCNI_SeedRepository::get_next_task();
         if (empty($task)) {
-            return [
-                'status' => 'idle',
-                'message' => 'No pending seed task.',
-            ];
+            $summary['status'] = 'idle';
+            $summary['message'] = 'No pending seed task.';
+
+            return self::finalize_summary($summary, $started_at);
         }
 
         $seed_constraints = self::get_seed_constraints();
@@ -98,89 +121,82 @@ class LCNI_SeedScheduler {
 
         $batch_requests_per_run = self::get_batch_requests_per_run();
         $rate_limit_microseconds = self::get_rate_limit_microseconds();
+        $max_candles_per_symbol = self::get_max_candles_per_symbol();
 
         while ($requests < $batch_requests_per_run) {
             $requests++;
+            $summary['processed']++;
 
             if ($to <= $min_from) {
                 LCNI_SeedRepository::mark_done((int) $task['id']);
-                LCNI_DB::log_change('seed_task_done', sprintf('Task %d done for %s-%s at from_time boundary.', (int) $task['id'], $task['symbol'], $task['timeframe']));
-
-                return [
-                    'status' => 'done',
-                    'task_id' => (int) $task['id'],
-                    'requests' => max(1, $requests),
-                ];
+                $summary['status'] = 'done';
+                $summary['success']++;
+                break;
             }
 
-            $result = LCNI_HistoryFetcher::fetch($task['symbol'], $task['timeframe'], $to, LCNI_HistoryFetcher::DEFAULT_LIMIT, $min_from);
-            if (is_wp_error($result)) {
-                $error_message = (string) $result->get_error_message();
+            try {
+                $result = LCNI_HistoryFetcher::fetch($task['symbol'], $task['timeframe'], $to, $max_candles_per_symbol, $min_from);
+                if (is_wp_error($result)) {
+                    $error_message = (string) $result->get_error_message();
 
-                if (self::is_non_retryable_task_error($error_message)) {
-                    LCNI_SeedRepository::mark_done((int) $task['id']);
-                    LCNI_DB::log_change('seed_task_skipped', sprintf('Task %d skipped for %s-%s due to non-retryable error: %s', (int) $task['id'], $task['symbol'], $task['timeframe'], $error_message));
+                    if (self::is_non_retryable_task_error($error_message)) {
+                        LCNI_SeedRepository::mark_done((int) $task['id']);
+                        $summary['status'] = 'skipped';
+                        $summary['failed']++;
+                        break;
+                    }
 
-                    return [
-                        'status' => 'skipped',
-                        'message' => $error_message,
-                        'task_id' => (int) $task['id'],
-                    ];
+                    LCNI_SeedRepository::mark_failed((int) $task['id'], $to, $error_message);
+                    $summary['status'] = 'error';
+                    $summary['failed']++;
+                    break;
                 }
 
-                LCNI_DB::log_change('seed_task_failed', sprintf('Task %d fetch failed for %s-%s: %s', (int) $task['id'], $task['symbol'], $task['timeframe'], $error_message));
-                LCNI_SeedRepository::mark_failed((int) $task['id'], $to, $error_message);
+                $rows = isset($result['rows']) && is_array($result['rows']) ? $result['rows'] : [];
+                $oldest_event_time = isset($result['oldest_event_time']) ? (int) $result['oldest_event_time'] : 0;
 
-                return [
-                    'status' => 'error',
-                    'message' => $error_message,
-                    'task_id' => (int) $task['id'],
-                ];
-            }
+                if (!empty($rows)) {
+                    $rows = self::filter_rows_by_from_time($rows, $min_from);
+                    if (count($rows) > $max_candles_per_symbol) {
+                        $rows = array_slice($rows, -$max_candles_per_symbol);
+                    }
+                }
 
-            $rows = isset($result['rows']) && is_array($result['rows']) ? $result['rows'] : [];
-            $oldest_event_time = isset($result['oldest_event_time']) ? (int) $result['oldest_event_time'] : 0;
+                if (empty($rows) || $oldest_event_time <= 0 || $oldest_event_time >= $to) {
+                    LCNI_SeedRepository::mark_done((int) $task['id']);
+                    $summary['status'] = 'done';
+                    $summary['success']++;
+                    break;
+                }
 
-            if (empty($rows) || $oldest_event_time <= 0 || $oldest_event_time >= $to) {
-                LCNI_SeedRepository::mark_done((int) $task['id']);
-                LCNI_DB::log_change('seed_task_done', sprintf('Task %d done for %s-%s.', (int) $task['id'], $task['symbol'], $task['timeframe']));
-
-                return [
-                    'status' => 'done',
-                    'task_id' => (int) $task['id'],
-                    'requests' => $requests,
-                ];
-            }
-
-            $rows = self::filter_rows_by_from_time($rows, $min_from);
-            if (!empty($rows)) {
                 LCNI_DB::upsert_ohlc_rows($rows);
+                $summary['success']++;
+
+                $to = max(1, $oldest_event_time - 1);
+
+                if ($to <= $min_from) {
+                    LCNI_SeedRepository::mark_done((int) $task['id']);
+                    $summary['status'] = 'done';
+                    break;
+                }
+
+                LCNI_SeedRepository::update_progress((int) $task['id'], $to);
+                $summary['status'] = 'running';
+            } catch (Throwable $e) {
+                error_log('[LCNI Seed] ' . $e->getMessage());
+                LCNI_SeedRepository::mark_failed((int) $task['id'], $to, $e->getMessage());
+                $summary['failed']++;
+                $summary['status'] = 'error';
+                continue;
             }
-
-            $to = max(1, $oldest_event_time - 1);
-
-            if ($to <= $min_from) {
-                LCNI_SeedRepository::mark_done((int) $task['id']);
-                LCNI_DB::log_change('seed_task_done', sprintf('Task %d done for %s-%s (reached configured from_time).', (int) $task['id'], $task['symbol'], $task['timeframe']));
-
-                return [
-                    'status' => 'done',
-                    'task_id' => (int) $task['id'],
-                    'requests' => $requests,
-                ];
-            }
-
-            LCNI_SeedRepository::update_progress((int) $task['id'], $to);
 
             usleep($rate_limit_microseconds);
         }
 
-        return [
-            'status' => 'running',
-            'task_id' => (int) $task['id'],
-            'requests' => $requests,
-            'next_to' => $to,
-        ];
+        $summary['task_id'] = (int) $task['id'];
+        $summary['requests'] = $requests;
+
+        return self::finalize_summary($summary, $started_at);
     }
 
     public static function pause() {
@@ -211,6 +227,10 @@ class LCNI_SeedScheduler {
 
     public static function get_rate_limit_microseconds() {
         return max(1, (int) get_option('lcni_seed_rate_limit_microseconds', self::RATE_LIMIT_MICROSECONDS));
+    }
+
+    public static function get_max_candles_per_symbol() {
+        return max(1, (int) get_option('lcni_seed_max_candles_per_symbol', self::MAX_CANDLES_PER_SYMBOL));
     }
 
     public static function get_seed_constraints() {
@@ -253,6 +273,42 @@ class LCNI_SeedScheduler {
             'to_time' => $to_time,
             'sessions' => $sessions,
         ];
+    }
+
+    private static function finalize_summary($summary, $started_at) {
+        $summary['execution_time'] = round(max(0, microtime(true) - (float) $started_at), 4);
+
+        return $summary;
+    }
+
+    private static function slice_symbols_for_batch($symbols) {
+        $symbols = array_values(array_filter(array_map('strval', (array) $symbols)));
+        $total = count($symbols);
+        if ($total === 0) {
+            update_option(self::OPTION_SYMBOL_OFFSET, 0);
+
+            return [];
+        }
+
+        $batch_size = self::get_batch_requests_per_run();
+        $offset = max(0, (int) get_option(self::OPTION_SYMBOL_OFFSET, 0));
+        if ($offset >= $total) {
+            $offset = 0;
+        }
+
+        $batch_symbols = array_slice($symbols, $offset, $batch_size);
+        if (empty($batch_symbols)) {
+            $offset = 0;
+            $batch_symbols = array_slice($symbols, 0, $batch_size);
+        }
+
+        $next_offset = $offset + count($batch_symbols);
+        if ($next_offset >= $total) {
+            $next_offset = 0;
+        }
+        update_option(self::OPTION_SYMBOL_OFFSET, $next_offset);
+
+        return $batch_symbols;
     }
 
     private static function persist_seed_constraints($constraints) {
