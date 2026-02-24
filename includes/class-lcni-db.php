@@ -1796,6 +1796,7 @@ class LCNI_DB {
         global $wpdb;
 
         $timeframe = strtoupper((string) get_option('lcni_timeframe', '1D'));
+        $api_resolution = LCNI_API::normalize_requested_resolution($timeframe);
         $days = max(1, (int) get_option('lcni_days_to_load', 365));
 
         $batch_limit = max(1, (int) $batch_limit);
@@ -1925,6 +1926,7 @@ class LCNI_DB {
         global $wpdb;
 
         $timeframe = strtoupper((string) get_option('lcni_timeframe', '1D'));
+        $api_resolution = LCNI_API::normalize_requested_resolution($timeframe);
         $symbols = $wpdb->get_col("SELECT symbol FROM {$wpdb->prefix}lcni_symbol_tongquan");
 
         $symbols = array_values(array_unique(array_filter(array_map(static function ($symbol) {
@@ -1960,7 +1962,7 @@ class LCNI_DB {
             $url = add_query_arg(
                 [
                     'symbol' => $symbol,
-                    'resolution' => $timeframe,
+                    'resolution' => $api_resolution,
                     'from' => $from_timestamp,
                     'to' => $current_timestamp,
                 ],
@@ -1981,16 +1983,24 @@ class LCNI_DB {
                 continue;
             }
 
-            $status_code = (int) wp_remote_retrieve_response_code($response);
-            if ($status_code !== 200) {
+            $body = wp_remote_retrieve_body($response);
+            $decoded = json_decode((string) $body, true);
+
+            if (!is_array($decoded)) {
                 $error_symbols++;
                 $processed_symbols++;
                 usleep(100000);
                 continue;
             }
 
-            $decoded = json_decode((string) wp_remote_retrieve_body($response), true);
-            if (!is_array($decoded) || !isset($decoded['s']) || $decoded['s'] !== 'ok') {
+            if (!isset($decoded['s']) || $decoded['s'] !== 'ok') {
+                $error_symbols++;
+                $processed_symbols++;
+                usleep(100000);
+                continue;
+            }
+
+            if (empty($decoded['c']) || !is_array($decoded['c']) || empty($decoded['o']) || !is_array($decoded['o']) || empty($decoded['h']) || !is_array($decoded['h']) || empty($decoded['l']) || !is_array($decoded['l'])) {
                 $error_symbols++;
                 $processed_symbols++;
                 usleep(100000);

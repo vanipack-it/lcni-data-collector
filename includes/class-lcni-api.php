@@ -60,6 +60,11 @@ class LCNI_API {
         return self::$last_request_error;
     }
 
+
+    public static function normalize_requested_resolution($resolution) {
+        return self::normalize_resolution($resolution);
+    }
+
     public static function test_connection() {
         $response = self::get_candles('VNINDEX', '1D', 5);
 
@@ -149,12 +154,12 @@ class LCNI_API {
     private static function normalize_resolution($resolution) {
         $raw = strtoupper(trim((string) $resolution));
         $map = [
-            'D' => '1D',
-            '1D' => '1D',
-            'W' => '1W',
-            '1W' => '1W',
-            'M' => '1M',
-            '1M' => '1M',
+            'D' => 'D',
+            '1D' => 'D',
+            'W' => 'W',
+            '1W' => 'W',
+            'M' => 'M',
+            '1M' => 'M',
             '1H' => '60',
             'H1' => '60',
         ];
@@ -171,7 +176,7 @@ class LCNI_API {
             return $matches[1];
         }
 
-        return '1D';
+        return 'D';
     }
 
 }
