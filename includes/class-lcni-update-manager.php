@@ -9,9 +9,11 @@ class LCNI_Update_Manager {
     const OPTION_SETTINGS = 'lcni_update_runtime_settings';
     const OPTION_STATUS = 'lcni_update_runtime_status';
     const CRON_HOOK = 'lcni_runtime_update_cron';
+    const MANUAL_TRIGGER_CRON_HOOK = 'lcni_runtime_update_manual_trigger_cron';
 
     public static function init() {
         add_action(self::CRON_HOOK, [__CLASS__, 'handle_cron']);
+        add_action(self::MANUAL_TRIGGER_CRON_HOOK, [__CLASS__, 'handle_manual_trigger']);
         add_action('init', [__CLASS__, 'ensure_cron']);
     }
 
@@ -52,9 +54,21 @@ class LCNI_Update_Manager {
     }
 
     public static function trigger_manual_update() {
-        self::clear_running_state('Previous run stopped. Manual update started.');
+        self::clear_running_state('Manual update đã được đưa vào hàng đợi chạy nền.');
 
-        return self::run_update('manual');
+        if (!wp_next_scheduled(self::MANUAL_TRIGGER_CRON_HOOK)) {
+            wp_schedule_single_event(current_time('timestamp') + 5, self::MANUAL_TRIGGER_CRON_HOOK);
+        }
+
+        return [
+            'queued' => true,
+            'message' => 'Manual update đã được đưa vào hàng đợi chạy nền.',
+            'running' => false,
+        ];
+    }
+
+    public static function handle_manual_trigger() {
+        self::run_update('manual');
     }
 
     public static function handle_cron() {
