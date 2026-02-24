@@ -9,6 +9,7 @@ class LCNI_API {
     const BASE_URL = 'https://services.entrade.com.vn';
     const SECDEF_ENDPOINT = '/open-api/market/v2/securities';
     const SECDEF_URL = self::BASE_URL . self::SECDEF_ENDPOINT;
+    const CANDLE_URL = self::BASE_URL . '/chart-api/v2/ohlcs';
 
     private static $last_request_error = '';
 
@@ -51,7 +52,7 @@ class LCNI_API {
                 'from' => $from,
                 'to' => $to,
             ],
-            'https://services.entrade.com.vn/chart-api/v2/ohlcs'
+            self::CANDLE_URL
         );
 
         return self::request_json($url);
