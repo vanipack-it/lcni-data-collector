@@ -1533,7 +1533,7 @@ class LCNI_DB {
                 'insert_mode' => 'append',
                 'columns' => [
                     'symbol' => 'text',
-                    'timeframe' => 'text',
+                    'event_time' => 'int',
                     'open_price' => 'float',
                     'high_price' => 'float',
                     'low_price' => 'float',
@@ -1638,7 +1638,7 @@ class LCNI_DB {
         return $mapping;
     }
 
-    public static function import_csv_with_mapping($file_path, $table_key, $mapping) {
+    public static function import_csv_with_mapping($file_path, $table_key, $mapping, $options = []) {
         self::ensure_tables_exist();
 
         $targets = self::get_csv_import_targets();
@@ -1652,7 +1652,7 @@ class LCNI_DB {
 
         $target = $targets[$table_key];
         if (($target['insert_mode'] ?? '') === 'append') {
-            return self::import_csv_append_only($file_path, $table_key, $mapping, $target);
+            return self::import_csv_append_only($file_path, $table_key, $mapping, $target, $options);
         }
 
         $columns = $target['columns'];
@@ -1772,13 +1772,17 @@ class LCNI_DB {
         ];
     }
 
-    private static function import_csv_append_only($file_path, $table_key, $mapping, $target) {
+    private static function import_csv_append_only($file_path, $table_key, $mapping, $target, $options = []) {
         if ($table_key !== 'lcni_ohlc') {
             return new WP_Error('append_import_unsupported', 'Bảng append import chưa được hỗ trợ.');
         }
 
         $columns = $target['columns'];
-        $required_fields = ['symbol', 'timeframe', 'open_price', 'high_price', 'low_price', 'close_price'];
+        $required_fields = ['symbol', 'open_price', 'high_price', 'low_price', 'close_price', 'event_time'];
+        $timeframe = strtoupper(sanitize_text_field((string) ($options['timeframe'] ?? '1D')));
+        if (!in_array($timeframe, ['1D', '1W', '1M'], true)) {
+            return new WP_Error('invalid_timeframe', 'Timeframe import cho LCNI OHLC không hợp lệ.');
+        }
 
         $handle = fopen($file_path, 'r');
         if ($handle === false) {
@@ -1803,8 +1807,9 @@ class LCNI_DB {
         $table = $wpdb->prefix . $table_key;
         $updated = 0;
         $total = 0;
-        $imported_event_time = max(1, (int) current_time('timestamp'));
-        $seen_pairs = [];
+        $touched_series = [];
+        $touched_event_times = [];
+        $touched_timeframes = [];
 
         while (($line = fgetcsv($handle)) !== false) {
             if (!is_array($line) || empty($line)) {
@@ -1823,19 +1828,28 @@ class LCNI_DB {
                 }
 
                 $value = trim((string) ($line[$header_lookup[$csv_column]] ?? ''));
+                if ($db_column === 'event_time') {
+                    $record[$db_column] = $value;
+                    $formats[$db_column] = '%d';
+                    continue;
+                }
+
                 $parsed = self::cast_import_value($value, $columns[$db_column]);
                 if ($db_column === 'symbol' && $parsed['value'] !== null) {
                     $parsed['value'] = strtoupper((string) $parsed['value']);
                 }
-                if ($db_column === 'timeframe' && $parsed['value'] !== null) {
-                    $parsed['value'] = strtoupper((string) $parsed['value']);
-                }
-
                 $record[$db_column] = $parsed['value'];
                 $formats[$db_column] = $parsed['format'];
             }
 
             $total++;
+
+            $record['timeframe'] = $timeframe;
+            $formats['timeframe'] = '%s';
+
+            if (isset($record['event_time'])) {
+                $record['event_time'] = self::normalize_import_event_time($record['event_time']);
+            }
 
             $is_valid = true;
             foreach ($required_fields as $field) {
@@ -1848,25 +1862,18 @@ class LCNI_DB {
                 continue;
             }
 
-            $pair_key = $record['symbol'] . '|' . $record['timeframe'];
-            if (isset($seen_pairs[$pair_key])) {
-                continue;
-            }
-
             $exists = $wpdb->get_var(
                 $wpdb->prepare(
                     "SELECT id FROM {$table} WHERE symbol = %s AND timeframe = %s AND event_time = %d LIMIT 1",
                     $record['symbol'],
                     $record['timeframe'],
-                    $imported_event_time
+                    $record['event_time']
                 )
             );
             if ($exists !== null) {
                 continue;
             }
 
-            $record['event_time'] = $imported_event_time;
-            $formats['event_time'] = '%d';
             if (!isset($record['volume']) || $record['volume'] === null) {
                 $record['volume'] = 0;
                 $formats['volume'] = '%d';
@@ -1879,16 +1886,35 @@ class LCNI_DB {
             $result = $wpdb->insert($table, $record, array_values($formats));
             if ($result !== false) {
                 $updated++;
-                $seen_pairs[$pair_key] = true;
+                $series_key = $record['symbol'] . '|' . $record['timeframe'];
+                $touched_series[$series_key] = [
+                    'symbol' => $record['symbol'],
+                    'timeframe' => $record['timeframe'],
+                ];
+                $touched_event_times[(int) $record['event_time']] = true;
+                $touched_timeframes[$record['timeframe']] = true;
             }
         }
 
         fclose($handle);
 
+        foreach ($touched_series as $series) {
+            self::rebuild_ohlc_indicators($series['symbol'], $series['timeframe']);
+            self::rebuild_ohlc_trading_index($series['symbol'], $series['timeframe']);
+        }
+
+        if (!empty($touched_series)) {
+            self::rebuild_missing_ohlc_indicators(5);
+            self::rebuild_rs_1m_by_exchange(array_keys($touched_event_times), array_keys($touched_timeframes));
+            self::rebuild_rs_1w_by_exchange(array_keys($touched_event_times), array_keys($touched_timeframes));
+            self::rebuild_rs_3m_by_exchange([], array_keys($touched_timeframes));
+            self::rebuild_rs_exchange_signals([], array_keys($touched_timeframes));
+        }
+
         self::log_change('import_csv_generic', sprintf('Imported %d/%d rows into %s (append mode).', $updated, $total, $table_key), [
             'table' => $table_key,
             'mapping' => $mapping,
-            'event_time' => $imported_event_time,
+            'timeframe' => $timeframe,
         ]);
 
         return [
@@ -1933,6 +1959,29 @@ class LCNI_DB {
         }
 
         return ['value' => is_numeric($normalized) ? (float) $normalized : null, 'format' => '%f'];
+    }
+
+    private static function normalize_import_event_time($value) {
+        $raw_value = trim((string) $value);
+        if ($raw_value === '') {
+            return 0;
+        }
+
+        if (is_numeric($raw_value)) {
+            $timestamp = (int) round((float) $raw_value);
+            if ($timestamp > 1000000000000) {
+                $timestamp = (int) floor($timestamp / 1000);
+            }
+
+            return max(0, $timestamp);
+        }
+
+        $parsed = strtotime($raw_value);
+        if ($parsed === false) {
+            return 0;
+        }
+
+        return max(0, (int) $parsed);
     }
 
     private static function get_wpdb_format_for_type($type) {
