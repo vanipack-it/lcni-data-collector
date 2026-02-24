@@ -10,9 +10,11 @@ class LCNI_Settings {
         add_action('admin_menu', [$this, 'menu']);
         add_action('admin_init', [$this, 'register_settings']);
         add_action('admin_init', [$this, 'handle_admin_actions']);
+        add_action('lcni_csv_import_process', [$this, 'process_csv_import_job'], 10, 2);
         add_action('wp_ajax_lcni_seed_dashboard_snapshot', [$this, 'ajax_seed_dashboard_snapshot']);
         add_action('wp_ajax_lcni_rule_rebuild_status', [$this, 'ajax_rule_rebuild_status']);
         add_action('wp_ajax_lcni_update_data_status_snapshot', [$this, 'ajax_update_data_status_snapshot']);
+        add_action('wp_ajax_lcni_csv_import_status_snapshot', [$this, 'ajax_csv_import_status_snapshot']);
     }
 
     public function menu() {
@@ -170,16 +172,35 @@ class LCNI_Settings {
                     $import_options['timeframe'] = isset($_POST['lcni_import_timeframe']) ? sanitize_text_field(wp_unslash($_POST['lcni_import_timeframe'])) : '1D';
                 }
 
-                $import_summary = LCNI_DB::import_csv_with_mapping((string) $draft['file_path'], (string) $draft['table_key'], $mapping, $import_options);
-                if (is_wp_error($import_summary)) {
-                    $this->set_notice('error', 'Import CSV thất bại: ' . $import_summary->get_error_message());
-                } else {
-                    $this->set_notice('success', sprintf('Đã import CSV vào %s: updated %d / total %d.', esc_html((string) ($import_summary['table'] ?? 'N/A')), (int) ($import_summary['updated'] ?? 0), (int) ($import_summary['total'] ?? 0)));
-                    delete_transient($this->get_csv_import_draft_key());
-                    if (!empty($draft['file_path']) && is_string($draft['file_path']) && file_exists($draft['file_path'])) {
-                        @unlink($draft['file_path']);
-                    }
+                $user_id = get_current_user_id();
+                $estimated_total = LCNI_DB::count_csv_rows((string) $draft['file_path']);
+                if (is_wp_error($estimated_total)) {
+                    $estimated_total = 0;
                 }
+
+                $job_id = wp_generate_uuid4();
+                $status = [
+                    'id' => $job_id,
+                    'state' => 'queued',
+                    'table' => (string) $draft['table_key'],
+                    'updated' => 0,
+                    'processed' => 0,
+                    'total' => (int) $estimated_total,
+                    'message' => 'Đã đưa vào hàng đợi import CSV. Đang chờ xử lý nền...',
+                    'updated_at' => current_time('mysql'),
+                ];
+
+                set_transient($this->get_csv_import_status_key($user_id), $status, HOUR_IN_SECONDS);
+                delete_transient($this->get_csv_import_draft_key());
+                wp_schedule_single_event(time() + 1, 'lcni_csv_import_process', [$user_id, [
+                    'job_id' => $job_id,
+                    'file_path' => (string) $draft['file_path'],
+                    'table_key' => (string) $draft['table_key'],
+                    'mapping' => $mapping,
+                    'options' => $import_options,
+                ]]);
+
+                $this->set_notice('success', 'Đã chuyển import CSV sang chạy nền. Vui lòng theo dõi tiến trình bên dưới.');
             }
         } elseif ($action === 'start_seed') {
             $seed_mode = isset($_POST['lcni_seed_mode']) ? $this->sanitize_seed_range_mode(wp_unslash($_POST['lcni_seed_mode'])) : 'full';
@@ -517,6 +538,11 @@ class LCNI_Settings {
         return 'lcni_csv_import_draft_' . get_current_user_id();
     }
 
+    private function get_csv_import_status_key($user_id = null) {
+        $target_user_id = $user_id === null ? get_current_user_id() : (int) $user_id;
+        return 'lcni_csv_import_status_' . $target_user_id;
+    }
+
     private function prepare_csv_import_draft($tmp_file_path, $table_key) {
         $targets = LCNI_DB::get_csv_import_targets();
         if (!isset($targets[$table_key])) {
@@ -565,6 +591,94 @@ class LCNI_Settings {
 
         LCNI_DB::log_change('api_connection_success', 'Manual chart-api connection test passed from admin button.');
         $this->set_notice('success', 'Kết nối chart-api thành công.');
+    }
+
+    public function process_csv_import_job($user_id, $payload = []) {
+        $user_id = (int) $user_id;
+        $status_key = $this->get_csv_import_status_key($user_id);
+        $existing_status = get_transient($status_key);
+        $job_id = isset($payload['job_id']) ? sanitize_text_field((string) $payload['job_id']) : '';
+
+        if (!is_array($payload) || empty($payload['file_path']) || empty($payload['table_key'])) {
+            set_transient($status_key, [
+                'id' => $job_id,
+                'state' => 'error',
+                'table' => (string) ($payload['table_key'] ?? ''),
+                'updated' => 0,
+                'processed' => 0,
+                'total' => 0,
+                'message' => 'Payload import không hợp lệ.',
+                'updated_at' => current_time('mysql'),
+            ], HOUR_IN_SECONDS);
+            return;
+        }
+
+        if (is_array($existing_status) && !empty($existing_status['id']) && $job_id !== '' && $existing_status['id'] !== $job_id) {
+            return;
+        }
+
+        $status = is_array($existing_status) ? $existing_status : [];
+        $status['state'] = 'running';
+        $status['message'] = 'Đang import CSV ở chế độ nền...';
+        $status['updated_at'] = current_time('mysql');
+        set_transient($status_key, $status, HOUR_IN_SECONDS);
+
+        $options = isset($payload['options']) && is_array($payload['options']) ? $payload['options'] : [];
+        $options['progress_callback'] = function($processed, $updated) use ($status_key, &$status) {
+            $status['processed'] = (int) $processed;
+            $status['updated'] = (int) $updated;
+            $status['updated_at'] = current_time('mysql');
+            set_transient($status_key, $status, HOUR_IN_SECONDS);
+        };
+
+        $import_summary = LCNI_DB::import_csv_with_mapping(
+            (string) $payload['file_path'],
+            (string) $payload['table_key'],
+            isset($payload['mapping']) && is_array($payload['mapping']) ? $payload['mapping'] : [],
+            $options
+        );
+
+        if (is_wp_error($import_summary)) {
+            $status['state'] = 'error';
+            $status['message'] = 'Import CSV thất bại: ' . $import_summary->get_error_message();
+        } else {
+            $status['state'] = 'done';
+            $status['table'] = (string) ($import_summary['table'] ?? ($status['table'] ?? 'N/A'));
+            $status['updated'] = (int) ($import_summary['updated'] ?? 0);
+            $status['processed'] = (int) ($import_summary['total'] ?? ($status['processed'] ?? 0));
+            $status['total'] = max((int) ($status['total'] ?? 0), (int) ($import_summary['total'] ?? 0));
+            $status['message'] = sprintf('Đã import CSV vào %s: updated %d / total %d.', $status['table'], $status['updated'], (int) ($import_summary['total'] ?? 0));
+        }
+
+        $status['updated_at'] = current_time('mysql');
+        set_transient($status_key, $status, HOUR_IN_SECONDS);
+
+        if (!empty($payload['file_path']) && is_string($payload['file_path']) && file_exists($payload['file_path'])) {
+            @unlink($payload['file_path']);
+        }
+    }
+
+    public function ajax_csv_import_status_snapshot() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Forbidden'], 403);
+        }
+
+        check_ajax_referer('lcni_csv_import_status_nonce', 'nonce');
+
+        $status = get_transient($this->get_csv_import_status_key());
+        if (!is_array($status)) {
+            $status = [
+                'state' => 'idle',
+                'table' => '',
+                'updated' => 0,
+                'processed' => 0,
+                'total' => 0,
+                'message' => 'Chưa có tiến trình import CSV.',
+                'updated_at' => current_time('mysql'),
+            ];
+        }
+
+        wp_send_json_success($status);
     }
 
     private function run_multi_symbol_test() {
@@ -1005,6 +1119,14 @@ class LCNI_Settings {
                     </form>
                 <?php endif; ?>
 
+                <div id="lcni-csv-import-progress" style="margin-bottom:12px;padding:10px;background:#fff;border:1px solid #dcdcde;border-radius:6px;max-width:760px;">
+                    <p style="margin-top:0;margin-bottom:8px;"><strong>Tiến trình Import CSV (chạy nền)</strong></p>
+                    <div style="width:100%;height:18px;background:#f0f0f1;border-radius:10px;overflow:hidden;">
+                        <div id="lcni-csv-import-progress-bar" style="height:100%;width:0%;background:#2271b1;transition:width .3s ease;"></div>
+                    </div>
+                    <p id="lcni-csv-import-progress-text" style="margin:8px 0 0;color:#1d2327;">Chưa có tiến trình import CSV.</p>
+                </div>
+
                 <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_redirect_tab" value="seed_dashboard"><input type="hidden" name="lcni_admin_action" value="sync_securities"><?php submit_button('Sync Security Definition', 'secondary', 'submit', false); ?></form>
                 <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;padding:8px 10px;background:#fff;border:1px solid #dcdcde;border-radius:6px;">
                     <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
@@ -1051,8 +1173,11 @@ class LCNI_Settings {
                     (function() {
                         const endpoint = '<?php echo esc_js(admin_url('admin-ajax.php')); ?>';
                         const nonce = '<?php echo esc_js(wp_create_nonce('lcni_seed_dashboard_nonce')); ?>';
+                        const importNonce = '<?php echo esc_js(wp_create_nonce('lcni_csv_import_status_nonce')); ?>';
                         const rowsTarget = document.getElementById('lcni-seed-task-rows');
                         const updatedHint = document.getElementById('lcni-dashboard-updated-at');
+                        const importProgressBar = document.getElementById('lcni-csv-import-progress-bar');
+                        const importProgressText = document.getElementById('lcni-csv-import-progress-text');
 
                         if (!rowsTarget || !updatedHint) {
                             return;
@@ -1098,8 +1223,60 @@ class LCNI_Settings {
                             });
                         };
 
+                        const refreshImportProgress = function() {
+                            if (!importProgressBar || !importProgressText) {
+                                return;
+                            }
+
+                            const body = new URLSearchParams();
+                            body.append('action', 'lcni_csv_import_status_snapshot');
+                            body.append('nonce', importNonce);
+
+                            fetch(endpoint, {
+                                method: 'POST',
+                                credentials: 'same-origin',
+                                headers: {
+                                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                                },
+                                body: body.toString()
+                            })
+                            .then(function(response) { return response.json(); })
+                            .then(function(payload) {
+                                if (!payload || !payload.success || !payload.data) {
+                                    return;
+                                }
+
+                                const info = payload.data;
+                                const total = parseInt(info.total || 0, 10);
+                                const processed = parseInt(info.processed || 0, 10);
+                                const updated = parseInt(info.updated || 0, 10);
+                                let percent = 0;
+
+                                if (total > 0) {
+                                    percent = Math.min(100, Math.round((processed / total) * 100));
+                                } else if (info.state === 'done') {
+                                    percent = 100;
+                                }
+
+                                importProgressBar.style.width = percent + '%';
+
+                                const table = info.table ? ('[' + info.table + '] ') : '';
+                                if (info.state === 'running' || info.state === 'queued') {
+                                    importProgressText.textContent = table + (info.message || 'Đang xử lý...') + ' (' + processed + '/' + (total > 0 ? total : '?') + ', updated ' + updated + ')';
+                                } else if (info.state === 'done') {
+                                    importProgressText.textContent = table + (info.message || 'Import CSV hoàn tất.');
+                                } else if (info.state === 'error') {
+                                    importProgressText.textContent = table + (info.message || 'Import CSV thất bại.');
+                                } else {
+                                    importProgressText.textContent = info.message || 'Chưa có tiến trình import CSV.';
+                                }
+                            });
+                        };
+
                         setInterval(refreshDashboard, 5000);
+                        setInterval(refreshImportProgress, 3000);
                         refreshDashboard();
+                        refreshImportProgress();
                     })();
                 </script>
 

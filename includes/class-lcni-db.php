@@ -1683,10 +1683,15 @@ class LCNI_DB {
         $updated = 0;
         $total = 0;
 
+        $progress_callback = isset($options['progress_callback']) && is_callable($options['progress_callback']) ? $options['progress_callback'] : null;
+        $processed = 0;
+
         while (($line = fgetcsv($handle)) !== false) {
             if (!is_array($line) || empty($line)) {
                 continue;
             }
+
+            $processed++;
 
             $record = [];
             $formats = [];
@@ -1744,9 +1749,17 @@ class LCNI_DB {
                 $updated++;
             }
             $total++;
+
+            if ($progress_callback !== null && (($processed % 50) === 0)) {
+                call_user_func($progress_callback, $processed, $updated);
+            }
         }
 
         fclose($handle);
+
+        if ($progress_callback !== null) {
+            call_user_func($progress_callback, $processed, $updated);
+        }
 
         if ($table_key === 'lcni_symbols') {
             self::sync_symbol_market_icb_mapping();
@@ -1811,10 +1824,15 @@ class LCNI_DB {
         $touched_event_times = [];
         $touched_timeframes = [];
 
+        $progress_callback = isset($options['progress_callback']) && is_callable($options['progress_callback']) ? $options['progress_callback'] : null;
+        $processed = 0;
+
         while (($line = fgetcsv($handle)) !== false) {
             if (!is_array($line) || empty($line)) {
                 continue;
             }
+
+            $processed++;
 
             $record = [];
             $formats = [];
@@ -1894,9 +1912,17 @@ class LCNI_DB {
                 $touched_event_times[(int) $record['event_time']] = true;
                 $touched_timeframes[$record['timeframe']] = true;
             }
+
+            if ($progress_callback !== null && (($processed % 50) === 0)) {
+                call_user_func($progress_callback, $processed, $updated);
+            }
         }
 
         fclose($handle);
+
+        if ($progress_callback !== null) {
+            call_user_func($progress_callback, $processed, $updated);
+        }
 
         foreach ($touched_series as $series) {
             self::rebuild_ohlc_indicators($series['symbol'], $series['timeframe']);
@@ -1922,6 +1948,31 @@ class LCNI_DB {
             'total' => $total,
             'table' => $table_key,
         ];
+    }
+
+    public static function count_csv_rows($file_path) {
+        if (!is_readable($file_path)) {
+            return new WP_Error('csv_not_readable', 'Không thể đọc file CSV đã upload.');
+        }
+
+        $handle = fopen($file_path, 'r');
+        if ($handle === false) {
+            return new WP_Error('csv_open_failed', 'Không thể mở file CSV.');
+        }
+
+        $header = fgetcsv($handle);
+        if (!is_array($header) || empty($header)) {
+            fclose($handle);
+            return new WP_Error('csv_empty', 'CSV không có dòng tiêu đề hợp lệ.');
+        }
+
+        $rows = 0;
+        while (fgetcsv($handle) !== false) {
+            $rows++;
+        }
+
+        fclose($handle);
+        return $rows;
     }
 
     public static function import_symbols_from_csv($file_path) {
