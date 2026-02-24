@@ -20,6 +20,13 @@ class LCNI_HistoryFetcher {
             return new WP_Error('fetch_failed', LCNI_API::get_last_request_error());
         }
 
+        if (!isset($payload['s']) || $payload['s'] !== 'ok' || !isset($payload['c']) || !is_array($payload['c']) || !isset($payload['o']) || !is_array($payload['o'])) {
+            return [
+                'rows' => [],
+                'oldest_event_time' => 0,
+            ];
+        }
+
         $rows = lcni_convert_candles($payload, $symbol, $timeframe);
         if (empty($rows)) {
             return [

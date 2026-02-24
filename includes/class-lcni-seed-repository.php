@@ -22,12 +22,16 @@ class LCNI_SeedRepository {
     }
 
     public static function create_seed_tasks($symbols, $timeframes, $initial_to_time = null) {
+        return self::create_seed_tasks_for_symbols($symbols, $timeframes, $initial_to_time);
+    }
+
+    public static function create_seed_tasks_for_symbols($symbols, $timeframes, $initial_to_time = null) {
         global $wpdb;
 
         $table = self::get_table_name();
         $created = 0;
 
-        foreach ($symbols as $symbol) {
+        foreach ((array) $symbols as $symbol) {
             foreach ($timeframes as $timeframe) {
                 $result = $wpdb->query(
                     $wpdb->prepare(

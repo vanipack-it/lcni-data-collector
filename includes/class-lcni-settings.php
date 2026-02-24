@@ -11,6 +11,7 @@ class LCNI_Settings {
         add_action('admin_init', [$this, 'register_settings']);
         add_action('admin_init', [$this, 'handle_admin_actions']);
         add_action('wp_ajax_lcni_seed_dashboard_snapshot', [$this, 'ajax_seed_dashboard_snapshot']);
+        add_action('wp_ajax_lcni_start_seed', [$this, 'ajax_start_seed']);
         add_action('wp_ajax_lcni_rule_rebuild_status', [$this, 'ajax_rule_rebuild_status']);
         add_action('wp_ajax_lcni_update_data_status_snapshot', [$this, 'ajax_update_data_status_snapshot']);
     }
@@ -31,6 +32,7 @@ class LCNI_Settings {
         register_setting('lcni_settings_group', 'lcni_seed_session_count', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_seed_session_count'], 'default' => 300]);
         register_setting('lcni_settings_group', 'lcni_seed_batch_requests_per_run', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_positive_int'], 'default' => 5]);
         register_setting('lcni_settings_group', 'lcni_seed_rate_limit_microseconds', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_positive_int'], 'default' => 100000]);
+        register_setting('lcni_settings_group', 'lcni_seed_max_candles_per_symbol', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_positive_int'], 'default' => 500]);
         register_setting('lcni_settings_group', 'lcni_api_key', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_api_credential'], 'default' => '']);
         register_setting('lcni_settings_group', 'lcni_api_secret', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_api_credential'], 'default' => '']);
         register_setting('lcni_settings_group', 'lcni_access_token', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_api_credential'], 'default' => '']);
@@ -162,6 +164,7 @@ class LCNI_Settings {
             $seed_sessions = isset($_POST['lcni_seed_session_count']) ? $this->sanitize_seed_session_count(wp_unslash($_POST['lcni_seed_session_count'])) : (int) get_option('lcni_seed_session_count', 300);
             $batch_requests_per_run = isset($_POST['lcni_seed_batch_requests_per_run']) ? $this->sanitize_positive_int(wp_unslash($_POST['lcni_seed_batch_requests_per_run'])) : (int) get_option('lcni_seed_batch_requests_per_run', 5);
             $rate_limit_microseconds = isset($_POST['lcni_seed_rate_limit_microseconds']) ? $this->sanitize_positive_int(wp_unslash($_POST['lcni_seed_rate_limit_microseconds'])) : (int) get_option('lcni_seed_rate_limit_microseconds', 100000);
+            $max_candles_per_symbol = isset($_POST['lcni_seed_max_candles_per_symbol']) ? $this->sanitize_positive_int(wp_unslash($_POST['lcni_seed_max_candles_per_symbol'])) : (int) get_option('lcni_seed_max_candles_per_symbol', 500);
 
             update_option('lcni_seed_range_mode', $seed_mode);
             update_option('lcni_seed_from_date', $seed_from_date);
@@ -169,6 +172,7 @@ class LCNI_Settings {
             update_option('lcni_seed_session_count', $seed_sessions);
             update_option('lcni_seed_batch_requests_per_run', $batch_requests_per_run);
             update_option('lcni_seed_rate_limit_microseconds', $rate_limit_microseconds);
+            update_option('lcni_seed_max_candles_per_symbol', $max_candles_per_symbol);
 
             $constraints = [
                 'mode' => $seed_mode,
@@ -662,6 +666,49 @@ class LCNI_Settings {
         return $rows;
     }
 
+    public function ajax_start_seed() {
+        check_ajax_referer('lcni_seed_dashboard_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Permission denied.'], 403);
+        }
+
+        $seed_mode = isset($_POST['seed_mode']) ? $this->sanitize_seed_range_mode(wp_unslash($_POST['seed_mode'])) : 'full';
+        $seed_from_date = isset($_POST['seed_from_date']) ? $this->sanitize_seed_date(wp_unslash($_POST['seed_from_date'])) : '';
+        $seed_to_date = isset($_POST['seed_to_date']) ? $this->sanitize_seed_date(wp_unslash($_POST['seed_to_date'])) : '';
+        $seed_sessions = isset($_POST['seed_sessions']) ? $this->sanitize_seed_session_count(wp_unslash($_POST['seed_sessions'])) : (int) get_option('lcni_seed_session_count', 300);
+        $batch_requests_per_run = isset($_POST['batch_requests_per_run']) ? $this->sanitize_positive_int(wp_unslash($_POST['batch_requests_per_run'])) : (int) get_option('lcni_seed_batch_requests_per_run', 5);
+        $rate_limit_microseconds = isset($_POST['rate_limit_microseconds']) ? $this->sanitize_positive_int(wp_unslash($_POST['rate_limit_microseconds'])) : (int) get_option('lcni_seed_rate_limit_microseconds', 100000);
+        $max_candles_per_symbol = isset($_POST['max_candles_per_symbol']) ? $this->sanitize_positive_int(wp_unslash($_POST['max_candles_per_symbol'])) : (int) get_option('lcni_seed_max_candles_per_symbol', 500);
+
+        update_option('lcni_seed_range_mode', $seed_mode);
+        update_option('lcni_seed_from_date', $seed_from_date);
+        update_option('lcni_seed_to_date', $seed_to_date);
+        update_option('lcni_seed_session_count', $seed_sessions);
+        update_option('lcni_seed_batch_requests_per_run', $batch_requests_per_run);
+        update_option('lcni_seed_rate_limit_microseconds', $rate_limit_microseconds);
+        update_option('lcni_seed_max_candles_per_symbol', $max_candles_per_symbol);
+
+        $constraints = [
+            'mode' => $seed_mode,
+            'from_time' => $this->seed_date_to_timestamp($seed_from_date, false),
+            'to_time' => $this->seed_date_to_timestamp($seed_to_date, true),
+            'sessions' => $seed_sessions,
+        ];
+
+        $queued = LCNI_SeedScheduler::trigger_seed_start($constraints);
+        if (is_wp_error($queued)) {
+            wp_send_json_error(['message' => $queued->get_error_message()]);
+        }
+
+        $summary = LCNI_SeedScheduler::run_batch();
+
+        wp_send_json_success([
+            'message' => 'Seed request queued and one safe batch executed.',
+            'summary' => $summary,
+        ]);
+    }
+
     public function ajax_seed_dashboard_snapshot() {
         if (!current_user_can('manage_options')) {
             wp_send_json_error(['message' => 'Forbidden'], 403);
@@ -980,9 +1027,11 @@ class LCNI_Settings {
                     <input type="number" name="lcni_seed_session_count" value="<?php echo esc_attr((string) get_option('lcni_seed_session_count', 300)); ?>" min="1" style="width:90px;margin-right:6px;" title="Số phiên khi chọn mode sessions">
                     <input type="number" name="lcni_seed_batch_requests_per_run" value="<?php echo esc_attr((string) get_option('lcni_seed_batch_requests_per_run', 5)); ?>" min="1" style="width:90px;margin-right:6px;" title="BATCH_REQUESTS_PER_RUN">
                     <input type="number" name="lcni_seed_rate_limit_microseconds" value="<?php echo esc_attr((string) get_option('lcni_seed_rate_limit_microseconds', 100000)); ?>" min="1" style="width:130px;margin-right:6px;" title="RATE_LIMIT_MICROSECONDS">
+                    <input type="number" name="lcni_seed_max_candles_per_symbol" value="<?php echo esc_attr((string) get_option('lcni_seed_max_candles_per_symbol', 500)); ?>" min="1" style="width:110px;margin-right:6px;" title="MAX_CANDLES_PER_SYMBOL">
                     <?php submit_button('Start Seed', 'primary', 'submit', false); ?>
                 </form>
                 <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_redirect_tab" value="seed_dashboard"><input type="hidden" name="lcni_admin_action" value="run_seed_batch"><?php submit_button('Run 1 Batch', 'secondary', 'submit', false); ?></form>
+                <div id="lcni-seed-response" style="margin:8px 0 12px;padding:8px 10px;border:1px solid #dcdcde;background:#fff;display:none;max-width:1000px;"></div>
                 <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_redirect_tab" value="seed_dashboard"><input type="hidden" name="lcni_admin_action" value="pause_seed"><?php submit_button('Pause Seed', 'secondary', 'submit', false); ?></form>
                 <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_redirect_tab" value="seed_dashboard"><input type="hidden" name="lcni_admin_action" value="resume_seed"><?php submit_button('Resume Seed', 'secondary', 'submit', false); ?></form>
 
@@ -1009,6 +1058,8 @@ class LCNI_Settings {
                         const nonce = '<?php echo esc_js(wp_create_nonce('lcni_seed_dashboard_nonce')); ?>';
                         const rowsTarget = document.getElementById('lcni-seed-task-rows');
                         const updatedHint = document.getElementById('lcni-dashboard-updated-at');
+                        const responseBox = document.getElementById('lcni-seed-response');
+                        const startSeedForm = document.querySelector('form input[name="lcni_admin_action"][value="start_seed"]') ? document.querySelector('form input[name="lcni_admin_action"][value="start_seed"]').closest('form') : null;
 
                         if (!rowsTarget || !updatedHint) {
                             return;
@@ -1053,6 +1104,49 @@ class LCNI_Settings {
                                 updatedHint.textContent = 'Cập nhật realtime mỗi 5 giây. Lần cập nhật gần nhất: ' + (payload.data.updated_at || 'N/A');
                             });
                         };
+
+
+                        if (startSeedForm) {
+                            startSeedForm.addEventListener('submit', function(event) {
+                                event.preventDefault();
+                                const body = new URLSearchParams();
+                                body.append('action', 'lcni_start_seed');
+                                body.append('nonce', nonce);
+                                body.append('seed_mode', startSeedForm.querySelector('[name="lcni_seed_mode"]').value || 'full');
+                                body.append('seed_from_date', startSeedForm.querySelector('[name="lcni_seed_from_date"]').value || '');
+                                body.append('seed_to_date', startSeedForm.querySelector('[name="lcni_seed_to_date"]').value || '');
+                                body.append('seed_sessions', startSeedForm.querySelector('[name="lcni_seed_session_count"]').value || '300');
+                                body.append('batch_requests_per_run', startSeedForm.querySelector('[name="lcni_seed_batch_requests_per_run"]').value || '5');
+                                body.append('rate_limit_microseconds', startSeedForm.querySelector('[name="lcni_seed_rate_limit_microseconds"]').value || '100000');
+                                body.append('max_candles_per_symbol', startSeedForm.querySelector('[name="lcni_seed_max_candles_per_symbol"]').value || '500');
+
+                                fetch(endpoint, {
+                                    method: 'POST',
+                                    credentials: 'same-origin',
+                                    headers: {
+                                        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                                    },
+                                    body: body.toString()
+                                })
+                                .then(function(response) { return response.json(); })
+                                .then(function(payload) {
+                                    if (!responseBox) {
+                                        return;
+                                    }
+
+                                    responseBox.style.display = 'block';
+                                    if (!payload || !payload.success) {
+                                        const msg = payload && payload.data && payload.data.message ? payload.data.message : 'Start seed failed.';
+                                        responseBox.innerHTML = '<strong>Error:</strong> ' + msg;
+                                        return;
+                                    }
+
+                                    const summary = payload.data && payload.data.summary ? payload.data.summary : {};
+                                    responseBox.textContent = JSON.stringify(summary);
+                                    refreshDashboard();
+                                });
+                            });
+                        }
 
                         setInterval(refreshDashboard, 5000);
                         refreshDashboard();
