@@ -34,7 +34,6 @@ class LCNI_Settings {
         register_setting('lcni_settings_group', 'lcni_api_key', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_api_credential'], 'default' => '']);
         register_setting('lcni_settings_group', 'lcni_api_secret', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_api_credential'], 'default' => '']);
         register_setting('lcni_settings_group', 'lcni_access_token', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_api_credential'], 'default' => '']);
-        register_setting('lcni_settings_group', 'lcni_secdef_url', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_secdef_url'], 'default' => LCNI_API::SECDEF_URL]);
         register_setting('lcni_settings_group', 'lcni_update_interval_minutes', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_update_interval'], 'default' => 5]);
         register_setting('lcni_settings_group', 'lcni_ohlc_latest_interval_minutes', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_update_interval'], 'default' => 5]);
         register_setting('lcni_settings_group', 'lcni_frontend_settings_signals', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_frontend_module_settings'], 'default' => []]);
@@ -100,12 +99,6 @@ class LCNI_Settings {
         return trim((string) $value);
     }
 
-    public function sanitize_secdef_url($value) {
-        $url = esc_url_raw(trim((string) $value));
-
-        return $url !== '' ? $url : LCNI_API::SECDEF_URL;
-    }
-
     public function sanitize_update_interval($value) {
         return max(1, (int) $value);
     }
@@ -127,14 +120,6 @@ class LCNI_Settings {
             $this->run_api_connection_test();
         } elseif ($action === 'test_api_multi_symbol') {
             $this->run_multi_symbol_test();
-        } elseif ($action === 'sync_securities') {
-            $security_summary = LCNI_DB::collect_security_definitions();
-
-            if (is_wp_error($security_summary)) {
-                $this->set_notice('error', 'Sync securities thất bại: ' . $security_summary->get_error_message());
-            } else {
-                $this->set_notice('success', sprintf('Đã sync Security Definition vào lcni_symbols: updated %d / total %d.', (int) ($security_summary['updated'] ?? 0), (int) ($security_summary['total'] ?? 0)));
-            }
         } elseif ($action === 'prepare_csv_import') {
             $table_key = isset($_POST['lcni_import_table']) ? sanitize_key(wp_unslash($_POST['lcni_import_table'])) : 'lcni_symbols';
             if (empty($_FILES['lcni_import_csv']['tmp_name'])) {
@@ -979,7 +964,6 @@ class LCNI_Settings {
                     </form>
                 <?php endif; ?>
 
-                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_redirect_tab" value="seed_dashboard"><input type="hidden" name="lcni_admin_action" value="sync_securities"><?php submit_button('Sync Security Definition', 'secondary', 'submit', false); ?></form>
                 <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;padding:8px 10px;background:#fff;border:1px solid #dcdcde;border-radius:6px;">
                     <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
                     <input type="hidden" name="lcni_redirect_tab" value="seed_dashboard">

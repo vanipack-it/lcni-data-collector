@@ -59,7 +59,7 @@ class LCNI_SeedScheduler {
         if (empty($symbols)) {
             LCNI_DB::log_change('seed_skipped', 'Seed queue skipped: no symbols in database.');
 
-            return new WP_Error('no_symbols', 'Không có symbol trong database. Vui lòng sync securities trước.');
+            return new WP_Error('no_symbols', 'Không có symbol trong database. Vui lòng import bảng lcni_symbol_tongquan trước.');
         }
 
         if (empty($timeframes)) {
