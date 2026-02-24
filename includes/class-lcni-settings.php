@@ -29,8 +29,10 @@ class LCNI_Settings {
         register_setting('lcni_settings_group', 'lcni_seed_from_date', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_seed_date'], 'default' => '']);
         register_setting('lcni_settings_group', 'lcni_seed_to_date', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_seed_date'], 'default' => '']);
         register_setting('lcni_settings_group', 'lcni_seed_session_count', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_seed_session_count'], 'default' => 300]);
+        register_setting('lcni_settings_group', 'lcni_seed_tasks_per_run', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_positive_int'], 'default' => 10]);
         register_setting('lcni_settings_group', 'lcni_seed_batch_requests_per_run', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_positive_int'], 'default' => 5]);
         register_setting('lcni_settings_group', 'lcni_seed_rate_limit_microseconds', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_positive_int'], 'default' => 100000]);
+        register_setting('lcni_settings_group', 'lcni_seed_max_failed_attempts', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_positive_int'], 'default' => 3]);
         register_setting('lcni_settings_group', 'lcni_api_key', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_api_credential'], 'default' => '']);
         register_setting('lcni_settings_group', 'lcni_api_secret', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_api_credential'], 'default' => '']);
         register_setting('lcni_settings_group', 'lcni_access_token', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_api_credential'], 'default' => '']);
@@ -93,6 +95,10 @@ class LCNI_Settings {
     }
 
     public function sanitize_seed_session_count($value) {
+        return max(1, (int) $value);
+    }
+
+    public function sanitize_positive_int($value) {
         return max(1, (int) $value);
     }
 
@@ -175,15 +181,19 @@ class LCNI_Settings {
             $seed_from_date = isset($_POST['lcni_seed_from_date']) ? $this->sanitize_seed_date(wp_unslash($_POST['lcni_seed_from_date'])) : '';
             $seed_to_date = isset($_POST['lcni_seed_to_date']) ? $this->sanitize_seed_date(wp_unslash($_POST['lcni_seed_to_date'])) : '';
             $seed_sessions = isset($_POST['lcni_seed_session_count']) ? $this->sanitize_seed_session_count(wp_unslash($_POST['lcni_seed_session_count'])) : (int) get_option('lcni_seed_session_count', 300);
+            $tasks_per_run = isset($_POST['lcni_seed_tasks_per_run']) ? $this->sanitize_positive_int(wp_unslash($_POST['lcni_seed_tasks_per_run'])) : (int) get_option('lcni_seed_tasks_per_run', 10);
             $batch_requests_per_run = isset($_POST['lcni_seed_batch_requests_per_run']) ? $this->sanitize_positive_int(wp_unslash($_POST['lcni_seed_batch_requests_per_run'])) : (int) get_option('lcni_seed_batch_requests_per_run', 5);
             $rate_limit_microseconds = isset($_POST['lcni_seed_rate_limit_microseconds']) ? $this->sanitize_positive_int(wp_unslash($_POST['lcni_seed_rate_limit_microseconds'])) : (int) get_option('lcni_seed_rate_limit_microseconds', 100000);
+            $max_failed_attempts = isset($_POST['lcni_seed_max_failed_attempts']) ? $this->sanitize_positive_int(wp_unslash($_POST['lcni_seed_max_failed_attempts'])) : (int) get_option('lcni_seed_max_failed_attempts', 3);
 
             update_option('lcni_seed_range_mode', $seed_mode);
             update_option('lcni_seed_from_date', $seed_from_date);
             update_option('lcni_seed_to_date', $seed_to_date);
             update_option('lcni_seed_session_count', $seed_sessions);
+            update_option('lcni_seed_tasks_per_run', $tasks_per_run);
             update_option('lcni_seed_batch_requests_per_run', $batch_requests_per_run);
             update_option('lcni_seed_rate_limit_microseconds', $rate_limit_microseconds);
+            update_option('lcni_seed_max_failed_attempts', $max_failed_attempts);
 
             $constraints = [
                 'mode' => $seed_mode,
@@ -997,8 +1007,10 @@ class LCNI_Settings {
                     <input type="date" name="lcni_seed_from_date" value="<?php echo esc_attr(get_option('lcni_seed_from_date', '')); ?>" style="margin-right:6px;">
                     <input type="date" name="lcni_seed_to_date" value="<?php echo esc_attr(get_option('lcni_seed_to_date', '')); ?>" style="margin-right:6px;">
                     <input type="number" name="lcni_seed_session_count" value="<?php echo esc_attr((string) get_option('lcni_seed_session_count', 300)); ?>" min="1" style="width:90px;margin-right:6px;" title="Số phiên khi chọn mode sessions">
+                    <input type="number" name="lcni_seed_tasks_per_run" value="<?php echo esc_attr((string) get_option('lcni_seed_tasks_per_run', 10)); ?>" min="1" style="width:90px;margin-right:6px;" title="Số task xử lý mỗi lần chạy cron">
                     <input type="number" name="lcni_seed_batch_requests_per_run" value="<?php echo esc_attr((string) get_option('lcni_seed_batch_requests_per_run', 5)); ?>" min="1" style="width:90px;margin-right:6px;" title="BATCH_REQUESTS_PER_RUN">
                     <input type="number" name="lcni_seed_rate_limit_microseconds" value="<?php echo esc_attr((string) get_option('lcni_seed_rate_limit_microseconds', 100000)); ?>" min="1" style="width:130px;margin-right:6px;" title="RATE_LIMIT_MICROSECONDS">
+                    <input type="number" name="lcni_seed_max_failed_attempts" value="<?php echo esc_attr((string) get_option('lcni_seed_max_failed_attempts', 3)); ?>" min="1" style="width:90px;margin-right:6px;" title="Số lần lỗi tối đa trước khi bỏ qua symbol/timeframe lỗi">
                     <?php submit_button('Start Seed', 'primary', 'submit', false); ?>
                 </form>
                 <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_redirect_tab" value="seed_dashboard"><input type="hidden" name="lcni_admin_action" value="run_seed_batch"><?php submit_button('Run 1 Batch', 'secondary', 'submit', false); ?></form>

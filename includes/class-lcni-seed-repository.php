@@ -108,7 +108,7 @@ class LCNI_SeedRepository {
 
         $table = self::get_table_name();
 
-        return $wpdb->query(
+        $wpdb->query(
             $wpdb->prepare(
                 "UPDATE {$table}
                 SET status = 'pending',
@@ -120,6 +120,13 @@ class LCNI_SeedRepository {
                 sanitize_textarea_field((string) $error_message),
                 max(1, (int) $last_to_time),
                 current_time('mysql', 1),
+                (int) $task_id
+            )
+        );
+
+        return (int) $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT failed_attempts FROM {$table} WHERE id = %d",
                 (int) $task_id
             )
         );
