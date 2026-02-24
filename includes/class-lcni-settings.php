@@ -946,7 +946,7 @@ class LCNI_Settings {
                     </select>
                     <input type="file" id="lcni_import_csv" name="lcni_import_csv" accept=".csv" required>
                     <?php submit_button('Nhận diện cột CSV', 'secondary', 'submit', false); ?>
-                    <p class="description" style="flex:1 1 100%;margin:0;">Workflow: nhận diện cột → chọn bảng → map cột CSV với cột DB → chạy import (upsert, giữ nguyên cấu trúc bảng và Primary Key).</p>
+                    <p class="description" style="flex:1 1 100%;margin:0;">Workflow: nhận diện cột → chọn bảng → map cột CSV với cột DB → chạy import. Bảng thường dùng upsert theo Primary Key; riêng LCNI OHLC sẽ append hàng mới, tự gán <code>id</code> và <code>event_time</code> = Unix timestamp tại thời điểm import.</p>
                 </form>
 
                 <?php if (!empty($csv_import_draft) && is_array($csv_import_draft) && !empty($csv_import_draft['headers']) && !empty($csv_import_draft['table_key']) && isset($csv_import_targets[$csv_import_draft['table_key']])) : ?>
@@ -956,6 +956,9 @@ class LCNI_Settings {
                         <input type="hidden" name="lcni_redirect_tab" value="seed_dashboard">
                         <input type="hidden" name="lcni_admin_action" value="run_csv_import">
                         <p style="margin-top:0;"><strong>Map cột cho bảng:</strong> <?php echo esc_html($target_meta['label']); ?> (Primary Key: <code><?php echo esc_html((string) $target_meta['primary_key']); ?></code>)</p>
+                        <?php if (($csv_import_draft['table_key'] ?? '') === 'lcni_ohlc') : ?>
+                            <p class="description" style="margin-top:-6px;">Yêu cầu map đủ 6 cột bắt buộc: <code>symbol</code>, <code>timeframe</code>, <code>open_price</code>, <code>high_price</code>, <code>low_price</code>, <code>close_price</code>. Hệ thống tự thêm <code>event_time</code> (Unix timestamp lúc import), tự tăng <code>id</code>, và chèn theo chế độ append.</p>
+                        <?php endif; ?>
                         <table class="widefat striped" style="max-width:980px;">
                             <thead><tr><th>Cột CSV</th><th>Cột DB</th></tr></thead>
                             <tbody>

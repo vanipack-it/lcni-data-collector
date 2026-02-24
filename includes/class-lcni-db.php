@@ -1527,6 +1527,21 @@ class LCNI_DB {
                     'tang_truong_ln_quy_gan_nhi' => 'float',
                 ],
             ],
+            'lcni_ohlc' => [
+                'label' => 'LCNI OHLC',
+                'primary_key' => 'id',
+                'insert_mode' => 'append',
+                'columns' => [
+                    'symbol' => 'text',
+                    'timeframe' => 'text',
+                    'open_price' => 'float',
+                    'high_price' => 'float',
+                    'low_price' => 'float',
+                    'close_price' => 'float',
+                    'volume' => 'int',
+                    'value_traded' => 'float',
+                ],
+            ],
         ];
     }
 
@@ -1636,6 +1651,10 @@ class LCNI_DB {
         }
 
         $target = $targets[$table_key];
+        if (($target['insert_mode'] ?? '') === 'append') {
+            return self::import_csv_append_only($file_path, $table_key, $mapping, $target);
+        }
+
         $columns = $target['columns'];
         $primary_key = $target['primary_key'];
         $primary_key_format = self::get_wpdb_format_for_type((string) ($columns[$primary_key] ?? 'text'));
@@ -1744,6 +1763,132 @@ class LCNI_DB {
         self::log_change('import_csv_generic', sprintf('Imported %d/%d rows into %s.', $updated, $total, $table_key), [
             'table' => $table_key,
             'mapping' => $mapping,
+        ]);
+
+        return [
+            'updated' => $updated,
+            'total' => $total,
+            'table' => $table_key,
+        ];
+    }
+
+    private static function import_csv_append_only($file_path, $table_key, $mapping, $target) {
+        if ($table_key !== 'lcni_ohlc') {
+            return new WP_Error('append_import_unsupported', 'Bảng append import chưa được hỗ trợ.');
+        }
+
+        $columns = $target['columns'];
+        $required_fields = ['symbol', 'timeframe', 'open_price', 'high_price', 'low_price', 'close_price'];
+
+        $handle = fopen($file_path, 'r');
+        if ($handle === false) {
+            return new WP_Error('csv_open_failed', 'Không thể mở file CSV.');
+        }
+
+        $header = fgetcsv($handle);
+        if (!is_array($header) || empty($header)) {
+            fclose($handle);
+            return new WP_Error('csv_empty', 'CSV không có dòng tiêu đề hợp lệ.');
+        }
+
+        $header_lookup = [];
+        foreach ($header as $index => $name) {
+            $normalized = self::normalize_csv_header($name);
+            if ($normalized !== '') {
+                $header_lookup[$normalized] = $index;
+            }
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . $table_key;
+        $updated = 0;
+        $total = 0;
+        $imported_event_time = max(1, (int) current_time('timestamp'));
+        $seen_pairs = [];
+
+        while (($line = fgetcsv($handle)) !== false) {
+            if (!is_array($line) || empty($line)) {
+                continue;
+            }
+
+            $record = [];
+            $formats = [];
+
+            foreach ((array) $mapping as $csv_column => $db_column) {
+                $csv_column = self::normalize_csv_header($csv_column);
+                $db_column = sanitize_key((string) $db_column);
+
+                if ($csv_column === '' || $db_column === '' || !isset($columns[$db_column]) || !isset($header_lookup[$csv_column])) {
+                    continue;
+                }
+
+                $value = trim((string) ($line[$header_lookup[$csv_column]] ?? ''));
+                $parsed = self::cast_import_value($value, $columns[$db_column]);
+                if ($db_column === 'symbol' && $parsed['value'] !== null) {
+                    $parsed['value'] = strtoupper((string) $parsed['value']);
+                }
+                if ($db_column === 'timeframe' && $parsed['value'] !== null) {
+                    $parsed['value'] = strtoupper((string) $parsed['value']);
+                }
+
+                $record[$db_column] = $parsed['value'];
+                $formats[$db_column] = $parsed['format'];
+            }
+
+            $total++;
+
+            $is_valid = true;
+            foreach ($required_fields as $field) {
+                if (!isset($record[$field]) || $record[$field] === '' || $record[$field] === null) {
+                    $is_valid = false;
+                    break;
+                }
+            }
+            if (!$is_valid) {
+                continue;
+            }
+
+            $pair_key = $record['symbol'] . '|' . $record['timeframe'];
+            if (isset($seen_pairs[$pair_key])) {
+                continue;
+            }
+
+            $exists = $wpdb->get_var(
+                $wpdb->prepare(
+                    "SELECT id FROM {$table} WHERE symbol = %s AND timeframe = %s AND event_time = %d LIMIT 1",
+                    $record['symbol'],
+                    $record['timeframe'],
+                    $imported_event_time
+                )
+            );
+            if ($exists !== null) {
+                continue;
+            }
+
+            $record['event_time'] = $imported_event_time;
+            $formats['event_time'] = '%d';
+            if (!isset($record['volume']) || $record['volume'] === null) {
+                $record['volume'] = 0;
+                $formats['volume'] = '%d';
+            }
+            if (!isset($record['value_traded']) || $record['value_traded'] === null) {
+                $record['value_traded'] = 0;
+                $formats['value_traded'] = '%f';
+            }
+
+            $result = $wpdb->insert($table, $record, array_values($formats));
+            if ($result !== false) {
+                $updated++;
+                $seen_pairs[$pair_key] = true;
+            }
+        }
+
+        fclose($handle);
+
+        self::log_change('import_csv_generic', sprintf('Imported %d/%d rows into %s (append mode).', $updated, $total, $table_key), [
+            'table' => $table_key,
+            'mapping' => $mapping,
+            'event_time' => $imported_event_time,
         ]);
 
         return [
