@@ -7,8 +7,6 @@ if (!defined('ABSPATH')) {
 class LCNI_API {
 
     const BASE_URL = 'https://services.entrade.com.vn';
-    const SECDEF_ENDPOINT = '/open-api/market/v2/securities';
-    const SECDEF_URL = self::BASE_URL . self::SECDEF_ENDPOINT;
     const CANDLE_URL = self::BASE_URL . '/chart-api/v2/ohlcs';
 
     private static $last_request_error = '';
@@ -56,21 +54,6 @@ class LCNI_API {
         );
 
         return self::request_json($url);
-    }
-
-    public static function get_security_definitions() {
-        $url = self::BASE_URL . self::SECDEF_ENDPOINT;
-
-        $query_args = [
-            'page' => 1,
-            'size' => 200,
-        ];
-
-        return self::request_json(
-            add_query_arg($query_args, $url),
-            [],
-            'GET'
-        );
     }
 
     public static function get_last_request_error() {

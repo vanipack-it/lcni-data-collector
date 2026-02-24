@@ -1382,69 +1382,10 @@ class LCNI_DB {
     public static function collect_all_data($latest_only = false, $offset = 0, $batch_limit = self::SYMBOL_BATCH_LIMIT) {
         self::ensure_tables_exist();
 
-        $security_summary = self::collect_security_definitions();
         $ohlc_summary = self::collect_ohlc_data($latest_only, $offset, $batch_limit);
 
         return [
-            'security' => $security_summary,
             'ohlc' => $ohlc_summary,
-        ];
-    }
-
-    public static function collect_security_definitions() {
-        self::ensure_tables_exist();
-
-        $payload = LCNI_API::get_security_definitions();
-        $cached_symbols = self::count_cached_security_symbols();
-
-        if (!is_array($payload)) {
-            $error_message = LCNI_API::get_last_request_error();
-            $log_message = 'Unable to collect security definitions: invalid payload.';
-
-            if ($error_message !== '') {
-                $log_message .= ' ' . $error_message;
-            }
-
-            if ($cached_symbols > 0) {
-                self::log_change('sync_security_cached', $log_message . sprintf(' Using %d cached symbols.', $cached_symbols));
-
-                return [
-                    'updated' => 0,
-                    'cached_symbols' => $cached_symbols,
-                    'used_cache' => true,
-                ];
-            }
-
-            self::log_change('sync_failed', $log_message);
-
-            return new WP_Error('invalid_payload', $error_message !== '' ? $error_message : 'Invalid security definitions payload.');
-        }
-
-        $rows = self::extract_items($payload, ['data', 'items', 'secDefs', 'secdefs', 'securities', 'symbols']);
-
-        if (empty($rows)) {
-            if ($cached_symbols > 0) {
-                self::log_change('sync_security_cached', sprintf('No remote security definitions returned. Using %d cached symbols.', $cached_symbols));
-
-                return [
-                    'updated' => 0,
-                    'cached_symbols' => $cached_symbols,
-                    'used_cache' => true,
-                ];
-            }
-
-            self::log_change('sync_skipped', 'No security definitions returned from DNSE API.');
-
-            return new WP_Error('empty_payload', 'Security definitions payload is empty.');
-        }
-
-        $upsert_summary = self::upsert_symbol_rows($rows, 'api');
-
-        self::log_change('sync_security_definition', sprintf('Upserted %d symbols from Security Definition.', (int) $upsert_summary['updated']));
-
-        return [
-            'updated' => (int) $upsert_summary['updated'],
-            'total' => count($rows),
         ];
     }
 
@@ -1860,7 +1801,7 @@ class LCNI_DB {
         $batch_limit = max(1, (int) $batch_limit);
         $offset = max(0, (int) $offset);
 
-        $symbol_table = $wpdb->prefix . 'lcni_symbols';
+        $symbol_table = $wpdb->prefix . 'lcni_symbol_tongquan';
         $total_symbols = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$symbol_table}");
 
         $symbols = $wpdb->get_col(
@@ -1872,7 +1813,7 @@ class LCNI_DB {
         );
 
         if (empty($symbols)) {
-            self::log_change('sync_skipped', 'No symbols available in lcni_symbols table for OHLC sync.');
+            self::log_change('sync_skipped', 'No symbols available in lcni_symbol_tongquan table for OHLC sync.');
 
             return [
                 'inserted' => 0,
@@ -2137,7 +2078,7 @@ class LCNI_DB {
     public static function get_all_symbols() {
         global $wpdb;
 
-        $table = $wpdb->prefix . 'lcni_symbols';
+        $table = $wpdb->prefix . 'lcni_symbol_tongquan';
 
         return $wpdb->get_col("SELECT symbol FROM {$table} ORDER BY symbol ASC");
     }
@@ -3133,61 +3074,6 @@ class LCNI_DB {
         self::$symbol_exchange_cache = [];
     }
 
-    private static function count_cached_security_symbols() {
-        global $wpdb;
-
-        $table = $wpdb->prefix . 'lcni_symbols';
-
-        return (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table}");
-    }
-
-    private static function extract_items($payload, $preferred_keys = []) {
-        if (!is_array($payload)) {
-            return [];
-        }
-
-        if (self::looks_like_security_definition($payload)) {
-            return [$payload];
-        }
-
-        if (self::is_list_array($payload)) {
-            return $payload;
-        }
-
-        $keys = array_merge($preferred_keys, ['data', 'items', 'rows', 'result', 'results', 'content', 'candles', 'secDefs', 'secdefs']);
-
-        foreach (array_unique($keys) as $key) {
-            if (!array_key_exists($key, $payload) || !is_array($payload[$key])) {
-                continue;
-            }
-
-            $items = self::extract_items($payload[$key]);
-            if (!empty($items)) {
-                return $items;
-            }
-        }
-
-        foreach ($payload as $value) {
-            if (!is_array($value)) {
-                continue;
-            }
-
-            $items = self::extract_items($value);
-            if (!empty($items)) {
-                return $items;
-            }
-        }
-
-        return [];
-    }
-
-    private static function is_list_array($array) {
-        if (!is_array($array)) {
-            return false;
-        }
-
-        return array_keys($array) === range(0, count($array) - 1);
-    }
 
     private static function pick($row, $keys, $default = null) {
         foreach ($keys as $key) {
@@ -3249,20 +3135,6 @@ class LCNI_DB {
         return null;
     }
 
-    private static function looks_like_security_definition($row) {
-        if (!is_array($row)) {
-            return false;
-        }
-
-        $keys = ['symbol', 's', 'isin', 'marketId', 'boardId', 'referencePrice', 'basicPrice'];
-        foreach ($keys as $key) {
-            if (array_key_exists($key, $row)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
 
     public static function log_change($action, $message, $context = null) {
         global $wpdb;
