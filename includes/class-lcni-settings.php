@@ -192,12 +192,12 @@ class LCNI_Settings {
                 'sessions' => $seed_sessions,
             ];
 
-            $created = LCNI_SeedScheduler::start_seed($constraints);
+            $queued = LCNI_SeedScheduler::trigger_seed_start($constraints);
 
-            if (is_wp_error($created)) {
-                $this->set_notice('error', $created->get_error_message());
+            if (is_wp_error($queued)) {
+                $this->set_notice('error', $queued->get_error_message());
             } else {
-                $this->set_notice('success', sprintf('Đã khởi tạo queue seed với %d task.', (int) $created));
+                $this->set_notice('success', 'Đã đưa yêu cầu seed vào chạy nền. Vui lòng theo dõi trạng thái Seed Dashboard.');
             }
         } elseif ($action === 'run_seed_batch') {
             $summary = LCNI_SeedScheduler::run_batch();
@@ -241,7 +241,7 @@ class LCNI_Settings {
             if (!empty($status['error'])) {
                 $this->set_notice('error', 'Cập nhật thủ công thất bại: ' . $status['error']);
             } else {
-                $this->set_notice('success', 'Đã chạy cập nhật thủ công.');
+                $this->set_notice('success', 'Đã đưa yêu cầu cập nhật thủ công vào chạy nền. Vui lòng theo dõi Runtime Status.');
             }
         } elseif ($action === 'save_ohlc_latest_settings') {
             $enabled = !empty($_POST['lcni_ohlc_latest_enabled']);

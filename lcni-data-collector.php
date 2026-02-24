@@ -167,6 +167,16 @@ function lcni_deactivate_plugin() {
         wp_unschedule_event($runtime_update_timestamp, LCNI_Update_Manager::CRON_HOOK);
     }
 
+    $runtime_manual_timestamp = wp_next_scheduled(LCNI_Update_Manager::MANUAL_TRIGGER_CRON_HOOK);
+    if ($runtime_manual_timestamp) {
+        wp_unschedule_event($runtime_manual_timestamp, LCNI_Update_Manager::MANUAL_TRIGGER_CRON_HOOK);
+    }
+
+    $seed_start_timestamp = wp_next_scheduled(LCNI_SeedScheduler::START_SEED_CRON_HOOK);
+    if ($seed_start_timestamp) {
+        wp_unschedule_event($seed_start_timestamp, LCNI_SeedScheduler::START_SEED_CRON_HOOK);
+    }
+
     flush_rewrite_rules();
 }
 
@@ -216,6 +226,7 @@ new LCNI_Stock_Detail_Router();
 new LCNI_Watchlist_Module();
 new LCNI_Filter_Module();
 new LCNI_Update_Data_Page();
+LCNI_SeedScheduler::init();
 LCNI_Update_Manager::init();
 LCNI_OHLC_Latest_Manager::init();
 new LCNI_Rest_API();

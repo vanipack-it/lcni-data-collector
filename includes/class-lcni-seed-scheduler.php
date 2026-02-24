@@ -8,6 +8,32 @@ class LCNI_SeedScheduler {
 
     const BATCH_REQUESTS_PER_RUN = 5;
     const RATE_LIMIT_MICROSECONDS = 300000;
+    const START_SEED_CRON_HOOK = 'lcni_seed_start_cron';
+    const OPTION_PENDING_START = 'lcni_seed_pending_start_constraints';
+
+    public static function init() {
+        add_action(self::START_SEED_CRON_HOOK, [__CLASS__, 'handle_scheduled_seed_start']);
+    }
+
+    public static function trigger_seed_start($constraints = []) {
+        update_option(self::OPTION_PENDING_START, is_array($constraints) ? $constraints : []);
+
+        if (!wp_next_scheduled(self::START_SEED_CRON_HOOK)) {
+            wp_schedule_single_event(current_time('timestamp') + 5, self::START_SEED_CRON_HOOK);
+        }
+
+        return [
+            'queued' => true,
+            'message' => 'Seed queue đã được đưa vào tiến trình chạy nền.',
+        ];
+    }
+
+    public static function handle_scheduled_seed_start() {
+        $constraints = get_option(self::OPTION_PENDING_START, []);
+        delete_option(self::OPTION_PENDING_START);
+
+        self::start_seed(is_array($constraints) ? $constraints : []);
+    }
 
     public static function start_seed($constraints = []) {
         $seeded = self::create_seed_tasks($constraints);
