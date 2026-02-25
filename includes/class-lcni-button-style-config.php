@@ -21,14 +21,38 @@ class LCNI_Button_Style_Config {
     public static function sanitize_config($input) {
         $input = is_array($input) ? $input : [];
         $sanitized = [];
+        $shared_all = self::sanitize_button_entry(array_merge(self::get_default_button_entry('shared'), is_array($input['__shared_all'] ?? null) ? $input['__shared_all'] : []));
+        $shared_table = self::sanitize_button_entry(array_merge(self::get_default_button_entry('shared'), is_array($input['__shared_table'] ?? null) ? $input['__shared_table'] : []));
+        $shared_outside = self::sanitize_button_entry(array_merge(self::get_default_button_entry('shared'), is_array($input['__shared_outside'] ?? null) ? $input['__shared_outside'] : []));
 
         foreach (array_keys(self::get_button_keys()) as $button_key) {
             $defaults = self::get_default_button_entry($button_key);
             $raw = isset($input[$button_key]) && is_array($input[$button_key]) ? $input[$button_key] : [];
-            $sanitized[$button_key] = self::sanitize_button_entry(array_merge($defaults, $raw));
+            $merged = array_merge($defaults, $raw);
+
+            $merged['background_color'] = $shared_all['background_color'];
+            $merged['text_color'] = $shared_all['text_color'];
+            $merged['hover_background_color'] = $shared_all['hover_background_color'];
+            $merged['hover_text_color'] = $shared_all['hover_text_color'];
+
+            if (in_array($button_key, self::get_table_button_keys(), true)) {
+                $merged['height'] = $shared_table['height'];
+                $merged['font_size'] = $shared_table['font_size'];
+                $merged['padding_left_right'] = $shared_table['padding_left_right'];
+            } else {
+                $merged['height'] = $shared_outside['height'];
+                $merged['font_size'] = $shared_outside['font_size'];
+                $merged['padding_left_right'] = $shared_outside['padding_left_right'];
+            }
+
+            $sanitized[$button_key] = self::sanitize_button_entry($merged);
         }
 
         return $sanitized;
+    }
+
+    public static function get_table_button_keys() {
+        return ['btn_watchlist_remove_symbol', 'btn_watchlist_remove_symbol_row'];
     }
 
     public static function get_config() {

@@ -150,6 +150,8 @@
     if (operator === '<=') return left <= right;
     if (operator === '=') return left === right;
     if (operator === '!=') return left !== right;
+    if (operator === 'contains') return String(rawValue).toLowerCase().includes(String(expected).toLowerCase());
+    if (operator === 'not_contains') return !String(rawValue).toLowerCase().includes(String(expected).toLowerCase());
     return false;
   }
 

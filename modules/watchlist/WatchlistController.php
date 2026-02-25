@@ -144,6 +144,8 @@ class LCNI_WatchlistController {
         if ($operator === '<=') return $left <= $right;
         if ($operator === '=') return $left === $right;
         if ($operator === '!=') return $left !== $right;
+        if ($operator === 'contains') return stripos((string) $raw_value, (string) $expected) !== false;
+        if ($operator === 'not_contains') return stripos((string) $raw_value, (string) $expected) === false;
         return false;
     }
 
