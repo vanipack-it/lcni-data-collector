@@ -21,9 +21,28 @@ class LCNI_Button_Style_Config {
     public static function sanitize_config($input) {
         $input = is_array($input) ? $input : [];
         $sanitized = [];
-        $shared_all = self::sanitize_button_entry(array_merge(self::get_default_button_entry('shared'), is_array($input['__shared_all'] ?? null) ? $input['__shared_all'] : []));
-        $shared_table = self::sanitize_button_entry(array_merge(self::get_default_button_entry('shared'), is_array($input['__shared_table'] ?? null) ? $input['__shared_table'] : []));
-        $shared_outside = self::sanitize_button_entry(array_merge(self::get_default_button_entry('shared'), is_array($input['__shared_outside'] ?? null) ? $input['__shared_outside'] : []));
+        $shared_all = self::sanitize_button_entry(array_merge(self::get_default_button_entry('shared'), self::extract_shared_config($input, '__shared_all', null, [])));
+        $shared_table = self::sanitize_button_entry(array_merge(self::get_default_button_entry('shared'), self::extract_shared_config($input, '__shared_table', 'btn_watchlist_remove_symbol', [])));
+        $shared_outside = self::sanitize_button_entry(array_merge(self::get_default_button_entry('shared'), self::extract_shared_config($input, '__shared_outside', 'btn_filter_open', [])));
+
+        $sanitized['__shared_all'] = [
+            'background_color' => $shared_all['background_color'],
+            'text_color' => $shared_all['text_color'],
+            'hover_background_color' => $shared_all['hover_background_color'],
+            'hover_text_color' => $shared_all['hover_text_color'],
+        ];
+
+        $sanitized['__shared_table'] = [
+            'height' => $shared_table['height'],
+            'font_size' => $shared_table['font_size'],
+            'padding_left_right' => $shared_table['padding_left_right'],
+        ];
+
+        $sanitized['__shared_outside'] = [
+            'height' => $shared_outside['height'],
+            'font_size' => $shared_outside['font_size'],
+            'padding_left_right' => $shared_outside['padding_left_right'],
+        ];
 
         foreach (array_keys(self::get_button_keys()) as $button_key) {
             $defaults = self::get_default_button_entry($button_key);
@@ -52,7 +71,7 @@ class LCNI_Button_Style_Config {
     }
 
     public static function get_table_button_keys() {
-        return ['btn_watchlist_remove_symbol', 'btn_watchlist_remove_symbol_row'];
+        return ['btn_add_filter_row', 'btn_watchlist_remove_symbol', 'btn_watchlist_remove_symbol_row'];
     }
 
     public static function get_config() {
@@ -186,6 +205,10 @@ class LCNI_Button_Style_Config {
         $css = '.lcni-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;border:0;cursor:pointer;}' . "\n";
 
         foreach ($config as $key => $button) {
+            if (strpos((string) $key, '__shared_') === 0 || !is_array($button)) {
+                continue;
+            }
+
             $class = '.lcni-btn-' . sanitize_html_class((string) $key);
             $css .= sprintf(
                 "%s{background:%s;color:%s;height:%s;border-radius:%s;padding:0 %s;font-size:%s;}\n",
@@ -205,8 +228,35 @@ class LCNI_Button_Style_Config {
                 esc_attr($button['hover_background_color']),
                 esc_attr($button['hover_text_color'])
             );
+
+            if (in_array((string) $key, self::get_table_button_keys(), true)) {
+                $css .= sprintf("%s,%s:hover,%s:focus{background:transparent!important;}\n", $class, $class, $class);
+            }
         }
 
         return $css;
+    }
+
+    private static function extract_shared_config(array $input, $shared_key, $fallback_button_key = null, array $field_map = []) {
+        if (isset($input[$shared_key]) && is_array($input[$shared_key])) {
+            return $input[$shared_key];
+        }
+
+        if ($fallback_button_key !== null && isset($input[$fallback_button_key]) && is_array($input[$fallback_button_key])) {
+            $fallback = $input[$fallback_button_key];
+            $result = [];
+            foreach ($field_map as $from => $to) {
+                if (isset($fallback[$from])) {
+                    $result[$to] = $fallback[$from];
+                }
+            }
+            if (empty($result)) {
+                return $fallback;
+            }
+
+            return $result;
+        }
+
+        return [];
     }
 }
