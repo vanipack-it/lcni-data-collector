@@ -24,6 +24,28 @@
   const sessionKey = cfg.tableSettingsStorageKey || 'lcni_filter_visible_columns_v1';
   const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
 
+  const toNumberOrNull = (value) => {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  };
+
+  const getRangeData = (item) => {
+    const min = toNumberOrNull(item.min);
+    const max = toNumberOrNull(item.max);
+    if (min === null || max === null) {
+      return { min: 0, max: 100, step: 1 };
+    }
+
+    if (min === max) {
+      return { min, max: min + 1, step: 1 };
+    }
+
+    const spread = Math.abs(max - min);
+    const step = spread >= 100 ? 1 : spread >= 10 ? 0.1 : spread >= 1 ? 0.01 : 0.001;
+
+    return { min: Math.min(min, max), max: Math.max(min, max), step };
+  };
+
   function getButtonConfig(key) { return (cfg.buttonConfig || {})[key] || {}; }
   function renderButtonContent(key, fallbackLabel, forceLabel) {
     const conf = getButtonConfig(key);
@@ -226,11 +248,13 @@
     state.criteria.forEach((item) => {
       const found = filters.find((f) => f.column === item.column);
       if (item.type === 'number') {
-        const range = found && Array.isArray(found.value) ? found.value : ['', ''];
         const min = host.querySelector(`[data-range-min="${item.column}"]`);
         const max = host.querySelector(`[data-range-max="${item.column}"]`);
-        if (min) min.value = range[0] || '';
-        if (max) max.value = range[1] || '';
+        const rangeData = getRangeData(item);
+        const range = found && Array.isArray(found.value) ? found.value : [rangeData.min, rangeData.max];
+        if (min) min.value = range[0] || rangeData.min;
+        if (max) max.value = range[1] || rangeData.max;
+        syncNumberRange(host, item.column);
       } else {
         const selected = found && Array.isArray(found.value) ? found.value.map(String) : [];
         host.querySelectorAll(`[data-text-check="${item.column}"]`).forEach((i) => { i.checked = selected.includes(String(i.value)); });
@@ -248,11 +272,18 @@
     }
     state.criteria.forEach((item) => {
       const value = defaults[item.column];
-      if (item.type === 'number' && Array.isArray(value)) {
+      if (item.type === 'number') {
         const min = host.querySelector(`[data-range-min="${item.column}"]`);
         const max = host.querySelector(`[data-range-max="${item.column}"]`);
-        if (min) min.value = value[0] || '';
-        if (max) max.value = value[1] || '';
+        const rangeData = getRangeData(item);
+        if (Array.isArray(value)) {
+          if (min) min.value = value[0] || rangeData.min;
+          if (max) max.value = value[1] || rangeData.max;
+        } else {
+          if (min) min.value = rangeData.min;
+          if (max) max.value = rangeData.max;
+        }
+        syncNumberRange(host, item.column);
       }
       if (item.type !== 'number' && Array.isArray(value)) {
         const selected = value.map(String);
@@ -262,6 +293,31 @@
     updateCriteriaSelectionState(host);
   }
 
+  function syncNumberRange(host, column, changed) {
+    const minInput = host.querySelector(`[data-range-min="${column}"]`);
+    const maxInput = host.querySelector(`[data-range-max="${column}"]`);
+    const minLabel = host.querySelector(`[data-range-min-label="${column}"]`);
+    const maxLabel = host.querySelector(`[data-range-max-label="${column}"]`);
+    if (!minInput || !maxInput) return;
+
+    let minValue = toNumberOrNull(minInput.value);
+    let maxValue = toNumberOrNull(maxInput.value);
+    if (minValue === null || maxValue === null) return;
+
+    if (changed === 'min' && minValue > maxValue) {
+      maxValue = minValue;
+      maxInput.value = String(maxValue);
+    }
+
+    if (changed === 'max' && maxValue < minValue) {
+      minValue = maxValue;
+      minInput.value = String(minValue);
+    }
+
+    if (minLabel) minLabel.textContent = String(minValue);
+    if (maxLabel) maxLabel.textContent = String(maxValue);
+  }
+
   function getApplyLabel() {
     const fallback = (getButtonConfig('btn_filter_apply').label_text || getButtonConfig('btn_apply_filter').label_text || 'Apply Filter');
     return `${fallback} (${Number(state.lastAppliedTotal || 0)})`;
@@ -269,7 +325,8 @@
 
   function criteriaControlHtml(item) {
     if (item.type === 'number') {
-      return `<div class="lcni-filter-range-wrap"><input type="number" data-range-min="${esc(item.column)}" value="" placeholder="Min"><input type="number" data-range-max="${esc(item.column)}" value="" placeholder="Max"></div>`;
+      const range = getRangeData(item);
+      return `<div class="lcni-filter-range-wrap" data-range-wrap="${esc(item.column)}" data-range-step="${esc(range.step)}"><div class="lcni-filter-range-values"><span data-range-min-label="${esc(item.column)}">${esc(range.min)}</span><span data-range-max-label="${esc(item.column)}">${esc(range.max)}</span></div><div class="lcni-filter-range-sliders"><input type="range" data-range-min="${esc(item.column)}" value="${esc(range.min)}" min="${esc(range.min)}" max="${esc(range.max)}" step="${esc(range.step)}" aria-label="${esc(item.label || item.column)} min"><input type="range" data-range-max="${esc(item.column)}" value="${esc(range.max)}" min="${esc(range.min)}" max="${esc(range.max)}" step="${esc(range.step)}" aria-label="${esc(item.label || item.column)} max"></div></div>`;
     }
     return `<div class="lcni-filter-check-list">${(item.values || []).map((v) => `<label><input type="checkbox" data-text-check="${esc(item.column)}" value="${esc(v)}"> ${esc(v)}</label>`).join('')}</div>`;
   }
@@ -501,6 +558,18 @@
       }
       if (event.target.matches('[data-visible-col]')) state.columnPanelOpen = true;
       if (event.target.matches('input[type="checkbox"]')) updateCriteriaSelectionState(host);
+    });
+
+    host.addEventListener('input', (event) => {
+      if (event.target.matches('[data-range-min]')) {
+        syncNumberRange(host, event.target.getAttribute('data-range-min') || '', 'min');
+      }
+      if (event.target.matches('[data-range-max]')) {
+        syncNumberRange(host, event.target.getAttribute('data-range-max') || '', 'max');
+      }
+      if (event.target.matches('[data-range-min],[data-range-max],input[type="checkbox"]')) {
+        updateCriteriaSelectionState(host);
+      }
     });
   }
 
