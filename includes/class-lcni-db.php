@@ -42,6 +42,14 @@ class LCNI_DB {
     ];
 
     const INDEX_SYMBOLS = ['HNX30', 'HNXINDEX', 'UPINDEX', 'VN30', 'VNINDEX', 'VNXALL'];
+    const DEFAULT_INDEX_NAMES = [
+        ['id' => 1, 'index_name' => 'VNINDEX', 'marketid' => '0', 'symbol_type' => 'INDEX', 'symbol' => 'VNINDEX'],
+        ['id' => 2, 'index_name' => 'HNX30', 'marketid' => '0', 'symbol_type' => 'INDEX', 'symbol' => 'HNX30'],
+        ['id' => 3, 'index_name' => 'HNXINDEX', 'marketid' => '0', 'symbol_type' => 'INDEX', 'symbol' => 'HNXINDEX'],
+        ['id' => 4, 'index_name' => 'UPINDEX', 'marketid' => '0', 'symbol_type' => 'INDEX', 'symbol' => 'UPINDEX'],
+        ['id' => 5, 'index_name' => 'VN30', 'marketid' => '0', 'symbol_type' => 'INDEX', 'symbol' => 'VN30'],
+        ['id' => 6, 'index_name' => 'VNXALL', 'marketid' => '0', 'symbol_type' => 'INDEX', 'symbol' => 'VNXALL'],
+    ];
 
     public static function ensure_tables_exist() {
         global $wpdb;
@@ -54,6 +62,7 @@ class LCNI_DB {
             $wpdb->prefix . 'lcni_change_logs',
             $wpdb->prefix . 'lcni_seed_tasks',
             $wpdb->prefix . 'lcni_marketid',
+            $wpdb->prefix . 'lcni_indexname',
             $wpdb->prefix . 'lcni_icb2',
             $wpdb->prefix . 'lcni_sym_icb_market',
             $wpdb->prefix . 'lcni_watchlist',
@@ -110,6 +119,7 @@ class LCNI_DB {
         $log_table = $wpdb->prefix . 'lcni_change_logs';
         $seed_task_table = $wpdb->prefix . 'lcni_seed_tasks';
         $market_table = $wpdb->prefix . 'lcni_marketid';
+        $index_name_table = $wpdb->prefix . 'lcni_indexname';
         $icb2_table = $wpdb->prefix . 'lcni_icb2';
         $symbol_market_icb_table = $wpdb->prefix . 'lcni_sym_icb_market';
         $watchlist_table = $wpdb->prefix . 'lcni_watchlist';
@@ -275,6 +285,19 @@ class LCNI_DB {
             KEY idx_name_icb2 (name_icb2)
         ) {$charset_collate};";
 
+        $sql_indexname = "CREATE TABLE {$index_name_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            index_name VARCHAR(50) NOT NULL,
+            marketid VARCHAR(20) NOT NULL DEFAULT '0',
+            symbol_type VARCHAR(20) NOT NULL DEFAULT 'INDEX',
+            symbol VARCHAR(20) NOT NULL,
+            PRIMARY KEY  (id),
+            UNIQUE KEY uniq_index_symbol (symbol),
+            KEY idx_marketid (marketid),
+            KEY idx_symbol_type (symbol_type),
+            KEY idx_index_name (index_name)
+        ) {$charset_collate};";
+
         $sql_symbol_tongquan = "CREATE TABLE {$symbol_tongquan_table} (
             symbol VARCHAR(20) NOT NULL,
             eps DECIMAL(20,4) DEFAULT NULL,
@@ -369,6 +392,7 @@ class LCNI_DB {
         dbDelta($sql_change_logs);
         dbDelta($sql_seed_tasks);
         dbDelta($sql_market);
+        dbDelta($sql_indexname);
         dbDelta($sql_icb2);
         dbDelta($sql_symbol_market_icb);
         dbDelta($sql_symbol_tongquan);
@@ -378,6 +402,7 @@ class LCNI_DB {
         dbDelta($sql_watchlist_symbols);
 
         self::seed_market_reference_data($market_table);
+        self::seed_index_name_reference_data($index_name_table);
         self::seed_icb2_reference_data($icb2_table);
         self::sync_symbol_market_icb_mapping();
         self::ensure_ohlc_indicator_columns();
@@ -390,7 +415,7 @@ class LCNI_DB {
         self::normalize_legacy_ratio_columns();
         self::sync_symbol_tongquan_with_symbols();
 
-        self::log_change('activation', 'Created/updated OHLC, lcni_symbols, lcni_symbol_tongquan, seed task, market, icb2, sym_icb_market and change log tables.');
+        self::log_change('activation', 'Created/updated OHLC, lcni_symbols, lcni_symbol_tongquan, seed task, market, indexname, icb2, sym_icb_market and change log tables.');
     }
 
     public static function ensure_ohlc_latest_snapshot_infrastructure($enabled = null, $interval_minutes = null) {
@@ -1461,6 +1486,28 @@ class LCNI_DB {
         }
     }
 
+    private static function seed_index_name_reference_data($index_name_table) {
+        global $wpdb;
+
+        foreach (self::DEFAULT_INDEX_NAMES as $index_row) {
+            $wpdb->query(
+                $wpdb->prepare(
+                    "INSERT INTO {$index_name_table} (id, index_name, marketid, symbol_type, symbol)
+                    VALUES (%d, %s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        index_name = VALUES(index_name),
+                        marketid = VALUES(marketid),
+                        symbol_type = VALUES(symbol_type)",
+                    (int) $index_row['id'],
+                    (string) $index_row['index_name'],
+                    (string) $index_row['marketid'],
+                    (string) $index_row['symbol_type'],
+                    (string) $index_row['symbol']
+                )
+            );
+        }
+    }
+
     public static function collect_all_data($latest_only = false, $offset = 0, $batch_limit = self::SYMBOL_BATCH_LIMIT) {
         self::ensure_tables_exist();
 
@@ -1568,6 +1615,16 @@ class LCNI_DB {
                 'columns' => [
                     'id_icb2' => 'int',
                     'name_icb2' => 'text',
+                ],
+            ],
+            'lcni_indexname' => [
+                'label' => 'LCNI Index Name',
+                'primary_key' => 'symbol',
+                'columns' => [
+                    'index_name' => 'text',
+                    'marketid' => 'text',
+                    'symbol_type' => 'text',
+                    'symbol' => 'text',
                 ],
             ],
             'lcni_sym_icb_market' => [
