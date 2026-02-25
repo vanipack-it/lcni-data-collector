@@ -6,7 +6,7 @@ if (!defined('ABSPATH')) {
 
 class LCNI_Overview_Shortcode {
 
-    const VERSION = '2.0.7';
+    const VERSION = '2.0.8';
 
     const DEFAULT_FIELDS = [
         'symbol',
@@ -33,6 +33,18 @@ class LCNI_Overview_Shortcode {
         'tang_truong_dt_quy_gan_nhi',
         'tang_truong_ln_quy_gan_nhat',
         'tang_truong_ln_quy_gan_nhi',
+    ];
+
+    const DEFAULT_STYLES = [
+        'label_color' => '#4b5563',
+        'value_color' => '#111827',
+        'item_background' => '#f9fafb',
+        'container_background' => '#ffffff',
+        'container_border' => '#e5e7eb',
+        'item_height' => 56,
+        'label_font_size' => 12,
+        'value_font_size' => 14,
+        'value_rules' => [],
     ];
 
     private $ajax;
@@ -69,11 +81,24 @@ class LCNI_Overview_Shortcode {
         ], $atts, 'lcni_stock_overview');
 
         $symbol = lcni_get_current_symbol($atts['symbol']);
+        $admin_config = $this->ajax->get_admin_config();
+        $button_config = LCNI_Button_Style_Config::get_button('btn_overview_setting');
 
         wp_enqueue_script('lcni-stock-overview');
         wp_enqueue_style('lcni-stock-overview');
+        LCNI_Button_Style_Config::enqueue_frontend_assets('lcni-stock-overview');
 
-        return sprintf('<div data-lcni-overview data-symbol="%s"></div>', esc_attr($symbol));
+        $api_base = rest_url('lcni/v1/stock-overview');
+        $settings_api = rest_url('lcni/v1/stock-overview/settings');
+
+        return sprintf(
+            '<div data-lcni-overview data-symbol="%1$s" data-api-base="%2$s" data-settings-api="%3$s" data-query-param="symbol" data-admin-config="%4$s" data-button-config="%5$s"></div>',
+            esc_attr($symbol),
+            esc_url($api_base),
+            esc_url($settings_api),
+            esc_attr(wp_json_encode($admin_config)),
+            esc_attr(wp_json_encode($button_config))
+        );
     }
 }
 
