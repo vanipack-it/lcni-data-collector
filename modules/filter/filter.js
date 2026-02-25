@@ -98,6 +98,13 @@
     return String(numeric);
   }
 
+  function formatRangeLabel(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return String(value == null ? '' : value);
+    if (Math.abs(numeric % 1) < 1e-8) return String(Math.trunc(numeric));
+    return numeric.toLocaleString('vi-VN', { maximumFractionDigits: 4 });
+  }
+
   function renderColumnPositionItems(columns, labels) {
     return columns.map((column) => {
       const checked = state.visibleColumns.includes(column);
@@ -275,7 +282,7 @@
       const max = Number(item.max || 0);
       const safeMin = Number.isFinite(min) ? min : 0;
       const safeMax = Number.isFinite(max) && max >= safeMin ? max : safeMin;
-      return `<div class="lcni-filter-range-wrap lcni-filter-range-dual" data-range-wrap="${esc(item.column)}" data-range-bound-min="${esc(safeMin)}" data-range-bound-max="${esc(safeMax)}"><div class="lcni-filter-range-track"><div class="lcni-filter-range-fill" data-range-fill="${esc(item.column)}"></div><input type="range" data-range-slider-min="${esc(item.column)}" min="${esc(safeMin)}" max="${esc(safeMax)}" step="any" value="${esc(safeMin)}"><input type="range" data-range-slider-max="${esc(item.column)}" min="${esc(safeMin)}" max="${esc(safeMax)}" step="any" value="${esc(safeMax)}"></div><div class="lcni-filter-range-values"><span data-range-min-label="${esc(item.column)}">${esc(safeMin)}</span><span data-range-max-label="${esc(item.column)}">${esc(safeMax)}</span></div><input type="hidden" data-range-min="${esc(item.column)}" value=""><input type="hidden" data-range-max="${esc(item.column)}" value=""></div>`;
+      return `<div class="lcni-filter-range-wrap lcni-filter-range-dual" data-range-wrap="${esc(item.column)}" data-range-bound-min="${esc(safeMin)}" data-range-bound-max="${esc(safeMax)}"><div class="lcni-filter-range-track"><div class="lcni-filter-range-fill" data-range-fill="${esc(item.column)}"></div><input type="range" data-range-slider-min="${esc(item.column)}" min="${esc(safeMin)}" max="${esc(safeMax)}" step="any" value="${esc(safeMin)}"><input type="range" data-range-slider-max="${esc(item.column)}" min="${esc(safeMin)}" max="${esc(safeMax)}" step="any" value="${esc(safeMax)}"></div><div class="lcni-filter-range-values"><span data-range-min-label="${esc(item.column)}">${esc(formatRangeLabel(safeMin))}</span><span data-range-max-label="${esc(item.column)}">${esc(formatRangeLabel(safeMax))}</span></div><input type="hidden" data-range-min="${esc(item.column)}" value=""><input type="hidden" data-range-max="${esc(item.column)}" value=""></div>`;
     }
     return `<div class="lcni-filter-check-list">${(item.values || []).map((v) => `<label><input type="checkbox" data-text-check="${esc(item.column)}" value="${esc(v)}"> ${esc(v)}</label>`).join('')}</div>`;
   }
@@ -306,9 +313,11 @@
 
     valueMin = Math.max(minBound, Math.min(valueMin, maxBound));
     valueMax = Math.max(minBound, Math.min(valueMax, maxBound));
-    if (valueMin > valueMax) {
-      if (source === 'max') valueMin = valueMax;
-      else valueMax = valueMin;
+    if (source === 'min' && valueMin > valueMax) {
+      valueMax = valueMin;
+    }
+    if (source === 'max' && valueMax < valueMin) {
+      valueMin = valueMax;
     }
 
     sliderMin.value = String(valueMin);
@@ -317,14 +326,19 @@
     inputMin.value = valueMin <= minBound ? '' : String(valueMin);
     inputMax.value = valueMax >= maxBound ? '' : String(valueMax);
 
-    if (labelMin) labelMin.textContent = String(valueMin);
-    if (labelMax) labelMax.textContent = String(valueMax);
+    if (labelMin) labelMin.textContent = formatRangeLabel(valueMin);
+    if (labelMax) labelMax.textContent = formatRangeLabel(valueMax);
 
-    if (fill && maxBound > minBound) {
-      const left = ((valueMin - minBound) / (maxBound - minBound)) * 100;
-      const right = ((valueMax - minBound) / (maxBound - minBound)) * 100;
-      fill.style.left = `${left}%`;
-      fill.style.width = `${Math.max(0, right - left)}%`;
+    if (fill) {
+      if (maxBound > minBound) {
+        const left = ((valueMin - minBound) / (maxBound - minBound)) * 100;
+        const right = ((valueMax - minBound) / (maxBound - minBound)) * 100;
+        fill.style.left = `${Math.max(0, Math.min(100, left))}%`;
+        fill.style.width = `${Math.max(0, Math.min(100, right) - Math.max(0, Math.min(100, left)))}%`;
+      } else {
+        fill.style.left = '0%';
+        fill.style.width = '100%';
+      }
     }
   }
 

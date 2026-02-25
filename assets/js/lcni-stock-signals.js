@@ -146,6 +146,18 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
+  const unwrapPayload = (payload) => {
+    if (!payload || typeof payload !== "object") {
+      return payload;
+    }
+
+    if (payload.success === true && payload.data && typeof payload.data === "object") {
+      return payload.data;
+    }
+
+    return payload;
+  };
+
   const escapeHtml = (value) =>
     String(value ?? "").replace(
       /[&<>"']/g,
@@ -259,9 +271,11 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       try {
-        const payload = await context.fetchJson(
-          `signals:${symbol}`,
-          `${apiBase}?symbol=${encodeURIComponent(symbol)}`,
+        const payload = unwrapPayload(
+          await context.fetchJson(
+            `signals:${symbol}`,
+            `${apiBase}?symbol=${encodeURIComponent(symbol)}`,
+          ),
         );
 
         container.innerHTML = "";

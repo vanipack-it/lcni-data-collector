@@ -119,6 +119,18 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
+  const unwrapPayload = (payload) => {
+    if (!payload || typeof payload !== "object") {
+      return payload;
+    }
+
+    if (payload.success === true && payload.data && typeof payload.data === "object") {
+      return payload.data;
+    }
+
+    return payload;
+  };
+
   const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
 
   const renderButtonContent = (buttonConfig) => {
@@ -204,6 +216,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const queryParam = container.dataset.queryParam;
     const fixedSymbol = sanitizeSymbol(container.dataset.symbol);
     const adminConfig = parseAdminConfig(container.dataset.adminConfig);
+    const buttonConfig = parseButtonConfig(container.dataset.buttonConfig) || {};
     const allowedFields = Array.isArray(adminConfig?.allowed_fields) && adminConfig.allowed_fields.length
       ? adminConfig.allowed_fields.filter((field) => labels[field])
       : defaultFields;
@@ -239,7 +252,7 @@ document.addEventListener("DOMContentLoaded", () => {
           throw new Error("request failed");
         }
 
-        const payload = await response.json();
+        const payload = unwrapPayload(await response.json());
         if (!payload || (Array.isArray(payload) && payload.length === 0) || (!Array.isArray(payload) && typeof payload === 'object' && Object.keys(payload).length === 0)) {
           container.textContent = "NO DATA";
           return;
