@@ -1684,14 +1684,29 @@ class LCNI_DB {
         $total = 0;
 
         $progress_callback = isset($options['progress_callback']) && is_callable($options['progress_callback']) ? $options['progress_callback'] : null;
+        $max_rows = isset($options['max_rows']) ? max(1, (int) $options['max_rows']) : 0;
+        $offset_rows = isset($options['offset_rows']) ? max(0, (int) $options['offset_rows']) : 0;
         $processed = 0;
+        $seen_rows = 0;
+        $has_more = false;
 
         while (($line = fgetcsv($handle)) !== false) {
             if (!is_array($line) || empty($line)) {
                 continue;
             }
 
+            if ($seen_rows < $offset_rows) {
+                $seen_rows++;
+                continue;
+            }
+
+            if ($max_rows > 0 && $processed >= $max_rows) {
+                $has_more = true;
+                break;
+            }
+
             $processed++;
+            $seen_rows++;
 
             $record = [];
             $formats = [];
@@ -1781,6 +1796,8 @@ class LCNI_DB {
         return [
             'updated' => $updated,
             'total' => $total,
+            'processed' => $processed,
+            'has_more' => $has_more,
             'table' => $table_key,
         ];
     }
@@ -1825,14 +1842,29 @@ class LCNI_DB {
         $touched_timeframes = [];
 
         $progress_callback = isset($options['progress_callback']) && is_callable($options['progress_callback']) ? $options['progress_callback'] : null;
+        $max_rows = isset($options['max_rows']) ? max(1, (int) $options['max_rows']) : 0;
+        $offset_rows = isset($options['offset_rows']) ? max(0, (int) $options['offset_rows']) : 0;
         $processed = 0;
+        $seen_rows = 0;
+        $has_more = false;
 
         while (($line = fgetcsv($handle)) !== false) {
             if (!is_array($line) || empty($line)) {
                 continue;
             }
 
+            if ($seen_rows < $offset_rows) {
+                $seen_rows++;
+                continue;
+            }
+
+            if ($max_rows > 0 && $processed >= $max_rows) {
+                $has_more = true;
+                break;
+            }
+
             $processed++;
+            $seen_rows++;
 
             $record = [];
             $formats = [];
@@ -1946,6 +1978,8 @@ class LCNI_DB {
         return [
             'updated' => $updated,
             'total' => $total,
+            'processed' => $processed,
+            'has_more' => $has_more,
             'table' => $table_key,
         ];
     }
