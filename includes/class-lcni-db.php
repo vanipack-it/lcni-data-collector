@@ -41,6 +41,8 @@ class LCNI_DB {
         ['id_icb2' => 19, 'name_icb2' => 'Y tế'],
     ];
 
+    const INDEX_SYMBOLS = ['HNX30', 'HNXINDEX', 'UPINDEX', 'VN30', 'VNINDEX', 'VNXALL'];
+
     public static function ensure_tables_exist() {
         global $wpdb;
 
@@ -69,6 +71,7 @@ class LCNI_DB {
         }
 
         self::ensure_ohlc_indicator_columns();
+        self::ensure_ohlc_symbol_type_column();
         self::ensure_symbol_market_icb_columns();
         self::ensure_symbol_tongquan_columns();
         self::ensure_ohlc_indexes();
@@ -91,6 +94,7 @@ class LCNI_DB {
         self::backfill_ohlc_rs_3m_by_exchange();
         self::backfill_ohlc_rs_exchange_signals();
         self::backfill_ohlc_rs_recommend_status();
+        self::ensure_ohlc_symbol_type_column();
         self::ensure_ohlc_indexes();
         self::ensure_ohlc_latest_snapshot_infrastructure();
     }
@@ -171,6 +175,7 @@ class LCNI_DB {
             pha_nen VARCHAR(30) DEFAULT NULL,
             tang_gia_kem_vol VARCHAR(50) DEFAULT NULL,
             smart_money VARCHAR(30) DEFAULT NULL,
+            symbol_type VARCHAR(20) NOT NULL DEFAULT 'STOCK',
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY  (id),
             UNIQUE KEY unique_ohlc (symbol, timeframe, event_time),
@@ -376,6 +381,7 @@ class LCNI_DB {
         self::seed_icb2_reference_data($icb2_table);
         self::sync_symbol_market_icb_mapping();
         self::ensure_ohlc_indicator_columns();
+        self::ensure_ohlc_symbol_type_column();
         self::ensure_symbol_market_icb_columns();
         self::ensure_symbol_tongquan_columns();
         self::ensure_ohlc_indexes();
@@ -420,6 +426,9 @@ class LCNI_DB {
         if (!is_array($symbol_primary_key)) {
             $wpdb->query("ALTER TABLE {$latest_table} ADD PRIMARY KEY (symbol)");
         }
+
+        self::sync_ohlc_symbol_type_values($ohlc_table);
+        self::sync_ohlc_symbol_type_values($latest_table);
 
         $wpdb->query("DROP PROCEDURE IF EXISTS {$sync_proc_name}");
         $wpdb->query(
@@ -491,6 +500,12 @@ class LCNI_DB {
                 END"
             );
         }
+
+        $ohlc_count = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$ohlc_table}");
+        $latest_count = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$latest_table}");
+        if ($ohlc_count > 0 && $latest_count === 0) {
+            self::perform_refresh_ohlc_latest_snapshot();
+        }
     }
 
 
@@ -546,22 +561,89 @@ class LCNI_DB {
             $wpdb->query("ALTER TABLE {$latest_table} ADD COLUMN `{$column_name}` {$column_type}");
         }
 
-        $result = $wpdb->query(
-            "REPLACE INTO {$latest_table}
-            SELECT t.*
-            FROM {$ohlc_table} t
-            JOIN (
-                SELECT symbol, MAX(event_time) AS max_time
-                FROM {$ohlc_table}
-                GROUP BY symbol
-            ) m ON t.symbol = m.symbol AND t.event_time = m.max_time"
-        );
+        self::sync_ohlc_symbol_type_values($ohlc_table);
+        $result = self::perform_refresh_ohlc_latest_snapshot();
 
         return [
             'success' => $result !== false,
             'rows_affected' => (int) $result,
             'error' => $result === false ? $wpdb->last_error : '',
         ];
+    }
+
+    private static function perform_refresh_ohlc_latest_snapshot($symbols = []) {
+        global $wpdb;
+
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $latest_table = $wpdb->prefix . 'lcni_ohlc_latest';
+        $where_clause = '';
+        $where_symbol_clause = '';
+
+        if (!empty($symbols)) {
+            $symbols = array_values(array_filter(array_unique(array_map('strtoupper', (array) $symbols))));
+            if (!empty($symbols)) {
+                $placeholders = implode(', ', array_fill(0, count($symbols), '%s'));
+                $where_clause = $wpdb->prepare("WHERE symbol IN ({$placeholders})", ...$symbols);
+                $where_symbol_clause = $wpdb->prepare("AND t.symbol IN ({$placeholders})", ...$symbols);
+            }
+        }
+
+        return $wpdb->query(
+            "REPLACE INTO {$latest_table}
+            SELECT t.*
+            FROM {$ohlc_table} t
+            JOIN (
+                SELECT symbol, MAX(event_time) AS max_time
+                FROM {$ohlc_table}
+                {$where_clause}
+                GROUP BY symbol
+            ) m ON t.symbol = m.symbol AND t.event_time = m.max_time
+            WHERE 1=1 {$where_symbol_clause}"
+        );
+    }
+
+    private static function ensure_ohlc_symbol_type_column() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+        if ($exists !== $table) {
+            return;
+        }
+
+        $column = $wpdb->get_row("SHOW COLUMNS FROM {$table} LIKE 'symbol_type'", ARRAY_A);
+        if (!is_array($column)) {
+            $wpdb->query("ALTER TABLE {$table} ADD COLUMN symbol_type VARCHAR(20) NOT NULL DEFAULT 'STOCK' AFTER smart_money");
+        }
+
+        self::sync_ohlc_symbol_type_values($table);
+    }
+
+    private static function sync_ohlc_symbol_type_values($table) {
+        global $wpdb;
+
+        $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+        if ($exists !== $table) {
+            return;
+        }
+
+        $column = $wpdb->get_row("SHOW COLUMNS FROM {$table} LIKE 'symbol_type'", ARRAY_A);
+        if (!is_array($column)) {
+            return;
+        }
+
+        $index_symbols = self::INDEX_SYMBOLS;
+        $placeholders = implode(', ', array_fill(0, count($index_symbols), '%s'));
+        $sql = $wpdb->prepare(
+            "UPDATE {$table}
+            SET symbol_type = CASE
+                WHEN symbol IN ({$placeholders}) THEN 'INDEX'
+                ELSE 'STOCK'
+            END",
+            ...$index_symbols
+        );
+
+        $wpdb->query($sql);
     }
 
     private static function ensure_ohlc_indicator_columns() {
@@ -2447,6 +2529,7 @@ class LCNI_DB {
             $record = [
                 'symbol' => strtoupper((string) ($row['symbol'] ?? '')),
                 'timeframe' => strtoupper((string) ($row['timeframe'] ?? '1D')),
+                'symbol_type' => in_array(strtoupper((string) ($row['symbol'] ?? '')), self::INDEX_SYMBOLS, true) ? 'INDEX' : 'STOCK',
                 'event_time' => $event_time,
                 'open_price' => self::normalize_price($row['open'] ?? 0),
                 'high_price' => self::normalize_price($row['high'] ?? 0),
@@ -2470,9 +2553,10 @@ class LCNI_DB {
 
             $query = $wpdb->prepare(
                 "INSERT INTO {$table}
-                (symbol, timeframe, event_time, open_price, high_price, low_price, close_price, volume, value_traded)
-                VALUES (%s, %s, %d, %f, %f, %f, %f, %d, %f)
+                (symbol, timeframe, symbol_type, event_time, open_price, high_price, low_price, close_price, volume, value_traded)
+                VALUES (%s, %s, %s, %d, %f, %f, %f, %f, %d, %f)
                 ON DUPLICATE KEY UPDATE
+                    symbol_type = VALUES(symbol_type),
                     open_price = VALUES(open_price),
                     high_price = VALUES(high_price),
                     low_price = VALUES(low_price),
@@ -2481,6 +2565,7 @@ class LCNI_DB {
                     value_traded = VALUES(value_traded)",
                 $record['symbol'],
                 $record['timeframe'],
+                $record['symbol_type'],
                 $record['event_time'],
                 $record['open_price'],
                 $record['high_price'],
@@ -2513,6 +2598,7 @@ class LCNI_DB {
             // after historical backfills are not left NULL.
             self::rebuild_rs_3m_by_exchange([], array_keys($touched_timeframes));
             self::rebuild_rs_exchange_signals([], array_keys($touched_timeframes));
+            self::perform_refresh_ohlc_latest_snapshot(array_column($touched_series, 'symbol'));
         }
 
         return [
