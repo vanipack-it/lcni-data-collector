@@ -11,7 +11,13 @@ class LCNI_FilterAdmin {
         $all = $service->get_all_columns();
         $columns = is_array($columns) ? array_map('sanitize_key', $columns) : [];
 
-        return array_values(array_intersect($all, $columns));
+        return array_values(array_filter($columns, static function ($column) use ($all) {
+            return in_array($column, $all, true);
+        }));
+    }
+
+    public static function sanitize_column_order($columns) {
+        return self::sanitize_columns($columns);
     }
 
     public static function sanitize_style($input) {
@@ -128,17 +134,32 @@ class LCNI_FilterAdmin {
             </div>
 
             <div data-filter-sub-pane="table_columns" style="display:none">
-                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form" data-lcni-table-column-form>
                     <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
                     <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
                     <input type="hidden" name="lcni_frontend_module" value="filter">
                     <input type="hidden" name="lcni_filter_section" value="table_columns">
                     <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                    <input type="hidden" name="lcni_filter_table_column_order" value="<?php echo esc_attr(implode(',', (array) $table_columns)); ?>" data-selected-order>
                     <h3>Table Columns</h3>
-                    <div class="lcni-front-grid">
-                        <?php foreach ($all_columns as $column) : ?>
-                            <label><input type="checkbox" name="lcni_filter_table_columns[]" value="<?php echo esc_attr($column); ?>" <?php checked(in_array($column, $table_columns, true)); ?>> <?php echo esc_html($column); ?></label>
-                        <?php endforeach; ?>
+                    <div style="display:grid;grid-template-columns:80% 20%;gap:12px;align-items:start;">
+                        <div>
+                            <p><strong>Available fields</strong></p>
+                            <div class="lcni-front-grid">
+                                <?php foreach ($all_columns as $column) : ?>
+                                    <label><input type="checkbox" name="lcni_filter_table_columns[]" data-column-checkbox value="<?php echo esc_attr($column); ?>" <?php checked(in_array($column, $table_columns, true)); ?>> <?php echo esc_html($column); ?></label>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                        <div>
+                            <p><strong>Selected order</strong></p>
+                            <ol data-selected-list style="margin:0;padding-left:18px;max-height:320px;overflow:auto;">
+                                <?php foreach ((array) $table_columns as $column) : ?>
+                                    <li draggable="true" data-selected-column="<?php echo esc_attr($column); ?>" style="cursor:move;padding:4px 0;"><?php echo esc_html($column); ?></li>
+                                <?php endforeach; ?>
+                            </ol>
+                            <p class="description">Kéo thả để đổi thứ tự cột hiển thị frontend.</p>
+                        </div>
                     </div>
                     <?php submit_button('Save'); ?>
                 </form>
@@ -231,6 +252,54 @@ class LCNI_FilterAdmin {
                     panes.forEach((pane) => { pane.style.display = pane.getAttribute('data-filter-sub-pane') === name ? '' : 'none'; });
                 };
                 buttons.forEach((btn) => btn.addEventListener('click', () => show(btn.getAttribute('data-filter-sub-tab'))));
+
+                document.querySelectorAll('[data-lcni-table-column-form]').forEach((form) => {
+                    const selectedList = form.querySelector('[data-selected-list]');
+                    const hidden = form.querySelector('[data-selected-order]');
+                    if (!selectedList || !hidden) {
+                        return;
+                    }
+
+                    const syncHidden = () => {
+                        hidden.value = Array.from(selectedList.querySelectorAll('[data-selected-column]')).map((node) => node.getAttribute('data-selected-column') || '').filter(Boolean).join(',');
+                    };
+
+                    const renderSelected = () => {
+                        const checked = Array.from(form.querySelectorAll('[data-column-checkbox]:checked')).map((node) => node.value);
+                        const existing = Array.from(selectedList.querySelectorAll('[data-selected-column]')).map((node) => node.getAttribute('data-selected-column') || '');
+                        const next = existing.filter((col) => checked.includes(col));
+                        checked.forEach((col) => { if (!next.includes(col)) next.push(col); });
+                        selectedList.innerHTML = next.map((col) => `<li draggable="true" data-selected-column="${col}" style="cursor:move;padding:4px 0;">${col}</li>`).join('');
+                        bindSortable();
+                        syncHidden();
+                    };
+
+                    const bindSortable = () => {
+                        let dragging = null;
+                        selectedList.querySelectorAll('[data-selected-column]').forEach((item) => {
+                            item.addEventListener('dragstart', () => { dragging = item; item.style.opacity = '0.5'; });
+                            item.addEventListener('dragend', () => { if (dragging) dragging.style.opacity = ''; dragging = null; syncHidden(); });
+                            item.addEventListener('dragover', (event) => event.preventDefault());
+                            item.addEventListener('drop', (event) => {
+                                event.preventDefault();
+                                if (!dragging || dragging === item) return;
+                                const rect = item.getBoundingClientRect();
+                                const after = (event.clientY - rect.top) > rect.height / 2;
+                                if (after) {
+                                    item.after(dragging);
+                                } else {
+                                    item.before(dragging);
+                                }
+                                syncHidden();
+                            });
+                        });
+                    };
+
+                    form.querySelectorAll('[data-column-checkbox]').forEach((checkbox) => checkbox.addEventListener('change', renderSelected));
+                    bindSortable();
+                    syncHidden();
+                });
+
                 show('criteria');
             })();
         </script>

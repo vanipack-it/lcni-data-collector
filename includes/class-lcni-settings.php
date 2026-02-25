@@ -370,6 +370,10 @@ class LCNI_Settings {
                     } elseif ($watchlist_section === 'default_columns') {
                         $input['default_columns_desktop'] = isset($_POST['lcni_frontend_watchlist_default_columns_desktop']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_default_columns_desktop']) : [];
                         $input['default_columns_mobile'] = isset($_POST['lcni_frontend_watchlist_default_columns_mobile']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_default_columns_mobile']) : [];
+                        $posted_column_order = array_filter(array_map('sanitize_key', explode(',', (string) (isset($_POST['lcni_frontend_watchlist_column_order']) ? wp_unslash($_POST['lcni_frontend_watchlist_column_order']) : ''))));
+                        $styles = isset($input['styles']) && is_array($input['styles']) ? $input['styles'] : [];
+                        $styles['column_order'] = $posted_column_order;
+                        $input['styles'] = $styles;
                     } elseif ($watchlist_section === 'column_labels') {
                         $input['column_label_keys'] = isset($_POST['lcni_frontend_watchlist_column_label_key']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_column_label_key']) : [];
                         $input['column_label_values'] = isset($_POST['lcni_frontend_watchlist_column_label']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_column_label']) : [];
@@ -413,6 +417,7 @@ class LCNI_Settings {
                             'input_border_color' => isset($_POST['lcni_frontend_watchlist_style_input_border_color']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_input_border_color']) : '',
                             'input_border_radius' => isset($_POST['lcni_frontend_watchlist_style_input_border_radius']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_input_border_radius']) : 8,
                             'scroll_speed' => isset($_POST['lcni_frontend_watchlist_style_scroll_speed']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_scroll_speed']) : 1,
+                            'column_order' => array_filter(array_map('sanitize_key', explode(',', (string) (isset($_POST['lcni_frontend_watchlist_column_order']) ? wp_unslash($_POST['lcni_frontend_watchlist_column_order']) : '')))),
                         ];
                         $input['value_color_rule_columns'] = isset($_POST['lcni_watchlist_value_color_rule_column']) ? (array) wp_unslash($_POST['lcni_watchlist_value_color_rule_column']) : [];
                         $input['value_color_rule_operators'] = isset($_POST['lcni_watchlist_value_color_rule_operator']) ? (array) wp_unslash($_POST['lcni_watchlist_value_color_rule_operator']) : [];
@@ -444,7 +449,18 @@ class LCNI_Settings {
                     if ($section === 'criteria') {
                         update_option('lcni_filter_criteria_columns', LCNI_FilterAdmin::sanitize_columns(isset($_POST['lcni_filter_criteria_columns']) ? (array) wp_unslash($_POST['lcni_filter_criteria_columns']) : []));
                     } elseif ($section === 'table_columns') {
-                        update_option('lcni_filter_table_columns', LCNI_FilterAdmin::sanitize_columns(isset($_POST['lcni_filter_table_columns']) ? (array) wp_unslash($_POST['lcni_filter_table_columns']) : []));
+                        $selected_columns = LCNI_FilterAdmin::sanitize_columns(isset($_POST['lcni_filter_table_columns']) ? (array) wp_unslash($_POST['lcni_filter_table_columns']) : []);
+                        $ordered_columns = LCNI_FilterAdmin::sanitize_column_order(explode(',', (string) (isset($_POST['lcni_filter_table_column_order']) ? wp_unslash($_POST['lcni_filter_table_column_order']) : '')));
+                        $ordered_columns = array_values(array_filter($ordered_columns, static function ($column) use ($selected_columns) {
+                            return in_array($column, $selected_columns, true);
+                        }));
+                        foreach ($selected_columns as $column) {
+                            if (!in_array($column, $ordered_columns, true)) {
+                                $ordered_columns[] = $column;
+                            }
+                        }
+                        update_option('lcni_filter_table_columns', $selected_columns);
+                        update_option('lcni_filter_table_column_order', $ordered_columns);
                     } elseif ($section === 'style') {
                         $raw_style = isset($_POST['lcni_filter_style_config']) ? (array) wp_unslash($_POST['lcni_filter_style_config']) : (isset($_POST['lcni_filter_style']) ? (array) wp_unslash($_POST['lcni_filter_style']) : []);
                         $style_config = LCNI_FilterAdmin::sanitize_style($raw_style);
@@ -472,14 +488,18 @@ class LCNI_Settings {
 
                     $global_rules_raw = $this->collect_global_cell_color_rule_input_from_post();
                     $global_rules = $this->sanitize_global_cell_color_rules($global_rules_raw);
+                    $cell_to_cell_raw = $this->collect_global_cell_to_cell_rule_input_from_post();
+                    $cell_to_cell_rules = $this->sanitize_global_cell_to_cell_rules($cell_to_cell_raw);
 
                     $watchlist_settings['styles'] = $watchlist_styles;
                     $watchlist_settings['value_color_rules'] = $global_rules;
                     update_option('lcni_watchlist_settings', $this->sanitize_watchlist_settings($watchlist_settings));
+                    update_option('lcni_cell_to_cell_color_rules', $cell_to_cell_rules);
 
                     $filter_style = LCNI_FilterAdmin::sanitize_style(get_option('lcni_filter_style_config', get_option('lcni_filter_style', [])));
                     $filter_style['saved_filter_label'] = sanitize_text_field((string) (isset($_POST['lcni_form_saved_filter_label']) ? wp_unslash($_POST['lcni_form_saved_filter_label']) : ($filter_style['saved_filter_label'] ?? 'Saved filters')));
                     $filter_style['conditional_value_colors'] = wp_json_encode($global_rules);
+                    $filter_style['cell_to_cell_colors'] = wp_json_encode($cell_to_cell_rules);
                     update_option('lcni_filter_style', $filter_style);
                     update_option('lcni_filter_style_config', $filter_style);
 
@@ -2095,6 +2115,78 @@ private function sanitize_module_title($value, $fallback) {
         return array_slice($normalized, 0, 100);
     }
 
+
+    private function collect_global_cell_to_cell_rule_input_from_post() {
+        $source_fields = isset($_POST['lcni_cell_to_cell_source_field']) ? (array) wp_unslash($_POST['lcni_cell_to_cell_source_field']) : [];
+        $operators = isset($_POST['lcni_cell_to_cell_operator']) ? (array) wp_unslash($_POST['lcni_cell_to_cell_operator']) : [];
+        $values = isset($_POST['lcni_cell_to_cell_value']) ? (array) wp_unslash($_POST['lcni_cell_to_cell_value']) : [];
+        $target_fields = isset($_POST['lcni_cell_to_cell_target_field']) ? (array) wp_unslash($_POST['lcni_cell_to_cell_target_field']) : [];
+        $text_colors = isset($_POST['lcni_cell_to_cell_text_color']) ? (array) wp_unslash($_POST['lcni_cell_to_cell_text_color']) : [];
+        $icon_classes = isset($_POST['lcni_cell_to_cell_icon_class']) ? (array) wp_unslash($_POST['lcni_cell_to_cell_icon_class']) : [];
+        $icon_positions = isset($_POST['lcni_cell_to_cell_icon_position']) ? (array) wp_unslash($_POST['lcni_cell_to_cell_icon_position']) : [];
+        $icon_sizes = isset($_POST['lcni_cell_to_cell_icon_size']) ? (array) wp_unslash($_POST['lcni_cell_to_cell_icon_size']) : [];
+        $icon_colors = isset($_POST['lcni_cell_to_cell_icon_color']) ? (array) wp_unslash($_POST['lcni_cell_to_cell_icon_color']) : [];
+
+        $rules = [];
+        $row_count = max(count($source_fields), count($operators), count($values), count($target_fields), count($text_colors), count($icon_classes), count($icon_positions), count($icon_sizes), count($icon_colors));
+        for ($i = 0; $i < $row_count; $i++) {
+            $rules[] = [
+                'source_field' => $source_fields[$i] ?? '',
+                'operator' => $operators[$i] ?? '',
+                'value' => $values[$i] ?? '',
+                'target_field' => $target_fields[$i] ?? '',
+                'text_color' => $text_colors[$i] ?? '',
+                'icon_class' => $icon_classes[$i] ?? '',
+                'icon_position' => $icon_positions[$i] ?? 'right',
+                'icon_size' => $icon_sizes[$i] ?? 12,
+                'icon_color' => $icon_colors[$i] ?? '',
+            ];
+        }
+
+        return $rules;
+    }
+
+    private function sanitize_global_cell_to_cell_rules($rules) {
+        $service = new LCNI_WatchlistService(new LCNI_WatchlistRepository());
+        $all_columns = $service->get_all_columns();
+        $allowed_operators = ['=', '>', '<', 'contains', 'not_contains'];
+        $normalized = [];
+
+        foreach ((array) $rules as $rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+
+            $source = sanitize_key((string) ($rule['source_field'] ?? ''));
+            $target = sanitize_key((string) ($rule['target_field'] ?? ''));
+            $operator = sanitize_text_field((string) ($rule['operator'] ?? ''));
+            $value = trim(sanitize_text_field((string) ($rule['value'] ?? '')));
+            $text_color = sanitize_hex_color((string) ($rule['text_color'] ?? ''));
+            $icon_class = sanitize_text_field((string) ($rule['icon_class'] ?? ''));
+            $icon_position = in_array(($rule['icon_position'] ?? 'right'), ['left', 'right'], true) ? $rule['icon_position'] : 'right';
+            $icon_size = max(8, min(32, (int) ($rule['icon_size'] ?? 12)));
+            $icon_color = sanitize_hex_color((string) ($rule['icon_color'] ?? ''));
+
+            if ($source === '' || $target === '' || !in_array($source, $all_columns, true) || !in_array($target, $all_columns, true) || !in_array($operator, $allowed_operators, true) || $value === '') {
+                continue;
+            }
+
+            $normalized[] = [
+                'source_field' => $source,
+                'operator' => $operator,
+                'value' => is_numeric($value) ? (float) $value : $value,
+                'target_field' => $target,
+                'text_color' => $text_color ?: '#111827',
+                'icon_class' => $icon_class,
+                'icon_position' => $icon_position,
+                'icon_size' => $icon_size,
+                'icon_color' => $icon_color ?: '#dc2626',
+            ];
+        }
+
+        return array_slice($normalized, 0, 200);
+    }
+
     private function map_global_rules_to_frontend_value_rules($rules, $allowed_fields) {
         $operator_map = [
             '=' => 'equals',
@@ -2297,6 +2389,8 @@ private function sanitize_module_title($value, $fallback) {
         $watchlist_settings = $this->sanitize_watchlist_settings(get_option('lcni_watchlist_settings', []));
         $watchlist_styles = isset($watchlist_settings['styles']) && is_array($watchlist_settings['styles']) ? $watchlist_settings['styles'] : [];
         $cell_rules = isset($watchlist_settings['value_color_rules']) && is_array($watchlist_settings['value_color_rules']) ? $watchlist_settings['value_color_rules'] : [];
+        $cell_to_cell_rules = get_option('lcni_cell_to_cell_color_rules', []);
+        $cell_to_cell_rules = is_array($cell_to_cell_rules) ? $cell_to_cell_rules : [];
         $rule_rows = max(5, count($cell_rules));
         $filter_style = LCNI_FilterAdmin::sanitize_style(get_option('lcni_filter_style_config', get_option('lcni_filter_style', [])));
         $service = new LCNI_WatchlistService(new LCNI_WatchlistRepository());
@@ -2398,6 +2492,33 @@ private function sanitize_module_title($value, $fallback) {
                 </table>
                 <p><button type="button" class="button" id="lcni-add-global-cell-rule">+ Thêm rule</button></p>
                 <template id="lcni-global-cell-rule-template"><tr><td><select name="lcni_global_rule_field[]"><option value="">-- Field --</option><?php foreach ($all_columns as $column) : ?><option value="<?php echo esc_attr($column); ?>"><?php echo esc_html($column); ?></option><?php endforeach; ?></select></td><td><select name="lcni_global_rule_operator[]"><?php foreach (['=', '>', '<', 'contains', 'not_contains'] as $operator) : ?><option value="<?php echo esc_attr($operator); ?>"><?php echo esc_html($operator); ?></option><?php endforeach; ?></select></td><td><input type="text" name="lcni_global_rule_value[]"></td><td><input type="color" name="lcni_global_rule_bg_color[]" value="#16a34a"></td><td><input type="color" name="lcni_global_rule_text_color[]" value="<?php echo esc_attr((string) ($shared_all['text_color'] ?? "#ffffff")); ?>"></td><td><input type="text" name="lcni_global_rule_icon_class[]" placeholder="fa-solid fa-arrow-up"></td><td><select name="lcni_global_rule_icon_position[]"><option value="left">left</option><option value="right">right</option></select></td></tr></template>
+                <h3>Cell to Cell Color</h3>
+                <p class="description">Tạo rule điều kiện theo Field A để tô màu/icon cho Field B (9 cột).</p>
+                <table style="border-collapse:collapse; width:100%;">
+                    <thead>
+                        <tr>
+                            <th>Field A</th><th>Điều kiện</th><th>Giá trị so sánh</th><th>Field B</th><th>Màu text</th><th>Icon</th><th>Vị trí icon</th><th>Kích thước icon</th><th>Màu icon</th>
+                        </tr>
+                    </thead>
+                    <tbody id="lcni-cell-to-cell-rule-rows">
+                    <?php for ($i = 0; $i < max(5, count($cell_to_cell_rules)); $i++) : $rule = $cell_to_cell_rules[$i] ?? []; ?>
+                        <tr>
+                            <td><select name="lcni_cell_to_cell_source_field[]"><option value="">-- Field --</option><?php foreach ($all_columns as $column) : ?><option value="<?php echo esc_attr($column); ?>" <?php selected((string) ($rule['source_field'] ?? ''), $column); ?>><?php echo esc_html($column); ?></option><?php endforeach; ?></select></td>
+                            <td><select name="lcni_cell_to_cell_operator[]"><?php foreach (['=', '>', '<', 'contains', 'not_contains'] as $operator) : ?><option value="<?php echo esc_attr($operator); ?>" <?php selected((string) ($rule['operator'] ?? '='), $operator); ?>><?php echo esc_html($operator); ?></option><?php endforeach; ?></select></td>
+                            <td><input type="text" name="lcni_cell_to_cell_value[]" value="<?php echo esc_attr((string) ($rule['value'] ?? '')); ?>"></td>
+                            <td><select name="lcni_cell_to_cell_target_field[]"><option value="">-- Field --</option><?php foreach ($all_columns as $column) : ?><option value="<?php echo esc_attr($column); ?>" <?php selected((string) ($rule['target_field'] ?? ''), $column); ?>><?php echo esc_html($column); ?></option><?php endforeach; ?></select></td>
+                            <td><input type="color" name="lcni_cell_to_cell_text_color[]" value="<?php echo esc_attr((string) ($rule['text_color'] ?? '#111827')); ?>"></td>
+                            <td><input type="text" name="lcni_cell_to_cell_icon_class[]" value="<?php echo esc_attr((string) ($rule['icon_class'] ?? '')); ?>" placeholder="fa-solid fa-flag"></td>
+                            <td><select name="lcni_cell_to_cell_icon_position[]"><option value="left" <?php selected((string) ($rule['icon_position'] ?? 'right'), 'left'); ?>>left</option><option value="right" <?php selected((string) ($rule['icon_position'] ?? 'right'), 'right'); ?>>right</option></select></td>
+                            <td><input type="number" min="8" max="32" name="lcni_cell_to_cell_icon_size[]" value="<?php echo esc_attr((string) ($rule['icon_size'] ?? 12)); ?>"></td>
+                            <td><input type="color" name="lcni_cell_to_cell_icon_color[]" value="<?php echo esc_attr((string) ($rule['icon_color'] ?? '#dc2626')); ?>"></td>
+                        </tr>
+                    <?php endfor; ?>
+                    </tbody>
+                </table>
+                <p><button type="button" class="button" id="lcni-add-cell-to-cell-rule">+ Thêm rule</button></p>
+                <template id="lcni-cell-to-cell-rule-template"><tr><td><select name="lcni_cell_to_cell_source_field[]"><option value="">-- Field --</option><?php foreach ($all_columns as $column) : ?><option value="<?php echo esc_attr($column); ?>"><?php echo esc_html($column); ?></option><?php endforeach; ?></select></td><td><select name="lcni_cell_to_cell_operator[]"><?php foreach (['=', '>', '<', 'contains', 'not_contains'] as $operator) : ?><option value="<?php echo esc_attr($operator); ?>"><?php echo esc_html($operator); ?></option><?php endforeach; ?></select></td><td><input type="text" name="lcni_cell_to_cell_value[]"></td><td><select name="lcni_cell_to_cell_target_field[]"><option value="">-- Field --</option><?php foreach ($all_columns as $column) : ?><option value="<?php echo esc_attr($column); ?>"><?php echo esc_html($column); ?></option><?php endforeach; ?></select></td><td><input type="color" name="lcni_cell_to_cell_text_color[]" value="#111827"></td><td><input type="text" name="lcni_cell_to_cell_icon_class[]" placeholder="fa-solid fa-flag"></td><td><select name="lcni_cell_to_cell_icon_position[]"><option value="left">left</option><option value="right" selected>right</option></select></td><td><input type="number" min="8" max="32" name="lcni_cell_to_cell_icon_size[]" value="12"></td><td><input type="color" name="lcni_cell_to_cell_icon_color[]" value="#dc2626"></td></tr></template>
+
                 <?php submit_button('Save'); ?>
             </form>
             <script>
@@ -2407,6 +2528,12 @@ private function sanitize_module_title($value, $fallback) {
                     const template = document.getElementById('lcni-global-cell-rule-template');
                     if (addBtn && rows && template) {
                         addBtn.addEventListener('click', function(){ rows.insertAdjacentHTML('beforeend', template.innerHTML); });
+                    }
+                    const addCellToCellBtn = document.getElementById('lcni-add-cell-to-cell-rule');
+                    const cellToCellRows = document.getElementById('lcni-cell-to-cell-rule-rows');
+                    const cellToCellTemplate = document.getElementById('lcni-cell-to-cell-rule-template');
+                    if (addCellToCellBtn && cellToCellRows && cellToCellTemplate) {
+                        addCellToCellBtn.addEventListener('click', function(){ cellToCellRows.insertAdjacentHTML('beforeend', cellToCellTemplate.innerHTML); });
                     }
                 })();
             </script>
@@ -2492,8 +2619,16 @@ private function sanitize_module_title($value, $fallback) {
         $rule_values = isset($input['value_color_rule_values']) && is_array($input['value_color_rule_values']) ? $input['value_color_rule_values'] : [];
         $rule_bg_colors = isset($input['value_color_rule_bg_colors']) && is_array($input['value_color_rule_bg_colors']) ? $input['value_color_rule_bg_colors'] : [];
         $rule_text_colors = isset($input['value_color_rule_text_colors']) && is_array($input['value_color_rule_text_colors']) ? $input['value_color_rule_text_colors'] : [];
+        $legacy_rules = isset($input['value_color_rules']) && is_array($input['value_color_rules']) ? $input['value_color_rules'] : [];
         $column_labels = [];
         $value_color_rules = [];
+        if (empty($rule_columns) && !empty($legacy_rules)) {
+            $rule_columns = wp_list_pluck($legacy_rules, 'column');
+            $rule_operators = wp_list_pluck($legacy_rules, 'operator');
+            $rule_values = wp_list_pluck($legacy_rules, 'value');
+            $rule_bg_colors = wp_list_pluck($legacy_rules, 'bg_color');
+            $rule_text_colors = wp_list_pluck($legacy_rules, 'text_color');
+        }
         if (empty($label_keys) && empty($label_values) && isset($input['column_labels'])) {
             $legacy_label_pairs = $this->normalize_watchlist_column_label_pairs($input['column_labels']);
             $label_keys = wp_list_pluck($legacy_label_pairs, 'data_key');
@@ -2585,7 +2720,9 @@ private function sanitize_module_title($value, $fallback) {
                 'input_border_color' => sanitize_hex_color($styles['input_border_color'] ?? '#d1d5db') ?: '#d1d5db',
                 'input_border_radius' => max(0, min(24, (int) ($styles['input_border_radius'] ?? 8))),
                 'scroll_speed' => max(1, min(5, (int) ($styles['scroll_speed'] ?? 1))),
-                'column_order' => array_values(array_map('sanitize_key', is_array($styles['column_order'] ?? null) ? $styles['column_order'] : [])),
+                'column_order' => array_values(array_filter(array_map('sanitize_key', is_array($styles['column_order'] ?? null) ? $styles['column_order'] : []), static function ($column) use ($allowed_columns) {
+                    return in_array($column, $allowed_columns, true);
+                })),
             ],
             'value_color_rules' => array_slice($value_color_rules, 0, 100),
             'add_button' => [
@@ -2670,11 +2807,27 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
                     <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
                     <h3>Default Columns for User</h3>
                     <p class="description">Global default (admin) ở đây; user override được lưu riêng qua API /watchlist/settings.</p>
-                    <p><strong>Desktop (global default)</strong></p>
-                    <div class="lcni-front-grid">
-                        <?php foreach ((array) ($settings['allowed_columns'] ?? []) as $column) : ?>
-                            <label><input type="checkbox" name="lcni_frontend_watchlist_default_columns_desktop[]" value="<?php echo esc_attr($column); ?>" <?php checked(in_array($column, (array) ($settings['default_columns_desktop'] ?? []), true)); ?>> <?php echo esc_html($column); ?></label>
-                        <?php endforeach; ?>
+                    <input type="hidden" name="lcni_frontend_watchlist_column_order" value="<?php echo esc_attr(implode(',', (array) ($settings['styles']['column_order'] ?? $settings['default_columns_desktop'] ?? []))); ?>" data-watchlist-selected-order>
+                    <div style="display:grid;grid-template-columns:80% 20%;gap:12px;align-items:start;">
+                        <div>
+                            <p><strong>Desktop (global default)</strong></p>
+                            <div class="lcni-front-grid">
+                                <?php foreach ((array) ($settings['allowed_columns'] ?? []) as $column) : ?>
+                                    <label><input type="checkbox" data-watchlist-desktop-checkbox name="lcni_frontend_watchlist_default_columns_desktop[]" value="<?php echo esc_attr($column); ?>" <?php checked(in_array($column, (array) ($settings['default_columns_desktop'] ?? []), true)); ?>> <?php echo esc_html($column); ?></label>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                        <div>
+                            <p><strong>Desktop order</strong></p>
+                            <ol data-watchlist-selected-list style="margin:0;padding-left:18px;max-height:320px;overflow:auto;">
+                                <?php foreach ((array) (($settings['styles']['column_order'] ?? []) ?: ($settings['default_columns_desktop'] ?? [])) as $column) : ?>
+                                    <?php if (in_array($column, (array) ($settings['default_columns_desktop'] ?? []), true)) : ?>
+                                        <li draggable="true" data-watchlist-selected-column="<?php echo esc_attr($column); ?>" style="cursor:move;padding:4px 0;"><?php echo esc_html($column); ?></li>
+                                    <?php endif; ?>
+                                <?php endforeach; ?>
+                            </ol>
+                            <p class="description">Kéo thả để sắp xếp thứ tự cột ngoài frontend.</p>
+                        </div>
                     </div>
                     <p><strong>Mobile (global default)</strong></p>
                     <div class="lcni-front-grid">
@@ -2801,6 +2954,46 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
                             activate(btn.getAttribute('data-watchlist-sub-tab'));
                         });
                     });
+
+                    const defaultForm = document.querySelector('#lcni-watchlist-default-columns form');
+                    if (defaultForm) {
+                        const selectedList = defaultForm.querySelector('[data-watchlist-selected-list]');
+                        const hiddenOrder = defaultForm.querySelector('[data-watchlist-selected-order]');
+                        const syncOrder = () => {
+                            if (!selectedList || !hiddenOrder) return;
+                            hiddenOrder.value = Array.from(selectedList.querySelectorAll('[data-watchlist-selected-column]')).map((node) => node.getAttribute('data-watchlist-selected-column') || '').filter(Boolean).join(',');
+                        };
+                        const bindDnD = () => {
+                            if (!selectedList) return;
+                            let dragging = null;
+                            selectedList.querySelectorAll('[data-watchlist-selected-column]').forEach((item) => {
+                                item.addEventListener('dragstart', () => { dragging = item; item.style.opacity = '0.5'; });
+                                item.addEventListener('dragend', () => { item.style.opacity = ''; dragging = null; syncOrder(); });
+                                item.addEventListener('dragover', (event) => event.preventDefault());
+                                item.addEventListener('drop', (event) => {
+                                    event.preventDefault();
+                                    if (!dragging || dragging === item) return;
+                                    const rect = item.getBoundingClientRect();
+                                    const after = (event.clientY - rect.top) > rect.height / 2;
+                                    if (after) item.after(dragging); else item.before(dragging);
+                                    syncOrder();
+                                });
+                            });
+                        };
+                        const rebuildSelected = () => {
+                            if (!selectedList) return;
+                            const checked = Array.from(defaultForm.querySelectorAll('[data-watchlist-desktop-checkbox]:checked')).map((node) => node.value);
+                            const existing = Array.from(selectedList.querySelectorAll('[data-watchlist-selected-column]')).map((node) => node.getAttribute('data-watchlist-selected-column') || '');
+                            const next = existing.filter((col) => checked.includes(col));
+                            checked.forEach((col) => { if (!next.includes(col)) next.push(col); });
+                            selectedList.innerHTML = next.map((col) => `<li draggable="true" data-watchlist-selected-column="${col}" style="cursor:move;padding:4px 0;">${col}</li>`).join('');
+                            bindDnD();
+                            syncOrder();
+                        };
+                        defaultForm.querySelectorAll('[data-watchlist-desktop-checkbox]').forEach((checkbox) => checkbox.addEventListener('change', rebuildSelected));
+                        bindDnD();
+                        syncOrder();
+                    }
 
                     activate(current);
                 })();

@@ -1,3 +1,11 @@
+## 2026-02-25 22:43 (v2.0.9)
+- Frontend Filter: chỉnh hover row rõ ràng, header về normal weight, căn phải cho ô số và căn trái cho ô text.
+- Frontend Watchlist: căn phải cho ô số, căn trái cho ô text, header về normal weight.
+- Frontend Settings > Filter > Table Columns: bổ sung bố cục 80:20, cột phải hiển thị danh sách cột đã chọn và hỗ trợ kéo-thả để lưu thứ tự hiển thị ra frontend.
+- Frontend Settings > Watchlist > Default Columns: bổ sung bố cục 80:20 và kéo-thả thứ tự cột desktop để đồng bộ hiển thị frontend.
+- Fix lưu Style Config > Cell Color: giữ/persist đúng rules khi save và đồng bộ lại cho filter/watchlist.
+- Bổ sung Style Config > Cell to Cell Color: 9 cột rule, mặc định 5 dòng, có nút thêm rule và áp dụng ra frontend table (Filter/Watchlist).
+
 ## 2026-02-25 10:30
 - Release v2.0.8.
 - Gom cấu hình Style Config vào Frontend Setting theo nhóm Button/Form/Cell Color: chuẩn hóa nhóm nút trong bảng vs ngoài bảng (đồng bộ màu nền/text/hover), gom Saved filters + Watchlist dropdown/input style về Form, và gom rule màu theo value (7 cột) dùng chung cho Watchlist/Filter/Stock Overview/LCNI Signals.

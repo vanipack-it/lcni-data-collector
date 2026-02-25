@@ -266,6 +266,8 @@ class LCNI_WatchlistService {
 
         $styles = isset($settings['styles']) && is_array($settings['styles']) ? $settings['styles'] : [];
         $rules = isset($settings['value_color_rules']) && is_array($settings['value_color_rules']) ? $settings['value_color_rules'] : [];
+        $cell_to_cell_rules = get_option('lcni_cell_to_cell_color_rules', []);
+        $cell_to_cell_rules = is_array($cell_to_cell_rules) ? $cell_to_cell_rules : [];
 
         return [
             'allowed_columns' => $this->get_allowed_columns(),
@@ -310,6 +312,29 @@ class LCNI_WatchlistService {
                 }
                 return ['column' => $column, 'operator' => $operator, 'value' => $value, 'bg_color' => $bg_color, 'text_color' => $text_color, 'icon_class' => sanitize_text_field((string) ($rule['icon_class'] ?? '')), 'icon_position' => in_array(($rule['icon_position'] ?? 'left'), ['left', 'right'], true) ? $rule['icon_position'] : 'left'];
             }, $rules))),
+            'cell_to_cell_rules' => array_values(array_filter(array_map(static function ($rule) {
+                if (!is_array($rule)) {
+                    return null;
+                }
+                $source_field = sanitize_key($rule['source_field'] ?? '');
+                $target_field = sanitize_key($rule['target_field'] ?? '');
+                $operator = sanitize_text_field((string) ($rule['operator'] ?? ''));
+                $value = $rule['value'] ?? '';
+                if ($source_field === '' || $target_field === '' || !in_array($operator, ['=', '>', '<', 'contains', 'not_contains'], true) || $value === '') {
+                    return null;
+                }
+                return [
+                    'source_field' => $source_field,
+                    'target_field' => $target_field,
+                    'operator' => $operator,
+                    'value' => $value,
+                    'text_color' => sanitize_hex_color((string) ($rule['text_color'] ?? '')) ?: '#111827',
+                    'icon_class' => sanitize_text_field((string) ($rule['icon_class'] ?? '')),
+                    'icon_position' => in_array(($rule['icon_position'] ?? 'right'), ['left', 'right'], true) ? $rule['icon_position'] : 'right',
+                    'icon_size' => max(8, min(32, (int) ($rule['icon_size'] ?? 12))),
+                    'icon_color' => sanitize_hex_color((string) ($rule['icon_color'] ?? '')) ?: '#dc2626',
+                ];
+            }, $cell_to_cell_rules))),
         ];
     }
 

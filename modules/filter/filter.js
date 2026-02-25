@@ -78,6 +78,37 @@
   function saveVisibleColumns(cols) { try { sessionStorage.setItem(sessionKey, JSON.stringify(cols)); } catch (e) {} }
 
 
+
+  function isNumericValue(value) {
+    if (value === null || value === undefined || value === '') return false;
+    return Number.isFinite(Number(value));
+  }
+
+  function resolveOperatorMatch(rawValue, operator, expected) {
+    const numericRaw = Number(rawValue);
+    const numericExpected = Number(expected);
+    const bothNumeric = Number.isFinite(numericRaw) && Number.isFinite(numericExpected);
+    const left = bothNumeric ? numericRaw : String(rawValue);
+    const right = bothNumeric ? numericExpected : String(expected);
+    if (operator === '>') return left > right;
+    if (operator === '<') return left < right;
+    if (operator === '=') return left === right;
+    if (operator === 'contains') return String(rawValue).toLowerCase().includes(String(expected).toLowerCase());
+    if (operator === 'not_contains') return !String(rawValue).toLowerCase().includes(String(expected).toLowerCase());
+    return false;
+  }
+
+  function resolveCellToCellMeta(column, row) {
+    const rules = Array.isArray((cfg.settings || {}).cell_to_cell_rules) ? (cfg.settings || {}).cell_to_cell_rules : [];
+    for (let i = 0; i < rules.length; i += 1) {
+      const rule = rules[i] || {};
+      if (rule.target_field !== column) continue;
+      if (!resolveOperatorMatch(row[rule.source_field], rule.operator, rule.value)) continue;
+      return rule;
+    }
+    return null;
+  }
+
   function formatCellValue(column, value) {
     if (value === null || value === undefined || value === '') return '-';
     const numeric = Number(value);
@@ -380,7 +411,7 @@
     const hideBtn = style.enable_hide_button ? `<button type="button" class="lcni-btn lcni-btn-btn_filter_hide lcni-filter-hide-btn" data-filter-hide>${renderButtonContent('btn_filter_hide', 'Ẩn')}</button>` : '';
     const savedFilterLabel = esc(style.saved_filter_label || 'Saved filters');
 
-    host.innerHTML = `<div class="lcni-filter-toolbar"><button type="button" class="lcni-btn lcni-btn-btn_filter_open" data-filter-toggle>${renderButtonContent('btn_filter_open', 'Filter')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_setting" data-column-toggle-btn>${renderButtonContent('btn_filter_setting', '')}</button></div><div class="lcni-filter-panel ${state.panelHidden ? 'is-collapsed' : ''}" data-filter-panel><div class="lcni-filter-panel-body">${renderCriteriaPanel()}</div><div class="lcni-filter-panel-actions"><label class="lcni-saved-filter-label">${savedFilterLabel}</label><select data-saved-filter-select><option value="">${savedFilterLabel}</option>${(state.savedFilters || []).map((f) => `<option value="${Number(f.id || 0)}" ${Number(f.id || 0) === selectedId ? 'selected' : ''}>${esc(f.filter_name || '')}</option>`).join('')}</select><button type="button" class="lcni-btn lcni-btn-btn_filter_reload" data-reload-filter>${renderButtonContent('btn_filter_reload', 'Reload')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_save" data-save-current-filter>${renderButtonContent('btn_filter_save', 'Save')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_delete" data-delete-current-filter>${renderButtonContent('btn_filter_delete', 'Delete')}</button><button type="button" class="lcni-btn lcni-btn-btn_set_default_filter" data-set-default-filter>${renderButtonContent('btn_set_default_filter', 'Set Default')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_apply" data-apply-filter>${renderButtonContent('btn_filter_apply', 'Apply Filter', getApplyLabel())}</button>${hideBtn}</div></div><div class="lcni-column-pop" data-column-pop ${state.columnPanelOpen ? '' : 'hidden'}></div><div class="lcni-table-scroll"><table class="lcni-table"><thead><tr>${columns.map((c, idx) => `<th data-sort-key="${esc(c)}" class="${idx < Number(style.sticky_column_count || 1) ? 'is-sticky-col' : ''}">${esc(labels[c] || c)} <span data-sort-icon>${state.sortKey === c ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</span></th>`).join('')}</tr></thead><tbody></tbody></table></div>`;
+    host.innerHTML = `<div class="lcni-filter-toolbar"><button type="button" class="lcni-btn lcni-btn-btn_filter_open" data-filter-toggle>${renderButtonContent('btn_filter_open', 'Filter')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_setting" data-column-toggle-btn>${renderButtonContent('btn_filter_setting', '')}</button></div><div class="lcni-filter-panel ${state.panelHidden ? 'is-collapsed' : ''}" data-filter-panel><div class="lcni-filter-panel-body">${renderCriteriaPanel()}</div><div class="lcni-filter-panel-actions"><label class="lcni-saved-filter-label">${savedFilterLabel}</label><select data-saved-filter-select><option value="">${savedFilterLabel}</option>${(state.savedFilters || []).map((f) => `<option value="${Number(f.id || 0)}" ${Number(f.id || 0) === selectedId ? 'selected' : ''}>${esc(f.filter_name || '')}</option>`).join('')}</select><button type="button" class="lcni-btn lcni-btn-btn_filter_reload" data-reload-filter>${renderButtonContent('btn_filter_reload', 'Reload')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_save" data-save-current-filter>${renderButtonContent('btn_filter_save', 'Save')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_delete" data-delete-current-filter>${renderButtonContent('btn_filter_delete', 'Delete')}</button><button type="button" class="lcni-btn lcni-btn-btn_set_default_filter" data-set-default-filter>${renderButtonContent('btn_set_default_filter', 'Set Default')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_apply" data-apply-filter>${renderButtonContent('btn_filter_apply', 'Apply Filter', getApplyLabel())}</button>${hideBtn}</div></div><div class="lcni-column-pop" data-column-pop ${state.columnPanelOpen ? '' : 'hidden'}></div><div class="lcni-table-scroll"><table class="lcni-table"><thead><tr>${columns.map((c, idx) => `<th data-sort-key="${esc(c)}" class="${idx < Number(style.sticky_column_count || 1) ? 'is-sticky-col' : ''} ${isNumericValue((state.dataset[0] || {})[c]) ? 'lcni-cell-number' : 'lcni-cell-text'}">${esc(labels[c] || c)} <span data-sort-icon>${state.sortKey === c ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</span></th>`).join('')}</tr></thead><tbody></tbody></table></div>`;
 
     const selectable = settings.table_columns || columns;
     host.querySelector('[data-column-pop]').innerHTML = `${renderColumnPositionItems(selectable, labels)}<button type="button" class="lcni-btn lcni-btn-btn_save_filter" data-save-columns>${renderButtonContent('btn_save_filter', 'Save')}</button>`;
@@ -427,9 +458,15 @@
       tbody.innerHTML = sorted.map((row) => `<tr data-symbol="${esc(row.symbol || '')}">${columns.map((column, idx) => {
         const stickyClass = idx < stickyCount ? 'is-sticky-col' : '';
         if (column === 'symbol') {
-          return `<td class="${stickyClass}"><span>${esc(row[column] || '')}</span> <button type="button" class="lcni-btn lcni-btn-btn_add_filter_row" data-lcni-watchlist-add data-symbol="${esc(row.symbol || '')}" aria-label="Add to watchlist">${renderButtonContent('btn_add_filter_row', '')}</button></td>`;
+          return `<td class="${stickyClass} lcni-cell-text"><span>${esc(row[column] || '')}</span> <button type="button" class="lcni-btn lcni-btn-btn_add_filter_row" data-lcni-watchlist-add data-symbol="${esc(row.symbol || '')}" aria-label="Add to watchlist">${renderButtonContent('btn_add_filter_row', '')}</button></td>`;
         }
-        return `<td class="${stickyClass}">${esc(formatCellValue(column, row[column]))}</td>`;
+        const typeClass = isNumericValue(row[column]) ? 'lcni-cell-number' : 'lcni-cell-text';
+        const cellRule = resolveCellToCellMeta(column, row);
+        const iconHtml = cellRule && cellRule.icon_class ? `<i class="${esc(cellRule.icon_class)}" style="color:${esc(cellRule.icon_color || '#dc2626')};font-size:${Number(cellRule.icon_size || 12)}px;"></i>` : '';
+        const valueHtml = esc(formatCellValue(column, row[column]));
+        const content = cellRule && iconHtml ? (cellRule.icon_position === 'left' ? `${iconHtml} ${valueHtml}` : `${valueHtml} ${iconHtml}`) : valueHtml;
+        const styleAttr = cellRule && cellRule.text_color ? ` style="color:${esc(cellRule.text_color)};"` : '';
+        return `<td class="${stickyClass} ${typeClass}"${styleAttr}>${content}</td>`;
       }).join('')}</tr>`).join('');
     }
     state.total = Number(payload.total || state.total || 0);

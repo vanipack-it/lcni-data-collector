@@ -41,9 +41,10 @@
 .lcni-app .lcni-stock-filter .lcni-column-option span { flex:1; }
 .lcni-app .lcni-stock-filter .lcni-table-scroll { max-height:calc(100vh - 180px); overflow:auto; overscroll-behavior:contain; overscroll-behavior-x:contain; scrollbar-gutter:stable; }
 .lcni-app .lcni-stock-filter .lcni-table { width:100%; border-collapse:separate; border-spacing:0; }
-.lcni-app .lcni-stock-filter .lcni-table th { position:sticky; top:0; z-index:3; background:var(--lcni-table-header-bg,#f3f4f6); color:var(--lcni-table-header-color,#111827); font-size:var(--lcni-table-header-size,12px); border-bottom:var(--lcni-row-divider-width,1px) solid var(--lcni-row-divider-color,#e5e7eb); height:var(--lcni-table-header-height,42px); white-space:nowrap; }
+.lcni-app .lcni-stock-filter .lcni-table th { font-weight:400; position:sticky; top:0; z-index:3; background:var(--lcni-table-header-bg,#f3f4f6); color:var(--lcni-table-header-color,#111827); font-size:var(--lcni-table-header-size,12px); border-bottom:var(--lcni-row-divider-width,1px) solid var(--lcni-row-divider-color,#e5e7eb); height:var(--lcni-table-header-height,42px); white-space:nowrap; }
 .lcni-app .lcni-stock-filter .lcni-table td { background:var(--lcni-table-value-bg,#fff); color:var(--lcni-table-value-color,#111827); font-size:var(--lcni-table-value-size,13px); border-bottom:var(--lcni-row-divider-width,1px) solid var(--lcni-row-divider-color,#e5e7eb); white-space:nowrap; word-break:keep-all; }
 .lcni-app .lcni-stock-filter .lcni-table tr:hover td { background:var(--lcni-row-hover-bg,#eef2ff); }
+.lcni-app .lcni-stock-filter .lcni-table tbody tr { cursor:pointer; }
 .lcni-app .lcni-stock-filter .lcni-table .is-sticky-col { position:sticky; left:0; z-index:2; }
 .lcni-app .lcni-stock-filter .lcni-table th.is-sticky-col { z-index:4; }
 
@@ -64,3 +65,6 @@
   .lcni-app .lcni-stock-filter .lcni-table-scroll{max-height:calc(100vh - 140px);}
   .lcni-btn-btn_apply_filter span,.lcni-btn-btn_save_filter span,.lcni-btn-btn_filter_reload span,.lcni-btn-btn_filter_delete span,.lcni-btn-btn_filter_save span,.lcni-btn-btn_filter_apply span{display:none;}
 }
+
+.lcni-app .lcni-stock-filter .lcni-table .lcni-cell-number { text-align:right; }
+.lcni-app .lcni-stock-filter .lcni-table .lcni-cell-text { text-align:left; }
