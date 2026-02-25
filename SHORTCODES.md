@@ -77,3 +77,27 @@ Ví dụ:
 ```
 
 > Ghi chú tương thích ngược: shortcode cũ `[lcni_watchlist_add]` vẫn hoạt động, alias về cùng logic với `[lcni_watchlist_add_button]`.
+
+
+## 5) Bộ lọc cổ phiếu (Filter module)
+
+### `[lcni_stock_filter]`
+Render bảng filter cổ phiếu của module filter.
+
+- Dữ liệu lấy qua REST endpoint `lcni/v1/filter/list`.
+- Tự động bật tính năng lưu filter/watchlist khi user đăng nhập.
+- Nút mở trang chi tiết cổ phiếu dùng slug đã cấu hình trong option `lcni_watchlist_stock_page`.
+
+Ví dụ:
+```text
+[lcni_stock_filter]
+```
+
+### `[lcni_filter]` (alias)
+Alias của `[lcni_stock_filter]`, dùng khi muốn shortcode ngắn gọn hơn.
+
+Ví dụ:
+```text
+[lcni_filter]
+```
+

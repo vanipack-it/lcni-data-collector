@@ -18,6 +18,7 @@ class LCNI_FilterShortcode {
 
     public function register_shortcodes() {
         add_shortcode('lcni_stock_filter', [$this, 'render']);
+        add_shortcode('lcni_filter', [$this, 'render']);
     }
 
     public function register_assets() {
@@ -140,7 +141,9 @@ class LCNI_FilterShortcode {
             return false;
         }
 
-        return has_shortcode((string) $post->post_content, 'lcni_stock_filter');
+        $content = (string) $post->post_content;
+
+        return has_shortcode($content, 'lcni_stock_filter') || has_shortcode($content, 'lcni_filter');
     }
 
     private function is_stock_detail_context() {
