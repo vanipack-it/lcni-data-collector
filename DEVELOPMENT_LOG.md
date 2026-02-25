@@ -1,3 +1,9 @@
+## 2026-02-25 10:30
+- Release v2.0.8.
+- Gom cấu hình Style Config vào Frontend Setting theo nhóm Button/Form/Cell Color: chuẩn hóa nhóm nút trong bảng vs ngoài bảng (đồng bộ màu nền/text/hover), gom Saved filters + Watchlist dropdown/input style về Form, và gom rule màu theo value (7 cột) dùng chung cho Watchlist/Filter/Stock Overview/LCNI Signals.
+- Bổ sung cấu hình rule màu toàn cục hỗ trợ 5 dòng mặc định + nút thêm dòng, điều kiện `=`, `>`, `<`, `contains`, `not_contains`, icon fontawesome và vị trí icon trái/phải.
+- Cập nhật responsive Watchlist mobile: giữ hiển thị cả text + icon cho button, và ép Watchlist dropdown + Symbol input hiển thị 1 dòng tỷ lệ 50%:50%.
+
 ## 2.0.4
 - Refactor chart runtime qua abstraction `LCNIChartEngine` và thêm engine ECharts có fallback Lightweight qua `window.lcniChartEngineType`.
 - Mở rộng cấu hình style cho filter/watchlist popup-input, thêm lưu `lcni_filter_style_config`.

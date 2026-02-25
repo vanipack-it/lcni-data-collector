@@ -305,10 +305,10 @@ class LCNI_WatchlistService {
                 $value = $rule['value'] ?? '';
                 $bg_color = sanitize_hex_color((string) ($rule['bg_color'] ?? ''));
                 $text_color = sanitize_hex_color((string) ($rule['text_color'] ?? ''));
-                if ($column === '' || !in_array($operator, ['>', '>=', '<', '<=', '=', '!='], true) || !$bg_color || !$text_color || $value === '') {
+                if ($column === '' || !in_array($operator, ['>', '>=', '<', '<=', '=', '!=', 'contains', 'not_contains'], true) || !$bg_color || !$text_color || $value === '') {
                     return null;
                 }
-                return ['column' => $column, 'operator' => $operator, 'value' => $value, 'bg_color' => $bg_color, 'text_color' => $text_color];
+                return ['column' => $column, 'operator' => $operator, 'value' => $value, 'bg_color' => $bg_color, 'text_color' => $text_color, 'icon_class' => sanitize_text_field((string) ($rule['icon_class'] ?? '')), 'icon_position' => in_array(($rule['icon_position'] ?? 'left'), ['left', 'right'], true) ? $rule['icon_position'] : 'left'];
             }, $rules))),
         ];
     }
