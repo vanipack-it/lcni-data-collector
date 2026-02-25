@@ -236,6 +236,7 @@
         host.querySelectorAll(`[data-text-check="${item.column}"]`).forEach((i) => { i.checked = selected.includes(String(i.value)); });
       }
     });
+    syncAllNumberRanges(host, 'input');
     updateCriteriaSelectionState(host);
   }
 
@@ -259,6 +260,7 @@
         host.querySelectorAll(`[data-text-check="${item.column}"]`).forEach((i) => { i.checked = selected.includes(String(i.value)); });
       }
     });
+    syncAllNumberRanges(host, 'input');
     updateCriteriaSelectionState(host);
   }
 
@@ -269,9 +271,67 @@
 
   function criteriaControlHtml(item) {
     if (item.type === 'number') {
-      return `<div class="lcni-filter-range-wrap"><input type="number" data-range-min="${esc(item.column)}" value="" placeholder="Min"><input type="number" data-range-max="${esc(item.column)}" value="" placeholder="Max"></div>`;
+      const min = Number(item.min || 0);
+      const max = Number(item.max || 0);
+      const safeMin = Number.isFinite(min) ? min : 0;
+      const safeMax = Number.isFinite(max) && max >= safeMin ? max : safeMin;
+      return `<div class="lcni-filter-range-wrap lcni-filter-range-dual" data-range-wrap="${esc(item.column)}" data-range-bound-min="${esc(safeMin)}" data-range-bound-max="${esc(safeMax)}"><div class="lcni-filter-range-track"><div class="lcni-filter-range-fill" data-range-fill="${esc(item.column)}"></div><input type="range" data-range-slider-min="${esc(item.column)}" min="${esc(safeMin)}" max="${esc(safeMax)}" step="any" value="${esc(safeMin)}"><input type="range" data-range-slider-max="${esc(item.column)}" min="${esc(safeMin)}" max="${esc(safeMax)}" step="any" value="${esc(safeMax)}"></div><div class="lcni-filter-range-values"><span data-range-min-label="${esc(item.column)}">${esc(safeMin)}</span><span data-range-max-label="${esc(item.column)}">${esc(safeMax)}</span></div><input type="hidden" data-range-min="${esc(item.column)}" value=""><input type="hidden" data-range-max="${esc(item.column)}" value=""></div>`;
     }
     return `<div class="lcni-filter-check-list">${(item.values || []).map((v) => `<label><input type="checkbox" data-text-check="${esc(item.column)}" value="${esc(v)}"> ${esc(v)}</label>`).join('')}</div>`;
+  }
+
+  function syncNumberRange(host, column, source) {
+    const wrap = host.querySelector(`[data-range-wrap="${column}"]`);
+    if (!wrap) return;
+    const minBound = Number(wrap.getAttribute('data-range-bound-min') || 0);
+    const maxBound = Number(wrap.getAttribute('data-range-bound-max') || minBound);
+    const sliderMin = host.querySelector(`[data-range-slider-min="${column}"]`);
+    const sliderMax = host.querySelector(`[data-range-slider-max="${column}"]`);
+    const inputMin = host.querySelector(`[data-range-min="${column}"]`);
+    const inputMax = host.querySelector(`[data-range-max="${column}"]`);
+    const labelMin = host.querySelector(`[data-range-min-label="${column}"]`);
+    const labelMax = host.querySelector(`[data-range-max-label="${column}"]`);
+    const fill = host.querySelector(`[data-range-fill="${column}"]`);
+    if (!sliderMin || !sliderMax || !inputMin || !inputMax) return;
+
+    let valueMin = Number(sliderMin.value || minBound);
+    let valueMax = Number(sliderMax.value || maxBound);
+
+    if (source === 'input') {
+      const nextMin = Number(inputMin.value);
+      const nextMax = Number(inputMax.value);
+      valueMin = Number.isFinite(nextMin) ? nextMin : minBound;
+      valueMax = Number.isFinite(nextMax) ? nextMax : maxBound;
+    }
+
+    valueMin = Math.max(minBound, Math.min(valueMin, maxBound));
+    valueMax = Math.max(minBound, Math.min(valueMax, maxBound));
+    if (valueMin > valueMax) {
+      if (source === 'max') valueMin = valueMax;
+      else valueMax = valueMin;
+    }
+
+    sliderMin.value = String(valueMin);
+    sliderMax.value = String(valueMax);
+
+    inputMin.value = valueMin <= minBound ? '' : String(valueMin);
+    inputMax.value = valueMax >= maxBound ? '' : String(valueMax);
+
+    if (labelMin) labelMin.textContent = String(valueMin);
+    if (labelMax) labelMax.textContent = String(valueMax);
+
+    if (fill && maxBound > minBound) {
+      const left = ((valueMin - minBound) / (maxBound - minBound)) * 100;
+      const right = ((valueMax - minBound) / (maxBound - minBound)) * 100;
+      fill.style.left = `${left}%`;
+      fill.style.width = `${Math.max(0, right - left)}%`;
+    }
+  }
+
+  function syncAllNumberRanges(host, source) {
+    state.criteria.filter((item) => item.type === 'number').forEach((item) => {
+      syncNumberRange(host, item.column, source);
+    });
   }
 
   function renderCriteriaPanel() {
@@ -486,6 +546,14 @@
       }
     });
 
+    host.addEventListener('input', (event) => {
+      if (event.target.matches('[data-range-slider-min],[data-range-slider-max]')) {
+        const key = event.target.getAttribute('data-range-slider-min') || event.target.getAttribute('data-range-slider-max') || '';
+        syncNumberRange(host, key, event.target.hasAttribute('data-range-slider-max') ? 'max' : 'min');
+        updateCriteriaSelectionState(host);
+      }
+    });
+
     host.addEventListener('change', async (event) => {
       const select = event.target.closest('[data-saved-filter-select]');
       if (select) {
@@ -501,6 +569,11 @@
       }
       if (event.target.matches('[data-visible-col]')) state.columnPanelOpen = true;
       if (event.target.matches('input[type="checkbox"]')) updateCriteriaSelectionState(host);
+      if (event.target.matches('[data-range-slider-min],[data-range-slider-max]')) {
+        const key = event.target.getAttribute('data-range-slider-min') || event.target.getAttribute('data-range-slider-max') || '';
+        syncNumberRange(host, key, event.target.hasAttribute('data-range-slider-max') ? 'max' : 'min');
+        updateCriteriaSelectionState(host);
+      }
     });
   }
 
@@ -528,6 +601,7 @@
       await loadSavedFilters();
       renderStatic(host);
       bind(host);
+      syncAllNumberRanges(host, 'input');
       updateCriteriaSelectionState(host);
       state.filters = collectFilters(host);
       if (!state.filters.length && Array.isArray((cfg.settings || {}).default_saved_filters)) state.filters = (cfg.settings || {}).default_saved_filters;
