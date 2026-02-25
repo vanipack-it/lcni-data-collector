@@ -198,6 +198,8 @@ class LCNI_Settings {
                     'table_key' => (string) $draft['table_key'],
                     'mapping' => $mapping,
                     'options' => $import_options,
+                    'offset_rows' => 0,
+                    'updated_total' => 0,
                 ]]);
 
                 $this->set_notice('success', 'Đã chuyển import CSV sang chạy nền. Vui lòng theo dõi tiến trình bên dưới.');
@@ -623,13 +625,25 @@ class LCNI_Settings {
         $status['updated_at'] = current_time('mysql');
         set_transient($status_key, $status, HOUR_IN_SECONDS);
 
+        $chunk_size = max(200, (int) apply_filters('lcni_csv_import_chunk_size', 1500));
+        $offset_rows = max(0, (int) ($payload['offset_rows'] ?? 0));
+        $updated_total = max(0, (int) ($payload['updated_total'] ?? 0));
+
         $options = isset($payload['options']) && is_array($payload['options']) ? $payload['options'] : [];
+        $options['offset_rows'] = $offset_rows;
+        $options['max_rows'] = $chunk_size;
         $options['progress_callback'] = function($processed, $updated) use ($status_key, &$status) {
-            $status['processed'] = (int) $processed;
-            $status['updated'] = (int) $updated;
+            $base_processed = isset($status['processed_base']) ? (int) $status['processed_base'] : 0;
+            $base_updated = isset($status['updated_base']) ? (int) $status['updated_base'] : 0;
+            $status['processed'] = $base_processed + (int) $processed;
+            $status['updated'] = $base_updated + (int) $updated;
             $status['updated_at'] = current_time('mysql');
             set_transient($status_key, $status, HOUR_IN_SECONDS);
         };
+
+        $status['processed_base'] = $offset_rows;
+        $status['updated_base'] = $updated_total;
+        set_transient($status_key, $status, HOUR_IN_SECONDS);
 
         $import_summary = LCNI_DB::import_csv_with_mapping(
             (string) $payload['file_path'],
@@ -642,13 +656,46 @@ class LCNI_Settings {
             $status['state'] = 'error';
             $status['message'] = 'Import CSV thất bại: ' . $import_summary->get_error_message();
         } else {
+            $processed_chunk = max(0, (int) ($import_summary['processed'] ?? 0));
+            $updated_chunk = max(0, (int) ($import_summary['updated'] ?? 0));
+            $has_more = !empty($import_summary['has_more']);
+            $status['table'] = (string) ($import_summary['table'] ?? ($status['table'] ?? 'N/A'));
+            $status['processed'] = $offset_rows + $processed_chunk;
+            $status['updated'] = $updated_total + $updated_chunk;
+            $status['total'] = max((int) ($status['total'] ?? 0), (int) $status['processed']);
+
+            if ($has_more && $processed_chunk > 0) {
+                $status['state'] = 'running';
+                $status['message'] = sprintf(
+                    'Đang import %s theo lô %d dòng... (%d/%d, updated %d).',
+                    $status['table'],
+                    $chunk_size,
+                    (int) $status['processed'],
+                    (int) ($status['total'] ?? 0),
+                    (int) $status['updated']
+                );
+
+                set_transient($status_key, $status, HOUR_IN_SECONDS);
+
+                wp_schedule_single_event(time() + 1, 'lcni_csv_import_process', [$user_id, [
+                    'job_id' => $job_id,
+                    'file_path' => (string) $payload['file_path'],
+                    'table_key' => (string) $payload['table_key'],
+                    'mapping' => isset($payload['mapping']) && is_array($payload['mapping']) ? $payload['mapping'] : [],
+                    'options' => isset($payload['options']) && is_array($payload['options']) ? $payload['options'] : [],
+                    'offset_rows' => $offset_rows + $processed_chunk,
+                    'updated_total' => $updated_total + $updated_chunk,
+                ]]);
+
+                return;
+            }
+
             $status['state'] = 'done';
             $status['table'] = (string) ($import_summary['table'] ?? ($status['table'] ?? 'N/A'));
-            $status['updated'] = (int) ($import_summary['updated'] ?? 0);
-            $status['processed'] = (int) ($import_summary['total'] ?? ($status['processed'] ?? 0));
-            $status['total'] = max((int) ($status['total'] ?? 0), (int) ($import_summary['total'] ?? 0));
-            $status['message'] = sprintf('Đã import CSV vào %s: updated %d / total %d.', $status['table'], $status['updated'], (int) ($import_summary['total'] ?? 0));
+            $status['message'] = sprintf('Đã import CSV vào %s: updated %d / total %d.', $status['table'], (int) $status['updated'], (int) $status['processed']);
         }
+
+        unset($status['processed_base'], $status['updated_base']);
 
         $status['updated_at'] = current_time('mysql');
         set_transient($status_key, $status, HOUR_IN_SECONDS);
@@ -1063,7 +1110,7 @@ class LCNI_Settings {
                 <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_redirect_tab" value="general"><input type="hidden" name="lcni_admin_action" value="test_api_multi_symbol"><?php submit_button('Test nhiều symbol', 'secondary', 'submit', false); ?></form>
             <?php elseif ($active_tab === 'seed_dashboard') : ?>
                 <h2>Seed Manager</h2>
-                <form method="post" enctype="multipart/form-data" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="margin-bottom:12px;padding:10px;background:#fff;border:1px solid #dcdcde;border-radius:6px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                <form method="post" enctype="multipart/form-data" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=seed_dashboard')); ?>" style="margin-bottom:12px;padding:10px;background:#fff;border:1px solid #dcdcde;border-radius:6px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
                     <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
                     <input type="hidden" name="lcni_redirect_tab" value="seed_dashboard">
                     <input type="hidden" name="lcni_admin_action" value="prepare_csv_import">
@@ -1080,7 +1127,7 @@ class LCNI_Settings {
 
                 <?php if (!empty($csv_import_draft) && is_array($csv_import_draft) && !empty($csv_import_draft['headers']) && !empty($csv_import_draft['table_key']) && isset($csv_import_targets[$csv_import_draft['table_key']])) : ?>
                     <?php $target_meta = $csv_import_targets[$csv_import_draft['table_key']]; ?>
-                    <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="margin-bottom:12px;padding:10px;background:#fff;border:1px solid #dcdcde;border-radius:6px;">
+                    <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=seed_dashboard')); ?>" style="margin-bottom:12px;padding:10px;background:#fff;border:1px solid #dcdcde;border-radius:6px;">
                         <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
                         <input type="hidden" name="lcni_redirect_tab" value="seed_dashboard">
                         <input type="hidden" name="lcni_admin_action" value="run_csv_import">
