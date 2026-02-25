@@ -2315,6 +2315,9 @@ private function sanitize_module_title($value, $fallback) {
         $settings = LCNI_Button_Style_Config::get_config();
         $button_keys = LCNI_Button_Style_Config::get_button_keys();
         $table_keys = LCNI_Button_Style_Config::get_table_button_keys();
+        $shared_all = isset($settings['__shared_all']) && is_array($settings['__shared_all']) ? $settings['__shared_all'] : [];
+        $shared_table = isset($settings['__shared_table']) && is_array($settings['__shared_table']) ? $settings['__shared_table'] : [];
+        $shared_outside = isset($settings['__shared_outside']) && is_array($settings['__shared_outside']) ? $settings['__shared_outside'] : [];
         $watchlist_settings = $this->sanitize_watchlist_settings(get_option('lcni_watchlist_settings', []));
         $watchlist_styles = isset($watchlist_settings['styles']) && is_array($watchlist_settings['styles']) ? $watchlist_settings['styles'] : [];
         $cell_rules = isset($watchlist_settings['value_color_rules']) && is_array($watchlist_settings['value_color_rules']) ? $watchlist_settings['value_color_rules'] : [];
@@ -2334,23 +2337,23 @@ private function sanitize_module_title($value, $fallback) {
                 <p>Toàn bộ nút dùng chung màu nền, màu chữ và hover. Nút trong bảng dùng chung chiều cao/cỡ chữ riêng.</p>
                 <fieldset style="border:1px solid #dcdcde;padding:12px;margin:0 0 12px;">
                     <legend><strong>Shared color (all buttons)</strong></legend>
-                    <p><label>background_color <input type="color" name="lcni_button_style_config[__shared_all][background_color]" value="#2563eb"></label></p>
-                    <p><label>text_color <input type="color" name="lcni_button_style_config[__shared_all][text_color]" value="#ffffff"></label></p>
-                    <p><label>hover_background_color <input type="color" name="lcni_button_style_config[__shared_all][hover_background_color]" value="#1d4ed8"></label></p>
-                    <p><label>hover_text_color <input type="color" name="lcni_button_style_config[__shared_all][hover_text_color]" value="#ffffff"></label></p>
+                    <p><label>background_color <input type="color" name="lcni_button_style_config[__shared_all][background_color]" value="<?php echo esc_attr((string) ($shared_all['background_color'] ?? "#2563eb")); ?>"></label></p>
+                    <p><label>text_color <input type="color" name="lcni_button_style_config[__shared_all][text_color]" value="<?php echo esc_attr((string) ($shared_all['text_color'] ?? "#ffffff")); ?>"></label></p>
+                    <p><label>hover_background_color <input type="color" name="lcni_button_style_config[__shared_all][hover_background_color]" value="<?php echo esc_attr((string) ($shared_all['hover_background_color'] ?? "#1d4ed8")); ?>"></label></p>
+                    <p><label>hover_text_color <input type="color" name="lcni_button_style_config[__shared_all][hover_text_color]" value="<?php echo esc_attr((string) ($shared_all['hover_text_color'] ?? "#ffffff")); ?>"></label></p>
                 </fieldset>
                 <fieldset style="border:1px solid #dcdcde;padding:12px;margin:0 0 12px;">
                     <legend><strong>Trong bảng</strong></legend>
-                    <p><label>height <input type="text" name="lcni_button_style_config[__shared_table][height]" value="36px"></label></p>
-                    <p><label>font_size <input type="text" name="lcni_button_style_config[__shared_table][font_size]" value="14px"></label></p>
-                    <p><label>padding_left_right <input type="text" name="lcni_button_style_config[__shared_table][padding_left_right]" value="12px"></label></p>
-                    <p class="description">Áp dụng cho: btn_watchlist_remove_symbol, btn_watchlist_remove_symbol_row</p>
+                    <p><label>height <input type="text" name="lcni_button_style_config[__shared_table][height]" value="<?php echo esc_attr((string) ($shared_table['height'] ?? "36px")); ?>"></label></p>
+                    <p><label>font_size <input type="text" name="lcni_button_style_config[__shared_table][font_size]" value="<?php echo esc_attr((string) ($shared_table['font_size'] ?? "14px")); ?>"></label></p>
+                    <p><label>padding_left_right <input type="text" name="lcni_button_style_config[__shared_table][padding_left_right]" value="<?php echo esc_attr((string) ($shared_table['padding_left_right'] ?? "12px")); ?>"></label></p>
+                    <p class="description">Áp dụng cho: btn_add_filter_row, btn_watchlist_remove_symbol, btn_watchlist_remove_symbol_row</p>
                 </fieldset>
                 <fieldset style="border:1px solid #dcdcde;padding:12px;margin:0 0 12px;">
                     <legend><strong>Ngoài bảng</strong></legend>
-                    <p><label>height <input type="text" name="lcni_button_style_config[__shared_outside][height]" value="36px"></label></p>
-                    <p><label>font_size <input type="text" name="lcni_button_style_config[__shared_outside][font_size]" value="14px"></label></p>
-                    <p><label>padding_left_right <input type="text" name="lcni_button_style_config[__shared_outside][padding_left_right]" value="12px"></label></p>
+                    <p><label>height <input type="text" name="lcni_button_style_config[__shared_outside][height]" value="<?php echo esc_attr((string) ($shared_outside['height'] ?? "36px")); ?>"></label></p>
+                    <p><label>font_size <input type="text" name="lcni_button_style_config[__shared_outside][font_size]" value="<?php echo esc_attr((string) ($shared_outside['font_size'] ?? "14px")); ?>"></label></p>
+                    <p><label>padding_left_right <input type="text" name="lcni_button_style_config[__shared_outside][padding_left_right]" value="<?php echo esc_attr((string) ($shared_outside['padding_left_right'] ?? "12px")); ?>"></label></p>
                 </fieldset>
 
                 <?php foreach ($button_keys as $button_key => $button_label) : $button = $settings[$button_key] ?? []; ?>
@@ -2416,7 +2419,7 @@ private function sanitize_module_title($value, $fallback) {
                     </tbody>
                 </table>
                 <p><button type="button" class="button" id="lcni-add-global-cell-rule">+ Thêm rule</button></p>
-                <template id="lcni-global-cell-rule-template"><tr><td><select name="lcni_global_rule_field[]"><option value="">-- Field --</option><?php foreach ($all_columns as $column) : ?><option value="<?php echo esc_attr($column); ?>"><?php echo esc_html($column); ?></option><?php endforeach; ?></select></td><td><select name="lcni_global_rule_operator[]"><?php foreach (['=', '>', '<', 'contains', 'not_contains'] as $operator) : ?><option value="<?php echo esc_attr($operator); ?>"><?php echo esc_html($operator); ?></option><?php endforeach; ?></select></td><td><input type="text" name="lcni_global_rule_value[]"></td><td><input type="color" name="lcni_global_rule_bg_color[]" value="#16a34a"></td><td><input type="color" name="lcni_global_rule_text_color[]" value="#ffffff"></td><td><input type="text" name="lcni_global_rule_icon_class[]" placeholder="fa-solid fa-arrow-up"></td><td><select name="lcni_global_rule_icon_position[]"><option value="left">left</option><option value="right">right</option></select></td></tr></template>
+                <template id="lcni-global-cell-rule-template"><tr><td><select name="lcni_global_rule_field[]"><option value="">-- Field --</option><?php foreach ($all_columns as $column) : ?><option value="<?php echo esc_attr($column); ?>"><?php echo esc_html($column); ?></option><?php endforeach; ?></select></td><td><select name="lcni_global_rule_operator[]"><?php foreach (['=', '>', '<', 'contains', 'not_contains'] as $operator) : ?><option value="<?php echo esc_attr($operator); ?>"><?php echo esc_html($operator); ?></option><?php endforeach; ?></select></td><td><input type="text" name="lcni_global_rule_value[]"></td><td><input type="color" name="lcni_global_rule_bg_color[]" value="#16a34a"></td><td><input type="color" name="lcni_global_rule_text_color[]" value="<?php echo esc_attr((string) ($shared_all['text_color'] ?? "#ffffff")); ?>"></td><td><input type="text" name="lcni_global_rule_icon_class[]" placeholder="fa-solid fa-arrow-up"></td><td><select name="lcni_global_rule_icon_position[]"><option value="left">left</option><option value="right">right</option></select></td></tr></template>
                 <?php submit_button('Save'); ?>
             </form>
             <script>
