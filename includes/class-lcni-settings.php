@@ -483,14 +483,6 @@ class LCNI_Settings {
                     update_option('lcni_filter_style', $filter_style);
                     update_option('lcni_filter_style_config', $filter_style);
 
-                    foreach (['signals', 'overview'] as $frontend_module) {
-                        $frontend_option = 'lcni_frontend_settings_' . $frontend_module;
-                        $frontend_settings = $this->sanitize_frontend_module_settings(get_option($frontend_option, []));
-                        $frontend_styles = isset($frontend_settings['styles']) && is_array($frontend_settings['styles']) ? $frontend_settings['styles'] : [];
-                        $frontend_styles['value_rules'] = $this->map_global_rules_to_frontend_value_rules($global_rules, $frontend_settings['allowed_fields'] ?? []);
-                        $frontend_settings['styles'] = $frontend_styles;
-                        update_option($frontend_option, $this->sanitize_frontend_module_settings($frontend_settings));
-                    }
                 } elseif ($module === 'data_format') {
                     $input = isset($_POST[LCNI_Data_Format_Settings::OPTION_KEY]) ? (array) wp_unslash($_POST[LCNI_Data_Format_Settings::OPTION_KEY]) : [];
                     update_option(LCNI_Data_Format_Settings::OPTION_KEY, LCNI_Data_Format_Settings::sanitize_settings($input));
@@ -509,22 +501,6 @@ class LCNI_Settings {
                     }
                     update_option('lcni_column_labels', $pairs);
                 } else {
-                    $rule_fields = isset($_POST['lcni_frontend_rule_field']) ? (array) wp_unslash($_POST['lcni_frontend_rule_field']) : [];
-                    $rule_operators = isset($_POST['lcni_frontend_rule_operator']) ? (array) wp_unslash($_POST['lcni_frontend_rule_operator']) : [];
-                    $rule_values = isset($_POST['lcni_frontend_rule_value']) ? (array) wp_unslash($_POST['lcni_frontend_rule_value']) : [];
-                    $rule_colors = isset($_POST['lcni_frontend_rule_color']) ? (array) wp_unslash($_POST['lcni_frontend_rule_color']) : [];
-                    $value_rules = [];
-
-                    $rule_count = max(count($rule_fields), count($rule_operators), count($rule_values), count($rule_colors));
-                    for ($i = 0; $i < $rule_count; $i++) {
-                        $value_rules[] = [
-                            'field' => $rule_fields[$i] ?? '',
-                            'operator' => $rule_operators[$i] ?? '',
-                            'value' => $rule_values[$i] ?? '',
-                            'color' => $rule_colors[$i] ?? '',
-                        ];
-                    }
-
                     $input = [
                         'allowed_fields' => isset($_POST['lcni_frontend_allowed_fields']) ? (array) wp_unslash($_POST['lcni_frontend_allowed_fields']) : [],
                         'styles' => [
@@ -536,7 +512,7 @@ class LCNI_Settings {
                             'item_height' => isset($_POST['lcni_frontend_style_item_height']) ? wp_unslash($_POST['lcni_frontend_style_item_height']) : '',
                             'label_font_size' => isset($_POST['lcni_frontend_style_label_font_size']) ? wp_unslash($_POST['lcni_frontend_style_label_font_size']) : '',
                             'value_font_size' => isset($_POST['lcni_frontend_style_value_font_size']) ? wp_unslash($_POST['lcni_frontend_style_value_font_size']) : '',
-                            'value_rules' => $value_rules,
+                            'value_rules' => [],
                         ],
                     ];
 
@@ -554,7 +530,7 @@ class LCNI_Settings {
         $redirect_page = in_array($redirect_page, ['lcni-settings', 'lcni-data-viewer'], true) ? $redirect_page : 'lcni-settings';
         $redirect_url = admin_url('admin.php?page=' . $redirect_page);
 
-        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange', 'lcni-tab-update-runtime', 'lcni-tab-update-ohlc-latest', 'lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format'], true)) {
+        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange', 'lcni-tab-update-runtime', 'lcni-tab-update-ohlc-latest', 'lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format'], true)) {
             $redirect_url = add_query_arg('tab', $redirect_tab, $redirect_url);
         }
 
@@ -2639,7 +2615,6 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
             $configured_labels[$label_item['data_key']] = $label_item['label'];
         }
 
-        $watchlist_rules = isset($settings['value_color_rules']) && is_array($settings['value_color_rules']) ? $settings['value_color_rules'] : [];
         ?>
         <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
             <div class="lcni-sub-tab-nav" id="lcni-watchlist-sub-tabs">
@@ -2782,64 +2757,6 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
                     <p><label>Border radius <input type="number" min="0" max="24" name="lcni_frontend_watchlist_style_input_border_radius" value="<?php echo esc_attr((string) ($settings['styles']['input_border_radius'] ?? 8)); ?>"> px</label></p>
                     <p><label>Table horizontal scroll speed <input type="number" min="1" max="5" name="lcni_frontend_watchlist_style_scroll_speed" value="<?php echo esc_attr((string) ($settings['styles']['scroll_speed'] ?? 1)); ?>"></label></p>
 
-                    <h3>Conditional value colors</h3>
-                    <p class="description">Mặc định hiển thị 5 rule. Nếu cần thêm, bấm nút "Thêm rule".</p>
-                    <table class="form-table" role="presentation"><tbody id="lcni-watchlist-rule-rows">
-                        <?php for ($i = 0; $i < max(5, count($watchlist_rules)); $i++) :
-                            $rule = $watchlist_rules[$i] ?? [];
-                            $rule_column = (string) ($rule['column'] ?? '');
-                            $rule_operator = (string) ($rule['operator'] ?? '>');
-                            $rule_value = (string) ($rule['value'] ?? '');
-                            $rule_bg = (string) ($rule['bg_color'] ?? '#16a34a');
-                            $rule_text = (string) ($rule['text_color'] ?? '#ffffff');
-                            ?>
-                            <tr>
-                                <td>
-                                    <select name="lcni_watchlist_value_color_rule_column[]">
-                                        <option value="">-- Column --</option>
-                                        <?php foreach ($all_columns as $column) : ?>
-                                            <option value="<?php echo esc_attr($column); ?>" <?php selected($rule_column, $column); ?>><?php echo esc_html($column); ?></option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </td>
-                                <td>
-                                    <select name="lcni_watchlist_value_color_rule_operator[]">
-                                        <?php foreach (['>', '>=', '<', '<=', '=', '!='] as $operator) : ?>
-                                            <option value="<?php echo esc_attr($operator); ?>" <?php selected($rule_operator, $operator); ?>><?php echo esc_html($operator); ?></option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </td>
-                                <td><input type="text" name="lcni_watchlist_value_color_rule_value[]" value="<?php echo esc_attr($rule_value); ?>" placeholder="70"></td>
-                                <td><input type="color" name="lcni_watchlist_value_color_rule_bg_color[]" value="<?php echo esc_attr($rule_bg); ?>"></td>
-                                <td><input type="color" name="lcni_watchlist_value_color_rule_text_color[]" value="<?php echo esc_attr($rule_text); ?>"></td>
-                            </tr>
-                        <?php endfor; ?>
-                    </tbody></table>
-                    <p><button type="button" class="button" id="lcni-add-watchlist-rule">Thêm rule</button></p>
-
-                    <template id="lcni-watchlist-rule-template">
-                        <tr>
-                            <td>
-                                <select name="lcni_watchlist_value_color_rule_column[]">
-                                    <option value="">-- Column --</option>
-                                    <?php foreach ($all_columns as $column) : ?>
-                                        <option value="<?php echo esc_attr($column); ?>"><?php echo esc_html($column); ?></option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </td>
-                            <td>
-                                <select name="lcni_watchlist_value_color_rule_operator[]">
-                                    <?php foreach (['>', '>=', '<', '<=', '=', '!='] as $operator) : ?>
-                                        <option value="<?php echo esc_attr($operator); ?>"><?php echo esc_html($operator); ?></option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </td>
-                            <td><input type="text" name="lcni_watchlist_value_color_rule_value[]" value="" placeholder="70"></td>
-                            <td><input type="color" name="lcni_watchlist_value_color_rule_bg_color[]" value="#16a34a"></td>
-                            <td><input type="color" name="lcni_watchlist_value_color_rule_text_color[]" value="#ffffff"></td>
-                        </tr>
-                    </template>
-
                     <h3>Add to watchlist button style</h3>
                     <p><label>FontAwesome icon <input type="text" name="lcni_frontend_watchlist_btn_icon" value="<?php echo esc_attr((string) ($settings['add_button']['icon'] ?? 'fa-solid fa-heart-circle-plus')); ?>"></label></p>
                     <p><label>Background <input type="color" name="lcni_frontend_watchlist_btn_background" value="<?php echo esc_attr((string) ($settings['add_button']['background'] ?? '#dc2626')); ?>"></label></p>
@@ -2859,15 +2776,6 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
 
             <script>
                 (function () {
-                    const addRuleBtn = document.getElementById('lcni-add-watchlist-rule');
-                    const rows = document.getElementById('lcni-watchlist-rule-rows');
-                    const template = document.getElementById('lcni-watchlist-rule-template');
-                    if (addRuleBtn && rows && template) {
-                        addRuleBtn.addEventListener('click', function () {
-                            rows.insertAdjacentHTML('beforeend', template.innerHTML);
-                        });
-                    }
-
                     const nav = document.getElementById('lcni-watchlist-sub-tabs');
                     if (!nav) {
                         return;
@@ -2931,8 +2839,6 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
 
 
     private function render_frontend_module_form($module, $tab_id, $labels, $settings) {
-        $value_rules = isset($settings['styles']['value_rules']) && is_array($settings['styles']['value_rules']) ? $settings['styles']['value_rules'] : [];
-        $rule_rows = max(5, count($value_rules) + 1);
         ?>
         <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
             <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
@@ -2957,54 +2863,6 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
                     <tr><th>Chiều cao box</th><td><input type="number" min="40" max="300" name="lcni_frontend_style_item_height" value="<?php echo esc_attr((string) ($settings['styles']['item_height'] ?? 56)); ?>"> px</td></tr>
                     <tr><th>Cỡ chữ label</th><td><input type="number" min="10" max="40" name="lcni_frontend_style_label_font_size" value="<?php echo esc_attr((string) ($settings['styles']['label_font_size'] ?? 12)); ?>"> px</td></tr>
                     <tr><th>Cỡ chữ value</th><td><input type="number" min="10" max="40" name="lcni_frontend_style_value_font_size" value="<?php echo esc_attr((string) ($settings['styles']['value_font_size'] ?? 14)); ?>"> px</td></tr>
-                    <tr>
-                        <th>Rule màu theo value</th>
-                        <td>
-                            <p class="description">Thiết lập màu value theo điều kiện. Chọn "Tất cả fields" để áp dụng cho mọi field.</p>
-                            <table style="border-collapse:collapse; width:100%; max-width:760px;">
-                                <thead>
-                                    <tr>
-                                        <th style="text-align:left; padding:4px;">Field</th>
-                                        <th style="text-align:left; padding:4px;">Điều kiện</th>
-                                        <th style="text-align:left; padding:4px;">Giá trị so sánh</th>
-                                        <th style="text-align:left; padding:4px;">Màu</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php for ($i = 0; $i < $rule_rows; $i++) :
-                                        $rule = $value_rules[$i] ?? [];
-                                        $rule_field = (string) ($rule['field'] ?? '*');
-                                        $rule_operator = (string) ($rule['operator'] ?? 'equals');
-                                        $rule_value = (string) ($rule['value'] ?? '');
-                                        $rule_color = (string) ($rule['color'] ?? '#111827');
-                                        ?>
-                                        <tr>
-                                            <td style="padding:4px;">
-                                                <select name="lcni_frontend_rule_field[]">
-                                                    <option value="*" <?php selected($rule_field, '*'); ?>>Tất cả fields</option>
-                                                    <?php foreach ($labels as $field_key => $field_label) : ?>
-                                                        <option value="<?php echo esc_attr($field_key); ?>" <?php selected($rule_field, $field_key); ?>><?php echo esc_html($field_label); ?></option>
-                                                    <?php endforeach; ?>
-                                                </select>
-                                            </td>
-                                            <td style="padding:4px;">
-                                                <select name="lcni_frontend_rule_operator[]">
-                                                    <option value="equals" <?php selected($rule_operator, 'equals'); ?>>Bằng (=)</option>
-                                                    <option value="contains" <?php selected($rule_operator, 'contains'); ?>>Chứa</option>
-                                                    <option value="gt" <?php selected($rule_operator, 'gt'); ?>>Lớn hơn (&gt;)</option>
-                                                    <option value="gte" <?php selected($rule_operator, 'gte'); ?>>Lớn hơn hoặc bằng (&ge;)</option>
-                                                    <option value="lt" <?php selected($rule_operator, 'lt'); ?>>Nhỏ hơn (&lt;)</option>
-                                                    <option value="lte" <?php selected($rule_operator, 'lte'); ?>>Nhỏ hơn hoặc bằng (&le;)</option>
-                                                </select>
-                                            </td>
-                                            <td style="padding:4px;"><input type="text" name="lcni_frontend_rule_value[]" value="<?php echo esc_attr($rule_value); ?>" placeholder="Ví dụ: 0, MUA, breakout"></td>
-                                            <td style="padding:4px;"><input type="color" name="lcni_frontend_rule_color[]" value="<?php echo esc_attr($rule_color); ?>"></td>
-                                        </tr>
-                                    <?php endfor; ?>
-                                </tbody>
-                            </table>
-                        </td>
-                    </tr>
                 </tbody></table>
                 <?php submit_button('Lưu Frontend Settings'); ?>
             </form>
