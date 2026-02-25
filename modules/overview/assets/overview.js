@@ -25,7 +25,7 @@
     }
   };
 
-  document.addEventListener('DOMContentLoaded', function () {
+  const boot = function () {
     const context = window.LCNIStockContext;
     if (!context) {
       return;
@@ -43,5 +43,12 @@
       }
       initOverview(nextSymbol);
     });
-  });
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+    return;
+  }
+
+  boot();
 })();

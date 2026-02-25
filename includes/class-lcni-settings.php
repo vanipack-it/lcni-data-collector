@@ -2347,6 +2347,8 @@ private function sanitize_module_title($value, $fallback) {
                     <p><label>height <input type="text" name="lcni_button_style_config[__shared_table][height]" value="<?php echo esc_attr((string) ($shared_table['height'] ?? "36px")); ?>"></label></p>
                     <p><label>font_size <input type="text" name="lcni_button_style_config[__shared_table][font_size]" value="<?php echo esc_attr((string) ($shared_table['font_size'] ?? "14px")); ?>"></label></p>
                     <p><label>padding_left_right <input type="text" name="lcni_button_style_config[__shared_table][padding_left_right]" value="<?php echo esc_attr((string) ($shared_table['padding_left_right'] ?? "12px")); ?>"></label></p>
+                    <p><label>text_color <input type="color" name="lcni_button_style_config[__shared_table][text_color]" value="<?php echo esc_attr((string) ($shared_table['text_color'] ?? ($shared_all['text_color'] ?? "#ffffff"))); ?>"></label></p>
+                    <p><label>hover_text_color <input type="color" name="lcni_button_style_config[__shared_table][hover_text_color]" value="<?php echo esc_attr((string) ($shared_table['hover_text_color'] ?? ($shared_all['hover_text_color'] ?? "#ffffff"))); ?>"></label></p>
                     <p class="description">Áp dụng cho: btn_add_filter_row, btn_watchlist_remove_symbol, btn_watchlist_remove_symbol_row</p>
                 </fieldset>
                 <fieldset style="border:1px solid #dcdcde;padding:12px;margin:0 0 12px;">

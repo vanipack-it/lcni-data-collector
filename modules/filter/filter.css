@@ -20,8 +20,15 @@
 .lcni-app .lcni-stock-filter .lcni-filter-value-panel.is-active { display:block; }
 .lcni-app .lcni-stock-filter .lcni-filter-value-panel strong { display:block; margin-bottom:8px; color:var(--lcni-panel-label-color,#111827); font-size:var(--lcni-panel-label-size,13px); }
 .lcni-app .lcni-stock-filter .lcni-filter-check-list { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:4px; color:var(--lcni-panel-value-color,#374151); font-size:var(--lcni-panel-value-size,13px); max-height:280px; overflow:auto; }
-.lcni-app .lcni-stock-filter .lcni-filter-range-wrap { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-.lcni-app .lcni-stock-filter .lcni-filter-range-wrap input { width:100%; color:var(--lcni-panel-value-color,#374151); font-size:var(--lcni-panel-value-size,13px); }
+.lcni-app .lcni-stock-filter .lcni-filter-range-wrap { display:grid; gap:8px; }
+.lcni-app .lcni-stock-filter .lcni-filter-range-values { display:flex; justify-content:space-between; color:var(--lcni-panel-value-color,#374151); font-size:var(--lcni-panel-value-size,13px); }
+.lcni-app .lcni-stock-filter .lcni-filter-range-sliders { position:relative; height:24px; }
+.lcni-app .lcni-stock-filter .lcni-filter-range-sliders input[type="range"] { position:absolute; left:0; top:0; width:100%; margin:0; pointer-events:none; background:transparent; -webkit-appearance:none; appearance:none; }
+.lcni-app .lcni-stock-filter .lcni-filter-range-sliders input[type="range"]::-webkit-slider-runnable-track { height:4px; background:#d1d5db; border-radius:999px; }
+.lcni-app .lcni-stock-filter .lcni-filter-range-sliders input[type="range"]::-moz-range-track { height:4px; background:#d1d5db; border-radius:999px; }
+.lcni-app .lcni-stock-filter .lcni-filter-range-sliders input[type="range"]::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:14px; height:14px; border-radius:50%; background:#2563eb; border:0; margin-top:-5px; pointer-events:auto; cursor:pointer; }
+.lcni-app .lcni-stock-filter .lcni-filter-range-sliders input[type="range"]::-moz-range-thumb { width:14px; height:14px; border-radius:50%; background:#2563eb; border:0; pointer-events:auto; cursor:pointer; }
+.lcni-app .lcni-stock-filter .lcni-filter-range-sliders input[data-range-max] { z-index:2; }
 
 .lcni-app .lcni-stock-filter .lcni-filter-panel-actions { margin-top:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .lcni-app .lcni-stock-filter .lcni-saved-filter-label { font-size:var(--lcni-panel-label-size,13px); color:var(--lcni-panel-label-color,#111827); }

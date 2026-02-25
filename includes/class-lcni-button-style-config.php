@@ -36,6 +36,8 @@ class LCNI_Button_Style_Config {
             'height' => $shared_table['height'],
             'font_size' => $shared_table['font_size'],
             'padding_left_right' => $shared_table['padding_left_right'],
+            'text_color' => $shared_table['text_color'],
+            'hover_text_color' => $shared_table['hover_text_color'],
         ];
 
         $sanitized['__shared_outside'] = [
@@ -58,6 +60,8 @@ class LCNI_Button_Style_Config {
                 $merged['height'] = $shared_table['height'];
                 $merged['font_size'] = $shared_table['font_size'];
                 $merged['padding_left_right'] = $shared_table['padding_left_right'];
+                $merged['text_color'] = $shared_table['text_color'];
+                $merged['hover_text_color'] = $shared_table['hover_text_color'];
             } else {
                 $merged['height'] = $shared_outside['height'];
                 $merged['font_size'] = $shared_outside['font_size'];
