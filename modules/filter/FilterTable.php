@@ -17,6 +17,7 @@ class LCNI_FilterTable {
         $all_columns = $this->watchlist_service->get_all_columns();
         $criteria = $this->normalize_columns(get_option('lcni_filter_criteria_columns', []), $all_columns);
         $table_columns = $this->normalize_columns(get_option('lcni_filter_table_columns', []), $all_columns);
+        $table_column_order = $this->normalize_columns(get_option('lcni_filter_table_column_order', []), $all_columns);
         if (empty($criteria)) {
             $criteria = array_slice($all_columns, 0, 8);
         }
@@ -25,6 +26,17 @@ class LCNI_FilterTable {
         }
         if (!in_array('symbol', $table_columns, true)) {
             array_unshift($table_columns, 'symbol');
+        }
+        if (!empty($table_column_order)) {
+            $ordered = array_values(array_filter($table_column_order, function ($column) use ($table_columns) {
+                return in_array($column, $table_columns, true);
+            }));
+            foreach ($table_columns as $column) {
+                if (!in_array($column, $ordered, true)) {
+                    $ordered[] = $column;
+                }
+            }
+            $table_columns = $ordered;
         }
 
         $style = get_option('lcni_filter_style_config', get_option('lcni_filter_style', []));
@@ -66,6 +78,7 @@ class LCNI_FilterTable {
             ],
             'default_filter_values' => $this->get_default_filter_values($criteria),
             'default_saved_filters' => $this->get_effective_default_saved_filters(),
+            'cell_to_cell_rules' => get_option('lcni_cell_to_cell_color_rules', []),
         ];
     }
 
