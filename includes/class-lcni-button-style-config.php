@@ -36,6 +36,8 @@ class LCNI_Button_Style_Config {
             'height' => $shared_table['height'],
             'font_size' => $shared_table['font_size'],
             'padding_left_right' => $shared_table['padding_left_right'],
+            'text_color' => $shared_table['text_color'],
+            'hover_text_color' => $shared_table['hover_text_color'],
         ];
 
         $sanitized['__shared_outside'] = [
@@ -58,6 +60,8 @@ class LCNI_Button_Style_Config {
                 $merged['height'] = $shared_table['height'];
                 $merged['font_size'] = $shared_table['font_size'];
                 $merged['padding_left_right'] = $shared_table['padding_left_right'];
+                $merged['text_color'] = $shared_table['text_color'];
+                $merged['hover_text_color'] = $shared_table['hover_text_color'];
             } else {
                 $merged['height'] = $shared_outside['height'];
                 $merged['font_size'] = $shared_outside['font_size'];
@@ -189,6 +193,11 @@ class LCNI_Button_Style_Config {
             'icon_position' => 'left',
             'label_text' => '',
         ];
+
+        if ($button_key === '__shared_table') {
+            $shared['text_color'] = '#2563eb';
+            $shared['hover_text_color'] = '#1d4ed8';
+        }
 
         if (in_array($button_key, ['btn_overview_setting', 'btn_chart_setting', 'btn_signals_setting', 'btn_watchlist_setting', 'btn_filter_setting'], true)) {
             $shared['icon_class'] = 'fa-solid fa-gear';

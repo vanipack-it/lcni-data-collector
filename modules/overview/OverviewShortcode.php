@@ -69,14 +69,11 @@ class LCNI_Overview_Shortcode {
         ], $atts, 'lcni_stock_overview');
 
         $symbol = lcni_get_current_symbol($atts['symbol']);
-        if ($symbol === '') {
-            return '';
-        }
 
         wp_enqueue_script('lcni-stock-overview');
         wp_enqueue_style('lcni-stock-overview');
 
-        return '<div data-lcni-overview></div>';
+        return sprintf('<div data-lcni-overview data-symbol="%s"></div>', esc_attr($symbol));
     }
 }
 
