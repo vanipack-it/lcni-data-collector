@@ -324,7 +324,7 @@ class LCNI_WatchlistService {
                 $target_field = sanitize_key($rule['target_field'] ?? '');
                 $operator = sanitize_text_field((string) ($rule['operator'] ?? ''));
                 $value = $rule['value'] ?? '';
-                if ($source_field === '' || $target_field === '' || !in_array($operator, ['=', '>', '<', 'contains', 'not_contains'], true) || $value === '') {
+                if ($source_field === '' || $target_field === '' || !in_array($operator, ['=', '!=', '>', '>=', '<', '<=', 'contains', 'not_contains'], true) || $value === '') {
                     return null;
                 }
                 return [
