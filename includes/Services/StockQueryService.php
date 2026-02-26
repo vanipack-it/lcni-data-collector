@@ -183,21 +183,13 @@ class LCNI_StockQueryService {
                     return null;
                 }
 
-                return [
-                    'symbol' => $row['symbol'],
-                    'symbol_rendered' => function_exists('lcni_render_symbol') ? lcni_render_symbol($row['symbol']) : $row['symbol'],
-                    'event_time' => isset($row['event_time']) ? (int) $row['event_time'] : null,
-                    'event_date' => isset($row['event_time']) ? gmdate('Y-m-d', (int) $row['event_time']) : null,
-                    'xay_nen' => $row['xay_nen'] ?? null,
-                    'xay_nen_count_30' => isset($row['xay_nen_count_30']) ? (int) $row['xay_nen_count_30'] : null,
-                    'nen_type' => $row['nen_type'] ?? null,
-                    'pha_nen' => $row['pha_nen'] ?? null,
-                    'tang_gia_kem_vol' => $row['tang_gia_kem_vol'] ?? null,
-                    'smart_money' => $row['smart_money'] ?? null,
-                    'rs_exchange_status' => $row['rs_exchange_status'] ?? null,
-                    'rs_exchange_recommend' => $row['rs_exchange_recommend'] ?? null,
-                    'rs_recommend_status' => $row['rs_recommend_status'] ?? null,
-                ];
+                $signals = is_array($row) ? $row : [];
+                $signals['symbol'] = $row['symbol'] ?? $normalized_symbol;
+                $signals['symbol_rendered'] = function_exists('lcni_render_symbol') ? lcni_render_symbol($signals['symbol']) : $signals['symbol'];
+                $signals['event_time'] = isset($row['event_time']) ? (int) $row['event_time'] : null;
+                $signals['event_date'] = isset($row['event_time']) ? gmdate('Y-m-d', (int) $row['event_time']) : null;
+
+                return $signals;
             },
             120
         );

@@ -7,7 +7,7 @@ if (!defined('ABSPATH')) {
 class LCNI_Stock_Signals_Shortcodes {
 
     const SETTINGS_META_KEY = 'lcni_stock_signals_fields';
-    const VERSION = '2.1.4';
+    const VERSION = '2.1.5';
 
     public function __construct() {
         add_action('init', [$this, 'register_shortcodes']);
@@ -162,6 +162,7 @@ class LCNI_Stock_Signals_Shortcodes {
 
         return [
             'allowed_fields' => $allowed_fields,
+            'field_labels' => $default['field_labels'],
             'title' => sanitize_text_field((string) get_option('lcni_frontend_signal_title', 'LCNi Signals')),
             'styles' => [
                 'label_color' => $this->sanitize_hex_color($styles['label_color'] ?? $default['styles']['label_color'], $default['styles']['label_color']),
@@ -178,8 +179,11 @@ class LCNI_Stock_Signals_Shortcodes {
     }
 
     private function get_default_admin_config() {
+        $field_labels = $this->get_signal_field_labels();
+
         return [
-            'allowed_fields' => ['xay_nen', 'xay_nen_count_30', 'nen_type', 'pha_nen', 'tang_gia_kem_vol', 'smart_money', 'rs_exchange_status', 'rs_exchange_recommend', 'rs_recommend_status'],
+            'allowed_fields' => array_keys($field_labels),
+            'field_labels' => $field_labels,
             'styles' => [
                 'label_color' => '#4b5563',
                 'value_color' => '#111827',
@@ -192,6 +196,48 @@ class LCNI_Stock_Signals_Shortcodes {
                 'value_rules' => [],
             ],
         ];
+    }
+
+    private function get_signal_field_labels() {
+        global $wpdb;
+
+        $labels = [
+            'xay_nen' => 'Nền giá',
+            'xay_nen_count_30' => 'Số phiên đi nền trong 30 phiên',
+            'nen_type' => 'Dạng nền',
+            'pha_nen' => 'Tín hiệu phá nền',
+            'tang_gia_kem_vol' => 'Tăng giá kèm Vol',
+            'smart_money' => 'Tín hiệu smart',
+            'rs_exchange_status' => 'Trạng thái sức mạnh giá',
+            'rs_exchange_recommend' => 'Gợi ý sức mạnh giá',
+            'rs_recommend_status' => 'Gợi ý trạng thái sức mạnh giá',
+        ];
+
+        if (!isset($wpdb) || !($wpdb instanceof wpdb)) {
+            return $labels;
+        }
+
+        $table = $wpdb->prefix . 'lcni_ohlc_latest';
+        $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+        if ($exists !== $table) {
+            return $labels;
+        }
+
+        $columns = $wpdb->get_col("SHOW COLUMNS FROM {$table}");
+        if (!is_array($columns) || empty($columns)) {
+            return $labels;
+        }
+
+        foreach ($columns as $column) {
+            $field = sanitize_key((string) $column);
+            if ($field === '' || isset($labels[$field])) {
+                continue;
+            }
+
+            $labels[$field] = ucwords(str_replace('_', ' ', $field));
+        }
+
+        return $labels;
     }
 
     private function sanitize_value_rules($rules, $allowed_fields) {

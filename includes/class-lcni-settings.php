@@ -526,8 +526,24 @@ class LCNI_Settings {
                     }
                     update_option('lcni_column_labels', $pairs);
                 } else {
+                    $posted_allowed_fields = isset($_POST['lcni_frontend_allowed_fields']) ? (array) wp_unslash($_POST['lcni_frontend_allowed_fields']) : [];
+                    $posted_field_order = array_filter(array_map('sanitize_key', explode(',', (string) (isset($_POST['lcni_frontend_allowed_field_order']) ? wp_unslash($_POST['lcni_frontend_allowed_field_order']) : ''))));
+                    $ordered_allowed_fields = [];
+                    foreach ($posted_field_order as $field_key) {
+                        if (in_array($field_key, $posted_allowed_fields, true) && !in_array($field_key, $ordered_allowed_fields, true)) {
+                            $ordered_allowed_fields[] = $field_key;
+                        }
+                    }
+                    foreach ($posted_allowed_fields as $field_key) {
+                        $safe_key = sanitize_key((string) $field_key);
+                        if ($safe_key !== '' && !in_array($safe_key, $ordered_allowed_fields, true)) {
+                            $ordered_allowed_fields[] = $safe_key;
+                        }
+                    }
+
                     $input = [
-                        'allowed_fields' => isset($_POST['lcni_frontend_allowed_fields']) ? (array) wp_unslash($_POST['lcni_frontend_allowed_fields']) : [],
+                        '__module' => $module,
+                        'allowed_fields' => $ordered_allowed_fields,
                         'styles' => [
                             'label_color' => isset($_POST['lcni_frontend_style_label_color']) ? wp_unslash($_POST['lcni_frontend_style_label_color']) : '',
                             'value_color' => isset($_POST['lcni_frontend_style_value_color']) ? wp_unslash($_POST['lcni_frontend_style_value_color']) : '',
@@ -1904,7 +1920,8 @@ class LCNI_Settings {
             $value = [];
         }
 
-        $default = $this->get_default_frontend_module_settings();
+        $module = sanitize_key((string) ($value['__module'] ?? ''));
+        $default = $this->get_default_frontend_module_settings($module);
         $allowed_fields = isset($value['allowed_fields']) && is_array($value['allowed_fields'])
             ? array_values(array_intersect($default['fields'], array_map('sanitize_key', $value['allowed_fields'])))
             : $default['fields'];
@@ -2225,9 +2242,21 @@ private function sanitize_module_title($value, $fallback) {
         return $this->sanitize_frontend_value_rules($mapped, (array) $allowed_fields);
     }
 
-    private function get_default_frontend_module_settings() {
+    private function get_default_frontend_module_settings($module = '') {
+        $module = sanitize_key((string) $module);
+        $overview_fields = ['symbol', 'exchange', 'icb2_name', 'eps', 'eps_1y_pct', 'dt_1y_pct', 'bien_ln_gop', 'bien_ln_rong', 'roe', 'de_ratio', 'pe_ratio', 'pb_ratio', 'ev_ebitda', 'tcbs_khuyen_nghi', 'co_tuc_pct', 'tc_rating', 'so_huu_nn_pct', 'tien_mat_rong_von_hoa', 'tien_mat_rong_tong_tai_san', 'loi_nhuan_4_quy_gan_nhat', 'tang_truong_dt_quy_gan_nhat', 'tang_truong_dt_quy_gan_nhi', 'tang_truong_ln_quy_gan_nhat', 'tang_truong_ln_quy_gan_nhi'];
+        $signals_fields = array_keys($this->get_frontend_signal_labels());
+
+        if ($module === 'signals') {
+            $fields = $signals_fields;
+        } elseif ($module === 'overview') {
+            $fields = $overview_fields;
+        } else {
+            $fields = array_values(array_unique(array_merge($signals_fields, $overview_fields)));
+        }
+
         return [
-            'fields' => ['xay_nen', 'xay_nen_count_30', 'nen_type', 'pha_nen', 'tang_gia_kem_vol', 'smart_money', 'rs_exchange_status', 'rs_exchange_recommend', 'rs_recommend_status', 'symbol', 'exchange', 'icb2_name', 'eps', 'eps_1y_pct', 'dt_1y_pct', 'bien_ln_gop', 'bien_ln_rong', 'roe', 'de_ratio', 'pe_ratio', 'pb_ratio', 'ev_ebitda', 'tcbs_khuyen_nghi', 'co_tuc_pct', 'tc_rating', 'so_huu_nn_pct', 'tien_mat_rong_von_hoa', 'tien_mat_rong_tong_tai_san', 'loi_nhuan_4_quy_gan_nhat', 'tang_truong_dt_quy_gan_nhat', 'tang_truong_dt_quy_gan_nhi', 'tang_truong_ln_quy_gan_nhat', 'tang_truong_ln_quy_gan_nhi'],
+            'fields' => $fields,
             'styles' => [
                 'label_color' => '#4b5563',
                 'value_color' => '#111827',
@@ -2242,8 +2271,10 @@ private function sanitize_module_title($value, $fallback) {
         ];
     }
 
-    private function render_frontend_settings_section() {
-        $signals_labels = [
+    private function get_frontend_signal_labels() {
+        global $wpdb;
+
+        $labels = [
             'xay_nen' => 'Nền giá',
             'xay_nen_count_30' => 'Số phiên đi nền trong 30 phiên',
             'nen_type' => 'Dạng nền',
@@ -2254,11 +2285,41 @@ private function sanitize_module_title($value, $fallback) {
             'rs_exchange_recommend' => 'Gợi ý sức mạnh giá',
             'rs_recommend_status' => 'Gợi ý trạng thái sức mạnh giá',
         ];
+
+        if (!isset($wpdb) || !($wpdb instanceof wpdb)) {
+            return $labels;
+        }
+
+        $table = $wpdb->prefix . 'lcni_ohlc_latest';
+        $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+        if ($exists !== $table) {
+            return $labels;
+        }
+
+        $columns = $wpdb->get_col("SHOW COLUMNS FROM {$table}");
+        if (!is_array($columns) || empty($columns)) {
+            return $labels;
+        }
+
+        foreach ($columns as $column) {
+            $field = sanitize_key((string) $column);
+            if ($field === '' || isset($labels[$field])) {
+                continue;
+            }
+
+            $labels[$field] = ucwords(str_replace('_', ' ', $field));
+        }
+
+        return $labels;
+    }
+
+    private function render_frontend_settings_section() {
+        $signals_labels = $this->get_frontend_signal_labels();
         $overview_labels = [
             'symbol' => 'Mã', 'exchange' => 'Sàn', 'icb2_name' => 'Ngành ICB 2', 'eps' => 'EPS', 'eps_1y_pct' => '% EPS 1 năm', 'dt_1y_pct' => '% DT 1 năm', 'bien_ln_gop' => 'Biên LN gộp', 'bien_ln_rong' => 'Biên LN ròng', 'roe' => 'ROE', 'de_ratio' => 'D/E', 'pe_ratio' => 'P/E', 'pb_ratio' => 'P/B', 'ev_ebitda' => 'EV/EBITDA', 'tcbs_khuyen_nghi' => 'TCBS khuyến nghị', 'co_tuc_pct' => '% Cổ tức', 'tc_rating' => 'TC Rating', 'so_huu_nn_pct' => '% Sở hữu NN', 'tien_mat_rong_von_hoa' => 'Tiền mặt ròng/Vốn hóa', 'tien_mat_rong_tong_tai_san' => 'Tiền mặt ròng/Tổng tài sản', 'loi_nhuan_4_quy_gan_nhat' => 'Lợi nhuận 4 quý gần nhất', 'tang_truong_dt_quy_gan_nhat' => 'Tăng trưởng DT quý gần nhất', 'tang_truong_dt_quy_gan_nhi' => 'Tăng trưởng DT quý gần nhì', 'tang_truong_ln_quy_gan_nhat' => 'Tăng trưởng LN quý gần nhất', 'tang_truong_ln_quy_gan_nhi' => 'Tăng trưởng LN quý gần nhì'
         ];
-        $signals = $this->sanitize_frontend_module_settings(get_option('lcni_frontend_settings_signals', ['allowed_fields' => array_keys($signals_labels)]));
-        $overview = $this->sanitize_frontend_module_settings(get_option('lcni_frontend_settings_overview', ['allowed_fields' => array_keys($overview_labels)]));
+        $signals = $this->sanitize_frontend_module_settings(array_merge(['__module' => 'signals'], (array) get_option('lcni_frontend_settings_signals', ['allowed_fields' => array_keys($signals_labels)])));
+        $overview = $this->sanitize_frontend_module_settings(array_merge(['__module' => 'overview'], (array) get_option('lcni_frontend_settings_overview', ['allowed_fields' => array_keys($overview_labels)])));
         $chart = $this->sanitize_frontend_chart_settings(get_option('lcni_frontend_settings_chart', []));
         $watchlist = $this->sanitize_watchlist_settings(get_option('lcni_watchlist_settings', []));
         $chart_analyst = LCNI_Chart_Analyst_Settings::sanitize_config(get_option('lcni_chart_analyst_settings', []));
@@ -2313,6 +2374,59 @@ private function sanitize_module_title($value, $fallback) {
                 buttons.forEach((btn) => btn.addEventListener('click', () => activate(btn.getAttribute('data-sub-tab'))));
                 const validTabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format'];
                 activate(validTabs.includes(current) ? current : 'lcni-tab-frontend-signals');
+
+                const bindFrontendModuleSortable = (form) => {
+                    if (!form) return;
+                    const selectedList = form.querySelector('[data-frontend-module-selected-list]');
+                    const hiddenOrder = form.querySelector('[data-frontend-module-selected-order]');
+                    if (!selectedList || !hiddenOrder) return;
+
+                    const labelMap = {};
+                    form.querySelectorAll('[data-frontend-module-checkbox]').forEach((checkbox) => {
+                        const parentLabel = checkbox.closest('label');
+                        labelMap[checkbox.value] = parentLabel ? parentLabel.textContent.trim() : checkbox.value;
+                    });
+
+                    const syncOrder = () => {
+                        hiddenOrder.value = Array.from(selectedList.querySelectorAll('[data-frontend-module-selected-field]'))
+                            .map((node) => node.getAttribute('data-frontend-module-selected-field') || '')
+                            .filter(Boolean)
+                            .join(',');
+                    };
+
+                    const bindDnD = () => {
+                        let dragging = null;
+                        selectedList.querySelectorAll('[data-frontend-module-selected-field]').forEach((item) => {
+                            item.addEventListener('dragstart', () => { dragging = item; item.style.opacity = '0.5'; });
+                            item.addEventListener('dragend', () => { item.style.opacity = ''; dragging = null; syncOrder(); });
+                            item.addEventListener('dragover', (event) => event.preventDefault());
+                            item.addEventListener('drop', (event) => {
+                                event.preventDefault();
+                                if (!dragging || dragging === item) return;
+                                const rect = item.getBoundingClientRect();
+                                const after = (event.clientY - rect.top) > rect.height / 2;
+                                if (after) item.after(dragging); else item.before(dragging);
+                                syncOrder();
+                            });
+                        });
+                    };
+
+                    const rebuildSelected = () => {
+                        const checked = Array.from(form.querySelectorAll('[data-frontend-module-checkbox]:checked')).map((node) => node.value);
+                        const existing = Array.from(selectedList.querySelectorAll('[data-frontend-module-selected-field]')).map((node) => node.getAttribute('data-frontend-module-selected-field') || '');
+                        const next = existing.filter((field) => checked.includes(field));
+                        checked.forEach((field) => { if (!next.includes(field)) next.push(field); });
+                        selectedList.innerHTML = next.map((field) => `<li draggable="true" data-frontend-module-selected-field="${field}" style="cursor:move;padding:4px 0;">${labelMap[field] || field}</li>`).join('');
+                        bindDnD();
+                        syncOrder();
+                    };
+
+                    form.querySelectorAll('[data-frontend-module-checkbox]').forEach((checkbox) => checkbox.addEventListener('change', rebuildSelected));
+                    bindDnD();
+                    syncOrder();
+                };
+
+                document.querySelectorAll('form[data-frontend-module-form]').forEach(bindFrontendModuleSortable);
             })();
         </script>
         <?php
@@ -3094,20 +3208,33 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
 
 
     private function render_frontend_module_form($module, $tab_id, $labels, $settings) {
+        $selected_fields = (array) ($settings['allowed_fields'] ?? []);
         ?>
         <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
-            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form" data-frontend-module-form>
                 <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
                 <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
                 <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
                 <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
+                <input type="hidden" name="lcni_frontend_allowed_field_order" value="<?php echo esc_attr(implode(',', $selected_fields)); ?>" data-frontend-module-selected-order>
                 <h3><?php echo esc_html($module === 'signals' ? 'LCNi Signals' : 'Stock Overview'); ?></h3>
                 <p><label>Tên module <input type="text" name="lcni_frontend_module_title" value="<?php echo esc_attr((string) get_option($module === 'signals' ? 'lcni_frontend_signal_title' : 'lcni_frontend_overview_title', $module === 'signals' ? 'LCNi Signals' : 'Stock Overview')); ?>" class="regular-text"></label></p>
                 <p>Chọn chỉ báo được phép hiển thị để user frontend tùy chọn yêu thích.</p>
-                <div class="lcni-front-grid">
-                    <?php foreach ($labels as $key => $label) : ?>
-                        <label><input type="checkbox" name="lcni_frontend_allowed_fields[]" value="<?php echo esc_attr($key); ?>" <?php checked(in_array($key, (array) ($settings['allowed_fields'] ?? []), true)); ?>> <?php echo esc_html($label); ?></label>
-                    <?php endforeach; ?>
+                <div style="display:grid;grid-template-columns:4fr 1fr;gap:16px;align-items:start;">
+                    <div class="lcni-front-grid" style="margin:0;">
+                        <?php foreach ($labels as $key => $label) : ?>
+                            <label><input type="checkbox" name="lcni_frontend_allowed_fields[]" value="<?php echo esc_attr($key); ?>" data-frontend-module-checkbox <?php checked(in_array($key, $selected_fields, true)); ?>> <?php echo esc_html($label); ?></label>
+                        <?php endforeach; ?>
+                    </div>
+                    <div style="border:1px solid #dcdcde;border-radius:6px;padding:8px;background:#f9fafb;">
+                        <p style="margin:0 0 8px;"><strong>Thứ tự hiển thị</strong></p>
+                        <ul style="margin:0;padding-left:16px;max-height:360px;overflow:auto;" data-frontend-module-selected-list>
+                            <?php foreach ($selected_fields as $field_key) : ?>
+                                <?php if (!isset($labels[$field_key])) { continue; } ?>
+                                <li draggable="true" data-frontend-module-selected-field="<?php echo esc_attr($field_key); ?>" style="cursor:move;padding:4px 0;"><?php echo esc_html($labels[$field_key]); ?></li>
+                            <?php endforeach; ?>
+                        </ul>
+                    </div>
                 </div>
                 <table class="form-table" role="presentation"><tbody>
                     <tr><th>Màu label</th><td><input type="color" name="lcni_frontend_style_label_color" value="<?php echo esc_attr((string) ($settings['styles']['label_color'] ?? '#4b5563')); ?>"></td></tr>
