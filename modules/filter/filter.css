@@ -33,6 +33,8 @@
 .lcni-app .lcni-stock-filter .lcni-filter-range-values { display:flex; justify-content:space-between; color:var(--lcni-panel-value-color,#374151); font-size:var(--lcni-panel-value-size,13px); }
 
 .lcni-app .lcni-stock-filter .lcni-filter-panel-actions { margin-top:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.lcni-app .lcni-stock-filter .lcni-filter-result-summary { font-size:12px; color:#374151; }
+.lcni-app .lcni-stock-filter .lcni-filter-result-summary-mobile { display:none; }
 .lcni-app .lcni-stock-filter .lcni-saved-filter-label { font-size:var(--lcni-panel-label-size,13px); color:var(--lcni-panel-label-color,#111827); }
 .lcni-app .lcni-stock-filter .lcni-filter-panel-actions select { min-width:190px; height:36px; margin-right:0; font-size:var(--lcni-panel-value-size,13px); border:1px solid #d1d5db; border-radius:8px; padding:0 10px; }
 .lcni-app .lcni-stock-filter .lcni-filter-panel-actions .lcni-select-saved-filter { background:var(--lcni-saved-filter-bg,#fff); color:var(--lcni-saved-filter-color,#111827); border-color:var(--lcni-saved-filter-border,#d1d5db); }
@@ -45,6 +47,7 @@
 .lcni-app .lcni-stock-filter .lcni-table { width:100%; border-collapse:separate; border-spacing:0; }
 .lcni-app .lcni-stock-filter .lcni-table th { font-weight:400; position:sticky; top:0; z-index:3; background:var(--lcni-table-header-bg,#f3f4f6); color:var(--lcni-table-header-color,#111827); font-size:var(--lcni-table-header-size,12px); border-bottom:var(--lcni-row-divider-width,1px) solid var(--lcni-row-divider-color,#e5e7eb); height:var(--lcni-table-header-height,42px); white-space:nowrap; }
 .lcni-app .lcni-stock-filter .lcni-table td { background:var(--lcni-table-value-bg,#fff); color:var(--lcni-table-value-color,#111827); font-size:var(--lcni-table-value-size,13px); border-bottom:var(--lcni-row-divider-width,1px) solid var(--lcni-row-divider-color,#e5e7eb); white-space:nowrap; word-break:keep-all; }
+.lcni-app .lcni-stock-filter .lcni-table tbody td { height:var(--lcni-table-row-height,36px); }
 .lcni-app .lcni-stock-filter .lcni-table tr:hover td { background:var(--lcni-row-hover-bg,#eef2ff); }
 .lcni-app .lcni-stock-filter .lcni-table tbody tr { cursor:pointer; }
 .lcni-app .lcni-stock-filter .lcni-table .is-sticky-col { position:sticky; left:0; z-index:2; }
@@ -62,6 +65,8 @@
 
 @media (max-width: 767px) {
   .lcni-app .lcni-stock-filter .lcni-filter-toolbar{position:sticky;top:0;background:#fff;z-index:5;padding-bottom:6px;}
+  .lcni-app .lcni-stock-filter .lcni-filter-result-summary-desktop{display:none;}
+  .lcni-app .lcni-stock-filter .lcni-filter-result-summary-mobile{display:block;position:sticky;top:38px;background:#fff;z-index:4;padding:4px 0 8px;}
   .lcni-app .lcni-stock-filter .lcni-filter-panel,
   .lcni-app .lcni-stock-filter .lcni-column-pop{position:fixed;left:8px;right:8px;top:8px;max-height:80vh;overflow:auto;z-index:10001;margin:0;}
   .lcni-app .lcni-stock-filter .lcni-table-scroll{max-height:calc(100vh - 140px);}

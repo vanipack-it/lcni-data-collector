@@ -390,7 +390,7 @@
       const stickyColumn = String(styles.sticky_column || 'symbol');
       const valueColorRules = Array.isArray(settings.value_color_rules) ? settings.value_color_rules : [];
     const cellToCellRules = Array.isArray(settings.cell_to_cell_rules) ? settings.cell_to_cell_rules : [];
-      const orderedColumns = Array.isArray(data.columns) ? data.columns : [];
+      const orderedColumns = Array.from(host.querySelectorAll('thead th[data-sort-key]')).map((node) => String(node.getAttribute('data-sort-key') || '').trim()).filter(Boolean);
       tbody.innerHTML = renderRowsMarkup(orderedColumns, data.items || [], stickyColumn, valueColorRules, cellToCellRules);
     }
     if (Array.isArray(data.symbols)) {

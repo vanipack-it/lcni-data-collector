@@ -1,3 +1,10 @@
+## 2026-02-26 18:23 (v2.2.4)
+- Nâng version plugin lên `2.2.4` và cập nhật log có mốc ngày giờ cụ thể để dễ nắm bắt thời điểm thay đổi.
+- Fix Frontend Settings → Filter → Style: `Row height` sau khi nhập số và lưu đã áp dụng thực tế ra bảng filter frontend.
+- Bổ sung thông báo kết quả filter đặt cùng hàng với `btn_filter_apply` trên desktop và hiển thị dưới topbar trên mobile, theo mẫu: `Bộ lọc có {number} cổ phiếu thỏa mãn các tiêu chí ...`.
+- Fix Frontend Settings → Watchlist → Column → Selected order: sau khi kéo-thả lưu, thứ tự header và các cột value ở tbody luôn đồng bộ khi auto refresh, không còn lệch gây nhầm lẫn.
+- Fix Frontend Settings → Filter → Filter Criteria → Selected order: đảm bảo thứ tự tiêu chí kéo-thả được thực thi đúng ra filter panel frontend.
+
 ## 2026-02-26 18:10 (v2.2.3)
 - Nâng version plugin lên `2.2.3` và cập nhật log với mốc ngày giờ chi tiết để dễ nắm bắt thời điểm thay đổi.
 - Fix logic đồng bộ `wp_lcni_ohlc_latest`: lấy nến mới nhất theo từng cặp `symbol + timeframe` (không còn gộp theo `symbol`) để dữ liệu latest đúng khi filter theo ngày gần nhất.
