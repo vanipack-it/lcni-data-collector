@@ -460,12 +460,54 @@ class LCNI_DB {
             if (!empty($current_primary_columns)) {
                 $wpdb->query("ALTER TABLE {$latest_table} DROP PRIMARY KEY");
             }
-            $wpdb->query("ALTER TABLE {$latest_table} ADD PRIMARY KEY (symbol, timeframe)");
+
+            $add_primary_result = $wpdb->query("ALTER TABLE {$latest_table} ADD PRIMARY KEY (symbol, timeframe)");
+            if ($add_primary_result === false) {
+                $wpdb->query("TRUNCATE TABLE {$latest_table}");
+                $wpdb->query("ALTER TABLE {$latest_table} ADD PRIMARY KEY (symbol, timeframe)");
+            }
         }
 
         $unique_symbol_timeframe = $wpdb->get_var($wpdb->prepare("SHOW INDEX FROM {$latest_table} WHERE Key_name = %s", 'uniq_symbol_tf'));
         if ($unique_symbol_timeframe === null) {
             $wpdb->query("ALTER TABLE {$latest_table} ADD UNIQUE KEY uniq_symbol_tf (symbol, timeframe)");
+        }
+
+        $latest_indexes = $wpdb->get_results("SHOW INDEX FROM {$latest_table}", ARRAY_A);
+        $unique_indexes = [];
+        foreach ((array) $latest_indexes as $index) {
+            $key_name = isset($index['Key_name']) ? (string) $index['Key_name'] : '';
+            if ($key_name === '' || $key_name === 'PRIMARY') {
+                continue;
+            }
+
+            $non_unique = isset($index['Non_unique']) ? (int) $index['Non_unique'] : 1;
+            if ($non_unique !== 0) {
+                continue;
+            }
+
+            $seq = isset($index['Seq_in_index']) ? (int) $index['Seq_in_index'] : 0;
+            $column_name = isset($index['Column_name']) ? (string) $index['Column_name'] : '';
+            if ($seq <= 0 || $column_name === '') {
+                continue;
+            }
+
+            if (!isset($unique_indexes[$key_name])) {
+                $unique_indexes[$key_name] = [];
+            }
+            $unique_indexes[$key_name][$seq] = $column_name;
+        }
+
+        foreach ($unique_indexes as $key_name => $columns_by_seq) {
+            ksort($columns_by_seq);
+            $columns = array_values($columns_by_seq);
+
+            if ($columns === ['symbol', 'timeframe']) {
+                continue;
+            }
+
+            $safe_key_name = str_replace('`', '``', (string) $key_name);
+            $wpdb->query("ALTER TABLE {$latest_table} DROP INDEX `{$safe_key_name}`");
         }
 
         $event_time_index = $wpdb->get_var($wpdb->prepare("SHOW INDEX FROM {$ohlc_table} WHERE Key_name = %s", 'idx_symbol_tf_time'));
