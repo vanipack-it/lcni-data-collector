@@ -1103,6 +1103,104 @@ class LCNI_Settings {
         ]);
     }
 
+    private function calculate_percent($completed, $total) {
+        $total = max(0, (int) $total);
+        $completed = max(0, (int) $completed);
+
+        if ($total === 0) {
+            return 100;
+        }
+
+        return (int) min(100, floor(($completed / $total) * 100));
+    }
+
+    private function get_report_system_data() {
+        global $wpdb;
+
+        $stats = LCNI_SeedRepository::get_dashboard_stats();
+        $runtime_status = LCNI_Update_Manager::get_status();
+        $snapshot_status = LCNI_OHLC_Latest_Manager::get_status();
+        $rule_rebuild_status = LCNI_DB::get_rule_rebuild_status();
+
+        $running_tasks = 0;
+        if ((int) ($stats['running'] ?? 0) > 0) {
+            $running_tasks++;
+        }
+        if (!empty($runtime_status['running'])) {
+            $running_tasks++;
+        }
+        if (!empty($snapshot_status['running'])) {
+            $running_tasks++;
+        }
+        if (($rule_rebuild_status['status'] ?? 'idle') === 'running') {
+            $running_tasks++;
+        }
+
+        $seed_percent = $this->calculate_percent((int) ($stats['done'] ?? 0), (int) ($stats['total'] ?? 0));
+        $runtime_percent = $this->calculate_percent((int) ($runtime_status['processed_symbols'] ?? 0), (int) ($runtime_status['total_symbols'] ?? 0));
+        $snapshot_percent = empty($snapshot_status['running']) ? 100 : 0;
+        $rule_percent = (int) ($rule_rebuild_status['progress_percent'] ?? 100);
+        $overall_percent = (int) floor(($seed_percent + $runtime_percent + $snapshot_percent + $rule_percent) / 4);
+
+        $latest_symbol = $wpdb->get_row("SELECT symbol, event_time FROM {$wpdb->prefix}lcni_ohlc ORDER BY event_time DESC LIMIT 1", ARRAY_A);
+        $updated_symbols_today = (int) $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT COUNT(DISTINCT symbol) FROM {$wpdb->prefix}lcni_ohlc WHERE DATE(created_at) = %s",
+                current_time('Y-m-d')
+            )
+        );
+
+        $latest_symbol_event_time = '';
+        if (!empty($latest_symbol['event_time'])) {
+            $latest_symbol_event_time = $this->format_mysql_datetime_to_gmt7(gmdate('Y-m-d H:i:s', (int) $latest_symbol['event_time']));
+        }
+
+        $completed_background_tasks = $wpdb->get_results(
+            "SELECT symbol, timeframe, created_at, updated_at
+            FROM {$wpdb->prefix}lcni_seed_tasks
+            WHERE status = 'done'
+            ORDER BY updated_at DESC
+            LIMIT 10",
+            ARRAY_A
+        );
+
+        return [
+            'running_tasks' => $running_tasks,
+            'overall_percent' => $overall_percent,
+            'seed' => [
+                'total' => (int) ($stats['total'] ?? 0),
+                'done' => (int) ($stats['done'] ?? 0),
+                'running' => (int) ($stats['running'] ?? 0),
+                'pending' => (int) ($stats['pending'] ?? 0),
+                'percent' => $seed_percent,
+            ],
+            'runtime' => [
+                'running' => !empty($runtime_status['running']),
+                'processed' => (int) ($runtime_status['processed_symbols'] ?? 0),
+                'total' => (int) ($runtime_status['total_symbols'] ?? 0),
+                'percent' => $runtime_percent,
+            ],
+            'snapshot' => [
+                'running' => !empty($snapshot_status['running']),
+                'started_at' => (string) ($snapshot_status['started_at'] ?? ''),
+                'ended_at' => (string) ($snapshot_status['ended_at'] ?? ''),
+                'percent' => $snapshot_percent,
+            ],
+            'latest_symbol' => [
+                'symbol' => (string) ($latest_symbol['symbol'] ?? '-'),
+                'event_time' => $latest_symbol_event_time !== '' ? $latest_symbol_event_time : '-',
+            ],
+            'updated_symbols_today' => $updated_symbols_today,
+            'rule_rebuild' => [
+                'status' => (string) ($rule_rebuild_status['status'] ?? 'idle'),
+                'processed' => (int) ($rule_rebuild_status['processed'] ?? 0),
+                'total' => (int) ($rule_rebuild_status['total'] ?? 0),
+                'percent' => $rule_percent,
+            ],
+            'completed_background_tasks' => is_array($completed_background_tasks) ? $completed_background_tasks : [],
+        ];
+    }
+
     public function settings_page() {
         global $wpdb;
 
@@ -1120,7 +1218,11 @@ class LCNI_Settings {
             $active_tab = 'update_data';
         }
 
-        if (!in_array($active_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'change_logs'], true)) {
+        if ($active_tab === 'change_logs') {
+            $active_tab = 'report';
+        }
+
+        if (!in_array($active_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'report'], true)) {
             $active_tab = 'general';
         }
 
@@ -1128,6 +1230,7 @@ class LCNI_Settings {
         $stats = LCNI_SeedRepository::get_dashboard_stats();
         $tasks = LCNI_SeedRepository::get_recent_tasks(30);
         $logs = $wpdb->get_results("SELECT action, message, created_at FROM {$wpdb->prefix}lcni_change_logs ORDER BY id DESC LIMIT 50", ARRAY_A);
+        $report_data = $this->get_report_system_data();
         $notice = get_transient('lcni_settings_notice');
         $csv_import_targets = LCNI_DB::get_csv_import_targets();
         $csv_import_draft = get_transient($this->get_csv_import_draft_key());
@@ -1151,7 +1254,7 @@ class LCNI_Settings {
                 <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=update_data')); ?>" class="nav-tab <?php echo $active_tab === 'update_data' ? 'nav-tab-active' : ''; ?>">Update Data</a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=rule_settings')); ?>" class="nav-tab <?php echo $active_tab === 'rule_settings' ? 'nav-tab-active' : ''; ?>">Rule Setting</a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=frontend_settings')); ?>" class="nav-tab <?php echo $active_tab === 'frontend_settings' ? 'nav-tab-active' : ''; ?>">Frontend Setting</a>
-                <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=change_logs')); ?>" class="nav-tab <?php echo $active_tab === 'change_logs' ? 'nav-tab-active' : ''; ?>">Change Logs</a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=report')); ?>" class="nav-tab <?php echo $active_tab === 'report' ? 'nav-tab-active' : ''; ?>">Report</a>
             </h2>
 
             <?php if ($active_tab === 'general') : ?>
@@ -1590,14 +1693,48 @@ class LCNI_Settings {
             <?php elseif ($active_tab === 'frontend_settings') : ?>
                 <?php $this->render_frontend_settings_section(); ?>
             <?php else : ?>
-                <h2>Change Logs</h2>
-                <?php if (!empty($logs)) : ?>
-                    <table class="widefat striped" style="max-width:1100px;"><thead><tr><th style="width:180px;">Time</th><th style="width:180px;">Action</th><th>Message</th></tr></thead><tbody>
-                    <?php foreach ($logs as $log) : ?>
-                        <tr><td><?php echo esc_html($log['created_at']); ?></td><td><?php echo esc_html($log['action']); ?></td><td><?php echo esc_html($log['message']); ?></td></tr>
-                    <?php endforeach; ?>
-                    </tbody></table>
-                <?php else : ?><p>No change logs available yet.</p><?php endif; ?>
+                <?php $report_sub_tab = isset($_GET['report_tab']) ? sanitize_key(wp_unslash($_GET['report_tab'])) : 'change_logs'; ?>
+                <h2>Report</h2>
+                <h2 class="nav-tab-wrapper" style="margin-bottom: 16px;">
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=report&report_tab=change_logs')); ?>" class="nav-tab <?php echo $report_sub_tab === 'change_logs' ? 'nav-tab-active' : ''; ?>">Change Logs</a>
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=report&report_tab=report_system')); ?>" class="nav-tab <?php echo $report_sub_tab === 'report_system' ? 'nav-tab-active' : ''; ?>">Report System</a>
+                </h2>
+
+                <?php if ($report_sub_tab === 'report_system') : ?>
+                    <table class="widefat striped" style="max-width:1100px; margin-bottom: 16px;">
+                        <tbody>
+                            <tr><th style="width: 45%;">Bao nhiêu tác vụ đang chạy ngầm? Đã chạy được bao nhiêu %?</th><td><?php echo esc_html(sprintf('%d tác vụ | %d%%', (int) ($report_data['running_tasks'] ?? 0), (int) ($report_data['overall_percent'] ?? 0))); ?></td></tr>
+                            <tr><th>Tác vụ seed nền</th><td><?php echo esc_html(sprintf('%d/%d hoàn thành | running=%d | pending=%d | %d%%', (int) ($report_data['seed']['done'] ?? 0), (int) ($report_data['seed']['total'] ?? 0), (int) ($report_data['seed']['running'] ?? 0), (int) ($report_data['seed']['pending'] ?? 0), (int) ($report_data['seed']['percent'] ?? 0))); ?></td></tr>
+                            <tr><th>Runtime update</th><td><?php echo esc_html(sprintf('%s | %d/%d symbol | %d%%', !empty($report_data['runtime']['running']) ? 'Đang chạy' : 'Đang dừng', (int) ($report_data['runtime']['processed'] ?? 0), (int) ($report_data['runtime']['total'] ?? 0), (int) ($report_data['runtime']['percent'] ?? 0))); ?></td></tr>
+                            <tr><th>Snapshot đồng bộ</th><td><?php echo esc_html(sprintf('%s | %d%% | start: %s | end: %s', !empty($report_data['snapshot']['running']) ? 'Đang chạy' : 'Đang dừng', (int) ($report_data['snapshot']['percent'] ?? 0), (string) ($report_data['snapshot']['started_at'] ?: '-'), (string) ($report_data['snapshot']['ended_at'] ?: '-'))); ?></td></tr>
+                            <tr><th>Dữ liệu symbol gần nhất cập nhật là symbol nào? ngày nào YYYY-MM-DD HH:MM?</th><td><?php echo esc_html(sprintf('%s | %s', (string) ($report_data['latest_symbol']['symbol'] ?? '-'), (string) ($report_data['latest_symbol']['event_time'] ?? '-'))); ?></td></tr>
+                            <tr><th>Đã cập nhật bao nhiêu symbol trong ngày hiện tại?</th><td><?php echo esc_html((string) ($report_data['updated_symbols_today'] ?? 0)); ?></td></tr>
+                            <tr><th>Tác vụ tự động tính toán khi có row mới hoặc dữ liệu mới</th><td><?php echo esc_html(sprintf('Rule rebuild: %s | %d/%d | %d%%', strtoupper((string) ($report_data['rule_rebuild']['status'] ?? 'idle')), (int) ($report_data['rule_rebuild']['processed'] ?? 0), (int) ($report_data['rule_rebuild']['total'] ?? 0), (int) ($report_data['rule_rebuild']['percent'] ?? 0))); ?></td></tr>
+                        </tbody>
+                    </table>
+
+                    <h3>Tác vụ chạy ngầm đã hoàn thành (gần nhất)</h3>
+                    <?php if (!empty($report_data['completed_background_tasks'])) : ?>
+                        <table class="widefat striped" style="max-width:1100px;"><thead><tr><th>Symbol</th><th>Timeframe</th><th>Bắt đầu</th><th>Kết thúc</th></tr></thead><tbody>
+                        <?php foreach ($report_data['completed_background_tasks'] as $task) : ?>
+                            <tr>
+                                <td><?php echo esc_html((string) ($task['symbol'] ?? '-')); ?></td>
+                                <td><?php echo esc_html((string) ($task['timeframe'] ?? '-')); ?></td>
+                                <td><?php echo esc_html((string) ($task['created_at'] ?? '-')); ?></td>
+                                <td><?php echo esc_html((string) ($task['updated_at'] ?? '-')); ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody></table>
+                    <?php else : ?><p>Chưa có tác vụ nền hoàn thành.</p><?php endif; ?>
+                <?php else : ?>
+                    <?php if (!empty($logs)) : ?>
+                        <table class="widefat striped" style="max-width:1100px;"><thead><tr><th style="width:180px;">Time</th><th style="width:180px;">Action</th><th>Message</th></tr></thead><tbody>
+                        <?php foreach ($logs as $log) : ?>
+                            <tr><td><?php echo esc_html($log['created_at']); ?></td><td><?php echo esc_html($log['action']); ?></td><td><?php echo esc_html($log['message']); ?></td></tr>
+                        <?php endforeach; ?>
+                        </tbody></table>
+                    <?php else : ?><p>No change logs available yet.</p><?php endif; ?>
+                <?php endif; ?>
             <?php endif; ?>
         </div>
         <?php

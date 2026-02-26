@@ -1,3 +1,8 @@
+## 2026-02-26 14:03 (v2.1.8)
+- Nâng version plugin lên `2.1.8` và ghi log mốc thời gian cập nhật cụ thể (YYYY-MM-DD HH:MM) để tiện theo dõi.
+- Đổi tab `Change Logs` thành `Report` và tách thành 2 tab con: `Change Logs` + `Report System`.
+- Bổ sung `Report System` hiển thị: số tác vụ chạy ngầm + % tổng quan, danh sách tác vụ nền đã hoàn thành (thời gian bắt đầu/kết thúc), symbol cập nhật gần nhất kèm thời gian, tổng số symbol đã cập nhật trong ngày hiện tại, và tiến độ tác vụ tự động tính toán `Rule rebuild` khi có dữ liệu mới.
+
 ## 2026-02-26 14:45 (v2.1.7)
 - Nâng version plugin lên `2.1.7` và cập nhật log kèm mốc ngày giờ cụ thể để tiện theo dõi.
 - Frontend Settings → Filter Criteria: chuyển sang layout 2 cột tỷ lệ 80:20; cột trái chọn field bằng checkbox, cột phải hiển thị field đã chọn và hỗ trợ kéo-thả để lưu thứ tự điều kiện filter hiển thị ở frontend.
