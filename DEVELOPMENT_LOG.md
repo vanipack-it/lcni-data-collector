@@ -1,3 +1,13 @@
+## 2026-02-26 09:30 (v2.1.0)
+- Nâng version plugin lên `2.1.0` và cập nhật log có mốc ngày giờ cụ thể để tiện theo dõi thay đổi.
+- Bổ sung cột `rsi_status` và `hanh_vi_gia` cho `wp_lcni_ohlc` trong schema tạo bảng mới + cơ chế tự thêm cột cho hệ thống đang chạy.
+- Thêm migration `lcni_ohlc_rsi_status_hanh_vi_gia_backfilled_v1` để tính lại dữ liệu các dòng cũ: cập nhật `rsi_status` theo ngưỡng RSI (Tham lam/Sợ hãi/Quá mua/Quá bán) và `hanh_vi_gia` theo so sánh giá + khối lượng với phiên trước.
+- Đảm bảo dữ liệu dòng mới luôn có `rsi_status` + `hanh_vi_gia` ngay trong pipeline `rebuild_ohlc_indicators`.
+- Bổ sung index `idx_symbol_trading (symbol, trading_index)` nếu chưa có để tối ưu các truy vấn/join theo symbol + trading_index.
+- Fix thực thi Frontend Setting → Style Config: module Filter nhận và áp dụng `global cell color rules` + `cell-to-cell rules`; mở rộng toán tử hỗ trợ `>=`, `<=`, `!=` cho cả rule lưu và rule render.
+- Cải thiện đồng bộ thứ tự cột Filter: đổi `tableSettingsStorageKey` theo hash cấu hình cột để frontend tự nhận thứ tự mới sau khi admin lưu, không bị giữ cache session cũ.
+- Đồng bộ Watchlist để dùng thêm global value color rules cùng bộ rule hiện có.
+
 ## 2026-02-25 22:43 (v2.0.9)
 - Frontend Filter: chỉnh hover row rõ ràng, header về normal weight, căn phải cho ô số và căn trái cho ô text.
 - Frontend Watchlist: căn phải cho ô số, căn trái cho ô text, header về normal weight.

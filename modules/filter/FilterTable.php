@@ -42,6 +42,9 @@ class LCNI_FilterTable {
         $style = get_option('lcni_filter_style_config', get_option('lcni_filter_style', []));
         $style = is_array($style) ? $style : [];
 
+        $value_color_rules = get_option('lcni_global_cell_color_rules', []);
+        $value_color_rules = is_array($value_color_rules) ? array_values($value_color_rules) : [];
+
         return [
             'criteria_columns' => $criteria,
             'table_columns' => $table_columns,
@@ -78,6 +81,7 @@ class LCNI_FilterTable {
             ],
             'default_filter_values' => $this->get_default_filter_values($criteria),
             'default_saved_filters' => $this->get_effective_default_saved_filters(),
+            'value_color_rules' => $value_color_rules,
             'cell_to_cell_rules' => get_option('lcni_cell_to_cell_color_rules', []),
         ];
     }

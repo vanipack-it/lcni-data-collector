@@ -266,6 +266,10 @@ class LCNI_WatchlistService {
 
         $styles = isset($settings['styles']) && is_array($settings['styles']) ? $settings['styles'] : [];
         $rules = isset($settings['value_color_rules']) && is_array($settings['value_color_rules']) ? $settings['value_color_rules'] : [];
+        $global_value_rules = get_option('lcni_global_cell_color_rules', []);
+        if (is_array($global_value_rules) && !empty($global_value_rules)) {
+            $rules = array_merge($rules, $global_value_rules);
+        }
         $cell_to_cell_rules = get_option('lcni_cell_to_cell_color_rules', []);
         $cell_to_cell_rules = is_array($cell_to_cell_rules) ? $cell_to_cell_rules : [];
 
