@@ -186,6 +186,25 @@ class LCNI_OHLC_Latest_Manager {
         $status['message'] = empty($status['error']) ? 'OHLC latest snapshot sync completed.' : 'OHLC latest snapshot sync failed.';
         update_option(self::OPTION_STATUS, $status);
 
+        LCNI_DB::log_change(
+            empty($status['error']) ? 'ohlc_latest_snapshot_synced' : 'ohlc_latest_snapshot_sync_failed',
+            sprintf(
+                'OHLC latest snapshot sync %s via %s (rows=%d, started_at=%s, ended_at=%s).',
+                empty($status['error']) ? 'completed' : 'failed',
+                (string) ($status['source'] ?? 'unknown'),
+                (int) ($status['rows_affected'] ?? 0),
+                (string) ($status['started_at'] ?? ''),
+                (string) ($status['ended_at'] ?? '')
+            ),
+            [
+                'source' => (string) ($status['source'] ?? 'unknown'),
+                'rows_affected' => (int) ($status['rows_affected'] ?? 0),
+                'started_at' => (string) ($status['started_at'] ?? ''),
+                'ended_at' => (string) ($status['ended_at'] ?? ''),
+                'error' => (string) ($status['error'] ?? ''),
+            ]
+        );
+
         self::update_snapshot_stats($status, $started_at_timestamp, $ended_at_timestamp);
         self::release_lock();
 
@@ -285,23 +304,20 @@ class LCNI_OHLC_Latest_Manager {
     }
 
     private static function get_last_snapshot_timestamp() {
-        global $wpdb;
-
-        $latest_table = $wpdb->prefix . 'lcni_ohlc_latest';
-        $event_time = $wpdb->get_var("SELECT MAX(event_time) FROM {$latest_table}");
-        if ($event_time === null) {
-            return 0;
+        $stats = self::get_snapshot_stats();
+        $last_run_timestamp = (int) ($stats['last_run_timestamp'] ?? 0);
+        if ($last_run_timestamp > 0) {
+            return $last_run_timestamp;
         }
 
-        $event_time_int = (int) $event_time;
-        if ($event_time_int <= 0) {
-            return 0;
+        $status = self::get_status();
+        if (!empty($status['ended_at'])) {
+            $ended_at_timestamp = strtotime((string) $status['ended_at']);
+            if ($ended_at_timestamp !== false && $ended_at_timestamp > 0) {
+                return (int) $ended_at_timestamp;
+            }
         }
 
-        if ($event_time_int > 9999999999) {
-            $event_time_int = (int) floor($event_time_int / 1000);
-        }
-
-        return $event_time_int;
+        return 0;
     }
 }

@@ -1,3 +1,9 @@
+## 2026-02-26 13:19 (v2.1.6)
+- Nâng version plugin lên `2.1.6` và cập nhật log kèm thời điểm ngày giờ cụ thể để dễ theo dõi.
+- Fix pipeline đồng bộ `wp_lcni_ohlc_latest`: kiểm tra stale theo **thời điểm chạy sync gần nhất** (runtime timestamp) thay vì `MAX(event_time)` của dữ liệu, tránh trường hợp `event_time` nằm tương lai làm cron/watchdog bỏ qua refresh và khiến dữ liệu latest bị đứng.
+- Bổ sung change log cho mỗi lần chạy OHLC latest snapshot (manual/wp_cron/watchdog): ghi rõ nguồn chạy, số row ảnh hưởng, `started_at`, `ended_at`, trạng thái thành công/thất bại và lỗi (nếu có) để dễ audit thời điểm cập nhật.
+- Fix Frontend Setting → Style Config → Cell Color: đọc danh sách rule từ option global `lcni_global_cell_color_rules` khi render màn hình admin, đảm bảo hiển thị đầy đủ nhiều rule trên cùng 1 field (ví dụ `pct_t_1 > 0`, `< 0`, `= 0`) thay vì phụ thuộc dữ liệu cũ theo watchlist settings.
+
 ## 2026-02-26 08:07 (v2.1.5)
 - Nâng version plugin lên `2.1.5` và cập nhật log kèm mốc ngày giờ cụ thể để dễ theo dõi.
 - Fix Frontend Setting → LCNi Signals: mở danh sách field theo toàn bộ cột hiện có của bảng `wp_lcni_ohlc_latest` (thay vì cố định 9 field), admin có thể chọn đầy đủ cột và kéo-thả thứ tự hiển thị theo layout 80:20.
