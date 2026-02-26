@@ -1,5 +1,5 @@
 -- Rebuild indicator columns for wp_lcni_ohlc (MySQL 8+).
--- Core requirement: all window functions ORDER BY event_time per symbol.
+-- Core requirement: all indicators are computed on trading order (symbol + timeframe), not calendar gaps.
 
 ALTER TABLE wp_lcni_ohlc
     ADD COLUMN IF NOT EXISTS pha_nen VARCHAR(30) NULL,
@@ -17,20 +17,21 @@ base AS (
     SELECT
         t.id,
         t.symbol,
+        t.timeframe,
         t.event_time,
-        ROW_NUMBER() OVER (PARTITION BY t.symbol ORDER BY t.event_time, t.id) AS trading_index,
+        ROW_NUMBER() OVER (PARTITION BY t.symbol, t.timeframe ORDER BY t.event_time, t.id) AS trading_index,
         t.close_price,
         t.volume,
-        ROW_NUMBER() OVER (PARTITION BY t.symbol ORDER BY t.event_time) AS rn,
+        ROW_NUMBER() OVER (PARTITION BY t.symbol, t.timeframe ORDER BY t.event_time, t.id) AS rn,
 
         -- % change (decimal ratio, e.g. 0.05 = +5%)
         t.close_price / NULLIF(LAG(t.close_price, 1)  OVER w, 0) - 1 AS pct_t_1,
         t.close_price / NULLIF(LAG(t.close_price, 3)  OVER w, 0) - 1 AS pct_t_3,
         t.close_price / NULLIF(LAG(t.close_price, 5)  OVER w, 0) - 1 AS pct_1w,
-        t.close_price / NULLIF(LAG(t.close_price, 20) OVER w, 0) - 1 AS pct_1m,
-        t.close_price / NULLIF(LAG(t.close_price, 60) OVER w, 0) - 1 AS pct_3m,
-        t.close_price / NULLIF(LAG(t.close_price, 120) OVER w, 0) - 1 AS pct_6m,
-        t.close_price / NULLIF(LAG(t.close_price, 240) OVER w, 0) - 1 AS pct_1y,
+        t.close_price / NULLIF(LAG(t.close_price, 21) OVER w, 0) - 1 AS pct_1m,
+        t.close_price / NULLIF(LAG(t.close_price, 63) OVER w, 0) - 1 AS pct_3m,
+        t.close_price / NULLIF(LAG(t.close_price, 126) OVER w, 0) - 1 AS pct_6m,
+        t.close_price / NULLIF(LAG(t.close_price, 252) OVER w, 0) - 1 AS pct_1y,
 
         -- Moving averages
         AVG(t.close_price) OVER (w ROWS BETWEEN 9 PRECEDING  AND CURRENT ROW)  AS ma10,
@@ -40,15 +41,15 @@ base AS (
         AVG(t.close_price) OVER (w ROWS BETWEEN 199 PRECEDING AND CURRENT ROW) AS ma200,
 
         -- Highest / Lowest by close_price
-        MAX(t.close_price) OVER (w ROWS BETWEEN 19 PRECEDING  AND CURRENT ROW) AS h1m,
-        MAX(t.close_price) OVER (w ROWS BETWEEN 59 PRECEDING  AND CURRENT ROW) AS h3m,
-        MAX(t.close_price) OVER (w ROWS BETWEEN 119 PRECEDING AND CURRENT ROW) AS h6m,
-        MAX(t.close_price) OVER (w ROWS BETWEEN 239 PRECEDING AND CURRENT ROW) AS h1y,
+        MAX(t.close_price) OVER (w ROWS BETWEEN 20 PRECEDING  AND CURRENT ROW) AS h1m,
+        MAX(t.close_price) OVER (w ROWS BETWEEN 62 PRECEDING  AND CURRENT ROW) AS h3m,
+        MAX(t.close_price) OVER (w ROWS BETWEEN 125 PRECEDING AND CURRENT ROW) AS h6m,
+        MAX(t.close_price) OVER (w ROWS BETWEEN 251 PRECEDING AND CURRENT ROW) AS h1y,
 
-        MIN(t.close_price) OVER (w ROWS BETWEEN 19 PRECEDING  AND CURRENT ROW) AS l1m,
-        MIN(t.close_price) OVER (w ROWS BETWEEN 59 PRECEDING  AND CURRENT ROW) AS l3m,
-        MIN(t.close_price) OVER (w ROWS BETWEEN 119 PRECEDING AND CURRENT ROW) AS l6m,
-        MIN(t.close_price) OVER (w ROWS BETWEEN 239 PRECEDING AND CURRENT ROW) AS l1y,
+        MIN(t.close_price) OVER (w ROWS BETWEEN 20 PRECEDING  AND CURRENT ROW) AS l1m,
+        MIN(t.close_price) OVER (w ROWS BETWEEN 62 PRECEDING  AND CURRENT ROW) AS l3m,
+        MIN(t.close_price) OVER (w ROWS BETWEEN 125 PRECEDING AND CURRENT ROW) AS l6m,
+        MIN(t.close_price) OVER (w ROWS BETWEEN 251 PRECEDING AND CURRENT ROW) AS l1y,
 
         -- Volume moving averages
         AVG(t.volume) OVER (w ROWS BETWEEN 9 PRECEDING  AND CURRENT ROW) AS vol_ma10,
@@ -57,15 +58,15 @@ base AS (
         -- RSI helper
         t.close_price - LAG(t.close_price, 1) OVER w AS price_change
     FROM wp_lcni_ohlc t
-    WINDOW w AS (PARTITION BY t.symbol ORDER BY t.event_time)
+    WINDOW w AS (PARTITION BY t.symbol, t.timeframe ORDER BY t.event_time, t.id)
 ),
 gainloss AS (
     SELECT
         b.*,
         GREATEST(b.price_change, 0) AS gain,
         ABS(LEAST(b.price_change, 0)) AS loss,
-        AVG(GREATEST(b.price_change, 0)) OVER (PARTITION BY b.symbol ORDER BY b.event_time ROWS BETWEEN 13 PRECEDING AND CURRENT ROW) AS avg_gain_14,
-        AVG(ABS(LEAST(b.price_change, 0))) OVER (PARTITION BY b.symbol ORDER BY b.event_time ROWS BETWEEN 13 PRECEDING AND CURRENT ROW) AS avg_loss_14
+        AVG(GREATEST(b.price_change, 0)) OVER (PARTITION BY b.symbol, b.timeframe ORDER BY b.event_time, b.id ROWS BETWEEN 13 PRECEDING AND CURRENT ROW) AS avg_gain_14,
+        AVG(ABS(LEAST(b.price_change, 0))) OVER (PARTITION BY b.symbol, b.timeframe ORDER BY b.event_time, b.id ROWS BETWEEN 13 PRECEDING AND CURRENT ROW) AS avg_loss_14
     FROM base b
 ),
 ema AS (
@@ -73,6 +74,7 @@ ema AS (
     SELECT
         b.id,
         b.symbol,
+        b.timeframe,
         b.rn,
         b.close_price,
         b.close_price AS ema12,
@@ -85,6 +87,7 @@ ema AS (
     SELECT
         b.id,
         b.symbol,
+        b.timeframe,
         b.rn,
         b.close_price,
         (2.0 / (12 + 1)) * b.close_price + (1 - 2.0 / (12 + 1)) * e.ema12 AS ema12,
@@ -92,12 +95,14 @@ ema AS (
     FROM ema e
     JOIN base b
       ON b.symbol = e.symbol
+     AND b.timeframe = e.timeframe
      AND b.rn = e.rn + 1
 ),
 macd_raw AS (
     SELECT
         e.id,
         e.symbol,
+        e.timeframe,
         e.rn,
         (e.ema12 - e.ema26) AS macd
     FROM ema e
@@ -107,6 +112,7 @@ macd_signal AS (
     SELECT
         m.id,
         m.symbol,
+        m.timeframe,
         m.rn,
         m.macd,
         m.macd AS macd_signal
@@ -118,12 +124,14 @@ macd_signal AS (
     SELECT
         m.id,
         m.symbol,
+        m.timeframe,
         m.rn,
         m.macd,
         (2.0 / (9 + 1)) * m.macd + (1 - 2.0 / (9 + 1)) * s.macd_signal AS macd_signal
     FROM macd_signal s
     JOIN macd_raw m
       ON m.symbol = s.symbol
+     AND m.timeframe = s.timeframe
      AND m.rn = s.rn + 1
 ),
 final_calc AS (
@@ -193,7 +201,7 @@ final_calc AS (
     SELECT
         f.*,
         SUM(CASE WHEN f.xay_nen = 'xây nền' THEN 1 ELSE 0 END)
-            OVER (PARTITION BY b.symbol ORDER BY b.event_time, b.id ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS xay_nen_count_30
+            OVER (PARTITION BY b.symbol, b.timeframe ORDER BY b.event_time, b.id ROWS BETWEEN 29 PRECEDING AND CURRENT ROW) AS xay_nen_count_30
     FROM final_calc f
     JOIN base b ON b.id = f.id
 )
@@ -208,7 +216,7 @@ final_calc AS (
                     ELSE 'Nền lỏng'
                 END,
                 1
-            ) OVER (PARTITION BY b.symbol ORDER BY b.event_time, b.id) IN ('Nền vừa', 'Nền chặt')
+            ) OVER (PARTITION BY b.symbol, b.timeframe ORDER BY b.event_time, b.id) IN ('Nền vừa', 'Nền chặt')
                 AND n.pct_t_1 > 0.03
                 AND n.vol_sv_vol_ma20 >= 0.5
             THEN 'Phá nền'
