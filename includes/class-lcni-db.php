@@ -522,20 +522,20 @@ class LCNI_DB {
                     symbol,
                     timeframe,
                     event_time,
-                    open,
-                    high,
-                    low,
-                    close,
+                    open_price,
+                    high_price,
+                    low_price,
+                    close_price,
                     volume
                 )
                 SELECT
                     o.symbol,
                     o.timeframe,
                     o.event_time,
-                    o.open,
-                    o.high,
-                    o.low,
-                    o.close,
+                    o.open_price,
+                    o.high_price,
+                    o.low_price,
+                    o.close_price,
                     o.volume
                 FROM {$ohlc_table} o
                 INNER JOIN (
@@ -673,20 +673,20 @@ class LCNI_DB {
                 symbol,
                 timeframe,
                 event_time,
-                open,
-                high,
-                low,
-                close,
+                open_price,
+                high_price,
+                low_price,
+                close_price,
                 volume
             )
             SELECT
                 o.symbol,
                 o.timeframe,
                 o.event_time,
-                o.open,
-                o.high,
-                o.low,
-                o.close,
+                o.open_price,
+                o.high_price,
+                o.low_price,
+                o.close_price,
                 o.volume
             FROM {$ohlc_table} o
             INNER JOIN (
