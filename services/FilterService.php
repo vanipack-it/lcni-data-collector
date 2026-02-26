@@ -75,6 +75,7 @@ class FilterService {
         $all_columns = $this->watchlist_service->get_all_columns();
         $criteria = $this->normalizeColumns(get_option('lcni_filter_criteria_columns', []), $all_columns);
         $table_columns = $this->normalizeColumns(get_option('lcni_filter_table_columns', []), $all_columns);
+        $table_column_order = $this->normalizeColumns(get_option('lcni_filter_table_column_order', []), $all_columns);
 
         if (empty($criteria)) {
             $criteria = array_slice($all_columns, 0, 8);
@@ -82,6 +83,19 @@ class FilterService {
 
         if (empty($table_columns)) {
             $table_columns = $this->watchlist_service->get_default_columns('desktop');
+        }
+
+
+        if (!empty($table_column_order)) {
+            $ordered = array_values(array_filter($table_column_order, function ($column) use ($table_columns) {
+                return in_array($column, $table_columns, true);
+            }));
+            foreach ($table_columns as $column) {
+                if (!in_array($column, $ordered, true)) {
+                    $ordered[] = $column;
+                }
+            }
+            $table_columns = $ordered;
         }
 
         if (!in_array('symbol', $table_columns, true)) {
@@ -102,7 +116,9 @@ class FilterService {
     private function normalizeColumns($columns, array $all_columns): array {
         $columns = is_array($columns) ? array_map('sanitize_key', $columns) : [];
 
-        return array_values(array_intersect($all_columns, $columns));
+        return array_values(array_filter($columns, static function ($column) use ($all_columns) {
+            return in_array($column, $all_columns, true);
+        }));
     }
 
     private function sanitizeFilters($filters, array $allowed_columns): array {

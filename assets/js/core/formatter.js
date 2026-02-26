@@ -32,6 +32,9 @@
       watchlist: true,
       market_overview: true,
     },
+    date_formats: {
+      event_time: "DD-MM-YYYY",
+    },
   };
 
   const CACHE = {
@@ -98,6 +101,7 @@
           DEFAULT_CONFIG.percent_normalization.already_percent_fields.slice(),
       },
       module_scope: Object.assign({}, DEFAULT_CONFIG.module_scope),
+      date_formats: Object.assign({}, DEFAULT_CONFIG.date_formats),
     };
 
     const decimals =
@@ -134,6 +138,16 @@
           ? !!moduleScope[moduleKey]
           : DEFAULT_CONFIG.module_scope[moduleKey];
     });
+
+    const dateFormats =
+      config.date_formats && typeof config.date_formats === "object"
+        ? config.date_formats
+        : {};
+    const eventTimeFormat = String(
+      dateFormats.event_time || DEFAULT_CONFIG.date_formats.event_time,
+    ).trim();
+    merged.date_formats.event_time =
+      eventTimeFormat === "number" ? "number" : "DD-MM-YYYY";
 
     return merged;
   }
@@ -257,6 +271,7 @@
 
   function inferColumnFormat(column) {
     const key = normalizeFieldName(column);
+    if (key === "event_time") return { type: "event_time" };
     if (key.indexOf("volume") !== -1 || key === "vol")
       return { type: "volume" };
     if (key.indexOf("rsi") !== -1) return { type: "rsi" };
@@ -269,6 +284,42 @@
     if (key === "pe" || key.indexOf("pe_") === 0) return { type: "pe" };
     if (key === "pb" || key.indexOf("pb_") === 0) return { type: "pb" };
     return { type: "price" };
+  }
+
+  function pad2(number) {
+    const value = Math.max(0, Math.floor(Number(number) || 0));
+    return value < 10 ? `0${value}` : String(value);
+  }
+
+  function formatEventTime(value) {
+    if (value === null || value === undefined || value === "") {
+      return "-";
+    }
+
+    const normalized = String(value).trim();
+    if (activeConfig.date_formats.event_time === "number") {
+      return normalized;
+    }
+
+    if (/^\d{8}$/.test(normalized)) {
+      const year = normalized.slice(0, 4);
+      const month = normalized.slice(4, 6);
+      const day = normalized.slice(6, 8);
+      return `${day}-${month}-${year}`;
+    }
+
+    const numeric = Number(normalized);
+    if (!Number.isFinite(numeric)) {
+      return normalized;
+    }
+
+    const timestampMs = numeric > 1e12 ? numeric : numeric * 1000;
+    const date = new Date(timestampMs);
+    if (!Number.isFinite(date.getTime())) {
+      return normalized;
+    }
+
+    return `${pad2(date.getDate())}-${pad2(date.getMonth() + 1)}-${date.getFullYear()}`;
   }
 
   function shouldApply(moduleName) {
@@ -303,6 +354,9 @@
     },
     formatByField(value, fieldName) {
       const format = inferColumnFormat(fieldName);
+      if (format.type === "event_time") {
+        return formatEventTime(value);
+      }
       return formatCompact(value, format.type, format);
     },
     formatByColumn(value, column) {
@@ -321,6 +375,7 @@
             activeConfig.percent_normalization.already_percent_fields.slice(),
         },
         module_scope: Object.assign({}, activeConfig.module_scope),
+        date_formats: Object.assign({}, activeConfig.date_formats),
       });
     },
     setConfig(nextConfig) {
