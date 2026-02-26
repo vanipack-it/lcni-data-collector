@@ -117,17 +117,32 @@ class LCNI_FilterAdmin {
             </div>
 
             <div data-filter-sub-pane="criteria">
-                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form" data-lcni-criteria-form>
                     <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
                     <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
                     <input type="hidden" name="lcni_frontend_module" value="filter">
                     <input type="hidden" name="lcni_filter_section" value="criteria">
                     <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                    <input type="hidden" name="lcni_filter_criteria_column_order" value="<?php echo esc_attr(implode(',', (array) $criteria)); ?>" data-selected-order>
                     <h3>Filter Criteria</h3>
-                    <div class="lcni-front-grid">
-                        <?php foreach ($all_columns as $column) : ?>
-                            <label><input type="checkbox" name="lcni_filter_criteria_columns[]" value="<?php echo esc_attr($column); ?>" <?php checked(in_array($column, $criteria, true)); ?>> <?php echo esc_html($column); ?></label>
-                        <?php endforeach; ?>
+                    <div style="display:grid;grid-template-columns:80% 20%;gap:12px;align-items:start;">
+                        <div>
+                            <p><strong>Available fields</strong></p>
+                            <div class="lcni-front-grid">
+                                <?php foreach ($all_columns as $column) : ?>
+                                    <label><input type="checkbox" name="lcni_filter_criteria_columns[]" data-column-checkbox value="<?php echo esc_attr($column); ?>" <?php checked(in_array($column, $criteria, true)); ?>> <?php echo esc_html($column); ?></label>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                        <div>
+                            <p><strong>Selected order</strong></p>
+                            <ol data-selected-list style="margin:0;padding-left:18px;max-height:320px;overflow:auto;">
+                                <?php foreach ((array) $criteria as $column) : ?>
+                                    <li draggable="true" data-selected-column="<?php echo esc_attr($column); ?>" style="cursor:move;padding:4px 0;"><?php echo esc_html($column); ?></li>
+                                <?php endforeach; ?>
+                            </ol>
+                            <p class="description">Kéo thả để đổi thứ tự điều kiện hiển thị frontend.</p>
+                        </div>
                     </div>
                     <?php submit_button('Save'); ?>
                 </form>
@@ -253,14 +268,16 @@ class LCNI_FilterAdmin {
                 };
                 buttons.forEach((btn) => btn.addEventListener('click', () => show(btn.getAttribute('data-filter-sub-tab'))));
 
-                document.querySelectorAll('[data-lcni-table-column-form]').forEach((form) => {
+                document.querySelectorAll('[data-lcni-table-column-form], [data-lcni-criteria-form]').forEach((form) => {
                     const selectedList = form.querySelector('[data-selected-list]');
                     const hidden = form.querySelector('[data-selected-order]');
                     if (!selectedList || !hidden) {
                         return;
                     }
 
-                    const stickyColumnCount = Math.max(0, Number(<?php echo wp_json_encode((int) ($style['sticky_column_count'] ?? 1)); ?>) || 0);
+                    const stickyColumnCount = form.hasAttribute('data-lcni-table-column-form')
+                        ? Math.max(0, Number(<?php echo wp_json_encode((int) ($style['sticky_column_count'] ?? 1)); ?>) || 0)
+                        : 0;
                     const syncHidden = () => {
                         hidden.value = Array.from(selectedList.querySelectorAll('[data-selected-column]')).map((node) => node.getAttribute('data-selected-column') || '').filter(Boolean).join(',');
                     };

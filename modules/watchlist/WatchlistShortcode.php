@@ -7,7 +7,7 @@ if (!defined('ABSPATH')) {
 class LCNI_WatchlistShortcode {
 
     const OPTION_KEY = 'lcni_watchlist_settings';
-    const VERSION = '2.1.6';
+    const VERSION = '2.1.7';
 
     private $service;
 

@@ -1,3 +1,10 @@
+## 2026-02-26 14:45 (v2.1.7)
+- Nâng version plugin lên `2.1.7` và cập nhật log kèm mốc ngày giờ cụ thể để tiện theo dõi.
+- Frontend Settings → Filter Criteria: chuyển sang layout 2 cột tỷ lệ 80:20; cột trái chọn field bằng checkbox, cột phải hiển thị field đã chọn và hỗ trợ kéo-thả để lưu thứ tự điều kiện filter hiển thị ở frontend.
+- Frontend Filter panel: bổ sung nút `Clear` (key button `btn_filter_clear`) để xóa nhanh toàn bộ điều kiện đã chọn; nút này có thể cấu hình trong Frontend Settings → Style Config → Button.
+- Frontend Filter: nút `btn_filter_apply` hiển thị realtime số mã đủ điều kiện ngay trên label button; bảng kết quả chỉ tải khi click `Apply Filter` (không auto load khi mở trang).
+- Đảm bảo `btn_filter_apply` luôn hiển thị đầy đủ cả icon + text trên desktop và mobile.
+
 ## 2026-02-26 13:19 (v2.1.6)
 - Nâng version plugin lên `2.1.6` và cập nhật log kèm thời điểm ngày giờ cụ thể để dễ theo dõi.
 - Fix pipeline đồng bộ `wp_lcni_ohlc_latest`: kiểm tra stale theo **thời điểm chạy sync gần nhất** (runtime timestamp) thay vì `MAX(event_time)` của dữ liệu, tránh trường hợp `event_time` nằm tương lai làm cron/watchdog bỏ qua refresh và khiến dữ liệu latest bị đứng.

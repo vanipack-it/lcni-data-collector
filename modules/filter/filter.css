@@ -63,7 +63,7 @@
   .lcni-app .lcni-stock-filter .lcni-filter-panel,
   .lcni-app .lcni-stock-filter .lcni-column-pop{position:fixed;left:8px;right:8px;top:8px;max-height:80vh;overflow:auto;z-index:10001;margin:0;}
   .lcni-app .lcni-stock-filter .lcni-table-scroll{max-height:calc(100vh - 140px);}
-  .lcni-btn-btn_apply_filter span,.lcni-btn-btn_save_filter span,.lcni-btn-btn_filter_reload span,.lcni-btn-btn_filter_delete span,.lcni-btn-btn_filter_save span,.lcni-btn-btn_filter_apply span{display:none;}
+  .lcni-btn-btn_apply_filter span,.lcni-btn-btn_save_filter span,.lcni-btn-btn_filter_reload span,.lcni-btn-btn_filter_delete span,.lcni-btn-btn_filter_save span,.lcni-btn-btn_filter_clear span{display:none;}
 }
 
 .lcni-app .lcni-stock-filter .lcni-table .lcni-cell-number { text-align:right; }
