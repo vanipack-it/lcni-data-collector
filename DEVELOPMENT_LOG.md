@@ -1,3 +1,10 @@
+## 2026-02-26 08:07 (v2.1.5)
+- Nâng version plugin lên `2.1.5` và cập nhật log kèm mốc ngày giờ cụ thể để dễ theo dõi.
+- Fix Frontend Setting → LCNi Signals: mở danh sách field theo toàn bộ cột hiện có của bảng `wp_lcni_ohlc_latest` (thay vì cố định 9 field), admin có thể chọn đầy đủ cột và kéo-thả thứ tự hiển thị theo layout 80:20.
+- Fix Frontend Setting → Stock Overview: bổ sung layout chọn field 80:20, cột phải hiển thị field đã chọn và hỗ trợ kéo-thả để lưu thứ tự hiển thị frontend.
+- Đồng bộ frontend Signals để đọc `field_labels` từ admin config và render thứ tự box theo danh sách đã chọn/sắp xếp, đảm bảo di chuyển đồng thời cả label + value.
+- Fix watchlist mobile: nhóm nút `btn_watchlist_add`, `btn_watchlist_new`, `btn_watchlist_delete`, `btn_watchlist_setting` hiển thị trên cùng 1 hàng full-width; khi thiếu không gian sẽ tự ẩn text và giữ icon.
+
 ## 2026-02-26 07:22 (v2.1.4)
 - Nâng version plugin lên `2.1.4` và ghi log kèm mốc ngày giờ cập nhật cụ thể để dễ theo dõi.
 - Frontend Setting -> Data Format: bổ sung tùy chỉnh định dạng `event_time` (`DD-MM-YYYY` hoặc `number`), mặc định hiển thị ngày để các module frontend dùng đồng bộ.

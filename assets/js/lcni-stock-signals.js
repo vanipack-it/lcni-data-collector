@@ -11,7 +11,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const sanitizeSymbol = context.normalizeSymbol;
 
-  const labels = {
+  const defaultLabels = {
     xay_nen: "Nền giá",
     xay_nen_count_30: "Số phiên đi nền trong 30 phiên",
     nen_type: "Dạng nền",
@@ -22,8 +22,6 @@ document.addEventListener("DOMContentLoaded", () => {
     rs_exchange_recommend: "Gợi ý sức mạnh giá",
     rs_recommend_status: "Gợi ý trạng thái sức mạnh giá",
   };
-
-  const defaultFields = Object.keys(labels);
 
   const evaluateRule = (field, value, rule) => {
     if (!rule || typeof rule !== "object") {
@@ -247,6 +245,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const adminConfig = parseAdminConfig(container.dataset.adminConfig);
     const buttonConfig =
       parseButtonConfig(container.dataset.buttonConfig) || {};
+    const labels =
+      adminConfig?.field_labels && typeof adminConfig.field_labels === "object"
+        ? { ...defaultLabels, ...adminConfig.field_labels }
+        : defaultLabels;
+    const defaultFields = Object.keys(labels);
     const allowedFields =
       Array.isArray(adminConfig?.allowed_fields) &&
       adminConfig.allowed_fields.length

@@ -63,8 +63,12 @@
   .lcni-watchlist-header{align-items:flex-start;}
   .lcni-watchlist-list-controls{width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
   .lcni-watchlist-list-controls select,.lcni-watchlist-symbol-input{width:100%;min-width:0;}
-  .lcni-watchlist-action-buttons{display:flex;flex-wrap:nowrap;gap:6px;overflow-x:auto;padding-bottom:4px;}
-  .lcni-watchlist-action-buttons > *{flex:0 0 auto;}
+
+  .lcni-watchlist-list-controls{grid-template-columns:1fr;}
+  .lcni-watchlist-action-buttons{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;width:100%;overflow:visible;padding-bottom:0;}
+  .lcni-watchlist-action-buttons > .lcni-btn{width:100%;justify-content:center;min-width:0;}
+  .lcni-watchlist-action-buttons .lcni-btn-btn_watchlist_setting{padding-left:0;padding-right:0;}
+  .lcni-watchlist-action-buttons .lcni-btn span{display:none;}
   .lcni-watchlist-dropdown{align-self:flex-start;}
   .lcni-watchlist-controls{position:fixed;top:12px;right:12px;left:12px;max-width:none;width:auto;max-height:80vh;overflow:auto;z-index:9999;}
   .lcni-watchlist-table-wrap{max-height:calc(100vh - 220px);}
