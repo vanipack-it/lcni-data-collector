@@ -12,6 +12,8 @@
     total: 0,
     savedFilters: [],
     selectedSavedFilterId: 0,
+    adminTemplates: [],
+    selectedTemplateId: 0,
     lastAppliedTotal: 0,
     sortKey: '',
     sortDir: 'asc',
@@ -266,15 +268,21 @@
   }
 
   async function loadSavedFilters() {
-    if (!cfg.isLoggedIn) {
-      state.savedFilters = [];
-      state.selectedSavedFilterId = 0;
-      return;
-    }
     const payload = await savedFilterApi('/list', { method: 'GET' });
-    state.savedFilters = Array.isArray(payload.items) ? payload.items : [];
+    state.savedFilters = cfg.isLoggedIn && Array.isArray(payload.items) ? payload.items : [];
+    state.adminTemplates = Array.isArray(payload.admin_templates) ? payload.admin_templates : [];
+
     const defaultId = Number(payload.default_filter_id || 0);
-    if (!state.selectedSavedFilterId && defaultId > 0) state.selectedSavedFilterId = defaultId;
+    const lastViewedId = Number(payload.last_viewed_filter_id || 0);
+    const defaultTemplateId = Number(payload.default_admin_template_id || 0);
+
+    if (cfg.isLoggedIn && !state.selectedSavedFilterId) {
+      if (defaultId > 0) state.selectedSavedFilterId = defaultId;
+      else if (lastViewedId > 0) state.selectedSavedFilterId = lastViewedId;
+    }
+    if (!state.selectedTemplateId && defaultTemplateId > 0) {
+      state.selectedTemplateId = defaultTemplateId;
+    }
   }
 
   function applySavedFilterConfig(host, config) {
@@ -409,6 +417,7 @@
     const labels = settings.column_labels || {};
     const columns = state.visibleColumns;
     const selectedId = Number(state.selectedSavedFilterId || 0);
+    const selectedTemplateId = Number(state.selectedTemplateId || 0);
 
     host.style.setProperty('--lcni-panel-label-size', `${Number(style.panel_label_font_size || 13)}px`);
     host.style.setProperty('--lcni-panel-value-size', `${Number(style.panel_value_font_size || 13)}px`);
@@ -423,14 +432,21 @@
     host.style.setProperty('--lcni-row-divider-color', String(style.table_row_divider_color || '#e5e7eb'));
     host.style.setProperty('--lcni-row-divider-width', `${Number(style.table_row_divider_width || 1)}px`);
     host.style.setProperty('--lcni-row-hover-bg', String(style.row_hover_background || '#eef2ff'));
+    host.style.setProperty('--lcni-saved-filter-bg', String(style.saved_filter_dropdown_bg || '#ffffff'));
+    host.style.setProperty('--lcni-saved-filter-color', String(style.saved_filter_dropdown_text || '#111827'));
+    host.style.setProperty('--lcni-saved-filter-border', String(style.saved_filter_dropdown_border || '#d1d5db'));
+    host.style.setProperty('--lcni-template-filter-bg', String(style.template_filter_dropdown_bg || '#ffffff'));
+    host.style.setProperty('--lcni-template-filter-color', String(style.template_filter_dropdown_text || '#111827'));
+    host.style.setProperty('--lcni-template-filter-border', String(style.template_filter_dropdown_border || '#d1d5db'));
     host.style.setProperty('--lcni-table-header-height', `${Number(style.table_header_row_height || 42)}px`);
     host.style.setProperty('--lcni-table-scroll-speed', String(Number(style.table_scroll_speed || 1)));
     host.classList.toggle('lcni-disable-sticky-header', Number(style.sticky_header_rows || 1) < 1);
 
     const hideBtn = style.enable_hide_button ? `<button type="button" class="lcni-btn lcni-btn-btn_filter_hide lcni-filter-hide-btn" data-filter-hide>${renderButtonContent('btn_filter_hide', 'Ẩn')}</button>` : '';
-    const savedFilterLabel = esc(style.saved_filter_label || 'Saved filters');
+    const savedFilterLabel = esc(style.saved_filter_label || 'Saved Filter');
+    const templateLabel = esc(style.template_filter_label || 'LCNi Filter Template');
 
-    host.innerHTML = `<div class="lcni-filter-toolbar"><button type="button" class="lcni-btn lcni-btn-btn_filter_open" data-filter-toggle>${renderButtonContent('btn_filter_open', 'Filter')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_setting" data-column-toggle-btn>${renderButtonContent('btn_filter_setting', '')}</button></div><div class="lcni-filter-panel ${state.panelHidden ? 'is-collapsed' : ''}" data-filter-panel><div class="lcni-filter-panel-body">${renderCriteriaPanel()}</div><div class="lcni-filter-panel-actions"><label class="lcni-saved-filter-label">${savedFilterLabel}</label><select data-saved-filter-select><option value="">${savedFilterLabel}</option>${(state.savedFilters || []).map((f) => `<option value="${Number(f.id || 0)}" ${Number(f.id || 0) === selectedId ? 'selected' : ''}>${esc(f.filter_name || '')}</option>`).join('')}</select><button type="button" class="lcni-btn lcni-btn-btn_filter_reload" data-reload-filter>${renderButtonContent('btn_filter_reload', 'Reload')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_save" data-save-current-filter>${renderButtonContent('btn_filter_save', 'Save')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_delete" data-delete-current-filter>${renderButtonContent('btn_filter_delete', 'Delete')}</button><button type="button" class="lcni-btn lcni-btn-btn_set_default_filter" data-set-default-filter>${renderButtonContent('btn_set_default_filter', 'Set Default')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_clear" data-clear-filter>${renderButtonContent('btn_filter_clear', 'Clear')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_apply" data-apply-filter>${renderButtonContent('btn_filter_apply', 'Apply Filter', getApplyLabel())}</button>${hideBtn}</div></div><div class="lcni-column-pop" data-column-pop ${state.columnPanelOpen ? '' : 'hidden'}></div><div class="lcni-table-scroll"><table class="lcni-table"><thead><tr>${columns.map((c, idx) => `<th data-sort-key="${esc(c)}" class="${idx < Number(style.sticky_column_count || 1) ? 'is-sticky-col' : ''} ${isNumericValue((state.dataset[0] || {})[c]) ? 'lcni-cell-number' : 'lcni-cell-text'}">${esc(labels[c] || c)} <span data-sort-icon>${state.sortKey === c ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</span></th>`).join('')}</tr></thead><tbody><tr><td colspan="${columns.length}" class="lcni-cell-text">Nhấn Apply Filter để tải dữ liệu.</td></tr></tbody></table></div>`;
+    host.innerHTML = `<div class="lcni-filter-toolbar"><button type="button" class="lcni-btn lcni-btn-btn_filter_open" data-filter-toggle>${renderButtonContent('btn_filter_open', 'Filter')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_setting" data-column-toggle-btn>${renderButtonContent('btn_filter_setting', '')}</button></div><div class="lcni-filter-panel ${state.panelHidden ? 'is-collapsed' : ''}" data-filter-panel><div class="lcni-filter-panel-body">${renderCriteriaPanel()}</div><div class="lcni-filter-panel-actions"><label class="lcni-saved-filter-label">${savedFilterLabel}</label><select data-saved-filter-select class="lcni-select-saved-filter"><option value="">${savedFilterLabel}</option>${(state.savedFilters || []).map((f) => `<option value="${Number(f.id || 0)}" ${Number(f.id || 0) === selectedId ? 'selected' : ''}>${esc(f.filter_name || '')}</option>`).join('')}</select><label class="lcni-saved-filter-label">${templateLabel}</label><select data-template-filter-select class="lcni-select-template-filter"><option value="">${templateLabel}</option>${(state.adminTemplates || []).map((f) => `<option value="${Number(f.id || 0)}" ${Number(f.id || 0) === selectedTemplateId ? 'selected' : ''}>${esc(f.filter_name || '')}</option>`).join('')}</select><button type="button" class="lcni-btn lcni-btn-btn_filter_reload" data-reload-filter>${renderButtonContent('btn_filter_reload', 'Reload')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_save" data-save-current-filter>${renderButtonContent('btn_filter_save', 'Save')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_delete" data-delete-current-filter>${renderButtonContent('btn_filter_delete', 'Delete')}</button><button type="button" class="lcni-btn lcni-btn-btn_set_default_filter" data-set-default-filter>${renderButtonContent('btn_set_default_filter', 'Set Default')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_clear" data-clear-filter>${renderButtonContent('btn_filter_clear', 'Clear')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_apply" data-apply-filter>${renderButtonContent('btn_filter_apply', 'Apply Filter', getApplyLabel())}</button>${hideBtn}</div></div><div class="lcni-column-pop" data-column-pop ${state.columnPanelOpen ? '' : 'hidden'}></div><div class="lcni-table-scroll"><table class="lcni-table"><thead><tr>${columns.map((c, idx) => `<th data-sort-key="${esc(c)}" class="${idx < Number(style.sticky_column_count || 1) ? 'is-sticky-col' : ''} ${isNumericValue((state.dataset[0] || {})[c]) ? 'lcni-cell-number' : 'lcni-cell-text'}">${esc(labels[c] || c)} <span data-sort-icon>${state.sortKey === c ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</span></th>`).join('')}</tr></thead><tbody><tr><td colspan="${columns.length}" class="lcni-cell-text">Nhấn Apply Filter để tải dữ liệu.</td></tr></tbody></table></div>`;
 
     const selectable = settings.table_columns || columns;
     host.querySelector('[data-column-pop]').innerHTML = `${renderColumnPositionItems(selectable, labels)}<button type="button" class="lcni-btn lcni-btn-btn_save_filter" data-save-columns>${renderButtonContent('btn_save_filter', 'Save')}</button>`;
@@ -646,6 +662,7 @@
         state.filters = [];
         state.page = 1;
         state.selectedSavedFilterId = 0;
+        state.selectedTemplateId = 0;
         state.tableLoaded = false;
         state.dataset = [];
         const tbody = host.querySelector('tbody');
@@ -691,8 +708,22 @@
       const select = event.target.closest('[data-saved-filter-select]');
       if (select) {
         state.selectedSavedFilterId = Number(select.value || 0);
+        state.selectedTemplateId = 0;
         if (state.selectedSavedFilterId > 0) {
           const payload = await savedFilterApi('/load?id=' + encodeURIComponent(state.selectedSavedFilterId), { method: 'GET' });
+          applySavedFilterConfig(host, payload.config || {});
+          state.filters = collectFilters(host);
+          state.page = 1;
+          queueEligibleCount(host);
+        }
+      }
+
+      const templateSelect = event.target.closest('[data-template-filter-select]');
+      if (templateSelect) {
+        state.selectedTemplateId = Number(templateSelect.value || 0);
+        state.selectedSavedFilterId = 0;
+        if (state.selectedTemplateId > 0) {
+          const payload = await savedFilterApi('/template/load?id=' + encodeURIComponent(state.selectedTemplateId), { method: 'GET' });
           applySavedFilterConfig(host, payload.config || {});
           state.filters = collectFilters(host);
           state.page = 1;
@@ -736,8 +767,25 @@
       bind(host);
       syncAllNumberRanges(host, 'input');
       updateCriteriaSelectionState(host);
+
+      let initialConfig = null;
+      if (state.selectedSavedFilterId > 0) {
+        const payload = await savedFilterApi('/load?id=' + encodeURIComponent(state.selectedSavedFilterId), { method: 'GET' });
+        initialConfig = payload.config || null;
+      } else if (state.selectedTemplateId > 0) {
+        const payload = await savedFilterApi('/template/load?id=' + encodeURIComponent(state.selectedTemplateId), { method: 'GET' });
+        initialConfig = payload.config || null;
+      }
+
+      if (initialConfig) {
+        applySavedFilterConfig(host, initialConfig);
+      }
+
       state.filters = collectFilters(host);
       queueEligibleCount(host);
+      if (state.filters.length) {
+        await load(host);
+      }
     });
   }
 

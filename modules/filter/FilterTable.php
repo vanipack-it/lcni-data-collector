@@ -51,7 +51,14 @@ class LCNI_FilterTable {
             'column_labels' => $this->watchlist_service->get_column_labels($all_columns),
             'style' => [
                 'enable_hide_button' => !empty($style['enable_hide_button']),
-                'saved_filter_label' => sanitize_text_field((string) ($style['saved_filter_label'] ?? 'Saved filters')),
+                'saved_filter_label' => sanitize_text_field((string) ($style['saved_filter_label'] ?? 'Saved Filter')),
+                'template_filter_label' => sanitize_text_field((string) ($style['template_filter_label'] ?? 'LCNi Filter Template')),
+                'saved_filter_dropdown_bg' => sanitize_hex_color((string) ($style['saved_filter_dropdown_bg'] ?? '#ffffff')) ?: '#ffffff',
+                'saved_filter_dropdown_text' => sanitize_hex_color((string) ($style['saved_filter_dropdown_text'] ?? '#111827')) ?: '#111827',
+                'saved_filter_dropdown_border' => sanitize_hex_color((string) ($style['saved_filter_dropdown_border'] ?? '#d1d5db')) ?: '#d1d5db',
+                'template_filter_dropdown_bg' => sanitize_hex_color((string) ($style['template_filter_dropdown_bg'] ?? '#ffffff')) ?: '#ffffff',
+                'template_filter_dropdown_text' => sanitize_hex_color((string) ($style['template_filter_dropdown_text'] ?? '#111827')) ?: '#111827',
+                'template_filter_dropdown_border' => sanitize_hex_color((string) ($style['template_filter_dropdown_border'] ?? '#d1d5db')) ?: '#d1d5db',
                 'font_size' => max(10, min(24, (int) ($style['font_size'] ?? 13))),
                 'text_color' => sanitize_hex_color((string) ($style['text_color'] ?? '#111827')) ?: '#111827',
                 'background_color' => sanitize_hex_color((string) ($style['background_color'] ?? '#ffffff')) ?: '#ffffff',
@@ -98,6 +105,9 @@ class LCNI_FilterTable {
         $filter_id = 0;
         if ($user_id > 0) {
             $filter_id = absint(get_user_meta($user_id, 'lcni_filter_default_saved_filter_id', true));
+            if ($filter_id <= 0) {
+                $filter_id = absint(get_user_meta($user_id, 'lcni_filter_last_viewed_saved_filter_id', true));
+            }
         }
         if ($filter_id <= 0) {
             $filter_id = absint(get_option('lcni_filter_default_admin_saved_filter_id', 0));

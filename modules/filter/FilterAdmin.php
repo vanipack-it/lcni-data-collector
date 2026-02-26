@@ -40,7 +40,14 @@ class LCNI_FilterAdmin {
             'header_label_font_size' => is_numeric($input['header_label_font_size'] ?? '') ? max(10, min(30, (int) $input['header_label_font_size'])) : '',
             'row_font_size' => is_numeric($input['row_font_size'] ?? '') ? max(10, min(30, (int) $input['row_font_size'])) : '',
             'row_height' => max(24, min(64, (int) ($input['row_height'] ?? 36))),
-            'saved_filter_label' => sanitize_text_field((string) ($input['saved_filter_label'] ?? 'Saved filters')),
+            'saved_filter_label' => sanitize_text_field((string) ($input['saved_filter_label'] ?? 'Saved Filter')),
+            'template_filter_label' => sanitize_text_field((string) ($input['template_filter_label'] ?? 'LCNi Filter Template')),
+            'saved_filter_dropdown_bg' => sanitize_hex_color((string) ($input['saved_filter_dropdown_bg'] ?? '')) ?: '',
+            'saved_filter_dropdown_text' => sanitize_hex_color((string) ($input['saved_filter_dropdown_text'] ?? '')) ?: '',
+            'saved_filter_dropdown_border' => sanitize_hex_color((string) ($input['saved_filter_dropdown_border'] ?? '')) ?: '',
+            'template_filter_dropdown_bg' => sanitize_hex_color((string) ($input['template_filter_dropdown_bg'] ?? '')) ?: '',
+            'template_filter_dropdown_text' => sanitize_hex_color((string) ($input['template_filter_dropdown_text'] ?? '')) ?: '',
+            'template_filter_dropdown_border' => sanitize_hex_color((string) ($input['template_filter_dropdown_border'] ?? '')) ?: '',
             'panel_label_font_size' => is_numeric($input['panel_label_font_size'] ?? '') ? max(10, min(30, (int) $input['panel_label_font_size'])) : '',
             'panel_value_font_size' => is_numeric($input['panel_value_font_size'] ?? '') ? max(10, min(30, (int) $input['panel_value_font_size'])) : '',
             'panel_label_color' => sanitize_hex_color((string) ($input['panel_label_color'] ?? '')) ?: '',
@@ -113,7 +120,7 @@ class LCNI_FilterAdmin {
                 <button type="button" data-filter-sub-tab="table_columns">Table Columns</button>
                 <button type="button" data-filter-sub-tab="style">Style</button>
                 <button type="button" data-filter-sub-tab="default_values">Default Values</button>
-                <button type="button" data-filter-sub-tab="default_criteria">Filter Criteria Default</button>
+                <button type="button" data-filter-sub-tab="default_criteria">LCNi Filter Template</button>
             </div>
 
             <div data-filter-sub-pane="criteria">
@@ -190,7 +197,8 @@ class LCNI_FilterAdmin {
                     <h3>Style</h3>
                     <p><label><input type="checkbox" name="lcni_filter_style_config[inherit_style]" value="1" <?php checked(!empty($style['inherit_style'])); ?>> Inherit global style</label></p>
                     <p><label><input type="checkbox" name="lcni_filter_style_config[enable_hide_button]" value="1" <?php checked(!empty($style['enable_hide_button'])); ?>> Enable panel hide button</label></p>
-                    <p><label>Saved filter label <input type="text" name="lcni_filter_style_config[saved_filter_label]" value="<?php echo esc_attr((string) ($style['saved_filter_label'] ?? 'Saved filters')); ?>"></label></p>
+                    <p><label>Saved filter label <input type="text" name="lcni_filter_style_config[saved_filter_label]" value="<?php echo esc_attr((string) ($style['saved_filter_label'] ?? 'Saved Filter')); ?>"></label></p>
+                    <p><label>LCNi template label <input type="text" name="lcni_filter_style_config[template_filter_label]" value="<?php echo esc_attr((string) ($style['template_filter_label'] ?? 'LCNi Filter Template')); ?>"></label></p>
                     <p><label>Font size <input type="number" name="lcni_filter_style_config[font_size]" value="<?php echo esc_attr((string) $style['font_size']); ?>"></label></p>
                     <p><label>Text color <input type="color" name="lcni_filter_style_config[text_color]" value="<?php echo esc_attr((string) $style['text_color']); ?>"></label></p>
                     <p><label>Background color <input type="color" name="lcni_filter_style_config[background_color]" value="<?php echo esc_attr((string) $style['background_color']); ?>"></label></p>
@@ -217,6 +225,12 @@ class LCNI_FilterAdmin {
                     <p><label>Table header row height <input type="number" name="lcni_filter_style_config[table_header_row_height]" value="<?php echo esc_attr((string) ($style['table_header_row_height'] ?? 42)); ?>"></label></p>
                     <p><label>Table horizontal scroll speed <input type="number" min="1" max="5" name="lcni_filter_style_config[table_scroll_speed]" value="<?php echo esc_attr((string) ($style['table_scroll_speed'] ?? 1)); ?>"></label></p>
                     <p><label>Row hover background <input type="color" name="lcni_filter_style_config[row_hover_background]" value="<?php echo esc_attr((string) ($style['row_hover_background'] ?? '#eef2ff')); ?>"></label></p>
+                    <p><label>Saved filter dropdown background <input type="color" name="lcni_filter_style_config[saved_filter_dropdown_bg]" value="<?php echo esc_attr((string) ($style['saved_filter_dropdown_bg'] ?? '#ffffff')); ?>"></label></p>
+                    <p><label>Saved filter dropdown text color <input type="color" name="lcni_filter_style_config[saved_filter_dropdown_text]" value="<?php echo esc_attr((string) ($style['saved_filter_dropdown_text'] ?? '#111827')); ?>"></label></p>
+                    <p><label>Saved filter dropdown border color <input type="color" name="lcni_filter_style_config[saved_filter_dropdown_border]" value="<?php echo esc_attr((string) ($style['saved_filter_dropdown_border'] ?? '#d1d5db')); ?>"></label></p>
+                    <p><label>LCNi template dropdown background <input type="color" name="lcni_filter_style_config[template_filter_dropdown_bg]" value="<?php echo esc_attr((string) ($style['template_filter_dropdown_bg'] ?? '#ffffff')); ?>"></label></p>
+                    <p><label>LCNi template dropdown text color <input type="color" name="lcni_filter_style_config[template_filter_dropdown_text]" value="<?php echo esc_attr((string) ($style['template_filter_dropdown_text'] ?? '#111827')); ?>"></label></p>
+                    <p><label>LCNi template dropdown border color <input type="color" name="lcni_filter_style_config[template_filter_dropdown_border]" value="<?php echo esc_attr((string) ($style['template_filter_dropdown_border'] ?? '#d1d5db')); ?>"></label></p>
                     <p><label>Conditional value colors JSON <textarea name="lcni_filter_style_config[conditional_value_colors]" rows="5" class="large-text code"><?php echo esc_textarea((string) ($style['conditional_value_colors'] ?? '[]')); ?></textarea></label></p>
                     <?php submit_button('Save'); ?>
                 </form>
@@ -242,8 +256,8 @@ class LCNI_FilterAdmin {
                     <input type="hidden" name="lcni_frontend_module" value="filter">
                     <input type="hidden" name="lcni_filter_section" value="default_criteria">
                     <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
-                    <h3>Default filter from admin saved filter</h3>
-                    <p>Chọn bộ lọc đã lưu của admin để làm mặc định cho khách chưa đăng nhập.</p>
+                    <h3>LCNi filter template (admin saved filters)</h3>
+                    <p>Chọn bộ lọc do admin tạo để hiển thị trong dropdown LCNi Filter Template và dùng làm mặc định cho khách chưa đăng nhập.</p>
                     <p>
                         <select name="lcni_filter_default_admin_saved_filter_id">
                             <option value="0">-- None --</option>

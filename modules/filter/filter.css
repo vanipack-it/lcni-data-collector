@@ -34,7 +34,9 @@
 
 .lcni-app .lcni-stock-filter .lcni-filter-panel-actions { margin-top:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .lcni-app .lcni-stock-filter .lcni-saved-filter-label { font-size:var(--lcni-panel-label-size,13px); color:var(--lcni-panel-label-color,#111827); }
-.lcni-app .lcni-stock-filter .lcni-filter-panel-actions select { min-width:190px; height:36px; margin-right:auto; font-size:var(--lcni-panel-value-size,13px); }
+.lcni-app .lcni-stock-filter .lcni-filter-panel-actions select { min-width:190px; height:36px; margin-right:0; font-size:var(--lcni-panel-value-size,13px); border:1px solid #d1d5db; border-radius:8px; padding:0 10px; }
+.lcni-app .lcni-stock-filter .lcni-filter-panel-actions .lcni-select-saved-filter { background:var(--lcni-saved-filter-bg,#fff); color:var(--lcni-saved-filter-color,#111827); border-color:var(--lcni-saved-filter-border,#d1d5db); }
+.lcni-app .lcni-stock-filter .lcni-filter-panel-actions .lcni-select-template-filter { background:var(--lcni-template-filter-bg,#fff); color:var(--lcni-template-filter-color,#111827); border-color:var(--lcni-template-filter-border,#d1d5db); }
 
 .lcni-app .lcni-stock-filter .lcni-column-pop { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:6px; }
 .lcni-app .lcni-stock-filter .lcni-column-option { display:flex; align-items:center; gap:8px; border:1px solid #e5e7eb; border-radius:8px; padding:6px 8px; background:#fff; }
