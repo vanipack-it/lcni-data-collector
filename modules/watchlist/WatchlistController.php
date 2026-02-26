@@ -17,6 +17,7 @@ class LCNI_WatchlistController {
         register_rest_route('lcni/v1', '/watchlist/create', ['methods' => WP_REST_Server::CREATABLE, 'callback' => [$this, 'create_watchlist'], 'permission_callback' => [$this, 'can_access_watchlist']]);
         register_rest_route('lcni/v1', '/watchlist/delete', ['methods' => WP_REST_Server::CREATABLE, 'callback' => [$this, 'delete_watchlist'], 'permission_callback' => [$this, 'can_access_watchlist']]);
         register_rest_route('lcni/v1', '/watchlist/add-symbol', ['methods' => WP_REST_Server::CREATABLE, 'callback' => [$this, 'add_symbol'], 'permission_callback' => [$this, 'can_access_watchlist']]);
+        register_rest_route('lcni/v1', '/watchlist/add-symbols', ['methods' => WP_REST_Server::CREATABLE, 'callback' => [$this, 'add_symbols'], 'permission_callback' => [$this, 'can_access_watchlist']]);
         register_rest_route('lcni/v1', '/watchlist/remove-symbol', ['methods' => WP_REST_Server::CREATABLE, 'callback' => [$this, 'remove_symbol'], 'permission_callback' => [$this, 'can_access_watchlist']]);
         register_rest_route('lcni/v1', '/watchlist/add', ['methods' => WP_REST_Server::CREATABLE, 'callback' => [$this, 'add_symbol'], 'permission_callback' => [$this, 'can_access_watchlist']]);
         register_rest_route('lcni/v1', '/watchlist/remove', ['methods' => WP_REST_Server::CREATABLE, 'callback' => [$this, 'remove_symbol'], 'permission_callback' => [$this, 'can_access_watchlist']]);
@@ -82,6 +83,18 @@ class LCNI_WatchlistController {
     public function remove_symbol(WP_REST_Request $request) {
         if (!$this->verify_rest_nonce($request)) return new WP_Error('invalid_nonce', 'Nonce không hợp lệ.', ['status' => 403]);
         $result = $this->service->remove_symbol(get_current_user_id(), $request->get_param('symbol'), absint($request->get_param('watchlist_id')));
+        if (is_wp_error($result)) return $result;
+        wp_send_json_success($result);
+    }
+
+    public function add_symbols(WP_REST_Request $request) {
+        if (!$this->verify_rest_nonce($request)) return new WP_Error('invalid_nonce', 'Nonce không hợp lệ.', ['status' => 403]);
+        $symbols = $request->get_param('symbols');
+        if (!is_array($symbols)) {
+            return new WP_Error('invalid_symbols', 'Danh sách symbol không hợp lệ.', ['status' => 400]);
+        }
+
+        $result = $this->service->add_symbols(get_current_user_id(), $symbols, absint($request->get_param('watchlist_id')));
         if (is_wp_error($result)) return $result;
         wp_send_json_success($result);
     }
