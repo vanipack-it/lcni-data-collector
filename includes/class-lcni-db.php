@@ -631,7 +631,19 @@ class LCNI_DB {
         }
 
         self::sync_ohlc_symbol_type_values($ohlc_table);
+        self::sync_ohlc_symbol_type_values($latest_table);
+
+        $snapshot_health = self::get_ohlc_latest_snapshot_health();
+        if (($snapshot_health['expected_rows'] ?? 0) > 0 && ($snapshot_health['missing_rows'] ?? 0) > 0) {
+            $wpdb->query("TRUNCATE TABLE {$latest_table}");
+        }
+
         $result = self::perform_refresh_ohlc_latest_snapshot();
+
+        if ($result === false) {
+            $wpdb->query("TRUNCATE TABLE {$latest_table}");
+            $result = self::perform_refresh_ohlc_latest_snapshot();
+        }
 
         return [
             'success' => $result !== false,
@@ -692,6 +704,22 @@ class LCNI_DB {
             WHERE 1=1 {$where_symbol_clause}";
 
         return $wpdb->query($sql);
+    }
+
+    public static function get_ohlc_latest_snapshot_health() {
+        global $wpdb;
+
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $latest_table = $wpdb->prefix . 'lcni_ohlc_latest';
+
+        $expected_rows = (int) $wpdb->get_var("SELECT COUNT(*) FROM (SELECT symbol, timeframe FROM {$ohlc_table} GROUP BY symbol, timeframe) grouped_ohlc");
+        $actual_rows = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$latest_table}");
+
+        return [
+            'expected_rows' => $expected_rows,
+            'actual_rows' => $actual_rows,
+            'missing_rows' => max(0, $expected_rows - $actual_rows),
+        ];
     }
 
     private static function ensure_ohlc_symbol_type_column() {

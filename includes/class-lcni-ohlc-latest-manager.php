@@ -50,7 +50,7 @@ class LCNI_OHLC_Latest_Manager {
             return;
         }
 
-        if (!self::is_snapshot_stale($settings['interval_minutes'])) {
+        if (!self::is_snapshot_stale($settings['interval_minutes']) && !self::is_snapshot_unhealthy()) {
             return;
         }
 
@@ -70,7 +70,7 @@ class LCNI_OHLC_Latest_Manager {
 
         set_transient('lcni_ohlc_watchdog_5min_marker', '1', 5 * MINUTE_IN_SECONDS);
 
-        if (!self::is_snapshot_stale($settings['interval_minutes'] * 2)) {
+        if (!self::is_snapshot_stale($settings['interval_minutes'] * 2) && !self::is_snapshot_unhealthy()) {
             return;
         }
 
@@ -301,6 +301,14 @@ class LCNI_OHLC_Latest_Manager {
         $age_seconds = current_time('timestamp', true) - $last_snapshot_timestamp;
 
         return $age_seconds > (max(1, (int) $stale_interval_minutes) * MINUTE_IN_SECONDS);
+    }
+
+
+    private static function is_snapshot_unhealthy() {
+        $health = LCNI_DB::get_ohlc_latest_snapshot_health();
+
+        return (int) ($health['expected_rows'] ?? 0) > 0
+            && (int) ($health['missing_rows'] ?? 0) > 0;
     }
 
     private static function get_last_snapshot_timestamp() {
