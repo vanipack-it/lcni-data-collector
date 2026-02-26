@@ -207,7 +207,20 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   };
 
-  const buildField = (key, label, value, styles) => {
+  const buildFilterUrl = (base, fields, field, value) => {
+    const safeBase = String(base || "").trim();
+    const safeField = String(field || "").trim();
+    const safeValue = String(value == null ? "" : value).trim();
+    if (!safeBase || !safeField || !safeValue) return "";
+    const filterable = Array.isArray(fields) ? fields.map((item) => String(item || "").trim()) : [];
+    if (filterable.length && !filterable.includes(safeField)) return "";
+    const url = new URL(safeBase, window.location.origin);
+    url.searchParams.set("apply_filter", "1");
+    url.searchParams.set(safeField, safeValue);
+    return url.toString();
+  };
+
+  const buildField = (key, label, value, styles, clickUrl) => {
     const item = document.createElement("div");
     item.style.padding = "8px 10px";
     item.style.borderRadius = "6px";
@@ -234,6 +247,12 @@ document.addEventListener("DOMContentLoaded", () => {
     valueElement.appendChild(valueStrong);
     item.appendChild(labelElement);
     item.appendChild(valueElement);
+    if (clickUrl) {
+      item.style.cursor = "pointer";
+      item.addEventListener("click", () => {
+        window.location.href = clickUrl;
+      });
+    }
     return item;
   };
 
@@ -256,6 +275,8 @@ document.addEventListener("DOMContentLoaded", () => {
         ? adminConfig.allowed_fields.filter((field) => labels[field])
         : defaultFields;
     const styles = adminConfig?.styles || {};
+    const filterPageUrl = String(container.dataset.filterPageUrl || "");
+    const filterFields = (() => { try { const parsed = JSON.parse(container.dataset.filterFields || "[]"); return Array.isArray(parsed) ? parsed : []; } catch (error) { return []; } })();
 
     let selectedFields = await loadSettings(settingsApi, allowedFields);
     selectedFields = selectedFields.filter((field) =>
@@ -360,7 +381,8 @@ document.addEventListener("DOMContentLoaded", () => {
         grid.style.marginTop = "8px";
 
         selectedFields.forEach((key) => {
-          grid.appendChild(buildField(key, labels[key], payload[key], styles));
+          const clickUrl = buildFilterUrl(filterPageUrl, filterFields, key, payload[key]);
+          grid.appendChild(buildField(key, labels[key], payload[key], styles, clickUrl));
         });
 
         wrap.appendChild(header);

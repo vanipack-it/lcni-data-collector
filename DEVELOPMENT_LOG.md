@@ -1,3 +1,10 @@
+## 2026-02-26 15:30 (v2.2.1)
+- Nâng version plugin lên `2.2.1` và cập nhật log có mốc thời gian ngày giờ cụ thể để dễ theo dõi.
+- Điều chỉnh hành vi click bảng Watchlist/Filter: chỉ mở link chi tiết `...?symbol={SYMBOL}` khi click đúng cell `symbol`; click các cell khác không còn mở trang chi tiết.
+- Bổ sung deep-link filter theo cell value cho Watchlist/Filter/Overview/Signals: khi click cell/field có nằm trong Filter Criteria sẽ mở `.../sug-filter/?apply_filter=1&{field}={value}`.
+- Frontend Filter hỗ trợ auto-apply từ query `apply_filter=1`: tự nạp giá trị vào panel filter và chạy kết quả ngay, không cần bấm `Apply Filter` thủ công.
+- Bổ sung cấu hình URL filter link cho frontend qua option `lcni_filter_link_page` (mặc định `sug-filter`) để dùng làm đích điều hướng cho các deep-link filter.
+
 ## 2026-02-26 14:59 (v2.2.0)
 - Nâng version plugin lên `2.2.0` và ghi log kèm mốc thời gian cập nhật chi tiết theo định dạng `YYYY-MM-DD HH:MM` để dễ theo dõi.
 - Frontend Filter panel bổ sung nút `Thêm vào Watchlist` (`btn_filter_add_watchlist_bulk`): sau khi bấm `btn_filter_apply`, user có thể thêm toàn bộ mã trong kết quả vào watchlist đã có hoặc nhập tên để tạo watchlist mới ngay trong popup.
