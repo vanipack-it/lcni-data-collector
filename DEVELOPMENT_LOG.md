@@ -1,3 +1,9 @@
+## 2026-02-26 02:53 (v2.1.3)
+- Nâng version plugin lên `2.1.3` và ghi rõ mốc ngày giờ cập nhật để dễ theo dõi.
+- Fix lỗi `trading_index` bị nhảy cóc khi import/upsert dữ liệu `wp_lcni_ohlc`: gom toàn bộ luồng rebuild về 1 pipeline `symbol + timeframe`, luôn đánh lại `trading_index` từ `1..n` theo `event_time` (cũ -> mới) trước khi tính indicator.
+- Chuẩn hóa công thức tính `pct_t_1`, `pct_t_3`, `pct_1w`, `pct_1m`, `pct_3m`, `pct_6m`, `pct_1y`, `ma10/20/50/100/200`, `vol_ma10/20`, `macd`, `macd_signal`, `rsi` theo chuỗi `trading_index` để tránh lệch do ngày nghỉ/thứ 7/chủ nhật.
+- Cập nhật script `sql_ohlc_indicators_mysql8.sql` theo cùng nguyên tắc `symbol + timeframe` và số phiên giao dịch (1w=5, 1m=21, 3m=63, 6m=126, 1y=252).
+
 ## 2026-02-26 11:20 (v2.1.2)
 - Nâng version plugin lên `2.1.2` và ghi rõ mốc ngày giờ cập nhật để dễ theo dõi.
 - Fix Frontend Setting → Style Config → Cell Color: lưu rules đồng thời vào option global `lcni_global_cell_color_rules` để các module frontend (đặc biệt Filter/Watchlist) thực thi ngay.

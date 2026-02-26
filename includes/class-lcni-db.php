@@ -1118,8 +1118,7 @@ class LCNI_DB {
 
         while ($processed_in_batch < $batch_size && !empty($tasks)) {
             $task = array_shift($tasks);
-            self::rebuild_ohlc_indicators($task['symbol'], $task['timeframe']);
-            self::rebuild_ohlc_trading_index($task['symbol'], $task['timeframe']);
+            self::rebuild_ohlc_series_metrics($task['symbol'], $task['timeframe']);
             $touched_timeframes[(string) $task['timeframe']] = true;
             $processed_in_batch++;
             $processed++;
@@ -1178,8 +1177,7 @@ class LCNI_DB {
         }
 
         foreach ($all_series as $series) {
-            self::rebuild_ohlc_indicators($series['symbol'], $series['timeframe']);
-            self::rebuild_ohlc_trading_index($series['symbol'], $series['timeframe']);
+            self::rebuild_ohlc_series_metrics($series['symbol'], $series['timeframe']);
         }
 
         self::rebuild_rs_1m_by_exchange();
@@ -1252,8 +1250,7 @@ class LCNI_DB {
         }
 
         foreach ($all_series as $series) {
-            self::rebuild_ohlc_indicators($series['symbol'], $series['timeframe']);
-            self::rebuild_ohlc_trading_index($series['symbol'], $series['timeframe']);
+            self::rebuild_ohlc_series_metrics($series['symbol'], $series['timeframe']);
         }
 
         self::log_change(
@@ -1287,8 +1284,7 @@ class LCNI_DB {
         }
 
         foreach ($series_with_missing_values as $series) {
-            self::rebuild_ohlc_indicators($series['symbol'], $series['timeframe']);
-            self::rebuild_ohlc_trading_index($series['symbol'], $series['timeframe']);
+            self::rebuild_ohlc_series_metrics($series['symbol'], $series['timeframe']);
         }
 
         self::log_change(
@@ -1323,8 +1319,7 @@ class LCNI_DB {
         }
 
         foreach ($series_with_missing_values as $series) {
-            self::rebuild_ohlc_indicators($series['symbol'], $series['timeframe']);
-            self::rebuild_ohlc_trading_index($series['symbol'], $series['timeframe']);
+            self::rebuild_ohlc_series_metrics($series['symbol'], $series['timeframe']);
         }
 
         self::log_change(
@@ -2274,8 +2269,7 @@ class LCNI_DB {
         }
 
         foreach ($touched_series as $series) {
-            self::rebuild_ohlc_indicators($series['symbol'], $series['timeframe']);
-            self::rebuild_ohlc_trading_index($series['symbol'], $series['timeframe']);
+            self::rebuild_ohlc_series_metrics($series['symbol'], $series['timeframe']);
         }
 
         if (!empty($touched_series)) {
@@ -2820,8 +2814,7 @@ class LCNI_DB {
         }
 
         foreach ($touched_series as $series) {
-            self::rebuild_ohlc_indicators($series['symbol'], $series['timeframe']);
-            self::rebuild_ohlc_trading_index($series['symbol'], $series['timeframe']);
+            self::rebuild_ohlc_series_metrics($series['symbol'], $series['timeframe']);
         }
 
         if (!empty($touched_series)) {
@@ -2890,8 +2883,7 @@ class LCNI_DB {
         $timeframes = [];
 
         foreach ($missing_series as $series) {
-            self::rebuild_ohlc_indicators($series['symbol'], $series['timeframe']);
-            self::rebuild_ohlc_trading_index($series['symbol'], $series['timeframe']);
+            self::rebuild_ohlc_series_metrics($series['symbol'], $series['timeframe']);
             $timeframes[$series['timeframe']] = true;
 
             $series_event_times = $wpdb->get_col(
@@ -2920,13 +2912,18 @@ class LCNI_DB {
     }
 
 
+    private static function rebuild_ohlc_series_metrics($symbol, $timeframe) {
+        self::rebuild_ohlc_trading_index($symbol, $timeframe);
+        self::rebuild_ohlc_indicators($symbol, $timeframe);
+    }
+
     private static function rebuild_ohlc_indicators($symbol, $timeframe) {
         global $wpdb;
 
         $table = $wpdb->prefix . 'lcni_ohlc';
         $rows = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT id, close_price, high_price, low_price, volume FROM {$table} WHERE symbol = %s AND timeframe = %s ORDER BY event_time ASC",
+                "SELECT id, trading_index, close_price, high_price, low_price, volume FROM {$table} WHERE symbol = %s AND timeframe = %s ORDER BY trading_index ASC, event_time ASC, id ASC",
                 strtoupper((string) $symbol),
                 strtoupper((string) $timeframe)
             ),
@@ -3062,7 +3059,6 @@ class LCNI_DB {
             $wpdb->update(
                 $table,
                 [
-                    'trading_index' => $i + 1,
                     'pct_t_1' => $pct_t_1,
                     'pct_t_3' => self::change_pct($closes, $i, 3),
                     'pct_1w' => self::change_pct($closes, $i, 5),
@@ -3106,7 +3102,7 @@ class LCNI_DB {
                     'smart_money' => $smart_money,
                 ],
                 ['id' => (int) $rows[$i]['id']],
-                ['%d','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%s','%s','%d','%s','%s','%s','%s','%s','%s'],
+                ['%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%s','%s','%d','%s','%s','%s','%s','%s','%s'],
                 ['%d']
             );
         }
