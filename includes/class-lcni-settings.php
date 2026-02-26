@@ -2084,16 +2084,26 @@ private function sanitize_module_title($value, $fallback) {
         $icon_positions = isset($_POST['lcni_global_rule_icon_position']) ? (array) wp_unslash($_POST['lcni_global_rule_icon_position']) : [];
 
         $rules = [];
-        $row_count = max(count($fields), count($operators), count($values), count($bg_colors), count($text_colors), count($icon_classes), count($icon_positions));
-        for ($i = 0; $i < $row_count; $i++) {
+        $indexes = array_values(array_unique(array_merge(
+            array_keys($fields),
+            array_keys($operators),
+            array_keys($values),
+            array_keys($bg_colors),
+            array_keys($text_colors),
+            array_keys($icon_classes),
+            array_keys($icon_positions)
+        )));
+        sort($indexes);
+
+        foreach ($indexes as $index) {
             $rules[] = [
-                'field' => $fields[$i] ?? '',
-                'operator' => $operators[$i] ?? '',
-                'value' => $values[$i] ?? '',
-                'bg_color' => $bg_colors[$i] ?? '',
-                'text_color' => $text_colors[$i] ?? '',
-                'icon_class' => $icon_classes[$i] ?? '',
-                'icon_position' => $icon_positions[$i] ?? 'left',
+                'field' => $fields[$index] ?? '',
+                'operator' => $operators[$index] ?? '',
+                'value' => $values[$index] ?? '',
+                'bg_color' => $bg_colors[$index] ?? '',
+                'text_color' => $text_colors[$index] ?? '',
+                'icon_class' => $icon_classes[$index] ?? '',
+                'icon_position' => $icon_positions[$index] ?? 'left',
             ];
         }
 
@@ -2150,18 +2160,30 @@ private function sanitize_module_title($value, $fallback) {
         $icon_colors = isset($_POST['lcni_cell_to_cell_icon_color']) ? (array) wp_unslash($_POST['lcni_cell_to_cell_icon_color']) : [];
 
         $rules = [];
-        $row_count = max(count($source_fields), count($operators), count($values), count($target_fields), count($text_colors), count($icon_classes), count($icon_positions), count($icon_sizes), count($icon_colors));
-        for ($i = 0; $i < $row_count; $i++) {
+        $indexes = array_values(array_unique(array_merge(
+            array_keys($source_fields),
+            array_keys($operators),
+            array_keys($values),
+            array_keys($target_fields),
+            array_keys($text_colors),
+            array_keys($icon_classes),
+            array_keys($icon_positions),
+            array_keys($icon_sizes),
+            array_keys($icon_colors)
+        )));
+        sort($indexes);
+
+        foreach ($indexes as $index) {
             $rules[] = [
-                'source_field' => $source_fields[$i] ?? '',
-                'operator' => $operators[$i] ?? '',
-                'value' => $values[$i] ?? '',
-                'target_field' => $target_fields[$i] ?? '',
-                'text_color' => $text_colors[$i] ?? '',
-                'icon_class' => $icon_classes[$i] ?? '',
-                'icon_position' => $icon_positions[$i] ?? 'right',
-                'icon_size' => $icon_sizes[$i] ?? 12,
-                'icon_color' => $icon_colors[$i] ?? '',
+                'source_field' => $source_fields[$index] ?? '',
+                'operator' => $operators[$index] ?? '',
+                'value' => $values[$index] ?? '',
+                'target_field' => $target_fields[$index] ?? '',
+                'text_color' => $text_colors[$index] ?? '',
+                'icon_class' => $icon_classes[$index] ?? '',
+                'icon_position' => $icon_positions[$index] ?? 'right',
+                'icon_size' => $icon_sizes[$index] ?? 12,
+                'icon_color' => $icon_colors[$index] ?? '',
             ];
         }
 

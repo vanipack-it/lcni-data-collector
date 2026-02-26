@@ -188,6 +188,7 @@ class LCNI_WatchlistService {
         if (empty($effective_columns)) {
             $effective_columns = $this->get_default_columns($device);
         }
+        $query_columns = $this->append_rule_dependency_columns($effective_columns);
 
         $watchlist_id = $watchlist_id > 0 ? absint($watchlist_id) : $this->get_active_watchlist_id($user_id);
         $symbols = $this->get_watchlist_symbols($watchlist_id);
@@ -202,7 +203,7 @@ class LCNI_WatchlistService {
             ];
         }
 
-        $cache_key = 'watchlist:' . $user_id . ':' . $watchlist_id . ':' . $this->get_cache_version($user_id) . ':' . md5(wp_json_encode([$effective_columns, $symbols]));
+        $cache_key = 'watchlist:' . $user_id . ':' . $watchlist_id . ':' . $this->get_cache_version($user_id) . ':' . md5(wp_json_encode([$query_columns, $symbols]));
         $cached = wp_cache_get($cache_key, self::CACHE_GROUP);
         if ($cached !== false) {
             return [
@@ -214,7 +215,7 @@ class LCNI_WatchlistService {
             ];
         }
 
-        $rows = $this->repository->get_by_symbols($symbols, $effective_columns);
+        $rows = $this->repository->get_by_symbols($symbols, $query_columns);
         wp_cache_set($cache_key, $rows, self::CACHE_GROUP, self::CACHE_TTL);
 
         return [
@@ -224,6 +225,25 @@ class LCNI_WatchlistService {
             'column_labels' => $this->get_column_labels($effective_columns),
             'watchlist_id' => $watchlist_id,
         ];
+    }
+
+    public function append_rule_dependency_columns(array $columns): array {
+        $base_columns = array_values(array_unique(array_map('sanitize_key', $columns)));
+        $all_columns = $this->get_all_columns();
+        $source_fields = [];
+        $rules = get_option('lcni_cell_to_cell_color_rules', []);
+
+        foreach ((array) $rules as $rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+            $field = sanitize_key((string) ($rule['source_field'] ?? ''));
+            if ($field !== '' && in_array($field, $all_columns, true)) {
+                $source_fields[] = $field;
+            }
+        }
+
+        return array_values(array_unique(array_merge($base_columns, $source_fields)));
     }
 
     private function get_watchlist_symbols($watchlist_id) {

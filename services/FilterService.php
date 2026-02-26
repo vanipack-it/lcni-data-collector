@@ -30,6 +30,7 @@ class FilterService {
         if (!in_array('symbol', $columns, true)) {
             array_unshift($columns, 'symbol');
         }
+        $query_columns = $this->watchlist_service->append_rule_dependency_columns($columns);
 
         $filters = $this->sanitizeFilters($requestData['filters'] ?? [], $settings['criteria_columns']);
 
@@ -40,6 +41,7 @@ class FilterService {
 
         $validated_data = [
             'visible_columns' => $columns,
+            'query_columns' => $query_columns,
             'filters' => $filters,
             'page' => $page,
             'limit' => $limit,
@@ -52,7 +54,7 @@ class FilterService {
             return $cached;
         }
 
-        $items = $this->repository->getFiltered($filters, $columns, $limit, $offset);
+        $items = $this->repository->getFiltered($filters, $query_columns, $limit, $offset);
         $total = $this->repository->countFiltered($filters);
 
         $result = [
