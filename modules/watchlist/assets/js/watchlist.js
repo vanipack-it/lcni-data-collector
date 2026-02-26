@@ -105,13 +105,15 @@
           return `<td class="${classes.filter(Boolean).join(' ')}"><span class="lcni-watchlist-symbol">${esc(symbol)}</span>${renderWatchlistRowActionButton(symbol)}</td>`;
         }
         classes.push(isNumericValue(row[c]) ? 'lcni-cell-number' : 'lcni-cell-text');
-        const valueStyle = resolveCellStyle(c, row[c], valueColorRules);
+        const valueRule = resolveValueColorRule(c, row[c], valueColorRules);
         const cellRule = resolveCellToCellMeta(c, row, cellToCellRules || []);
-        const iconHtml = cellRule && cellRule.icon_class ? `<i class="${esc(cellRule.icon_class)}" style="color:${esc(cellRule.icon_color || '#dc2626')};font-size:${Number(cellRule.icon_size || 12)}px;"></i>` : '';
+        const iconRule = cellRule && cellRule.icon_class ? cellRule : valueRule;
+        const iconHtml = iconRule && iconRule.icon_class ? `<i class="${esc(iconRule.icon_class)}" style="color:${esc(iconRule.icon_color || '#dc2626')};font-size:${Number(iconRule.icon_size || 12)}px;"></i>` : '';
         const valueHtml = esc(formatCellValue(c, row[c]));
-        const content = cellRule && iconHtml ? (cellRule.icon_position === 'left' ? `${iconHtml} ${valueHtml}` : `${valueHtml} ${iconHtml}`) : valueHtml;
+        const iconPosition = String((iconRule && iconRule.icon_position) || 'left');
+        const content = iconHtml ? (iconPosition === 'right' ? `${valueHtml} ${iconHtml}` : `${iconHtml} ${valueHtml}`) : valueHtml;
         const styleParts = [];
-        if (valueStyle) styleParts.push(valueStyle);
+        if (valueRule) styleParts.push(`background:${esc(valueRule.bg_color || '')};color:${esc(valueRule.text_color || '')};`);
         if (cellRule && cellRule.text_color) styleParts.push(`color:${esc(cellRule.text_color)};`);
         const styleAttr = styleParts.length ? ` style="${styleParts.join('')}"` : '';
         return `<td class="${classes.filter(Boolean).join(' ')}"${styleAttr}>${content}</td>`;
@@ -181,15 +183,15 @@
     return null;
   }
 
-  function resolveCellStyle(column, value, rules) {
+  function resolveValueColorRule(column, value, rules) {
     for (let i = 0; i < rules.length; i += 1) {
       const rule = rules[i] || {};
       if (rule.column !== column) continue;
       if (!resolveOperatorMatch(value, rule.operator, rule.value)) continue;
-      return `background:${esc(rule.bg_color || '')};color:${esc(rule.text_color || '')};`;
+      return rule;
     }
 
-    return '';
+    return null;
   }
 
 
