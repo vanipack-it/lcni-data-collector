@@ -1,3 +1,10 @@
+## 2026-02-26 07:22 (v2.1.4)
+- Nâng version plugin lên `2.1.4` và ghi log kèm mốc ngày giờ cập nhật cụ thể để dễ theo dõi.
+- Frontend Setting -> Data Format: bổ sung tùy chỉnh định dạng `event_time` (`DD-MM-YYYY` hoặc `number`), mặc định hiển thị ngày để các module frontend dùng đồng bộ.
+- Fix Frontend Setting -> Watchlist/Filter -> Column -> Selected order: chuẩn hóa thứ tự cột theo đúng danh sách kéo thả (label và value di chuyển cùng nhau), đồng thời khóa cột sticky để không thể kéo đổi vị trí.
+- Fix Frontend Setting -> Watchlist -> Style Config -> Cell Color: mở rộng sanitize operator cho nhiều rule (`contains`, `not_contains`) để các rule sau lưu không bị rơi về mặc định.
+- Fix Frontend Setting -> Watchlist -> Style Config -> Cell to Cell Color: giữ dữ liệu rule ở pipeline settings dùng chung để frontend modules nhận và thực thi đúng.
+
 ## 2026-02-26 02:53 (v2.1.3)
 - Nâng version plugin lên `2.1.3` và ghi rõ mốc ngày giờ cập nhật để dễ theo dõi.
 - Fix lỗi `trading_index` bị nhảy cóc khi import/upsert dữ liệu `wp_lcni_ohlc`: gom toàn bộ luồng rebuild về 1 pipeline `symbol + timeframe`, luôn đánh lại `trading_index` từ `1..n` theo `event_time` (cũ -> mới) trước khi tính indicator.

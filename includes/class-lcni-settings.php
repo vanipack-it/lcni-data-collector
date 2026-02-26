@@ -2643,7 +2643,7 @@ private function sanitize_module_title($value, $fallback) {
             $label_values = wp_list_pluck($legacy_label_pairs, 'label');
         }
         $label_count = max(count($label_keys), count($label_values));
-        $allowed_operators = ['>', '>=', '<', '<=', '=', '!='];
+        $allowed_operators = ['>', '>=', '<', '<=', '=', '!=', 'contains', 'not_contains'];
 
         for ($index = 0; $index < $label_count; $index++) {
             $key = sanitize_key($label_keys[$index] ?? '');
@@ -2962,6 +2962,7 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
                     const url = new URL(window.location.href);
                     const current = url.searchParams.get('watchlist_tab') || 'lcni-watchlist-columns';
                     const validTabs = ['lcni-watchlist-columns', 'lcni-watchlist-stock-detail-page', 'lcni-watchlist-default-columns', 'lcni-watchlist-style-config'];
+                    const stickyColumn = <?php echo wp_json_encode((string) ($settings['styles']['sticky_column'] ?? 'symbol')); ?>;
 
                     const activate = function (tabId) {
                         const resolvedTab = validTabs.includes(tabId) ? tabId : 'lcni-watchlist-columns';
@@ -2978,7 +2979,7 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
                         });
                     });
 
-                    const bindSortableColumnsForm = (form, checkboxSelector, listSelector, itemAttr, hiddenSelector) => {
+                    const bindSortableColumnsForm = (form, checkboxSelector, listSelector, itemAttr, hiddenSelector, isLockedColumn) => {
                         if (!form) return;
                         const selectedList = form.querySelector(listSelector);
                         const hiddenOrder = form.querySelector(hiddenSelector);
@@ -2991,12 +2992,29 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
                         const bindDnD = () => {
                             let dragging = null;
                             selectedList.querySelectorAll('[' + itemAttr + ']').forEach((item) => {
-                                item.addEventListener('dragstart', () => { dragging = item; item.style.opacity = '0.5'; });
+                                const column = item.getAttribute(itemAttr) || '';
+                                const locked = typeof isLockedColumn === 'function' ? isLockedColumn(column, item) : false;
+                                if (locked) {
+                                    item.setAttribute('draggable', 'false');
+                                    item.style.cursor = 'not-allowed';
+                                    if (!String(item.textContent || '').includes('(sticky)')) {
+                                        item.textContent = column + ' (sticky)';
+                                    }
+                                }
+                                item.addEventListener('dragstart', (event) => {
+                                    if (locked) {
+                                        event.preventDefault();
+                                        dragging = null;
+                                        return;
+                                    }
+                                    dragging = item;
+                                    item.style.opacity = '0.5';
+                                });
                                 item.addEventListener('dragend', () => { item.style.opacity = ''; dragging = null; syncOrder(); });
                                 item.addEventListener('dragover', (event) => event.preventDefault());
                                 item.addEventListener('drop', (event) => {
                                     event.preventDefault();
-                                    if (!dragging || dragging === item) return;
+                                    if (locked || !dragging || dragging === item) return;
                                     const rect = item.getBoundingClientRect();
                                     const after = (event.clientY - rect.top) > rect.height / 2;
                                     if (after) item.after(dragging); else item.before(dragging);
@@ -3025,7 +3043,8 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
                         '[data-watchlist-columns-checkbox]',
                         '[data-watchlist-columns-selected-list]',
                         'data-watchlist-columns-selected-column',
-                        '[data-watchlist-columns-selected-order]'
+                        '[data-watchlist-columns-selected-order]',
+                        (column) => stickyColumn !== '' && (stickyColumn === 'first' ? column === 'symbol' : column === stickyColumn)
                     );
 
                     const defaultForm = document.querySelector('#lcni-watchlist-default-columns form');
@@ -3034,7 +3053,8 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
                         '[data-watchlist-desktop-checkbox]',
                         '[data-watchlist-selected-list]',
                         'data-watchlist-selected-column',
-                        '[data-watchlist-selected-order]'
+                        '[data-watchlist-selected-order]',
+                        (column) => stickyColumn !== '' && (stickyColumn === 'first' ? column === 'symbol' : column === stickyColumn)
                     );
 
                     activate(current);

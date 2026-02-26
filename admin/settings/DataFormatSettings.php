@@ -84,6 +84,9 @@ class LCNI_Data_Format_Settings {
                 'already_percent_fields' => self::ALREADY_PERCENT_FIELDS,
             ],
             'module_scope' => array_fill_keys(self::MODULE_SCOPE_KEYS, true),
+            'date_formats' => [
+                'event_time' => 'DD-MM-YYYY',
+            ],
         ];
     }
 
@@ -150,6 +153,7 @@ class LCNI_Data_Format_Settings {
                 'already_percent_fields' => $defaults['percent_normalization']['already_percent_fields'],
             ],
             'module_scope' => $defaults['module_scope'],
+            'date_formats' => $defaults['date_formats'],
         ];
 
         $decimals = isset($input['decimals']) && is_array($input['decimals']) ? $input['decimals'] : [];
@@ -180,6 +184,14 @@ class LCNI_Data_Format_Settings {
         foreach (self::MODULE_SCOPE_KEYS as $module_key) {
             $sanitized['module_scope'][$module_key] = !empty($module_scope_input[$module_key]);
         }
+
+        $date_formats_input = isset($input['date_formats']) && is_array($input['date_formats'])
+            ? $input['date_formats']
+            : [];
+        $event_time_format = sanitize_text_field((string) ($date_formats_input['event_time'] ?? $defaults['date_formats']['event_time']));
+        $sanitized['date_formats']['event_time'] = in_array($event_time_format, ['number', 'DD-MM-YYYY'], true)
+            ? $event_time_format
+            : $defaults['date_formats']['event_time'];
 
         return $sanitized;
     }
@@ -228,6 +240,19 @@ class LCNI_Data_Format_Settings {
                         <th scope="row"><?php echo esc_html__('Compact threshold', 'lcni'); ?></th>
                         <td>
                             <input type="number" min="0" step="1" name="<?php echo esc_attr(self::OPTION_KEY); ?>[compact_threshold]" value="<?php echo esc_attr((string) $settings['compact_threshold']); ?>" />
+                        </td>
+                    </tr>
+                </table>
+
+                <h2><?php echo esc_html__('Date Format', 'lcni'); ?></h2>
+                <table class="form-table" role="presentation">
+                    <tr>
+                        <th scope="row"><?php echo esc_html__('event_time format', 'lcni'); ?></th>
+                        <td>
+                            <select name="<?php echo esc_attr(self::OPTION_KEY); ?>[date_formats][event_time]">
+                                <option value="DD-MM-YYYY" <?php selected((string) ($settings['date_formats']['event_time'] ?? 'DD-MM-YYYY'), 'DD-MM-YYYY'); ?>>DD-MM-YYYY</option>
+                                <option value="number" <?php selected((string) ($settings['date_formats']['event_time'] ?? 'DD-MM-YYYY'), 'number'); ?>>Number</option>
+                            </select>
                         </td>
                     </tr>
                 </table>

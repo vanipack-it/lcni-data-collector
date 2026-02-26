@@ -260,29 +260,45 @@ class LCNI_FilterAdmin {
                         return;
                     }
 
+                    const stickyColumnCount = Math.max(0, Number(<?php echo wp_json_encode((int) ($style['sticky_column_count'] ?? 1)); ?>) || 0);
                     const syncHidden = () => {
                         hidden.value = Array.from(selectedList.querySelectorAll('[data-selected-column]')).map((node) => node.getAttribute('data-selected-column') || '').filter(Boolean).join(',');
                     };
+
+                    const isLockedIndex = (index) => index < stickyColumnCount;
 
                     const renderSelected = () => {
                         const checked = Array.from(form.querySelectorAll('[data-column-checkbox]:checked')).map((node) => node.value);
                         const existing = Array.from(selectedList.querySelectorAll('[data-selected-column]')).map((node) => node.getAttribute('data-selected-column') || '');
                         const next = existing.filter((col) => checked.includes(col));
                         checked.forEach((col) => { if (!next.includes(col)) next.push(col); });
-                        selectedList.innerHTML = next.map((col) => `<li draggable="true" data-selected-column="${col}" style="cursor:move;padding:4px 0;">${col}</li>`).join('');
+                        selectedList.innerHTML = next.map((col, index) => {
+                            const locked = isLockedIndex(index);
+                            return `<li draggable="${locked ? 'false' : 'true'}" data-selected-column="${col}" data-sticky-locked="${locked ? '1' : '0'}" style="cursor:${locked ? 'not-allowed' : 'move'};padding:4px 0;">${col}${locked ? ' (sticky)' : ''}</li>`;
+                        }).join('');
                         bindSortable();
                         syncHidden();
                     };
 
                     const bindSortable = () => {
                         let dragging = null;
-                        selectedList.querySelectorAll('[data-selected-column]').forEach((item) => {
-                            item.addEventListener('dragstart', () => { dragging = item; item.style.opacity = '0.5'; });
+                        selectedList.querySelectorAll('[data-selected-column]').forEach((item, itemIndex) => {
+                            const itemLocked = item.getAttribute('data-sticky-locked') === '1' || isLockedIndex(itemIndex);
+                            item.addEventListener('dragstart', (event) => {
+                                if (itemLocked) {
+                                    event.preventDefault();
+                                    dragging = null;
+                                    return;
+                                }
+                                dragging = item;
+                                item.style.opacity = '0.5';
+                            });
                             item.addEventListener('dragend', () => { if (dragging) dragging.style.opacity = ''; dragging = null; syncHidden(); });
                             item.addEventListener('dragover', (event) => event.preventDefault());
                             item.addEventListener('drop', (event) => {
                                 event.preventDefault();
-                                if (!dragging || dragging === item) return;
+                                const targetLocked = item.getAttribute('data-sticky-locked') === '1';
+                                if (!dragging || dragging === item || targetLocked) return;
                                 const rect = item.getBoundingClientRect();
                                 const after = (event.clientY - rect.top) > rect.height / 2;
                                 if (after) {

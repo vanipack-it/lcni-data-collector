@@ -181,7 +181,10 @@ class LCNI_WatchlistService {
 
     public function get_watchlist($user_id, $columns, $device = 'desktop', $watchlist_id = 0) {
         $allowed_columns = $this->get_allowed_columns();
-        $effective_columns = array_values(array_intersect($allowed_columns, $columns));
+        $requested_columns = is_array($columns) ? array_map('sanitize_key', $columns) : [];
+        $effective_columns = array_values(array_filter($requested_columns, static function ($column) use ($allowed_columns) {
+            return in_array($column, $allowed_columns, true);
+        }));
         if (empty($effective_columns)) {
             $effective_columns = $this->get_default_columns($device);
         }
