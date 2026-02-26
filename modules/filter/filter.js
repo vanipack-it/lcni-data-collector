@@ -25,7 +25,28 @@
     countRequestId: 0
   };
 
+  const FILTER_SUMMARY_FALLBACK = 'Chưa chọn tiêu chí lọc.';
+
   const sessionKey = cfg.tableSettingsStorageKey || 'lcni_filter_visible_columns_v1';
+
+  function reorderCriteriaByColumns(criteria, orderedColumns) {
+    const source = Array.isArray(criteria) ? criteria : [];
+    const requestedOrder = Array.isArray(orderedColumns) ? orderedColumns.map((item) => String(item || '').trim()).filter(Boolean) : [];
+    if (!requestedOrder.length) return source;
+
+    const byColumn = new Map(source.map((item) => [String((item && item.column) || ''), item]));
+    const ordered = [];
+
+    requestedOrder.forEach((column) => {
+      const found = byColumn.get(column);
+      if (!found) return;
+      ordered.push(found);
+      byColumn.delete(column);
+    });
+
+    byColumn.forEach((item) => ordered.push(item));
+    return ordered;
+  }
   const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
 
 
@@ -447,6 +468,42 @@
     return `${fallback} (${Number(state.lastAppliedTotal || 0)})`;
   }
 
+  function getFilterSummaryLabel(host, filter) {
+    const settings = cfg.settings || {};
+    const labels = settings.column_labels || {};
+    const criterion = state.criteria.find((item) => item.column === filter.column);
+    const name = labels[filter.column] || (criterion && criterion.label) || filter.column;
+
+    if (Array.isArray(filter.value)) {
+      if (filter.operator === 'between') {
+        const min = String(filter.value[0] || '').trim();
+        const max = String(filter.value[1] || '').trim();
+        return `${name}=${[min, max].filter(Boolean).join(' → ')}`;
+      }
+
+      if (criterion && criterion.type !== 'number') {
+        const selected = Array.from(host.querySelectorAll(`[data-text-check="${filter.column}"]:checked`)).map((input) => {
+          const wrapper = input.closest('label');
+          const text = wrapper ? String(wrapper.textContent || '').trim() : '';
+          return text || String(input.value || '').trim();
+        }).filter(Boolean);
+        return `${name}=${selected.join(', ')}`;
+      }
+
+      return `${name}=${filter.value.map((value) => String(value || '').trim()).filter(Boolean).join(', ')}`;
+    }
+
+    return `${name}=${String(filter.value || '').trim()}`;
+  }
+
+  function buildFilterSummaryText(host) {
+    const parts = collectFilters(host).map((filter) => getFilterSummaryLabel(host, filter)).filter(Boolean);
+    if (!parts.length) {
+      return `Bộ lọc có ${Number(state.lastAppliedTotal || 0)} cổ phiếu thỏa mãn các tiêu chí ${FILTER_SUMMARY_FALLBACK}`;
+    }
+    return `Bộ lọc có ${Number(state.lastAppliedTotal || 0)} cổ phiếu thỏa mãn các tiêu chí ${parts.join(' + ')}`;
+  }
+
   function criteriaControlHtml(item) {
     if (item.type === 'number') {
       const min = Number(item.min || 0);
@@ -552,6 +609,7 @@
     host.style.setProperty('--lcni-template-filter-color', String(style.template_filter_dropdown_text || '#111827'));
     host.style.setProperty('--lcni-template-filter-border', String(style.template_filter_dropdown_border || '#d1d5db'));
     host.style.setProperty('--lcni-table-header-height', `${Number(style.table_header_row_height || 42)}px`);
+    host.style.setProperty('--lcni-table-row-height', `${Number(style.row_height || 36)}px`);
     host.style.setProperty('--lcni-table-scroll-speed', String(Number(style.table_scroll_speed || 1)));
     host.classList.toggle('lcni-disable-sticky-header', Number(style.sticky_header_rows || 1) < 1);
 
@@ -559,7 +617,7 @@
     const savedFilterLabel = esc(style.saved_filter_label || 'Saved Filter');
     const templateLabel = esc(style.template_filter_label || 'LCNi Filter Template');
 
-    host.innerHTML = `<div class="lcni-filter-toolbar"><button type="button" class="lcni-btn lcni-btn-btn_filter_open" data-filter-toggle>${renderButtonContent('btn_filter_open', 'Filter')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_setting" data-column-toggle-btn>${renderButtonContent('btn_filter_setting', '')}</button></div><div class="lcni-filter-panel ${state.panelHidden ? 'is-collapsed' : ''}" data-filter-panel><div class="lcni-filter-panel-body">${renderCriteriaPanel()}</div><div class="lcni-filter-panel-actions"><label class="lcni-saved-filter-label">${savedFilterLabel}</label><select data-saved-filter-select class="lcni-select-saved-filter"><option value="">${savedFilterLabel}</option>${(state.savedFilters || []).map((f) => `<option value="${Number(f.id || 0)}" ${Number(f.id || 0) === selectedId ? 'selected' : ''}>${esc(f.filter_name || '')}</option>`).join('')}</select><label class="lcni-saved-filter-label">${templateLabel}</label><select data-template-filter-select class="lcni-select-template-filter"><option value="">${templateLabel}</option>${(state.adminTemplates || []).map((f) => `<option value="${Number(f.id || 0)}" ${Number(f.id || 0) === selectedTemplateId ? 'selected' : ''}>${esc(f.filter_name || '')}</option>`).join('')}</select><button type="button" class="lcni-btn lcni-btn-btn_filter_reload" data-reload-filter>${renderButtonContent('btn_filter_reload', 'Reload')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_save" data-save-current-filter>${renderButtonContent('btn_filter_save', 'Save')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_delete" data-delete-current-filter>${renderButtonContent('btn_filter_delete', 'Delete')}</button><button type="button" class="lcni-btn lcni-btn-btn_set_default_filter" data-set-default-filter>${renderButtonContent('btn_set_default_filter', 'Set Default')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_clear" data-clear-filter>${renderButtonContent('btn_filter_clear', 'Clear')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_apply" data-apply-filter>${renderButtonContent('btn_filter_apply', 'Apply Filter', getApplyLabel())}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_add_watchlist_bulk" data-add-filter-result-watchlist>${renderButtonContent('btn_filter_add_watchlist_bulk', 'Thêm vào Watchlist')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_export_excel" data-export-filter-excel>${renderButtonContent('btn_filter_export_excel', 'Xuất Excel')}</button>${hideBtn}</div></div><div class="lcni-column-pop" data-column-pop ${state.columnPanelOpen ? '' : 'hidden'}></div><div class="lcni-table-scroll"><table class="lcni-table"><thead><tr>${columns.map((c, idx) => `<th data-sort-key="${esc(c)}" class="${idx < Number(style.sticky_column_count || 1) ? 'is-sticky-col' : ''} ${isNumericValue((state.dataset[0] || {})[c]) ? 'lcni-cell-number' : 'lcni-cell-text'}">${esc(labels[c] || c)} <span data-sort-icon>${state.sortKey === c ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</span></th>`).join('')}</tr></thead><tbody><tr><td colspan="${columns.length}" class="lcni-cell-text">Nhấn Apply Filter để tải dữ liệu.</td></tr></tbody></table></div>`;
+    host.innerHTML = `<div class="lcni-filter-toolbar"><button type="button" class="lcni-btn lcni-btn-btn_filter_open" data-filter-toggle>${renderButtonContent('btn_filter_open', 'Filter')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_setting" data-column-toggle-btn>${renderButtonContent('btn_filter_setting', '')}</button></div><div class="lcni-filter-panel ${state.panelHidden ? 'is-collapsed' : ''}" data-filter-panel><div class="lcni-filter-panel-body">${renderCriteriaPanel()}</div><div class="lcni-filter-panel-actions"><label class="lcni-saved-filter-label">${savedFilterLabel}</label><select data-saved-filter-select class="lcni-select-saved-filter"><option value="">${savedFilterLabel}</option>${(state.savedFilters || []).map((f) => `<option value="${Number(f.id || 0)}" ${Number(f.id || 0) === selectedId ? 'selected' : ''}>${esc(f.filter_name || '')}</option>`).join('')}</select><label class="lcni-saved-filter-label">${templateLabel}</label><select data-template-filter-select class="lcni-select-template-filter"><option value="">${templateLabel}</option>${(state.adminTemplates || []).map((f) => `<option value="${Number(f.id || 0)}" ${Number(f.id || 0) === selectedTemplateId ? 'selected' : ''}>${esc(f.filter_name || '')}</option>`).join('')}</select><button type="button" class="lcni-btn lcni-btn-btn_filter_reload" data-reload-filter>${renderButtonContent('btn_filter_reload', 'Reload')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_save" data-save-current-filter>${renderButtonContent('btn_filter_save', 'Save')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_delete" data-delete-current-filter>${renderButtonContent('btn_filter_delete', 'Delete')}</button><button type="button" class="lcni-btn lcni-btn-btn_set_default_filter" data-set-default-filter>${renderButtonContent('btn_set_default_filter', 'Set Default')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_clear" data-clear-filter>${renderButtonContent('btn_filter_clear', 'Clear')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_apply" data-apply-filter>${renderButtonContent('btn_filter_apply', 'Apply Filter', getApplyLabel())}</button><div class="lcni-filter-result-summary lcni-filter-result-summary-desktop" data-filter-result-summary></div><button type="button" class="lcni-btn lcni-btn-btn_filter_add_watchlist_bulk" data-add-filter-result-watchlist>${renderButtonContent('btn_filter_add_watchlist_bulk', 'Thêm vào Watchlist')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_export_excel" data-export-filter-excel>${renderButtonContent('btn_filter_export_excel', 'Xuất Excel')}</button>${hideBtn}</div></div><div class="lcni-filter-result-summary lcni-filter-result-summary-mobile" data-filter-result-summary-mobile></div><div class="lcni-column-pop" data-column-pop ${state.columnPanelOpen ? '' : 'hidden'}></div><div class="lcni-table-scroll"><table class="lcni-table"><thead><tr>${columns.map((c, idx) => `<th data-sort-key="${esc(c)}" class="${idx < Number(style.sticky_column_count || 1) ? 'is-sticky-col' : ''} ${isNumericValue((state.dataset[0] || {})[c]) ? 'lcni-cell-number' : 'lcni-cell-text'}">${esc(labels[c] || c)} <span data-sort-icon>${state.sortKey === c ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</span></th>`).join('')}</tr></thead><tbody><tr><td colspan="${columns.length}" class="lcni-cell-text">Nhấn Apply Filter để tải dữ liệu.</td></tr></tbody></table></div>`;
 
     const selectable = settings.table_columns || columns;
     host.querySelector('[data-column-pop]').innerHTML = `${renderColumnPositionItems(selectable, labels)}<button type="button" class="lcni-btn lcni-btn-btn_save_filter" data-save-columns>${renderButtonContent('btn_save_filter', 'Save')}</button>`;
@@ -612,6 +670,12 @@
   function updateApplyButtonLabel(host) {
     const btn = host.querySelector('[data-apply-filter]');
     if (btn) btn.innerHTML = renderButtonContent('btn_filter_apply', 'Apply Filter', getApplyLabel());
+
+    const summaryText = buildFilterSummaryText(host);
+    const desktopSummary = host.querySelector('[data-filter-result-summary]');
+    const mobileSummary = host.querySelector('[data-filter-result-summary-mobile]');
+    if (desktopSummary) desktopSummary.textContent = summaryText;
+    if (mobileSummary) mobileSummary.textContent = summaryText;
   }
 
   function sortDataset(items) {
@@ -905,6 +969,7 @@
 
   function boot() {
     bindRowNavigation();
+    state.criteria = reorderCriteriaByColumns(state.criteria, cfg.filterCriteriaColumns);
     const defaultColumns = ((cfg.settings || {}).table_columns || []).slice();
     state.visibleColumns = loadVisibleColumns(defaultColumns);
     if (!state.visibleColumns.includes('symbol')) state.visibleColumns.unshift('symbol');
