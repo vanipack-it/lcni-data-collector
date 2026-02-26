@@ -1,3 +1,10 @@
+## 2026-02-26 22:55 (v2.2.6)
+- Nâng version plugin lên `2.2.6` và cập nhật log thay đổi cho bản vá đồng bộ snapshot OHLC Latest.
+- Fix cơ chế auto sync `wp_lcni_ohlc_latest`: cron/watchdog sẽ tự chạy lại không chỉ khi dữ liệu stale mà cả khi phát hiện snapshot bị thiếu row so với số cặp `(symbol, timeframe)` trong bảng gốc `wp_lcni_ohlc`.
+- Fix manual sync trong tab **Update Data**: trước khi refresh sẽ kiểm tra health snapshot, nếu bảng latest đang trống/thiếu row thì chủ động `TRUNCATE` và nạp lại toàn bộ để phục hồi dữ liệu.
+- Bổ sung cơ chế retry cho manual refresh: nếu lần `REPLACE INTO` đầu thất bại, hệ thống sẽ tự làm sạch bảng latest và chạy lại một lần để tăng khả năng tự phục hồi.
+- Bổ sung hàm health check snapshot để chuẩn hóa kiểm tra `expected_rows`, `actual_rows`, `missing_rows` và tái sử dụng cho cả runtime manager lẫn DB layer.
+
 ## 2026-02-26 19:05 (v2.2.5)
 - Nâng version plugin lên `2.2.5` và cập nhật log kèm mốc ngày giờ cụ thể để dễ theo dõi thời điểm cập nhật.
 - Sửa logic đồng bộ snapshot OHLC để bảng `wp_lcni_ohlc_latest` chỉ giữ 1 dòng mới nhất cho mỗi cặp `(symbol, timeframe)` bằng 1 SQL duy nhất chạy qua `$wpdb->query($sql)` với `INNER JOIN` vào `MAX(event_time)`.
