@@ -1,3 +1,10 @@
+## 2026-02-26 19:05 (v2.2.5)
+- Nâng version plugin lên `2.2.5` và cập nhật log kèm mốc ngày giờ cụ thể để dễ theo dõi thời điểm cập nhật.
+- Sửa logic đồng bộ snapshot OHLC để bảng `wp_lcni_ohlc_latest` chỉ giữ 1 dòng mới nhất cho mỗi cặp `(symbol, timeframe)` bằng 1 SQL duy nhất chạy qua `$wpdb->query($sql)` với `INNER JOIN` vào `MAX(event_time)`.
+- Đồng bộ stored procedure refresh snapshot theo cùng logic `JOIN + MAX(event_time)` để cron/manual sync luôn lấy đúng bản ghi mới nhất theo từng `(symbol, timeframe)`.
+- Bổ sung kiểm tra/đảm bảo ràng buộc `UNIQUE KEY uniq_symbol_tf (symbol, timeframe)` trên bảng snapshot để `REPLACE INTO` hoạt động đúng theo yêu cầu.
+- Bổ sung kiểm tra/đảm bảo index hiệu năng `idx_symbol_tf_time (symbol, timeframe, event_time)` trên bảng gốc `wp_lcni_ohlc` để tối ưu truy vấn lấy bản ghi mới nhất.
+
 ## 2026-02-26 18:23 (v2.2.4)
 - Nâng version plugin lên `2.2.4` và cập nhật log có mốc ngày giờ cụ thể để dễ nắm bắt thời điểm thay đổi.
 - Fix Frontend Settings → Filter → Style: `Row height` sau khi nhập số và lưu đã áp dụng thực tế ra bảng filter frontend.
