@@ -788,6 +788,11 @@
         state.filters = collectFilters(host);
         state.page = 1;
         state.columnPanelOpen = false;
+        if (mobile()) {
+          state.panelHidden = true;
+          const panel = host.querySelector('[data-filter-panel]');
+          if (panel) panel.classList.add('is-collapsed');
+        }
         await load(host);
         return;
       }

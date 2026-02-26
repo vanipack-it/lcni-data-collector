@@ -16,10 +16,22 @@ class LCNI_FilterTable {
     public function get_settings() {
         $all_columns = $this->watchlist_service->get_all_columns();
         $criteria = $this->normalize_columns(get_option('lcni_filter_criteria_columns', []), $all_columns);
+        $criteria_column_order = $this->normalize_columns(get_option('lcni_filter_criteria_column_order', []), $all_columns);
         $table_columns = $this->normalize_columns(get_option('lcni_filter_table_columns', []), $all_columns);
         $table_column_order = $this->normalize_columns(get_option('lcni_filter_table_column_order', []), $all_columns);
         if (empty($criteria)) {
             $criteria = array_slice($all_columns, 0, 8);
+        }
+        if (!empty($criteria_column_order)) {
+            $ordered_criteria = array_values(array_filter($criteria_column_order, function ($column) use ($criteria) {
+                return in_array($column, $criteria, true);
+            }));
+            foreach ($criteria as $column) {
+                if (!in_array($column, $ordered_criteria, true)) {
+                    $ordered_criteria[] = $column;
+                }
+            }
+            $criteria = $ordered_criteria;
         }
         if (empty($table_columns)) {
             $table_columns = $this->watchlist_service->get_default_columns('desktop');
@@ -124,8 +136,20 @@ class LCNI_FilterTable {
 
         $all_columns = $this->watchlist_service->get_all_columns();
         $criteria = $this->normalize_columns(get_option('lcni_filter_criteria_columns', []), $all_columns);
+        $criteria_column_order = $this->normalize_columns(get_option('lcni_filter_criteria_column_order', []), $all_columns);
         if (empty($criteria)) {
             $criteria = array_slice($all_columns, 0, 8);
+        }
+        if (!empty($criteria_column_order)) {
+            $ordered_criteria = array_values(array_filter($criteria_column_order, function ($column) use ($criteria) {
+                return in_array($column, $criteria, true);
+            }));
+            foreach ($criteria as $column) {
+                if (!in_array($column, $ordered_criteria, true)) {
+                    $ordered_criteria[] = $column;
+                }
+            }
+            $criteria = $ordered_criteria;
         }
 
         return $this->sanitize_filters($decoded['filters'], $criteria);

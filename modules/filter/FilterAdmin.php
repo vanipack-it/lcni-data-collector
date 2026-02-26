@@ -107,12 +107,15 @@ class LCNI_FilterAdmin {
     public static function render_filter_form($tab_id) {
         $service = new LCNI_WatchlistService(new LCNI_WatchlistRepository());
         $all_columns = $service->get_all_columns();
+        $pages = get_pages(['sort_column' => 'post_title', 'sort_order' => 'asc']);
         $criteria = self::sanitize_columns(get_option('lcni_filter_criteria_columns', []));
         $table_columns = self::sanitize_columns(get_option('lcni_filter_table_columns', []));
         $style = self::sanitize_style(get_option('lcni_filter_style_config', get_option('lcni_filter_style', [])));
         $default_filter_values = (string) get_option('lcni_filter_default_values', '');
         $admin_saved_filters = self::get_saved_filters_by_user(get_current_user_id());
         $default_admin_saved_filter_id = absint(get_option('lcni_filter_default_admin_saved_filter_id', 0));
+        $filter_page_id = absint(get_option('lcni_filter_link_page_id', 0));
+        $filter_page_slug = sanitize_title((string) get_option('lcni_filter_link_page', 'sug-filter'));
         ?>
         <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
             <div class="lcni-sub-tab-nav" id="lcni-filter-sub-tabs">
@@ -121,6 +124,7 @@ class LCNI_FilterAdmin {
                 <button type="button" data-filter-sub-tab="style">Style</button>
                 <button type="button" data-filter-sub-tab="default_values">Default Values</button>
                 <button type="button" data-filter-sub-tab="default_criteria">LCNi Filter Template</button>
+                <button type="button" data-filter-sub-tab="filter_page">Filter Page</button>
             </div>
 
             <div data-filter-sub-pane="criteria">
@@ -266,6 +270,29 @@ class LCNI_FilterAdmin {
                             <?php endforeach; ?>
                         </select>
                     </p>
+                    <?php submit_button('Save'); ?>
+                </form>
+            </div>
+
+            <div data-filter-sub-pane="filter_page" style="display:none">
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                    <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                    <input type="hidden" name="lcni_frontend_module" value="filter">
+                    <input type="hidden" name="lcni_filter_section" value="filter_page">
+                    <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+
+                    <h3>Filter Page</h3>
+                    <p>Chọn trang làm liên kết chứa module filter (mặc định slug: <code>sug-filter</code>).</p>
+                    <p>
+                        <select name="lcni_filter_link_page_id">
+                            <option value="0">-- Chọn page --</option>
+                            <?php foreach ($pages as $page) : ?>
+                                <option value="<?php echo esc_attr((string) absint($page->ID)); ?>" <?php selected(absint($page->ID), $filter_page_id); ?>><?php echo esc_html($page->post_title); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </p>
+                    <p class="description">Filter page slug hiện tại: <code><?php echo esc_html($filter_page_slug !== '' ? $filter_page_slug : 'sug-filter'); ?></code></p>
                     <?php submit_button('Save'); ?>
                 </form>
             </div>

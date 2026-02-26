@@ -1,3 +1,10 @@
+## 2026-02-26 17:35 (v2.2.2)
+- Nâng version plugin lên `2.2.2` và cập nhật log với mốc ngày giờ cụ thể để dễ nắm bắt thời điểm thay đổi.
+- Fix Frontend Settings → Filter → Filter Criteria: đảm bảo thứ tự field kéo-thả được lưu và thực thi ổn định ra frontend theo option `lcni_filter_criteria_columns`/`lcni_filter_criteria_column_order`.
+- Fix bổ sung tab con `Filter Page` trong Frontend Settings → Filter để chọn page liên kết chứa module filter (thay cho slug mặc định `sug-filter`), tương tự cơ chế chọn stock detail page ở Watchlist.
+- Fix nút thêm vào watchlist trong filter panel: khi click sẽ mở popup chọn watchlist có sẵn, nếu chưa có thì cho tạo watchlist mới trước khi thêm mã.
+- Fix mobile UX: khi click `btn_filter_apply` hệ thống tự động ẩn filter panel để không che bảng kết quả sau lọc.
+
 ## 2026-02-26 15:30 (v2.2.1)
 - Nâng version plugin lên `2.2.1` và cập nhật log có mốc thời gian ngày giờ cụ thể để dễ theo dõi.
 - Điều chỉnh hành vi click bảng Watchlist/Filter: chỉ mở link chi tiết `...?symbol={SYMBOL}` khi click đúng cell `symbol`; click các cell khác không còn mở trang chi tiết.

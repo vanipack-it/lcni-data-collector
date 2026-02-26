@@ -88,6 +88,73 @@
     setTimeout(() => node.remove(), 2400);
   }
 
+  function closeModal() {
+    const modal = document.querySelector('[data-watchlist-modal]');
+    if (modal) modal.remove();
+  }
+
+  function showModal(html) {
+    closeModal();
+    const wrap = document.createElement('div');
+    wrap.className = 'lcni-watchlist-modal';
+    wrap.setAttribute('data-watchlist-modal', '1');
+    wrap.innerHTML = `<div class="lcni-watchlist-modal-card">${html}</div>`;
+    wrap.addEventListener('click', (event) => {
+      if (event.target === wrap || event.target.closest('[data-watchlist-modal-close]')) {
+        closeModal();
+      }
+    });
+    document.body.appendChild(wrap);
+  }
+
+  async function openAddSymbolDialog(symbol) {
+    const normalized = String(symbol || '').trim().toUpperCase();
+    if (!normalized) return;
+
+    const payload = await api('/list');
+    const watchlists = Array.isArray(payload.watchlists) ? payload.watchlists : [];
+    const activeId = Number(payload.active_watchlist_id || activeWatchlistId || 0);
+
+    if (!watchlists.length) {
+      showModal(`<h3>Tạo watchlist mới</h3><form data-create-watchlist-form><input type="text" name="name" placeholder="Tên watchlist" required /><div class="lcni-filter-modal-actions"><button type="submit" class="lcni-btn lcni-btn-btn_watchlist_new">${renderButtonContent('btn_watchlist_new', '+ New')}</button><button type="button" class="lcni-btn lcni-btn-btn_popup_close" data-watchlist-modal-close>Close</button></div></form>`);
+      const form = document.querySelector('[data-create-watchlist-form]');
+      if (form) {
+        form.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          const name = String((new FormData(form)).get('name') || '').trim();
+          if (!name) return;
+          const created = await api('/create', { method: 'POST', body: { name } });
+          const watchlistId = Number(created.id || 0);
+          if (!watchlistId) throw new Error('Không thể tạo watchlist');
+          await api('/add-symbol', { method: 'POST', body: { symbol: normalized, watchlist_id: watchlistId } });
+          closeModal();
+          showToast('Đã thêm mã ' + normalized + ' vào watchlist mới: ' + name + '.');
+          activeWatchlistId = watchlistId;
+          WatchlistStore.add(normalized);
+          syncAllButtons();
+        }, { once: true });
+      }
+      return;
+    }
+
+    showModal(`<h3>Chọn watchlist cho ${esc(normalized)}</h3><form data-select-watchlist-form><div class="lcni-filter-watchlist-options">${watchlists.map((w) => `<label><input type="radio" name="watchlist_id" value="${Number(w.id || 0)}" ${(Number(w.id || 0) === activeId) ? 'checked' : ''}> ${esc(w.name || '')}</label>`).join('')}</div><div class="lcni-filter-modal-actions"><button type="submit" class="lcni-btn lcni-btn-btn_popup_confirm">${renderButtonContent('btn_popup_confirm', 'Confirm')}</button><button type="button" class="lcni-btn lcni-btn-btn_popup_close" data-watchlist-modal-close>Close</button></div></form>`);
+    const form = document.querySelector('[data-select-watchlist-form]');
+    if (!form) return;
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const formData = new FormData(form);
+      const watchlistId = Number(formData.get('watchlist_id') || 0);
+      if (!watchlistId) return;
+      const payloadAdd = await api('/add-symbol', { method: 'POST', body: { symbol: normalized, watchlist_id: watchlistId } });
+      const watchlistName = String((payloadAdd && (payloadAdd.watchlist_name || payloadAdd.name)) || '');
+      closeModal();
+      showToast('Đã thêm mã ' + normalized + (watchlistName ? (' vào watchlist: ' + watchlistName + '.') : '.'));
+      WatchlistStore.add(normalized);
+      syncAllButtons();
+      document.querySelectorAll('[data-lcni-watchlist]').forEach((host) => refreshTable(host).catch(() => {}));
+    }, { once: true });
+  }
+
 
   function renderWatchlistRowActionButton(symbol) {
     const removeLabel = renderButtonContent('btn_watchlist_remove_symbol_row', 'Xóa');
@@ -452,9 +519,7 @@
         if (icon) icon.className = 'fa-solid fa-spinner fa-spin';
 
         try {
-          await toggleSymbol(symbol);
-          document.querySelectorAll('[data-lcni-watchlist]').forEach((host) => refreshTable(host).catch(() => {}));
-          syncAllButtons();
+          await openAddSymbolDialog(symbol);
         } catch (error) {
           showToast((error && error.message) || 'Không thể cập nhật watchlist');
         } finally {
