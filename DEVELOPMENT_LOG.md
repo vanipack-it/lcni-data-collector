@@ -1,3 +1,9 @@
+## 2026-02-26 18:10 (v2.2.3)
+- Nâng version plugin lên `2.2.3` và cập nhật log với mốc ngày giờ chi tiết để dễ nắm bắt thời điểm thay đổi.
+- Fix logic đồng bộ `wp_lcni_ohlc_latest`: lấy nến mới nhất theo từng cặp `symbol + timeframe` (không còn gộp theo `symbol`) để dữ liệu latest đúng khi filter theo ngày gần nhất.
+- Chuẩn hóa khóa chính bảng latest thành `PRIMARY KEY (symbol, timeframe)` để `REPLACE INTO` hoạt động đúng theo từng khung thời gian.
+- Bổ sung/đảm bảo index bắt buộc `idx_symbol_tf_time (symbol, timeframe, event_time)` trên bảng gốc `wp_lcni_ohlc` để tăng tốc truy vấn lấy bản ghi mới nhất.
+
 ## 2026-02-26 17:35 (v2.2.2)
 - Nâng version plugin lên `2.2.2` và cập nhật log với mốc ngày giờ cụ thể để dễ nắm bắt thời điểm thay đổi.
 - Fix Frontend Settings → Filter → Filter Criteria: đảm bảo thứ tự field kéo-thả được lưu và thực thi ổn định ra frontend theo option `lcni_filter_criteria_columns`/`lcni_filter_criteria_column_order`.
