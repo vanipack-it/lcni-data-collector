@@ -1,3 +1,15 @@
+## 2026-02-26 11:20 (v2.1.2)
+- Nâng version plugin lên `2.1.2` và ghi rõ mốc ngày giờ cập nhật để dễ theo dõi.
+- Fix Frontend Setting → Style Config → Cell Color: lưu rules đồng thời vào option global `lcni_global_cell_color_rules` để các module frontend (đặc biệt Filter/Watchlist) thực thi ngay.
+- Fix Frontend Setting → Style Config → Cell to Cell Color: chuẩn hóa hỗ trợ toán tử `>=`, `<=`, `!=` ở Watchlist service để rule đã lưu không bị loại bỏ khi render frontend.
+- Bổ sung Frontend Setting → Watchlist → Columns layout 80:20, cột phải hiển thị danh sách field đã chọn + kéo thả thứ tự; lưu thứ tự để frontend Watchlist render cột theo thứ tự từ trái sang phải.
+
+## 2026-02-26 02:07 (v2.1.1)
+- Nâng version plugin lên `2.1.1` và ghi log mốc thời gian cập nhật cụ thể.
+- Bổ sung cột `hanh_vi_gia_1w` cho `wp_lcni_ohlc` trong schema tạo mới + cơ chế tự thêm cột trên hệ thống đang chạy.
+- Thêm migration `lcni_ohlc_hanh_vi_gia_1w_backfilled_v1` để backfill dữ liệu cũ theo công thức so sánh giá/khối lượng với 5 phiên trước.
+- Đảm bảo pipeline `rebuild_ohlc_indicators` tự tính `hanh_vi_gia_1w` cho dữ liệu mới insert/update về sau.
+
 ## 2026-02-26 09:30 (v2.1.0)
 - Nâng version plugin lên `2.1.0` và cập nhật log có mốc ngày giờ cụ thể để tiện theo dõi thay đổi.
 - Bổ sung cột `rsi_status` và `hanh_vi_gia` cho `wp_lcni_ohlc` trong schema tạo bảng mới + cơ chế tự thêm cột cho hệ thống đang chạy.
