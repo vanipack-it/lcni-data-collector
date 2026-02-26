@@ -103,6 +103,7 @@ class LCNI_DB {
         self::backfill_ohlc_rs_3m_by_exchange();
         self::backfill_ohlc_rs_exchange_signals();
         self::backfill_ohlc_rs_recommend_status();
+        self::backfill_ohlc_rsi_status_and_hanh_vi_gia();
         self::ensure_ohlc_symbol_type_column();
         self::ensure_ohlc_indexes();
         self::ensure_ohlc_latest_snapshot_infrastructure();
@@ -178,12 +179,14 @@ class LCNI_DB {
             macd DECIMAL(16,8) DEFAULT NULL,
             macd_signal DECIMAL(16,8) DEFAULT NULL,
             rsi DECIMAL(12,6) DEFAULT NULL,
+            rsi_status VARCHAR(30) DEFAULT NULL,
             trading_index BIGINT UNSIGNED DEFAULT NULL,
             xay_nen VARCHAR(50) DEFAULT NULL,
             xay_nen_count_30 SMALLINT UNSIGNED DEFAULT NULL,
             nen_type VARCHAR(30) DEFAULT NULL,
             pha_nen VARCHAR(30) DEFAULT NULL,
             tang_gia_kem_vol VARCHAR(50) DEFAULT NULL,
+            hanh_vi_gia VARCHAR(50) DEFAULT NULL,
             smart_money VARCHAR(30) DEFAULT NULL,
             symbol_type VARCHAR(20) NOT NULL DEFAULT 'STOCK',
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -724,12 +727,14 @@ class LCNI_DB {
             'macd' => 'DECIMAL(16,8) DEFAULT NULL',
             'macd_signal' => 'DECIMAL(16,8) DEFAULT NULL',
             'rsi' => 'DECIMAL(12,6) DEFAULT NULL',
+            'rsi_status' => 'VARCHAR(30) DEFAULT NULL',
             'trading_index' => 'BIGINT UNSIGNED DEFAULT NULL',
             'xay_nen' => 'VARCHAR(50) DEFAULT NULL',
             'xay_nen_count_30' => 'SMALLINT UNSIGNED DEFAULT NULL',
             'nen_type' => 'VARCHAR(30) DEFAULT NULL',
             'pha_nen' => 'VARCHAR(30) DEFAULT NULL',
             'tang_gia_kem_vol' => 'VARCHAR(50) DEFAULT NULL',
+            'hanh_vi_gia' => 'VARCHAR(50) DEFAULT NULL',
             'smart_money' => 'VARCHAR(30) DEFAULT NULL',
         ];
 
@@ -861,6 +866,12 @@ class LCNI_DB {
 
         if ($index_exists === null) {
             $wpdb->query("CREATE INDEX {$index_name} ON {$table} (symbol, trading_index)");
+        }
+
+        $alt_index_name = 'idx_symbol_trading';
+        $alt_index_exists = $wpdb->get_var($wpdb->prepare("SHOW INDEX FROM {$table} WHERE Key_name = %s", $alt_index_name));
+        if ($alt_index_exists === null) {
+            $wpdb->query("CREATE INDEX {$alt_index_name} ON {$table} (symbol, trading_index)");
         }
     }
 
@@ -1408,6 +1419,79 @@ class LCNI_DB {
         update_option($migration_flag, 'yes');
     }
 
+
+    private static function backfill_ohlc_rsi_status_and_hanh_vi_gia() {
+        $migration_flag = 'lcni_ohlc_rsi_status_hanh_vi_gia_backfilled_v1';
+        if (get_option($migration_flag) === 'yes' && !self::has_missing_rsi_status_or_hanh_vi_gia_rows()) {
+            return;
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'lcni_ohlc';
+
+        $wpdb->query(
+            "UPDATE {$table}
+            SET rsi_status = CASE
+                WHEN rsi >= 80 THEN 'Tham lam'
+                WHEN rsi <= 20 THEN 'Sợ hãi'
+                WHEN rsi >= 70 THEN 'Quá mua'
+                WHEN rsi <= 30 THEN 'Quá bán'
+                WHEN rsi IS NULL THEN NULL
+                ELSE 'Trung tính'
+            END"
+        );
+
+        $wpdb->query(
+            "UPDATE {$table} cur
+            LEFT JOIN {$table} prev
+                ON prev.symbol = cur.symbol
+                AND prev.timeframe = cur.timeframe
+                AND prev.trading_index = cur.trading_index - 1
+            SET cur.hanh_vi_gia =
+                CASE
+                    WHEN prev.close_price IS NULL OR prev.close_price = 0 OR prev.volume IS NULL OR prev.volume = 0
+                        THEN 'Không rõ xu hướng'
+                    WHEN
+                        (cur.close_price - prev.close_price) / NULLIF(prev.close_price, 0) >
+                            (CASE WHEN cur.symbol IN ('VNINDEX', 'UPCOMINDEX', 'UPINDEX', 'HNXINDEX') THEN 0.01 ELSE 0.05 END)
+                        AND
+                        (cur.volume - prev.volume) / NULLIF(prev.volume, 0) >
+                            (CASE WHEN cur.symbol IN ('VNINDEX', 'UPCOMINDEX', 'UPINDEX', 'HNXINDEX') THEN 0.05 ELSE 0.5 END)
+                        THEN 'Bứt phá – Cầu mạnh'
+                    WHEN
+                        (cur.close_price - prev.close_price) / NULLIF(prev.close_price, 0) >
+                            (CASE WHEN cur.symbol IN ('VNINDEX', 'UPCOMINDEX', 'UPINDEX', 'HNXINDEX') THEN 0.01 ELSE 0.05 END)
+                        AND
+                        (cur.volume - prev.volume) / NULLIF(prev.volume, 0) < 0
+                        THEN 'Siết cung – Tăng mạnh'
+                    WHEN
+                        (cur.close_price - prev.close_price) / NULLIF(prev.close_price, 0) <
+                            -(CASE WHEN cur.symbol IN ('VNINDEX', 'UPCOMINDEX', 'UPINDEX', 'HNXINDEX') THEN 0.01 ELSE 0.05 END)
+                        AND
+                        (cur.volume - prev.volume) / NULLIF(prev.volume, 0) >
+                            (CASE WHEN cur.symbol IN ('VNINDEX', 'UPCOMINDEX', 'UPINDEX', 'HNXINDEX') THEN 0.05 ELSE 0.5 END)
+                        THEN 'Bán tháo – Cung mạnh'
+                    WHEN
+                        ABS((cur.close_price - prev.close_price) / NULLIF(prev.close_price, 0)) <=
+                            (CASE WHEN cur.symbol IN ('VNINDEX', 'UPCOMINDEX', 'UPINDEX', 'HNXINDEX') THEN 0.005 ELSE 0.02 END)
+                        AND
+                        (cur.volume - prev.volume) / NULLIF(prev.volume, 0) >
+                            (CASE WHEN cur.symbol IN ('VNINDEX', 'UPCOMINDEX', 'UPINDEX', 'HNXINDEX') THEN 0.05 ELSE 0.5 END)
+                        THEN 'Phân phối – Cung lớn'
+                    WHEN
+                        ABS((cur.close_price - prev.close_price) / NULLIF(prev.close_price, 0)) <=
+                            (CASE WHEN cur.symbol IN ('VNINDEX', 'UPCOMINDEX', 'UPINDEX', 'HNXINDEX') THEN 0.005 ELSE 0.02 END)
+                        AND
+                        (cur.volume - prev.volume) / NULLIF(prev.volume, 0) < 0
+                        THEN 'Tích lũy – Cạn cung'
+                    ELSE 'Không rõ xu hướng'
+                END"
+        );
+
+        self::log_change('backfill_ohlc_rsi_status_hanh_vi_gia', 'Backfilled rsi_status and hanh_vi_gia for existing OHLC rows.');
+        update_option($migration_flag, 'yes');
+    }
+
     private static function has_missing_rs_exchange_signal_rows() {
         global $wpdb;
 
@@ -1431,6 +1515,23 @@ class LCNI_DB {
             FROM {$ohlc_table}
             WHERE rs_recommend_status IS NULL
                 OR TRIM(rs_recommend_status) = ''"
+        );
+
+        return $missing_count > 0;
+    }
+
+
+    private static function has_missing_rsi_status_or_hanh_vi_gia_rows() {
+        global $wpdb;
+
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $missing_count = (int) $wpdb->get_var(
+            "SELECT COUNT(*)
+            FROM {$ohlc_table}
+            WHERE rsi_status IS NULL
+                OR TRIM(IFNULL(rsi_status, '')) = ''
+                OR hanh_vi_gia IS NULL
+                OR TRIM(IFNULL(hanh_vi_gia, '')) = ''"
         );
 
         return $missing_count > 0;
@@ -2693,6 +2794,8 @@ class LCNI_DB {
                     OR latest.pha_nen IS NULL
                     OR latest.tang_gia_kem_vol IS NULL
                     OR latest.smart_money IS NULL
+                    OR latest.rsi_status IS NULL
+                    OR latest.hanh_vi_gia IS NULL
                     OR latest.rs_exchange_status IS NULL
                     OR latest.rs_exchange_recommend IS NULL
                 LIMIT %d",
@@ -2869,6 +2972,10 @@ class LCNI_DB {
                 $rules
             );
             $smart_money = self::determine_smart_money($symbol, $pha_nen, $tang_gia_kem_vol);
+            $rsi_status = self::determine_rsi_status($rsi);
+            $previous_close = $i > 0 ? (float) $rows[$i - 1]['close_price'] : null;
+            $previous_volume = $i > 0 ? (float) $rows[$i - 1]['volume'] : null;
+            $hanh_vi_gia = self::determine_hanh_vi_gia($symbol, $close, $previous_close, $volume, $previous_volume);
             $nen_types[] = $nen_type;
 
             $wpdb->update(
@@ -2907,18 +3014,82 @@ class LCNI_DB {
                     'macd' => $macd,
                     'macd_signal' => $signal,
                     'rsi' => $rsi,
+                    'rsi_status' => $rsi_status,
                     'xay_nen' => $xay_nen,
                     'xay_nen_count_30' => $xay_nen_count_30,
                     'nen_type' => $nen_type,
                     'pha_nen' => $pha_nen,
                     'tang_gia_kem_vol' => $tang_gia_kem_vol,
+                    'hanh_vi_gia' => $hanh_vi_gia,
                     'smart_money' => $smart_money,
                 ],
                 ['id' => (int) $rows[$i]['id']],
-                ['%d','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%s','%d','%s','%s','%s','%s'],
+                ['%d','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%s','%s','%d','%s','%s','%s','%s','%s'],
                 ['%d']
             );
         }
+    }
+
+    private static function determine_rsi_status($rsi) {
+        if ($rsi === null || !is_numeric($rsi)) {
+            return null;
+        }
+
+        $rsi_value = (float) $rsi;
+        if ($rsi_value >= 80) {
+            return 'Tham lam';
+        }
+
+        if ($rsi_value <= 20) {
+            return 'Sợ hãi';
+        }
+
+        if ($rsi_value >= 70) {
+            return 'Quá mua';
+        }
+
+        if ($rsi_value <= 30) {
+            return 'Quá bán';
+        }
+
+        return 'Trung tính';
+    }
+
+    private static function determine_hanh_vi_gia($symbol, $close_price, $prev_close_price, $volume, $prev_volume) {
+        if ($prev_close_price === null || $prev_volume === null || (float) $prev_close_price == 0.0 || (float) $prev_volume == 0.0) {
+            return 'Không rõ xu hướng';
+        }
+
+        $symbol = strtoupper((string) $symbol);
+        $is_index_symbol = in_array($symbol, ['VNINDEX', 'UPCOMINDEX', 'UPINDEX', 'HNXINDEX'], true);
+        $price_up_threshold = $is_index_symbol ? 0.01 : 0.05;
+        $volume_up_threshold = $is_index_symbol ? 0.05 : 0.5;
+        $sideway_threshold = $is_index_symbol ? 0.005 : 0.02;
+
+        $price_change_ratio = ((float) $close_price - (float) $prev_close_price) / (float) $prev_close_price;
+        $volume_change_ratio = ((float) $volume - (float) $prev_volume) / (float) $prev_volume;
+
+        if ($price_change_ratio > $price_up_threshold && $volume_change_ratio > $volume_up_threshold) {
+            return 'Bứt phá – Cầu mạnh';
+        }
+
+        if ($price_change_ratio > $price_up_threshold && $volume_change_ratio < 0) {
+            return 'Siết cung – Tăng mạnh';
+        }
+
+        if ($price_change_ratio < -$price_up_threshold && $volume_change_ratio > $volume_up_threshold) {
+            return 'Bán tháo – Cung mạnh';
+        }
+
+        if (abs($price_change_ratio) <= $sideway_threshold && $volume_change_ratio > $volume_up_threshold) {
+            return 'Phân phối – Cung lớn';
+        }
+
+        if (abs($price_change_ratio) <= $sideway_threshold && $volume_change_ratio < 0) {
+            return 'Tích lũy – Cạn cung';
+        }
+
+        return 'Không rõ xu hướng';
     }
 
 

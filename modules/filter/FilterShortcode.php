@@ -5,7 +5,7 @@ if (!defined('ABSPATH')) {
 }
 
 class LCNI_FilterShortcode {
-    const VERSION = '2.0.9';
+    const VERSION = '2.1.0';
 
     private $table;
 
@@ -52,6 +52,8 @@ class LCNI_FilterShortcode {
 
         $stock_detail_url = $stock_page_slug !== '' ? home_url('/' . $stock_page_slug . '/') : '';
 
+        $storage_key_suffix = substr(md5(wp_json_encode($settings['table_columns'] ?? [])), 0, 8);
+
         wp_localize_script('lcni-filter', 'lcniFilterConfig', [
             'restUrl' => esc_url_raw(rest_url('lcni/v1/filter/list')),
             'savedFilterBase' => esc_url_raw(rest_url('lcni/v1/filter')),
@@ -64,7 +66,7 @@ class LCNI_FilterShortcode {
             'stockDetailUrl' => esc_url_raw($stock_detail_url),
             'settings' => $settings,
             'criteria' => $this->table->get_criteria_definitions(),
-            'tableSettingsStorageKey' => 'lcni_filter_visible_columns_v1',
+            'tableSettingsStorageKey' => 'lcni_filter_visible_columns_v1_' . $storage_key_suffix,
             'defaultFilterValues' => $settings['default_filter_values'] ?? [],
             'buttonConfig' => LCNI_Button_Style_Config::get_config(),
         ]);

@@ -91,8 +91,11 @@
     const left = bothNumeric ? numericRaw : String(rawValue);
     const right = bothNumeric ? numericExpected : String(expected);
     if (operator === '>') return left > right;
+    if (operator === '>=') return left >= right;
     if (operator === '<') return left < right;
+    if (operator === '<=') return left <= right;
     if (operator === '=') return left === right;
+    if (operator === '!=') return left !== right;
     if (operator === 'contains') return String(rawValue).toLowerCase().includes(String(expected).toLowerCase());
     if (operator === 'not_contains') return !String(rawValue).toLowerCase().includes(String(expected).toLowerCase());
     return false;
@@ -107,6 +110,19 @@
       return rule;
     }
     return null;
+  }
+
+
+
+  function resolveCellStyle(column, value) {
+    const rules = Array.isArray((cfg.settings || {}).value_color_rules) ? (cfg.settings || {}).value_color_rules : [];
+    for (let i = 0; i < rules.length; i += 1) {
+      const rule = rules[i] || {};
+      if (rule.column !== column) continue;
+      if (!resolveOperatorMatch(value, rule.operator, rule.value)) continue;
+      return `background:${esc(rule.bg_color || '')};color:${esc(rule.text_color || '')};`;
+    }
+    return '';
   }
 
   function formatCellValue(column, value) {
@@ -465,7 +481,11 @@
         const iconHtml = cellRule && cellRule.icon_class ? `<i class="${esc(cellRule.icon_class)}" style="color:${esc(cellRule.icon_color || '#dc2626')};font-size:${Number(cellRule.icon_size || 12)}px;"></i>` : '';
         const valueHtml = esc(formatCellValue(column, row[column]));
         const content = cellRule && iconHtml ? (cellRule.icon_position === 'left' ? `${iconHtml} ${valueHtml}` : `${valueHtml} ${iconHtml}`) : valueHtml;
-        const styleAttr = cellRule && cellRule.text_color ? ` style="color:${esc(cellRule.text_color)};"` : '';
+        const valueStyle = resolveCellStyle(column, row[column]);
+        const styleParts = [];
+        if (valueStyle) styleParts.push(valueStyle);
+        if (cellRule && cellRule.text_color) styleParts.push(`color:${esc(cellRule.text_color)};`);
+        const styleAttr = styleParts.length ? ` style="${styleParts.join('')}"` : '';
         return `<td class="${stickyClass} ${typeClass}"${styleAttr}>${content}</td>`;
       }).join('')}</tr>`).join('');
     }

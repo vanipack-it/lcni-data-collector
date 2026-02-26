@@ -2081,7 +2081,7 @@ private function sanitize_module_title($value, $fallback) {
     private function sanitize_global_cell_color_rules($rules) {
         $service = new LCNI_WatchlistService(new LCNI_WatchlistRepository());
         $all_columns = $service->get_all_columns();
-        $allowed_operators = ['=', '>', '<', 'contains', 'not_contains'];
+        $allowed_operators = ['=', '!=', '>', '>=', '<', '<=', 'contains', 'not_contains'];
         $normalized = [];
 
         foreach ((array) $rules as $rule) {
@@ -2149,7 +2149,7 @@ private function sanitize_module_title($value, $fallback) {
     private function sanitize_global_cell_to_cell_rules($rules) {
         $service = new LCNI_WatchlistService(new LCNI_WatchlistRepository());
         $all_columns = $service->get_all_columns();
-        $allowed_operators = ['=', '>', '<', 'contains', 'not_contains'];
+        $allowed_operators = ['=', '!=', '>', '>=', '<', '<=', 'contains', 'not_contains'];
         $normalized = [];
 
         foreach ((array) $rules as $rule) {
@@ -2190,8 +2190,11 @@ private function sanitize_module_title($value, $fallback) {
     private function map_global_rules_to_frontend_value_rules($rules, $allowed_fields) {
         $operator_map = [
             '=' => 'equals',
+            '!=' => 'not_equals',
             '>' => 'gt',
+            '>=' => 'gte',
             '<' => 'lt',
+            '<=' => 'lte',
             'contains' => 'contains',
         ];
 
@@ -2480,7 +2483,7 @@ private function sanitize_module_title($value, $fallback) {
                     <?php for ($i = 0; $i < $rule_rows; $i++) : $rule = $cell_rules[$i] ?? []; ?>
                         <tr>
                             <td><select name="lcni_global_rule_field[]"><option value="">-- Field --</option><?php foreach ($all_columns as $column) : ?><option value="<?php echo esc_attr($column); ?>" <?php selected((string) ($rule['column'] ?? ''), $column); ?>><?php echo esc_html($column); ?></option><?php endforeach; ?></select></td>
-                            <td><select name="lcni_global_rule_operator[]"><?php foreach (['=', '>', '<', 'contains', 'not_contains'] as $operator) : ?><option value="<?php echo esc_attr($operator); ?>" <?php selected((string) ($rule['operator'] ?? '='), $operator); ?>><?php echo esc_html($operator); ?></option><?php endforeach; ?></select></td>
+                            <td><select name="lcni_global_rule_operator[]"><?php foreach (['=', '!=', '>', '>=', '<', '<=', 'contains', 'not_contains'] as $operator) : ?><option value="<?php echo esc_attr($operator); ?>" <?php selected((string) ($rule['operator'] ?? '='), $operator); ?>><?php echo esc_html($operator); ?></option><?php endforeach; ?></select></td>
                             <td><input type="text" name="lcni_global_rule_value[]" value="<?php echo esc_attr((string) ($rule['value'] ?? '')); ?>"></td>
                             <td><input type="color" name="lcni_global_rule_bg_color[]" value="<?php echo esc_attr((string) ($rule['bg_color'] ?? '#16a34a')); ?>"></td>
                             <td><input type="color" name="lcni_global_rule_text_color[]" value="<?php echo esc_attr((string) ($rule['text_color'] ?? '#ffffff')); ?>"></td>
@@ -2491,7 +2494,7 @@ private function sanitize_module_title($value, $fallback) {
                     </tbody>
                 </table>
                 <p><button type="button" class="button" id="lcni-add-global-cell-rule">+ Thêm rule</button></p>
-                <template id="lcni-global-cell-rule-template"><tr><td><select name="lcni_global_rule_field[]"><option value="">-- Field --</option><?php foreach ($all_columns as $column) : ?><option value="<?php echo esc_attr($column); ?>"><?php echo esc_html($column); ?></option><?php endforeach; ?></select></td><td><select name="lcni_global_rule_operator[]"><?php foreach (['=', '>', '<', 'contains', 'not_contains'] as $operator) : ?><option value="<?php echo esc_attr($operator); ?>"><?php echo esc_html($operator); ?></option><?php endforeach; ?></select></td><td><input type="text" name="lcni_global_rule_value[]"></td><td><input type="color" name="lcni_global_rule_bg_color[]" value="#16a34a"></td><td><input type="color" name="lcni_global_rule_text_color[]" value="<?php echo esc_attr((string) ($shared_all['text_color'] ?? "#ffffff")); ?>"></td><td><input type="text" name="lcni_global_rule_icon_class[]" placeholder="fa-solid fa-arrow-up"></td><td><select name="lcni_global_rule_icon_position[]"><option value="left">left</option><option value="right">right</option></select></td></tr></template>
+                <template id="lcni-global-cell-rule-template"><tr><td><select name="lcni_global_rule_field[]"><option value="">-- Field --</option><?php foreach ($all_columns as $column) : ?><option value="<?php echo esc_attr($column); ?>"><?php echo esc_html($column); ?></option><?php endforeach; ?></select></td><td><select name="lcni_global_rule_operator[]"><?php foreach (['=', '!=', '>', '>=', '<', '<=', 'contains', 'not_contains'] as $operator) : ?><option value="<?php echo esc_attr($operator); ?>"><?php echo esc_html($operator); ?></option><?php endforeach; ?></select></td><td><input type="text" name="lcni_global_rule_value[]"></td><td><input type="color" name="lcni_global_rule_bg_color[]" value="#16a34a"></td><td><input type="color" name="lcni_global_rule_text_color[]" value="<?php echo esc_attr((string) ($shared_all['text_color'] ?? "#ffffff")); ?>"></td><td><input type="text" name="lcni_global_rule_icon_class[]" placeholder="fa-solid fa-arrow-up"></td><td><select name="lcni_global_rule_icon_position[]"><option value="left">left</option><option value="right">right</option></select></td></tr></template>
                 <h3>Cell to Cell Color</h3>
                 <p class="description">Tạo rule điều kiện theo Field A để tô màu/icon cho Field B (9 cột).</p>
                 <table style="border-collapse:collapse; width:100%;">
@@ -2504,7 +2507,7 @@ private function sanitize_module_title($value, $fallback) {
                     <?php for ($i = 0; $i < max(5, count($cell_to_cell_rules)); $i++) : $rule = $cell_to_cell_rules[$i] ?? []; ?>
                         <tr>
                             <td><select name="lcni_cell_to_cell_source_field[]"><option value="">-- Field --</option><?php foreach ($all_columns as $column) : ?><option value="<?php echo esc_attr($column); ?>" <?php selected((string) ($rule['source_field'] ?? ''), $column); ?>><?php echo esc_html($column); ?></option><?php endforeach; ?></select></td>
-                            <td><select name="lcni_cell_to_cell_operator[]"><?php foreach (['=', '>', '<', 'contains', 'not_contains'] as $operator) : ?><option value="<?php echo esc_attr($operator); ?>" <?php selected((string) ($rule['operator'] ?? '='), $operator); ?>><?php echo esc_html($operator); ?></option><?php endforeach; ?></select></td>
+                            <td><select name="lcni_cell_to_cell_operator[]"><?php foreach (['=', '!=', '>', '>=', '<', '<=', 'contains', 'not_contains'] as $operator) : ?><option value="<?php echo esc_attr($operator); ?>" <?php selected((string) ($rule['operator'] ?? '='), $operator); ?>><?php echo esc_html($operator); ?></option><?php endforeach; ?></select></td>
                             <td><input type="text" name="lcni_cell_to_cell_value[]" value="<?php echo esc_attr((string) ($rule['value'] ?? '')); ?>"></td>
                             <td><select name="lcni_cell_to_cell_target_field[]"><option value="">-- Field --</option><?php foreach ($all_columns as $column) : ?><option value="<?php echo esc_attr($column); ?>" <?php selected((string) ($rule['target_field'] ?? ''), $column); ?>><?php echo esc_html($column); ?></option><?php endforeach; ?></select></td>
                             <td><input type="color" name="lcni_cell_to_cell_text_color[]" value="<?php echo esc_attr((string) ($rule['text_color'] ?? '#111827')); ?>"></td>
@@ -2517,7 +2520,7 @@ private function sanitize_module_title($value, $fallback) {
                     </tbody>
                 </table>
                 <p><button type="button" class="button" id="lcni-add-cell-to-cell-rule">+ Thêm rule</button></p>
-                <template id="lcni-cell-to-cell-rule-template"><tr><td><select name="lcni_cell_to_cell_source_field[]"><option value="">-- Field --</option><?php foreach ($all_columns as $column) : ?><option value="<?php echo esc_attr($column); ?>"><?php echo esc_html($column); ?></option><?php endforeach; ?></select></td><td><select name="lcni_cell_to_cell_operator[]"><?php foreach (['=', '>', '<', 'contains', 'not_contains'] as $operator) : ?><option value="<?php echo esc_attr($operator); ?>"><?php echo esc_html($operator); ?></option><?php endforeach; ?></select></td><td><input type="text" name="lcni_cell_to_cell_value[]"></td><td><select name="lcni_cell_to_cell_target_field[]"><option value="">-- Field --</option><?php foreach ($all_columns as $column) : ?><option value="<?php echo esc_attr($column); ?>"><?php echo esc_html($column); ?></option><?php endforeach; ?></select></td><td><input type="color" name="lcni_cell_to_cell_text_color[]" value="#111827"></td><td><input type="text" name="lcni_cell_to_cell_icon_class[]" placeholder="fa-solid fa-flag"></td><td><select name="lcni_cell_to_cell_icon_position[]"><option value="left">left</option><option value="right" selected>right</option></select></td><td><input type="number" min="8" max="32" name="lcni_cell_to_cell_icon_size[]" value="12"></td><td><input type="color" name="lcni_cell_to_cell_icon_color[]" value="#dc2626"></td></tr></template>
+                <template id="lcni-cell-to-cell-rule-template"><tr><td><select name="lcni_cell_to_cell_source_field[]"><option value="">-- Field --</option><?php foreach ($all_columns as $column) : ?><option value="<?php echo esc_attr($column); ?>"><?php echo esc_html($column); ?></option><?php endforeach; ?></select></td><td><select name="lcni_cell_to_cell_operator[]"><?php foreach (['=', '!=', '>', '>=', '<', '<=', 'contains', 'not_contains'] as $operator) : ?><option value="<?php echo esc_attr($operator); ?>"><?php echo esc_html($operator); ?></option><?php endforeach; ?></select></td><td><input type="text" name="lcni_cell_to_cell_value[]"></td><td><select name="lcni_cell_to_cell_target_field[]"><option value="">-- Field --</option><?php foreach ($all_columns as $column) : ?><option value="<?php echo esc_attr($column); ?>"><?php echo esc_html($column); ?></option><?php endforeach; ?></select></td><td><input type="color" name="lcni_cell_to_cell_text_color[]" value="#111827"></td><td><input type="text" name="lcni_cell_to_cell_icon_class[]" placeholder="fa-solid fa-flag"></td><td><select name="lcni_cell_to_cell_icon_position[]"><option value="left">left</option><option value="right" selected>right</option></select></td><td><input type="number" min="8" max="32" name="lcni_cell_to_cell_icon_size[]" value="12"></td><td><input type="color" name="lcni_cell_to_cell_icon_color[]" value="#dc2626"></td></tr></template>
 
                 <?php submit_button('Save'); ?>
             </form>
