@@ -179,6 +179,64 @@ class LCNI_WatchlistService {
         return ['symbol' => $symbol, 'success' => true, 'watchlist_id' => $target_watchlist_id, 'symbols' => $this->get_watchlist_symbols($target_watchlist_id)];
     }
 
+    public function add_symbols($user_id, array $symbols, $watchlist_id = 0) {
+        $user_id = absint($user_id);
+        if ($user_id <= 0) {
+            return new WP_Error('invalid_user', 'User không hợp lệ.', ['status' => 403]);
+        }
+
+        $target_watchlist_id = $watchlist_id > 0 ? absint($watchlist_id) : $this->get_active_watchlist_id($user_id);
+        $watchlist = $this->get_user_watchlist($user_id, $target_watchlist_id);
+        if (!$watchlist) {
+            return new WP_Error('invalid_watchlist', 'Watchlist không hợp lệ.', ['status' => 400]);
+        }
+
+        $normalized = array_values(array_unique(array_filter(array_map([$this, 'sanitize_symbol'], $symbols))));
+        if (empty($normalized)) {
+            return new WP_Error('invalid_symbols', 'Danh sách symbol không hợp lệ.', ['status' => 400]);
+        }
+
+        $placeholders = implode(',', array_fill(0, count($normalized), '%s'));
+        $query_args = array_merge([$target_watchlist_id], $normalized);
+        $existing_rows = $this->wpdb->get_col($this->wpdb->prepare(
+            "SELECT symbol FROM {$this->watchlist_symbols_table} WHERE watchlist_id = %d AND symbol IN ({$placeholders})",
+            $query_args
+        ));
+
+        $existing_symbols = is_array($existing_rows) ? array_values(array_unique(array_map([$this, 'sanitize_symbol'], $existing_rows))) : [];
+        $existing_map = array_fill_keys($existing_symbols, true);
+        $to_insert = array_values(array_filter($normalized, static function ($symbol) use ($existing_map) {
+            return !isset($existing_map[$symbol]);
+        }));
+
+        $inserted = 0;
+        foreach ($to_insert as $symbol) {
+            $ok = $this->wpdb->insert($this->watchlist_symbols_table, [
+                'watchlist_id' => $target_watchlist_id,
+                'symbol' => $symbol,
+            ], ['%d', '%s']);
+
+            if ($ok !== false) {
+                $inserted += 1;
+            }
+        }
+
+        if ($inserted > 0) {
+            $this->clear_user_cache($user_id);
+        }
+
+        $watchlist_name = sanitize_text_field((string) ($watchlist['name'] ?? ''));
+        return [
+            'success' => true,
+            'watchlist_id' => $target_watchlist_id,
+            'watchlist_name' => $watchlist_name,
+            'requested_count' => count($normalized),
+            'added_count' => $inserted,
+            'duplicate_count' => count($normalized) - $inserted,
+            'symbols' => $this->get_watchlist_symbols($target_watchlist_id),
+        ];
+    }
+
     public function get_watchlist($user_id, $columns, $device = 'desktop', $watchlist_id = 0) {
         $allowed_columns = $this->get_allowed_columns();
         $requested_columns = is_array($columns) ? array_map('sanitize_key', $columns) : [];

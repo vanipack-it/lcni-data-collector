@@ -122,6 +122,8 @@ class LCNI_Button_Style_Config {
             'btn_filter_save' => ['Filter: Save Current', 'filter'],
             'btn_filter_apply' => ['Filter: Apply', 'filter'],
             'btn_filter_clear' => ['Filter: Clear', 'filter'],
+            'btn_filter_add_watchlist_bulk' => ['Filter: Add Result to Watchlist', 'filter'],
+            'btn_filter_export_excel' => ['Filter: Export Excel', 'filter'],
             'btn_add_filter_row' => ['Filter: Add Watchlist', 'filter'],
             'btn_filter_setting' => ['Filter: Settings', 'filter'],
             'btn_filter_hide' => ['Filter: Hide Panel', 'filter'],

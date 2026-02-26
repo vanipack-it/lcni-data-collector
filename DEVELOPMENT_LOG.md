@@ -1,3 +1,9 @@
+## 2026-02-26 14:59 (v2.2.0)
+- Nâng version plugin lên `2.2.0` và ghi log kèm mốc thời gian cập nhật chi tiết theo định dạng `YYYY-MM-DD HH:MM` để dễ theo dõi.
+- Frontend Filter panel bổ sung nút `Thêm vào Watchlist` (`btn_filter_add_watchlist_bulk`): sau khi bấm `btn_filter_apply`, user có thể thêm toàn bộ mã trong kết quả vào watchlist đã có hoặc nhập tên để tạo watchlist mới ngay trong popup.
+- Bổ sung REST endpoint `POST /wp-json/lcni/v1/watchlist/add-symbols` để thêm hàng loạt symbol vào watchlist, trả về thống kê `requested_count`, `added_count`, `duplicate_count` nhằm giúp frontend hiển thị kết quả chính xác.
+- Frontend Filter panel bổ sung nút `Xuất Excel` (`btn_filter_export_excel`) để xuất kết quả filter hiện tại ra file với tên mặc định `LCNi_Filter_{ten-bo-loc}.xlsx`; tên bộ lọc được chuẩn hóa `lowercase`, bỏ dấu tiếng Việt và nối bằng dấu gạch ngang.
+
 ## 2026-02-26 14:36 (v2.1.9)
 - Nâng version plugin lên `2.1.9` và cập nhật change log kèm mốc ngày giờ cụ thể để tiện theo dõi.
 - Filter Panel bổ sung thêm dropdown `LCNi Filter Template` (bộ lọc do Admin tạo), hiển thị cạnh dropdown `Saved Filter` (bộ lọc của user); tab Frontend Settings → Filter `Filter Criteria Default` được đồng bộ thành nguồn template mặc định cho dropdown này.
