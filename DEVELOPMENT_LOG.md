@@ -1,3 +1,10 @@
+## 2026-02-26 14:36 (v2.1.9)
+- Nâng version plugin lên `2.1.9` và cập nhật change log kèm mốc ngày giờ cụ thể để tiện theo dõi.
+- Filter Panel bổ sung thêm dropdown `LCNi Filter Template` (bộ lọc do Admin tạo), hiển thị cạnh dropdown `Saved Filter` (bộ lọc của user); tab Frontend Settings → Filter `Filter Criteria Default` được đồng bộ thành nguồn template mặc định cho dropdown này.
+- Bổ sung tùy chỉnh style hiệu ứng dropdown trong Frontend Settings → Filter → Style Config cho cả `Saved Filter` và `LCNi Filter Template` (background/text/border + label).
+- Tối ưu lần truy cập đầu tiên: hệ thống tự động tải bảng kết quả ngay theo bộ lọc mặc định, không cần bấm `Apply Filter` thủ công.
+- Với user đã đăng nhập: ưu tiên bộ lọc mặc định của user; nếu chưa có thì tự fallback sang bộ lọc gần nhất user đã xem; các thao tác sau đó vẫn giữ cơ chế Apply như hiện tại.
+
 ## 2026-02-26 14:03 (v2.1.8)
 - Nâng version plugin lên `2.1.8` và ghi log mốc thời gian cập nhật cụ thể (YYYY-MM-DD HH:MM) để tiện theo dõi.
 - Đổi tab `Change Logs` thành `Report` và tách thành 2 tab con: `Change Logs` + `Report System`.
