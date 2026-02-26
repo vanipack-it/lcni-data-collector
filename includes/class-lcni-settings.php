@@ -462,6 +462,7 @@ class LCNI_Settings {
                             }
                         }
                         update_option('lcni_filter_criteria_columns', $ordered_columns);
+                        update_option('lcni_filter_criteria_column_order', $ordered_columns);
                     } elseif ($section === 'table_columns') {
                         $selected_columns = LCNI_FilterAdmin::sanitize_columns(isset($_POST['lcni_filter_table_columns']) ? (array) wp_unslash($_POST['lcni_filter_table_columns']) : []);
                         $ordered_columns = LCNI_FilterAdmin::sanitize_column_order(explode(',', (string) (isset($_POST['lcni_filter_table_column_order']) ? wp_unslash($_POST['lcni_filter_table_column_order']) : '')));
@@ -484,6 +485,19 @@ class LCNI_Settings {
                         update_option('lcni_filter_default_values', LCNI_FilterAdmin::sanitize_default_filter_values(isset($_POST['lcni_filter_default_values']) ? (string) wp_unslash($_POST['lcni_filter_default_values']) : ''));
                     } elseif ($section === 'default_criteria') {
                         update_option('lcni_filter_default_admin_saved_filter_id', absint(isset($_POST['lcni_filter_default_admin_saved_filter_id']) ? wp_unslash($_POST['lcni_filter_default_admin_saved_filter_id']) : 0));
+                    } elseif ($section === 'filter_page') {
+                        $filter_page_id = absint(isset($_POST['lcni_filter_link_page_id']) ? wp_unslash($_POST['lcni_filter_link_page_id']) : 0);
+                        $filter_page_slug = 'sug-filter';
+                        if ($filter_page_id > 0) {
+                            $post = get_post($filter_page_id);
+                            if ($post instanceof WP_Post && $post->post_type === 'page') {
+                                $filter_page_slug = sanitize_title((string) $post->post_name);
+                            } else {
+                                $filter_page_id = 0;
+                            }
+                        }
+                        update_option('lcni_filter_link_page_id', $filter_page_id);
+                        update_option('lcni_filter_link_page', $filter_page_slug !== '' ? $filter_page_slug : 'sug-filter');
                     }
                 } elseif ($module === 'button_style') {
                     $button_input = isset($_POST['lcni_button_style_config']) ? (array) wp_unslash($_POST['lcni_button_style_config']) : [];
