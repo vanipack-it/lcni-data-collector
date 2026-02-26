@@ -195,6 +195,7 @@ class LCNI_DB {
             PRIMARY KEY  (id),
             UNIQUE KEY unique_ohlc (symbol, timeframe, event_time),
             KEY idx_symbol_timeframe (symbol, timeframe),
+            KEY idx_symbol_tf_time (symbol, timeframe, event_time),
             KEY idx_event_time (event_time),
             KEY idx_symbol_index (symbol, trading_index)
         ) {$charset_collate};";
@@ -447,14 +448,19 @@ class LCNI_DB {
             $wpdb->query("ALTER TABLE {$latest_table} MODIFY COLUMN id BIGINT UNSIGNED DEFAULT NULL");
         }
 
-        $primary_key = $wpdb->get_row($wpdb->prepare("SHOW INDEX FROM {$latest_table} WHERE Key_name = %s", 'PRIMARY'), ARRAY_A);
-        if (is_array($primary_key) && isset($primary_key['Column_name']) && $primary_key['Column_name'] !== 'symbol') {
-            $wpdb->query("ALTER TABLE {$latest_table} DROP PRIMARY KEY");
+        $primary_key_columns = $wpdb->get_results($wpdb->prepare("SHOW INDEX FROM {$latest_table} WHERE Key_name = %s ORDER BY Seq_in_index ASC", 'PRIMARY'), ARRAY_A);
+        $current_primary_columns = [];
+        foreach ((array) $primary_key_columns as $primary_key_column) {
+            if (isset($primary_key_column['Column_name'])) {
+                $current_primary_columns[] = (string) $primary_key_column['Column_name'];
+            }
         }
 
-        $symbol_primary_key = $wpdb->get_row($wpdb->prepare("SHOW INDEX FROM {$latest_table} WHERE Key_name = %s", 'PRIMARY'), ARRAY_A);
-        if (!is_array($symbol_primary_key)) {
-            $wpdb->query("ALTER TABLE {$latest_table} ADD PRIMARY KEY (symbol)");
+        if ($current_primary_columns !== ['symbol', 'timeframe']) {
+            if (!empty($current_primary_columns)) {
+                $wpdb->query("ALTER TABLE {$latest_table} DROP PRIMARY KEY");
+            }
+            $wpdb->query("ALTER TABLE {$latest_table} ADD PRIMARY KEY (symbol, timeframe)");
         }
 
         self::sync_ohlc_symbol_type_values($ohlc_table);
@@ -506,10 +512,10 @@ class LCNI_DB {
                 SELECT t.*
                 FROM {$ohlc_table} t
                 JOIN (
-                    SELECT symbol, MAX(event_time) AS max_time
+                    SELECT symbol, timeframe, MAX(event_time) AS max_time
                     FROM {$ohlc_table}
-                    GROUP BY symbol
-                ) m ON t.symbol = m.symbol AND t.event_time = m.max_time;
+                    GROUP BY symbol, timeframe
+                ) m ON t.symbol = m.symbol AND t.timeframe = m.timeframe AND t.event_time = m.max_time;
             END"
         );
 
@@ -623,11 +629,11 @@ class LCNI_DB {
             SELECT t.*
             FROM {$ohlc_table} t
             JOIN (
-                SELECT symbol, MAX(event_time) AS max_time
+                SELECT symbol, timeframe, MAX(event_time) AS max_time
                 FROM {$ohlc_table}
                 {$where_clause}
-                GROUP BY symbol
-            ) m ON t.symbol = m.symbol AND t.event_time = m.max_time
+                GROUP BY symbol, timeframe
+            ) m ON t.symbol = m.symbol AND t.timeframe = m.timeframe AND t.event_time = m.max_time
             WHERE 1=1 {$where_symbol_clause}"
         );
     }
@@ -875,6 +881,12 @@ class LCNI_DB {
         $alt_index_exists = $wpdb->get_var($wpdb->prepare("SHOW INDEX FROM {$table} WHERE Key_name = %s", $alt_index_name));
         if ($alt_index_exists === null) {
             $wpdb->query("CREATE INDEX {$alt_index_name} ON {$table} (symbol, trading_index)");
+        }
+
+        $latest_event_index_name = 'idx_symbol_tf_time';
+        $latest_event_index_exists = $wpdb->get_var($wpdb->prepare("SHOW INDEX FROM {$table} WHERE Key_name = %s", $latest_event_index_name));
+        if ($latest_event_index_exists === null) {
+            $wpdb->query("CREATE INDEX {$latest_event_index_name} ON {$table} (symbol, timeframe, event_time)");
         }
     }
 
