@@ -463,6 +463,16 @@ class LCNI_DB {
             $wpdb->query("ALTER TABLE {$latest_table} ADD PRIMARY KEY (symbol, timeframe)");
         }
 
+        $unique_symbol_timeframe = $wpdb->get_var($wpdb->prepare("SHOW INDEX FROM {$latest_table} WHERE Key_name = %s", 'uniq_symbol_tf'));
+        if ($unique_symbol_timeframe === null) {
+            $wpdb->query("ALTER TABLE {$latest_table} ADD UNIQUE KEY uniq_symbol_tf (symbol, timeframe)");
+        }
+
+        $event_time_index = $wpdb->get_var($wpdb->prepare("SHOW INDEX FROM {$ohlc_table} WHERE Key_name = %s", 'idx_symbol_tf_time'));
+        if ($event_time_index === null) {
+            $wpdb->query("CREATE INDEX idx_symbol_tf_time ON {$ohlc_table} (symbol, timeframe, event_time)");
+        }
+
         self::sync_ohlc_symbol_type_values($ohlc_table);
         self::sync_ohlc_symbol_type_values($latest_table);
 
@@ -508,14 +518,37 @@ class LCNI_DB {
         $wpdb->query(
             "CREATE PROCEDURE {$refresh_proc_name}()
             BEGIN
-                REPLACE INTO {$latest_table}
-                SELECT t.*
-                FROM {$ohlc_table} t
-                JOIN (
-                    SELECT symbol, timeframe, MAX(event_time) AS max_time
+                REPLACE INTO {$latest_table} (
+                    symbol,
+                    timeframe,
+                    event_time,
+                    open,
+                    high,
+                    low,
+                    close,
+                    volume
+                )
+                SELECT
+                    o.symbol,
+                    o.timeframe,
+                    o.event_time,
+                    o.open,
+                    o.high,
+                    o.low,
+                    o.close,
+                    o.volume
+                FROM {$ohlc_table} o
+                INNER JOIN (
+                    SELECT
+                        symbol,
+                        timeframe,
+                        MAX(event_time) AS max_time
                     FROM {$ohlc_table}
                     GROUP BY symbol, timeframe
-                ) m ON t.symbol = m.symbol AND t.timeframe = m.timeframe AND t.event_time = m.max_time;
+                ) latest
+                    ON o.symbol = latest.symbol
+                    AND o.timeframe = latest.timeframe
+                    AND o.event_time = latest.max_time;
             END"
         );
 
@@ -620,22 +653,45 @@ class LCNI_DB {
             if (!empty($symbols)) {
                 $placeholders = implode(', ', array_fill(0, count($symbols), '%s'));
                 $where_clause = $wpdb->prepare("WHERE symbol IN ({$placeholders})", ...$symbols);
-                $where_symbol_clause = $wpdb->prepare("AND t.symbol IN ({$placeholders})", ...$symbols);
+                $where_symbol_clause = $wpdb->prepare("AND o.symbol IN ({$placeholders})", ...$symbols);
             }
         }
 
-        return $wpdb->query(
-            "REPLACE INTO {$latest_table}
-            SELECT t.*
-            FROM {$ohlc_table} t
-            JOIN (
-                SELECT symbol, timeframe, MAX(event_time) AS max_time
+        $sql = "REPLACE INTO {$latest_table} (
+                symbol,
+                timeframe,
+                event_time,
+                open,
+                high,
+                low,
+                close,
+                volume
+            )
+            SELECT
+                o.symbol,
+                o.timeframe,
+                o.event_time,
+                o.open,
+                o.high,
+                o.low,
+                o.close,
+                o.volume
+            FROM {$ohlc_table} o
+            INNER JOIN (
+                SELECT
+                    symbol,
+                    timeframe,
+                    MAX(event_time) AS max_time
                 FROM {$ohlc_table}
                 {$where_clause}
                 GROUP BY symbol, timeframe
-            ) m ON t.symbol = m.symbol AND t.timeframe = m.timeframe AND t.event_time = m.max_time
-            WHERE 1=1 {$where_symbol_clause}"
-        );
+            ) latest
+                ON o.symbol = latest.symbol
+                AND o.timeframe = latest.timeframe
+                AND o.event_time = latest.max_time
+            WHERE 1=1 {$where_symbol_clause}";
+
+        return $wpdb->query($sql);
     }
 
     private static function ensure_ohlc_symbol_type_column() {
