@@ -2532,7 +2532,8 @@ private function sanitize_module_title($value, $fallback) {
         $shared_outside = isset($settings['__shared_outside']) && is_array($settings['__shared_outside']) ? $settings['__shared_outside'] : [];
         $watchlist_settings = $this->sanitize_watchlist_settings(get_option('lcni_watchlist_settings', []));
         $watchlist_styles = isset($watchlist_settings['styles']) && is_array($watchlist_settings['styles']) ? $watchlist_settings['styles'] : [];
-        $cell_rules = isset($watchlist_settings['value_color_rules']) && is_array($watchlist_settings['value_color_rules']) ? $watchlist_settings['value_color_rules'] : [];
+        $cell_rules = get_option('lcni_global_cell_color_rules', $watchlist_settings['value_color_rules'] ?? []);
+        $cell_rules = is_array($cell_rules) ? array_values($cell_rules) : [];
         $cell_to_cell_rules = get_option('lcni_cell_to_cell_color_rules', []);
         $cell_to_cell_rules = is_array($cell_to_cell_rules) ? $cell_to_cell_rules : [];
         $rule_rows = max(5, count($cell_rules));
