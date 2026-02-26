@@ -121,6 +121,7 @@ class LCNI_Button_Style_Config {
             'btn_filter_delete' => ['Filter: Delete', 'filter'],
             'btn_filter_save' => ['Filter: Save Current', 'filter'],
             'btn_filter_apply' => ['Filter: Apply', 'filter'],
+            'btn_filter_clear' => ['Filter: Clear', 'filter'],
             'btn_add_filter_row' => ['Filter: Add Watchlist', 'filter'],
             'btn_filter_setting' => ['Filter: Settings', 'filter'],
             'btn_filter_hide' => ['Filter: Hide Panel', 'filter'],

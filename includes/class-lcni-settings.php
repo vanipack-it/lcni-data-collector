@@ -451,7 +451,17 @@ class LCNI_Settings {
                 } elseif ($module === 'filter') {
                     $section = isset($_POST['lcni_filter_section']) ? sanitize_key((string) wp_unslash($_POST['lcni_filter_section'])) : '';
                     if ($section === 'criteria') {
-                        update_option('lcni_filter_criteria_columns', LCNI_FilterAdmin::sanitize_columns(isset($_POST['lcni_filter_criteria_columns']) ? (array) wp_unslash($_POST['lcni_filter_criteria_columns']) : []));
+                        $selected_columns = LCNI_FilterAdmin::sanitize_columns(isset($_POST['lcni_filter_criteria_columns']) ? (array) wp_unslash($_POST['lcni_filter_criteria_columns']) : []);
+                        $ordered_columns = LCNI_FilterAdmin::sanitize_column_order(explode(',', (string) (isset($_POST['lcni_filter_criteria_column_order']) ? wp_unslash($_POST['lcni_filter_criteria_column_order']) : '')));
+                        $ordered_columns = array_values(array_filter($ordered_columns, static function ($column) use ($selected_columns) {
+                            return in_array($column, $selected_columns, true);
+                        }));
+                        foreach ($selected_columns as $column) {
+                            if (!in_array($column, $ordered_columns, true)) {
+                                $ordered_columns[] = $column;
+                            }
+                        }
+                        update_option('lcni_filter_criteria_columns', $ordered_columns);
                     } elseif ($section === 'table_columns') {
                         $selected_columns = LCNI_FilterAdmin::sanitize_columns(isset($_POST['lcni_filter_table_columns']) ? (array) wp_unslash($_POST['lcni_filter_table_columns']) : []);
                         $ordered_columns = LCNI_FilterAdmin::sanitize_column_order(explode(',', (string) (isset($_POST['lcni_filter_table_column_order']) ? wp_unslash($_POST['lcni_filter_table_column_order']) : '')));

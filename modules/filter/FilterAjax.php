@@ -33,16 +33,26 @@ class LCNI_FilterAjax {
         if (!$this->verify_rest_nonce($request)) return new WP_Error('invalid_nonce', 'Nonce không hợp lệ.', ['status' => 403]);
 
         $filters = $this->service->sanitizeFiltersPublic($request->get_param('filters'), $this->table->get_settings()['criteria_columns'] ?? []);
-        if (empty($filters)) {
+        $skip_defaults = rest_sanitize_boolean($request->get_param('skip_defaults'));
+        if (empty($filters) && !$skip_defaults) {
             $filters = $this->table->get_effective_default_saved_filters(is_user_logged_in() ? get_current_user_id() : 0);
         }
 
+        $mode = sanitize_key((string) $request->get_param('mode'));
+
         $result = $this->service->getFilterResult([
-            'visible_columns' => $request->get_param('visible_columns'),
+            'visible_columns' => $mode === 'count_preview' ? ['symbol'] : $request->get_param('visible_columns'),
             'page' => $request->get_param('page'),
             'limit' => $request->get_param('limit'),
             'filters' => $filters,
         ]);
+
+        if ($mode === 'count_preview') {
+            return rest_ensure_response([
+                'total' => (int) ($result['total'] ?? 0),
+                'applied_filters' => $filters,
+            ]);
+        }
 
         $response = [
             'rows' => $this->table->render_tbody_rows($result['items'] ?? [], $result['columns'] ?? [], $this->table->get_settings()['add_button'] ?? []),
@@ -50,7 +60,7 @@ class LCNI_FilterAjax {
             'columns' => $result['columns'] ?? [],
             'applied_filters' => $filters,
         ];
-        if (sanitize_key((string) $request->get_param('mode')) !== 'refresh') $response['total'] = (int) ($result['total'] ?? 0);
+        if ($mode !== 'refresh') $response['total'] = (int) ($result['total'] ?? 0);
 
         return rest_ensure_response($response);
     }
