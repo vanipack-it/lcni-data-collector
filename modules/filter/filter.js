@@ -28,6 +28,20 @@
   const sessionKey = cfg.tableSettingsStorageKey || 'lcni_filter_visible_columns_v1';
   const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
 
+
+  function buildFilterUrl(field, value) {
+    const base = String(cfg.filterPageUrl || '').trim();
+    const safeField = String(field || '').trim();
+    const safeValue = String(value == null ? '' : value).trim();
+    if (!base || !safeField || !safeValue) return '';
+    const criteria = Array.isArray(cfg.filterCriteriaColumns) ? cfg.filterCriteriaColumns.map((item) => String(item || '').trim()) : [];
+    if (criteria.length && !criteria.includes(safeField)) return '';
+    const url = new URL(base, window.location.origin);
+    url.searchParams.set('apply_filter', '1');
+    url.searchParams.set(safeField, safeValue);
+    return url.toString();
+  }
+
   function getButtonConfig(key) { return (cfg.buttonConfig || {})[key] || {}; }
   function renderButtonContent(key, fallbackLabel, forceLabel) {
     const conf = getButtonConfig(key);
@@ -628,7 +642,7 @@
         tbody.innerHTML = sorted.map((row) => `<tr data-symbol="${esc(row.symbol || '')}">${columns.map((column, idx) => {
         const stickyClass = idx < stickyCount ? 'is-sticky-col' : '';
         if (column === 'symbol') {
-          return `<td class="${stickyClass} lcni-cell-text"><span>${esc(row[column] || '')}</span> <button type="button" class="lcni-btn lcni-btn-btn_add_filter_row" data-lcni-watchlist-add data-symbol="${esc(row.symbol || '')}" aria-label="Add to watchlist">${renderButtonContent('btn_add_filter_row', '')}</button></td>`;
+          return `<td class="${stickyClass} lcni-cell-text" data-cell-field="symbol" data-cell-value="${esc(row[column] || '')}"><span>${esc(row[column] || '')}</span> <button type="button" class="lcni-btn lcni-btn-btn_add_filter_row" data-lcni-watchlist-add data-symbol="${esc(row.symbol || '')}" aria-label="Add to watchlist">${renderButtonContent('btn_add_filter_row', '')}</button></td>`;
         }
         const typeClass = isNumericValue(row[column]) ? 'lcni-cell-number' : 'lcni-cell-text';
         const cellRule = resolveCellToCellMeta(column, row);
@@ -642,7 +656,7 @@
         if (valueRule) styleParts.push(`background:${esc(valueRule.bg_color || '')};color:${esc(valueRule.text_color || '')};`);
         if (cellRule && cellRule.text_color) styleParts.push(`color:${esc(cellRule.text_color)};`);
         const styleAttr = styleParts.length ? ` style="${styleParts.join('')}"` : '';
-        return `<td class="${stickyClass} ${typeClass}"${styleAttr}>${content}</td>`;
+        return `<td class="${stickyClass} ${typeClass}" data-cell-field="${esc(column)}" data-cell-value="${esc(row[column])}"${styleAttr}>${content}</td>`;
       }).join('')}</tr>`).join('');
       }
     }
@@ -849,16 +863,38 @@
     });
   }
 
+
+  function getAutoFilterConfigFromQuery() {
+    const query = new URLSearchParams(window.location.search || '');
+    if (query.get('apply_filter') !== '1') return null;
+    const filters = [];
+    state.criteria.forEach((item) => {
+      if (!item || !item.column || item.type === 'number') return;
+      const rawValue = query.get(item.column);
+      if (!rawValue) return;
+      filters.push({ column: item.column, operator: 'in', value: [rawValue] });
+    });
+    return filters.length ? { filters } : null;
+  }
+
   function bindRowNavigation() {
     if (document.body.dataset.lcniFilterRowNavBound === '1') return;
     document.body.dataset.lcniFilterRowNavBound = '1';
     document.addEventListener('click', function (e) {
       if (e.target.closest('.lcni-btn')) return;
       const row = e.target.closest('tr[data-symbol]');
-      if (!row || !row.closest('[data-lcni-stock-filter]')) return;
-      const detailBase = String((window.lcniData && window.lcniData.stockDetailUrl) || cfg.stockDetailUrl || '');
-      const symbol = encodeURIComponent(row.dataset.symbol || '');
-      if (detailBase && symbol) window.location.href = detailBase + '?symbol=' + symbol;
+      const cell = e.target.closest('td[data-cell-field]');
+      if (!row || !row.closest('[data-lcni-stock-filter]') || !cell) return;
+      const field = String(cell.getAttribute('data-cell-field') || '').trim();
+      const value = String(cell.getAttribute('data-cell-value') || '').trim();
+      if (field === 'symbol') {
+        const detailBase = String((window.lcniData && window.lcniData.stockDetailUrl) || cfg.stockDetailUrl || '');
+        const symbol = encodeURIComponent(row.dataset.symbol || '');
+        if (detailBase && symbol) window.location.href = detailBase + '?symbol=' + symbol;
+        return;
+      }
+      const filterUrl = buildFilterUrl(field, value);
+      if (filterUrl) window.location.href = filterUrl;
     });
   }
 
@@ -887,6 +923,11 @@
 
       if (initialConfig) {
         applySavedFilterConfig(host, initialConfig);
+      }
+
+      const autoConfig = getAutoFilterConfigFromQuery();
+      if (autoConfig) {
+        applySavedFilterConfig(host, autoConfig);
       }
 
       state.filters = collectFilters(host);

@@ -48,6 +48,20 @@
     }
   };
 
+
+  const buildFilterUrl = (base, fields, field, value) => {
+    const safeBase = String(base || "").trim();
+    const safeField = String(field || "").trim();
+    const safeValue = String(value == null ? "" : value).trim();
+    if (!safeBase || !safeField || !safeValue) return "";
+    const filterable = Array.isArray(fields) ? fields.map((item) => String(item || "").trim()) : [];
+    if (filterable.length && !filterable.includes(safeField)) return "";
+    const url = new URL(safeBase, window.location.origin);
+    url.searchParams.set("apply_filter", "1");
+    url.searchParams.set(safeField, safeValue);
+    return url.toString();
+  };
+
   const unwrapPayload = (payload) => {
     if (!payload || typeof payload !== "object") {
       return payload;
@@ -179,6 +193,8 @@
     const adminConfig = parseJsonDataAttr(container.dataset.adminConfig, {});
     const buttonConfig = parseJsonDataAttr(container.dataset.buttonConfig, {});
     const styles = adminConfig?.styles || {};
+    const filterPageUrl = String(container.dataset.filterPageUrl || "");
+    const filterFields = parseJsonDataAttr(container.dataset.filterFields, []);
 
     const allowedFields = Array.isArray(adminConfig?.allowed_fields) && adminConfig.allowed_fields.length
       ? adminConfig.allowed_fields.filter((field) => LABELS[field])
@@ -317,6 +333,13 @@
 
           item.appendChild(labelEl);
           item.appendChild(valueStrong);
+          const filterUrl = buildFilterUrl(filterPageUrl, filterFields, field, payload[field]);
+          if (filterUrl) {
+            item.style.cursor = "pointer";
+            item.addEventListener("click", () => {
+              window.location.href = filterUrl;
+            });
+          }
           grid.appendChild(item);
         });
 

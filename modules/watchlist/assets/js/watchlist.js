@@ -102,7 +102,7 @@
         const classes = [stickyCls];
         if (c === 'symbol') {
           classes.push('lcni-cell-text');
-          return `<td class="${classes.filter(Boolean).join(' ')}"><span class="lcni-watchlist-symbol">${esc(symbol)}</span>${renderWatchlistRowActionButton(symbol)}</td>`;
+          return `<td class="${classes.filter(Boolean).join(' ')}" data-cell-field="symbol" data-cell-value="${esc(symbol)}"><span class="lcni-watchlist-symbol">${esc(symbol)}</span>${renderWatchlistRowActionButton(symbol)}</td>`;
         }
         classes.push(isNumericValue(row[c]) ? 'lcni-cell-number' : 'lcni-cell-text');
         const valueRule = resolveValueColorRule(c, row[c], valueColorRules);
@@ -116,7 +116,7 @@
         if (valueRule) styleParts.push(`background:${esc(valueRule.bg_color || '')};color:${esc(valueRule.text_color || '')};`);
         if (cellRule && cellRule.text_color) styleParts.push(`color:${esc(cellRule.text_color)};`);
         const styleAttr = styleParts.length ? ` style="${styleParts.join('')}"` : '';
-        return `<td class="${classes.filter(Boolean).join(' ')}"${styleAttr}>${content}</td>`;
+        return `<td class="${classes.filter(Boolean).join(' ')}" data-cell-field="${esc(c)}" data-cell-value="${esc(row[c])}"${styleAttr}>${content}</td>`;
       }).join('')}</tr>`;
     }).join('');
   }
@@ -147,6 +147,19 @@
     const slug = String(cfg.stockDetailPageSlug || '').replace(/^\/+|\/+$/g, '');
     const encoded = encodeURIComponent(String(symbol || '').trim());
     return slug && encoded ? `/${slug}/?symbol=${encoded}` : '';
+  }
+
+  function buildFilterUrl(field, value) {
+    const base = String(cfg.filterPageUrl || '').trim();
+    const safeField = String(field || '').trim();
+    const safeValue = String(value == null ? '' : value).trim();
+    if (!base || !safeField || !safeValue) return '';
+    const criteria = Array.isArray(cfg.filterCriteriaColumns) ? cfg.filterCriteriaColumns.map((item) => String(item || '').trim()) : [];
+    if (criteria.length && !criteria.includes(safeField)) return '';
+    const url = new URL(base, window.location.origin);
+    url.searchParams.set('apply_filter', '1');
+    url.searchParams.set(safeField, safeValue);
+    return url.toString();
   }
 
   function resolveOperatorMatch(rawValue, operator, expected) {
@@ -570,10 +583,18 @@
     });
 
     document.addEventListener('click', (event) => {
+      const cell = event.target.closest('td[data-cell-field]');
       const row = event.target.closest('tbody tr[data-row-symbol]');
-      if (!row || event.target.closest('[data-lcni-watchlist-add],button,a,i,svg,[role="button"]')) return;
-      const url = buildStockDetailUrl(row.getAttribute('data-row-symbol'));
-      if (url) window.location.href = url;
+      if (!row || !row.closest('[data-lcni-watchlist]') || !cell || event.target.closest('[data-lcni-watchlist-add],button,a,i,svg,[role="button"]')) return;
+      const field = String(cell.getAttribute('data-cell-field') || '').trim();
+      const value = String(cell.getAttribute('data-cell-value') || '').trim();
+      if (field === 'symbol') {
+        const detailUrl = buildStockDetailUrl(row.getAttribute('data-row-symbol'));
+        if (detailUrl) window.location.href = detailUrl;
+        return;
+      }
+      const filterUrl = buildFilterUrl(field, value);
+      if (filterUrl) window.location.href = filterUrl;
     });
     window.addEventListener('lcniWatchlistSymbolsChanged', syncAllButtons);
   }

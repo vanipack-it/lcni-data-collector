@@ -7,7 +7,7 @@ if (!defined('ABSPATH')) {
 class LCNI_Stock_Signals_Shortcodes {
 
     const SETTINGS_META_KEY = 'lcni_stock_signals_fields';
-    const VERSION = '2.2.0';
+    const VERSION = '2.2.1';
 
     public function __construct() {
         add_action('init', [$this, 'register_shortcodes']);
@@ -88,16 +88,21 @@ class LCNI_Stock_Signals_Shortcodes {
         wp_enqueue_style('lcni-stock-signals');
         LCNI_Button_Style_Config::enqueue_frontend_assets('lcni-stock-signals');
         $admin_config = $this->get_admin_config();
+        $filter_page_slug = sanitize_title((string) get_option('lcni_filter_link_page', 'sug-filter'));
+        $filter_page_url = home_url('/' . $filter_page_slug . '/');
+        $filter_criteria_columns = array_values(array_filter(array_map('sanitize_key', (array) get_option('lcni_filter_criteria_columns', []))));
 
         return sprintf(
-            '<div data-lcni-stock-signals data-symbol="%1$s" data-query-param="%2$s" data-api-base="%3$s" data-settings-api="%4$s" data-admin-config="%5$s" data-button-config="%6$s" data-version="%7$s"></div>',
+            '<div data-lcni-stock-signals data-symbol="%1$s" data-query-param="%2$s" data-api-base="%3$s" data-settings-api="%4$s" data-admin-config="%5$s" data-button-config="%6$s" data-version="%7$s" data-filter-page-url="%8$s" data-filter-fields="%9$s"></div>',
             esc_attr($symbol),
             esc_attr($query_param),
             esc_url(rest_url('lcni/v1/stock-signals')),
             esc_url(rest_url('lcni/v1/stock-signals/settings')),
             esc_attr(wp_json_encode($admin_config)),
             esc_attr(wp_json_encode(LCNI_Button_Style_Config::get_button('btn_signals_setting'))),
-            esc_attr($version)
+            esc_attr($version),
+            esc_url($filter_page_url),
+            esc_attr(wp_json_encode($filter_criteria_columns))
         );
     }
 

@@ -7,7 +7,7 @@ if (!defined('ABSPATH')) {
 class LCNI_WatchlistShortcode {
 
     const OPTION_KEY = 'lcni_watchlist_settings';
-    const VERSION = '2.2.0';
+    const VERSION = '2.2.1';
 
     private $service;
 
@@ -122,6 +122,7 @@ class LCNI_WatchlistShortcode {
 
         $settings = $this->get_settings();
         $stock_page_slug = sanitize_title((string) get_option('lcni_watchlist_stock_page', (string) ($settings['stock_detail_page_slug'] ?? '')));
+        $filter_page_slug = sanitize_title((string) get_option('lcni_filter_link_page', 'sug-filter'));
         if ($stock_page_slug === '') {
             $stock_page_id = absint(get_option('lcni_frontend_stock_detail_page', 0));
             if ($stock_page_id > 0) {
@@ -136,6 +137,8 @@ class LCNI_WatchlistShortcode {
             'isLoggedIn' => is_user_logged_in(),
             'loginUrl' => esc_url_raw(wp_login_url(get_permalink() ?: home_url('/'))),
             'stockDetailPageSlug' => $stock_page_slug,
+            'filterPageUrl' => esc_url_raw(home_url('/' . $filter_page_slug . '/')),
+            'filterCriteriaColumns' => array_values(array_filter(array_map('sanitize_key', (array) get_option('lcni_filter_criteria_columns', [])))),
             'settingsStorageKey' => 'lcni_watchlist_settings_v1',
             'defaultColumnsDesktop' => $this->service->get_default_columns('desktop'),
             'defaultColumnsMobile' => $this->service->get_default_columns('mobile'),

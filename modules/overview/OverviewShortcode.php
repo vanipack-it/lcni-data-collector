@@ -6,7 +6,7 @@ if (!defined('ABSPATH')) {
 
 class LCNI_Overview_Shortcode {
 
-    const VERSION = '2.2.0';
+    const VERSION = '2.2.1';
 
     const DEFAULT_FIELDS = [
         'symbol',
@@ -90,14 +90,19 @@ class LCNI_Overview_Shortcode {
 
         $api_base = rest_url('lcni/v1/stock-overview');
         $settings_api = rest_url('lcni/v1/stock-overview/settings');
+        $filter_page_slug = sanitize_title((string) get_option('lcni_filter_link_page', 'sug-filter'));
+        $filter_page_url = home_url('/' . $filter_page_slug . '/');
+        $filter_criteria_columns = array_values(array_filter(array_map('sanitize_key', (array) get_option('lcni_filter_criteria_columns', []))));
 
         return sprintf(
-            '<div data-lcni-overview data-symbol="%1$s" data-api-base="%2$s" data-settings-api="%3$s" data-query-param="symbol" data-admin-config="%4$s" data-button-config="%5$s"></div>',
+            '<div data-lcni-overview data-symbol="%1$s" data-api-base="%2$s" data-settings-api="%3$s" data-query-param="symbol" data-admin-config="%4$s" data-button-config="%5$s" data-filter-page-url="%6$s" data-filter-fields="%7$s"></div>',
             esc_attr($symbol),
             esc_url($api_base),
             esc_url($settings_api),
             esc_attr(wp_json_encode($admin_config)),
-            esc_attr(wp_json_encode($button_config))
+            esc_attr(wp_json_encode($button_config)),
+            esc_url($filter_page_url),
+            esc_attr(wp_json_encode($filter_criteria_columns))
         );
     }
 }
