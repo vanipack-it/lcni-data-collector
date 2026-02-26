@@ -365,6 +365,10 @@ class LCNI_Settings {
 
                     if ($watchlist_section === 'columns') {
                         $input['allowed_columns'] = isset($_POST['lcni_frontend_watchlist_allowed_columns']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_allowed_columns']) : [];
+                        $posted_column_order = array_filter(array_map('sanitize_key', explode(',', (string) (isset($_POST['lcni_frontend_watchlist_column_order']) ? wp_unslash($_POST['lcni_frontend_watchlist_column_order']) : ''))));
+                        $styles = isset($input['styles']) && is_array($input['styles']) ? $input['styles'] : [];
+                        $styles['column_order'] = $posted_column_order;
+                        $input['styles'] = $styles;
                     } elseif ($watchlist_section === 'stock_detail_page') {
                         $input['stock_detail_page_id'] = isset($_POST['lcni_frontend_stock_detail_page']) ? wp_unslash($_POST['lcni_frontend_stock_detail_page']) : 0;
                     } elseif ($watchlist_section === 'default_columns') {
@@ -494,6 +498,7 @@ class LCNI_Settings {
                     $watchlist_settings['styles'] = $watchlist_styles;
                     $watchlist_settings['value_color_rules'] = $global_rules;
                     update_option('lcni_watchlist_settings', $this->sanitize_watchlist_settings($watchlist_settings));
+                    update_option('lcni_global_cell_color_rules', $global_rules);
                     update_option('lcni_cell_to_cell_color_rules', $cell_to_cell_rules);
 
                     $filter_style = LCNI_FilterAdmin::sanitize_style(get_option('lcni_filter_style_config', get_option('lcni_filter_style', [])));
@@ -2772,10 +2777,25 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
                     <input type="hidden" name="lcni_frontend_watchlist_section" value="columns">
                     <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
                     <h3>Watchlist: danh sách cột cho phép user chọn</h3>
-                    <div class="lcni-front-grid">
-                        <?php foreach ($all_columns as $column) : ?>
-                            <label><input type="checkbox" name="lcni_frontend_watchlist_allowed_columns[]" value="<?php echo esc_attr($column); ?>" <?php checked(in_array($column, (array) ($settings['allowed_columns'] ?? []), true)); ?>> <?php echo esc_html($column); ?></label>
-                        <?php endforeach; ?>
+                    <input type="hidden" name="lcni_frontend_watchlist_column_order" value="<?php echo esc_attr(implode(',', (array) (($settings['styles']['column_order'] ?? []) ?: ($settings['allowed_columns'] ?? [])))); ?>" data-watchlist-columns-selected-order>
+                    <div style="display:grid;grid-template-columns:80% 20%;gap:12px;align-items:start;">
+                        <div>
+                            <p><strong>Available fields</strong></p>
+                            <div class="lcni-front-grid">
+                                <?php foreach ($all_columns as $column) : ?>
+                                    <label><input type="checkbox" name="lcni_frontend_watchlist_allowed_columns[]" data-watchlist-columns-checkbox value="<?php echo esc_attr($column); ?>" <?php checked(in_array($column, (array) ($settings['allowed_columns'] ?? []), true)); ?>> <?php echo esc_html($column); ?></label>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                        <div>
+                            <p><strong>Selected order</strong></p>
+                            <ol data-watchlist-columns-selected-list style="margin:0;padding-left:18px;max-height:320px;overflow:auto;">
+                                <?php foreach ((array) (($settings['styles']['column_order'] ?? []) ?: ($settings['allowed_columns'] ?? [])) as $column) : ?>
+                                    <li draggable="true" data-watchlist-columns-selected-column="<?php echo esc_attr($column); ?>" style="cursor:move;padding:4px 0;"><?php echo esc_html($column); ?></li>
+                                <?php endforeach; ?>
+                            </ol>
+                            <p class="description">Kéo thả để đổi thứ tự cột hiển thị frontend.</p>
+                        </div>
                     </div>
                     <?php submit_button('Save'); ?>
                 </form>
@@ -2958,18 +2978,19 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
                         });
                     });
 
-                    const defaultForm = document.querySelector('#lcni-watchlist-default-columns form');
-                    if (defaultForm) {
-                        const selectedList = defaultForm.querySelector('[data-watchlist-selected-list]');
-                        const hiddenOrder = defaultForm.querySelector('[data-watchlist-selected-order]');
+                    const bindSortableColumnsForm = (form, checkboxSelector, listSelector, itemAttr, hiddenSelector) => {
+                        if (!form) return;
+                        const selectedList = form.querySelector(listSelector);
+                        const hiddenOrder = form.querySelector(hiddenSelector);
+                        if (!selectedList || !hiddenOrder) return;
+
                         const syncOrder = () => {
-                            if (!selectedList || !hiddenOrder) return;
-                            hiddenOrder.value = Array.from(selectedList.querySelectorAll('[data-watchlist-selected-column]')).map((node) => node.getAttribute('data-watchlist-selected-column') || '').filter(Boolean).join(',');
+                            hiddenOrder.value = Array.from(selectedList.querySelectorAll('[' + itemAttr + ']')).map((node) => node.getAttribute(itemAttr) || '').filter(Boolean).join(',');
                         };
+
                         const bindDnD = () => {
-                            if (!selectedList) return;
                             let dragging = null;
-                            selectedList.querySelectorAll('[data-watchlist-selected-column]').forEach((item) => {
+                            selectedList.querySelectorAll('[' + itemAttr + ']').forEach((item) => {
                                 item.addEventListener('dragstart', () => { dragging = item; item.style.opacity = '0.5'; });
                                 item.addEventListener('dragend', () => { item.style.opacity = ''; dragging = null; syncOrder(); });
                                 item.addEventListener('dragover', (event) => event.preventDefault());
@@ -2983,20 +3004,38 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
                                 });
                             });
                         };
+
                         const rebuildSelected = () => {
-                            if (!selectedList) return;
-                            const checked = Array.from(defaultForm.querySelectorAll('[data-watchlist-desktop-checkbox]:checked')).map((node) => node.value);
-                            const existing = Array.from(selectedList.querySelectorAll('[data-watchlist-selected-column]')).map((node) => node.getAttribute('data-watchlist-selected-column') || '');
+                            const checked = Array.from(form.querySelectorAll(checkboxSelector + ':checked')).map((node) => node.value);
+                            const existing = Array.from(selectedList.querySelectorAll('[' + itemAttr + ']')).map((node) => node.getAttribute(itemAttr) || '');
                             const next = existing.filter((col) => checked.includes(col));
                             checked.forEach((col) => { if (!next.includes(col)) next.push(col); });
-                            selectedList.innerHTML = next.map((col) => `<li draggable="true" data-watchlist-selected-column="${col}" style="cursor:move;padding:4px 0;">${col}</li>`).join('');
+                            selectedList.innerHTML = next.map((col) => `<li draggable="true" ${itemAttr}="${col}" style="cursor:move;padding:4px 0;">${col}</li>`).join('');
                             bindDnD();
                             syncOrder();
                         };
-                        defaultForm.querySelectorAll('[data-watchlist-desktop-checkbox]').forEach((checkbox) => checkbox.addEventListener('change', rebuildSelected));
+
+                        form.querySelectorAll(checkboxSelector).forEach((checkbox) => checkbox.addEventListener('change', rebuildSelected));
                         bindDnD();
                         syncOrder();
-                    }
+                    };
+
+                    bindSortableColumnsForm(
+                        document.querySelector('#lcni-watchlist-columns form'),
+                        '[data-watchlist-columns-checkbox]',
+                        '[data-watchlist-columns-selected-list]',
+                        'data-watchlist-columns-selected-column',
+                        '[data-watchlist-columns-selected-order]'
+                    );
+
+                    const defaultForm = document.querySelector('#lcni-watchlist-default-columns form');
+                    bindSortableColumnsForm(
+                        defaultForm,
+                        '[data-watchlist-desktop-checkbox]',
+                        '[data-watchlist-selected-list]',
+                        'data-watchlist-selected-column',
+                        '[data-watchlist-selected-order]'
+                    );
 
                     activate(current);
                 })();
