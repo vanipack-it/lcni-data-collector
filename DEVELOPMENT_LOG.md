@@ -1,3 +1,8 @@
+## 2026-02-27 08:28 (v2.2.6a)
+- Nâng version plugin lên `2.2.6a` và cập nhật log với mốc ngày giờ cụ thể để dễ nắm bắt thời điểm cập nhật.
+- Fix Filter Panel: di chuyển thông báo kết quả lọc vào bên trong cột 2 (khu vực giá trị), đặt ở phía dưới cùng của cột để dễ theo dõi khi chọn tiêu chí.
+- Fix lỗi đơ khi bấm `btn_filter_apply` sau khi chọn tiêu chí: thêm cơ chế khóa thao tác Apply trong lúc đang chạy request, hủy đếm preview treo và tránh xung đột với luồng cập nhật thông báo kết quả lọc.
+
 ## 2026-02-27 03:22 (v2.2.4a)
 - Nâng version plugin lên `2.2.4a` và cập nhật log với mốc ngày giờ cụ thể để dễ nắm bắt thời điểm cập nhật.
 - Fix đồng bộ `wp_lcni_ohlc_latest`: chỉ nạp các row có `event_time` lớn nhất toàn bảng gốc `wp_lcni_ohlc` để phục vụ filter ngày gần nhất, tránh dữ liệu `event_time` lộn xộn.
