@@ -703,6 +703,9 @@ class LCNI_Settings {
         $chunk_size = max(200, (int) apply_filters('lcni_csv_import_chunk_size', 1500));
         $offset_rows = max(0, (int) ($payload['offset_rows'] ?? 0));
         $updated_total = max(0, (int) ($payload['updated_total'] ?? 0));
+        $accumulated_series = isset($payload['accumulated_series']) && is_array($payload['accumulated_series']) ? $payload['accumulated_series'] : [];
+        $accumulated_event_times = isset($payload['accumulated_event_times']) && is_array($payload['accumulated_event_times']) ? $payload['accumulated_event_times'] : [];
+        $accumulated_timeframes = isset($payload['accumulated_timeframes']) && is_array($payload['accumulated_timeframes']) ? $payload['accumulated_timeframes'] : [];
 
         $options = isset($payload['options']) && is_array($payload['options']) ? $payload['options'] : [];
         $options['offset_rows'] = $offset_rows;
@@ -739,6 +742,35 @@ class LCNI_Settings {
             $status['updated'] = $updated_total + $updated_chunk;
             $status['total'] = max((int) ($status['total'] ?? 0), (int) $status['processed']);
 
+            foreach ((array) ($import_summary['touched_series'] ?? []) as $series) {
+                if (!is_array($series)) {
+                    continue;
+                }
+                $symbol = strtoupper(sanitize_text_field((string) ($series['symbol'] ?? '')));
+                $timeframe = strtoupper(sanitize_text_field((string) ($series['timeframe'] ?? '')));
+                if ($symbol === '' || $timeframe === '') {
+                    continue;
+                }
+                $accumulated_series[$symbol . '|' . $timeframe] = [
+                    'symbol' => $symbol,
+                    'timeframe' => $timeframe,
+                ];
+            }
+
+            foreach ((array) ($import_summary['touched_event_times'] ?? []) as $event_time) {
+                $event_time = (int) $event_time;
+                if ($event_time > 0) {
+                    $accumulated_event_times[$event_time] = true;
+                }
+            }
+
+            foreach ((array) ($import_summary['touched_timeframes'] ?? []) as $timeframe) {
+                $timeframe = strtoupper(sanitize_text_field((string) $timeframe));
+                if ($timeframe !== '') {
+                    $accumulated_timeframes[$timeframe] = true;
+                }
+            }
+
             if ($has_more && $processed_chunk > 0) {
                 $status['state'] = 'running';
                 $status['message'] = sprintf(
@@ -760,6 +792,9 @@ class LCNI_Settings {
                     'options' => isset($payload['options']) && is_array($payload['options']) ? $payload['options'] : [],
                     'offset_rows' => $offset_rows + $processed_chunk,
                     'updated_total' => $updated_total + $updated_chunk,
+                    'accumulated_series' => $accumulated_series,
+                    'accumulated_event_times' => $accumulated_event_times,
+                    'accumulated_timeframes' => $accumulated_timeframes,
                 ]]);
 
                 return;
@@ -767,6 +802,15 @@ class LCNI_Settings {
 
             $status['state'] = 'done';
             $status['table'] = (string) ($import_summary['table'] ?? ($status['table'] ?? 'N/A'));
+
+            if (($payload['table_key'] ?? '') === 'lcni_ohlc' && !empty($accumulated_series)) {
+                LCNI_DB::finalize_ohlc_import_post_process(
+                    array_values($accumulated_series),
+                    array_map('intval', array_keys($accumulated_event_times)),
+                    array_values(array_keys($accumulated_timeframes))
+                );
+            }
+
             $status['message'] = sprintf('Đã import CSV vào %s: updated %d / total %d.', $status['table'], (int) $status['updated'], (int) $status['processed']);
         }
 
