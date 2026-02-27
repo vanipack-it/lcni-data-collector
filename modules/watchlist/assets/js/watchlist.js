@@ -367,7 +367,7 @@
 
   async function refreshTable(host) {
     const device = getDevice();
-    const selected = Array.from(host.querySelectorAll('[data-col-toggle]:checked')).map((i) => i.value);
+    const selected = getRenderedColumnOrder(host);
     const queryCols = selected.length ? '&' + selected.map((v) => `columns[]=${encodeURIComponent(v)}`).join('&') : '';
     const queryWatchlist = activeWatchlistId ? '&watchlist_id=' + encodeURIComponent(activeWatchlistId) : '';
     const data = await api('/load?device=' + encodeURIComponent(device) + queryCols + queryWatchlist);
@@ -377,9 +377,15 @@
     syncAllButtons();
   }
 
+  function getRenderedColumnOrder(host) {
+    const fromHeader = Array.from(host.querySelectorAll('thead th[data-sort-key]')).map((node) => String(node.getAttribute('data-sort-key') || '').trim()).filter(Boolean);
+    if (fromHeader.length) return fromHeader;
+    return Array.from(host.querySelectorAll('[data-col-toggle]:checked')).map((i) => String(i.value || '').trim()).filter(Boolean);
+  }
+
   async function refreshRowsOnly(host) {
     const device = getDevice();
-    const selected = Array.from(host.querySelectorAll('[data-col-toggle]:checked')).map((i) => i.value);
+    const selected = getRenderedColumnOrder(host);
     const queryCols = selected.length ? '&' + selected.map((v) => `columns[]=${encodeURIComponent(v)}`).join('&') : '';
     const queryWatchlist = activeWatchlistId ? '&watchlist_id=' + encodeURIComponent(activeWatchlistId) : '';
     const data = await api('/list?device=' + encodeURIComponent(device) + queryCols + queryWatchlist);
@@ -390,7 +396,7 @@
       const stickyColumn = String(styles.sticky_column || 'symbol');
       const valueColorRules = Array.isArray(settings.value_color_rules) ? settings.value_color_rules : [];
     const cellToCellRules = Array.isArray(settings.cell_to_cell_rules) ? settings.cell_to_cell_rules : [];
-      const orderedColumns = Array.isArray(data.columns) ? data.columns : [];
+      const orderedColumns = selected.length ? selected : (Array.isArray(data.columns) ? data.columns : []);
       tbody.innerHTML = renderRowsMarkup(orderedColumns, data.items || [], stickyColumn, valueColorRules, cellToCellRules);
     }
     if (Array.isArray(data.symbols)) {

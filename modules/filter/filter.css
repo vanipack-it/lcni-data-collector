@@ -44,12 +44,16 @@
 .lcni-app .lcni-stock-filter .lcni-table-scroll { max-height:calc(100vh - 180px); overflow:auto; overscroll-behavior:contain; overscroll-behavior-x:contain; scrollbar-gutter:stable; }
 .lcni-app .lcni-stock-filter .lcni-table { width:100%; border-collapse:separate; border-spacing:0; }
 .lcni-app .lcni-stock-filter .lcni-table th { font-weight:400; position:sticky; top:0; z-index:3; background:var(--lcni-table-header-bg,#f3f4f6); color:var(--lcni-table-header-color,#111827); font-size:var(--lcni-table-header-size,12px); border-bottom:var(--lcni-row-divider-width,1px) solid var(--lcni-row-divider-color,#e5e7eb); height:var(--lcni-table-header-height,42px); white-space:nowrap; }
-.lcni-app .lcni-stock-filter .lcni-table td { background:var(--lcni-table-value-bg,#fff); color:var(--lcni-table-value-color,#111827); font-size:var(--lcni-table-value-size,13px); border-bottom:var(--lcni-row-divider-width,1px) solid var(--lcni-row-divider-color,#e5e7eb); white-space:nowrap; word-break:keep-all; }
+.lcni-app .lcni-stock-filter .lcni-table td { background:var(--lcni-table-value-bg,#fff); color:var(--lcni-table-value-color,#111827); font-size:var(--lcni-table-value-size,13px); border-bottom:var(--lcni-row-divider-width,1px) solid var(--lcni-row-divider-color,#e5e7eb); white-space:nowrap; word-break:keep-all; height:var(--lcni-table-row-height,36px); }
 .lcni-app .lcni-stock-filter .lcni-table tr:hover td { background:var(--lcni-row-hover-bg,#eef2ff); }
 .lcni-app .lcni-stock-filter .lcni-table tbody tr { cursor:pointer; }
 .lcni-app .lcni-stock-filter .lcni-table .is-sticky-col { position:sticky; left:0; z-index:2; }
 .lcni-app .lcni-stock-filter .lcni-table th.is-sticky-col { z-index:4; }
 
+
+.lcni-app .lcni-stock-filter .lcni-filter-summary { font-size:12px; color:#374151; }
+.lcni-app .lcni-stock-filter .lcni-filter-summary-desktop { display:inline-flex; align-items:center; }
+.lcni-app .lcni-stock-filter .lcni-filter-summary-mobile { display:none; margin:8px 0; }
 .lcni-filter-toast { position:fixed; right:16px; bottom:16px; z-index:9999; padding:8px 12px; border-radius:8px; background:#111827; color:#fff; }
 .lcni-filter-modal-backdrop { position:fixed; inset:0; z-index:10000; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.45); }
 .lcni-filter-modal { min-width:320px; max-width:520px; padding:16px; border-radius:10px; background:#fff; }
@@ -62,6 +66,8 @@
 
 @media (max-width: 767px) {
   .lcni-app .lcni-stock-filter .lcni-filter-toolbar{position:sticky;top:0;background:#fff;z-index:5;padding-bottom:6px;}
+  .lcni-app .lcni-stock-filter .lcni-filter-summary-mobile{display:block;position:sticky;top:38px;background:#fff;z-index:5;padding:4px 0 6px;}
+  .lcni-app .lcni-stock-filter .lcni-filter-summary-desktop{display:none;}
   .lcni-app .lcni-stock-filter .lcni-filter-panel,
   .lcni-app .lcni-stock-filter .lcni-column-pop{position:fixed;left:8px;right:8px;top:8px;max-height:80vh;overflow:auto;z-index:10001;margin:0;}
   .lcni-app .lcni-stock-filter .lcni-table-scroll{max-height:calc(100vh - 140px);}
