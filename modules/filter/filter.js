@@ -997,7 +997,6 @@
       }
 
       state.filters = collectFilters(host);
-      queueEligibleCount(host);
       if (state.filters.length) {
         await load(host);
       }
