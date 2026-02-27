@@ -80,7 +80,15 @@ function lcni_activate_plugin() {
 }
 
 function lcni_ensure_plugin_tables() {
+    // Avoid expensive schema/index checks on every request (especially wp-admin).
+    // Re-check periodically so newly deployed schema changes are still applied.
+    if (get_transient('lcni_schema_check_recent') !== false) {
+        return;
+    }
+
     LCNI_DB::ensure_tables_exist();
+
+    set_transient('lcni_schema_check_recent', time(), 15 * MINUTE_IN_SECONDS);
 }
 
 function lcni_ensure_cron_scheduled() {
