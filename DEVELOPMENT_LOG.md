@@ -1,3 +1,10 @@
+## 2026-02-27 02:47 (v2.2.3a)
+- Nâng version plugin lên `2.2.3a` và cập nhật log với mốc ngày giờ cụ thể để dễ nắm bắt thời điểm cập nhật.
+- Fix Frontend Settings → Filter → Style → Row height: giá trị đã lưu nay áp dụng trực tiếp ra frontend bằng CSS variable `--lcni-table-row-height`.
+- Bổ sung thông báo kết quả filter đặt cùng hàng với `btn_filter_apply` trên desktop và hiển thị sticky ngay dưới topbar trên mobile; hỗ trợ 2 trạng thái: chưa chọn tiêu chí và đã chạy lọc kèm danh sách tiêu chí.
+- Fix Frontend Settings → Watchlist → Column → Selected order: đảm bảo thứ tự cột value khi refresh dữ liệu luôn bám đúng thứ tự header/label đã kéo-thả lưu.
+- Fix Frontend Settings → Filter → Filter Criteria → Selected order: cưỡng bức áp dụng thứ tự tiêu chí theo cấu hình `lcni_filter_criteria_columns` khi render panel frontend.
+
 ## 2026-02-26 18:10 (v2.2.3)
 - Nâng version plugin lên `2.2.3` và cập nhật log với mốc ngày giờ chi tiết để dễ nắm bắt thời điểm thay đổi.
 - Fix logic đồng bộ `wp_lcni_ohlc_latest`: lấy nến mới nhất theo từng cặp `symbol + timeframe` (không còn gộp theo `symbol`) để dữ liệu latest đúng khi filter theo ngày gần nhất.
