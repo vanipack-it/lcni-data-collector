@@ -298,3 +298,10 @@
 - Bổ sung index `idx_macd_loc (timeframe, macd_cat, macd_manh, macd_diem_dong_luong)` để tối ưu truy vấn filter MACD.
 - Bổ sung backfill migration `backfill_ohlc_macd_flags()` để tính đầy đủ MACD flags cho dữ liệu cũ theo cặp `(symbol, timeframe)`.
 - Tích hợp tính toán MACD realtime flags vào luồng rebuild indicators hiện tại để dữ liệu nến mới insert được tính ngay, giữ nguyên kiến trúc `$wpdb` và không dùng window function.
+
+## 2026-02-27 (v2.2.8)
+- Nâng version plugin lên `2.2.8`; cập nhật `FilterShortcode::VERSION` để đồng bộ cache-busting asset Filter.
+- Thêm file SQL `sql_market_statistics_v2_2_8.sql` để tạo 2 bảng thống kê mới: `wp_lcni_thong_ke_thi_truong` và `wp_lcni_thong_ke_nganh_icb_2`.
+- Bổ sung script `INSERT ... SELECT`/`REPLACE INTO` chỉ tính theo 1 `event_time` + 1 `timeframe` mỗi lần chạy, join với `wp_lcni_sym_icb_market`, chỉ lấy `symbol_type = 'stock'`.
+- Bổ sung logic MACD cắt lên/cắt xuống cho thống kê ngành ICB cấp 2 bằng `LAG(...) OVER (PARTITION BY symbol, timeframe ORDER BY event_time)`.
+- Bổ sung index tối ưu hiệu năng theo yêu cầu: `(symbol, event_time, timeframe)`, `(event_time)`, `(symbol_type)` trên `wp_lcni_ohlc` và index hỗ trợ join/group cho bảng dimension.
