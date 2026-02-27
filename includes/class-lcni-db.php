@@ -563,6 +563,7 @@ class LCNI_DB {
                 TRUNCATE TABLE {$latest_table};
 
                 INSERT INTO {$latest_table} (
+                    id,
                     symbol,
                     timeframe,
                     event_time,
@@ -573,6 +574,7 @@ class LCNI_DB {
                     volume
                 )
                 SELECT
+                    o.id,
                     o.symbol,
                     o.timeframe,
                     o.event_time,
@@ -736,6 +738,7 @@ class LCNI_DB {
         }
 
         $sql = "INSERT INTO {$latest_table} (
+                id,
                 symbol,
                 timeframe,
                 event_time,
@@ -746,6 +749,7 @@ class LCNI_DB {
                 volume
             )
             SELECT
+                o.id,
                 o.symbol,
                 o.timeframe,
                 o.event_time,
