@@ -289,3 +289,12 @@
 - Tối ưu hiệu năng chart cho 0-10k daily users: giới hạn cứng tối đa 500 candles ở frontend, dùng `useDirtyRect`, `progressive`, `progressiveThreshold`, cập nhật dữ liệu bằng `setOption` + `replaceMerge` thay vì rebuild full option mỗi lần.
 - Bổ sung memory-safety: kiểm tra `echarts.getInstanceByDom` trước init, dispose instance khi destroy, resize bằng `ResizeObserver` có debounce, tránh listener trùng lặp.
 - Giữ nguyên shortcode `[lcni_stock_chart]`, kiến trúc PHP module, và REST API contract hiện có.
+
+## 2026-02-27 (v2.2.7a)
+- Nâng version plugin lên `2.2.7a`; cập nhật `FilterShortcode::VERSION` để đồng bộ cache-busting asset Filter.
+- Fix Panel Filter: harden luồng gọi API Apply bằng timeout `AbortController` (20s) để tránh trạng thái nút Apply bị treo khi request treo lâu.
+- Fix Panel Filter: sửa Export Excel/CSV bị file rỗng bằng cơ chế fallback lấy dữ liệu trực tiếp từ DOM table khi `state.dataset` trống; thêm BOM UTF-8 để mở chuẩn tiếng Việt trên Excel và đổi phần mở rộng xuất file sang `.csv` đúng định dạng thực tế.
+- Mở rộng schema bảng `wp_lcni_ohlc` thêm các cột MACD realtime filter: `macd_histogram`, `macd_cat`, `macd_tren_0`, `macd_hist_tang`, `macd_manh`, `macd_diem_dong_luong` (chỉ thêm mới, không sửa/xóa cột cũ).
+- Bổ sung index `idx_macd_loc (timeframe, macd_cat, macd_manh, macd_diem_dong_luong)` để tối ưu truy vấn filter MACD.
+- Bổ sung backfill migration `backfill_ohlc_macd_flags()` để tính đầy đủ MACD flags cho dữ liệu cũ theo cặp `(symbol, timeframe)`.
+- Tích hợp tính toán MACD realtime flags vào luồng rebuild indicators hiện tại để dữ liệu nến mới insert được tính ngay, giữ nguyên kiến trúc `$wpdb` và không dùng window function.
