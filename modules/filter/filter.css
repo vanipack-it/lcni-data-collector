@@ -15,7 +15,7 @@
 .lcni-app .lcni-stock-filter .lcni-filter-tab-check { visibility:hidden; color:#16a34a; font-weight:700; }
 .lcni-app .lcni-stock-filter .lcni-filter-tab-check.is-visible { visibility:visible; }
 
-.lcni-app .lcni-stock-filter .lcni-filter-criteria-values { min-height:220px; }
+.lcni-app .lcni-stock-filter .lcni-filter-criteria-values { min-height:220px; display:flex; flex-direction:column; }
 .lcni-app .lcni-stock-filter .lcni-filter-value-panel { display:none; }
 .lcni-app .lcni-stock-filter .lcni-filter-value-panel.is-active { display:block; }
 .lcni-app .lcni-stock-filter .lcni-filter-value-panel strong { display:block; margin-bottom:8px; color:var(--lcni-panel-label-color,#111827); font-size:var(--lcni-panel-label-size,13px); }
@@ -52,7 +52,7 @@
 
 
 .lcni-app .lcni-stock-filter .lcni-filter-summary { font-size:12px; color:#374151; }
-.lcni-app .lcni-stock-filter .lcni-filter-summary-desktop { display:inline-flex; align-items:center; }
+.lcni-app .lcni-stock-filter .lcni-filter-summary-desktop { display:block; margin-top:auto; padding-top:10px; align-items:center; }
 .lcni-app .lcni-stock-filter .lcni-filter-summary-mobile { display:none; margin:8px 0; }
 .lcni-filter-toast { position:fixed; right:16px; bottom:16px; z-index:9999; padding:8px 12px; border-radius:8px; background:#111827; color:#fff; }
 .lcni-filter-modal-backdrop { position:fixed; inset:0; z-index:10000; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.45); }

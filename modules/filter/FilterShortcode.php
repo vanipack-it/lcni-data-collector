@@ -5,7 +5,7 @@ if (!defined('ABSPATH')) {
 }
 
 class LCNI_FilterShortcode {
-    const VERSION = '2.2.4a';
+    const VERSION = '2.2.6a';
 
     private $table;
 
