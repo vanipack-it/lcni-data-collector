@@ -6,7 +6,7 @@ if (!defined('ABSPATH')) {
 
 class LCNI_Chart_Shortcode {
 
-    const VERSION = '2.2.3a';
+    const VERSION = '2.2.4a';
 
     public function __construct() {
         add_action('init', [$this, 'register_shortcodes']);

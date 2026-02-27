@@ -508,14 +508,27 @@ class LCNI_DB {
         $wpdb->query(
             "CREATE PROCEDURE {$refresh_proc_name}()
             BEGIN
-                REPLACE INTO {$latest_table}
-                SELECT t.*
-                FROM {$ohlc_table} t
-                JOIN (
-                    SELECT symbol, timeframe, MAX(event_time) AS max_time
-                    FROM {$ohlc_table}
-                    GROUP BY symbol, timeframe
-                ) m ON t.symbol = m.symbol AND t.timeframe = m.timeframe AND t.event_time = m.max_time;
+                DECLARE v_max_event_time BIGINT DEFAULT NULL;
+
+                SELECT MAX(event_time) INTO v_max_event_time
+                FROM {$ohlc_table};
+
+                IF v_max_event_time IS NULL THEN
+                    TRUNCATE TABLE {$latest_table};
+                ELSE
+                    DELETE FROM {$latest_table};
+
+                    INSERT INTO {$latest_table}
+                    SELECT t.*
+                    FROM {$ohlc_table} t
+                    JOIN (
+                        SELECT symbol, timeframe, MAX(id) AS max_id
+                        FROM {$ohlc_table}
+                        WHERE event_time = v_max_event_time
+                        GROUP BY symbol, timeframe
+                    ) latest
+                        ON latest.max_id = t.id;
+                END IF;
             END"
         );
 
@@ -614,6 +627,7 @@ class LCNI_DB {
         $latest_table = $wpdb->prefix . 'lcni_ohlc_latest';
         $where_clause = '';
         $where_symbol_clause = '';
+        $where_latest_symbol_clause = '';
 
         if (!empty($symbols)) {
             $symbols = array_values(array_filter(array_unique(array_map('strtoupper', (array) $symbols))));
@@ -621,20 +635,43 @@ class LCNI_DB {
                 $placeholders = implode(', ', array_fill(0, count($symbols), '%s'));
                 $where_clause = $wpdb->prepare("WHERE symbol IN ({$placeholders})", ...$symbols);
                 $where_symbol_clause = $wpdb->prepare("AND t.symbol IN ({$placeholders})", ...$symbols);
+                $where_latest_symbol_clause = $wpdb->prepare("AND symbol IN ({$placeholders})", ...$symbols);
             }
         }
 
+        $max_event_time = (int) $wpdb->get_var(
+            "SELECT MAX(event_time)
+            FROM {$ohlc_table}
+            {$where_clause}"
+        );
+
+        if ($max_event_time <= 0) {
+            if (empty($symbols)) {
+                return $wpdb->query("TRUNCATE TABLE {$latest_table}");
+            }
+
+            return $wpdb->query("DELETE FROM {$latest_table} WHERE 1=1 {$where_latest_symbol_clause}");
+        }
+
+        if (empty($symbols)) {
+            $wpdb->query("DELETE FROM {$latest_table}");
+        } else {
+            $wpdb->query("DELETE FROM {$latest_table} WHERE 1=1 {$where_latest_symbol_clause}");
+        }
+
         return $wpdb->query(
-            "REPLACE INTO {$latest_table}
-            SELECT t.*
-            FROM {$ohlc_table} t
-            JOIN (
-                SELECT symbol, timeframe, MAX(event_time) AS max_time
-                FROM {$ohlc_table}
-                {$where_clause}
-                GROUP BY symbol, timeframe
-            ) m ON t.symbol = m.symbol AND t.timeframe = m.timeframe AND t.event_time = m.max_time
-            WHERE 1=1 {$where_symbol_clause}"
+            $wpdb->prepare(
+                "INSERT INTO {$latest_table}
+                SELECT t.*
+                FROM {$ohlc_table} t
+                JOIN (
+                    SELECT symbol, timeframe, MAX(id) AS max_id
+                    FROM {$ohlc_table}
+                    WHERE event_time = %d {$where_symbol_clause}
+                    GROUP BY symbol, timeframe
+                ) latest ON latest.max_id = t.id",
+                $max_event_time
+            )
         );
     }
 

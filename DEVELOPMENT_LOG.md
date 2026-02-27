@@ -1,3 +1,8 @@
+## 2026-02-27 03:22 (v2.2.4a)
+- Nâng version plugin lên `2.2.4a` và cập nhật log với mốc ngày giờ cụ thể để dễ nắm bắt thời điểm cập nhật.
+- Fix đồng bộ `wp_lcni_ohlc_latest`: chỉ nạp các row có `event_time` lớn nhất toàn bảng gốc `wp_lcni_ohlc` để phục vụ filter ngày gần nhất, tránh dữ liệu `event_time` lộn xộn.
+- Khi bảng gốc có cập nhật mới, quy trình sync sẽ tự động xóa snapshot cũ và nạp lại snapshot mới nhất để đảm bảo dữ liệu latest luôn đồng bộ.
+
 ## 2026-02-27 02:47 (v2.2.3a)
 - Nâng version plugin lên `2.2.3a` và cập nhật log với mốc ngày giờ cụ thể để dễ nắm bắt thời điểm cập nhật.
 - Fix Frontend Settings → Filter → Style → Row height: giá trị đã lưu nay áp dụng trực tiếp ra frontend bằng CSS variable `--lcni-table-row-height`.
