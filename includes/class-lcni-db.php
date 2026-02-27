@@ -2317,17 +2317,9 @@ class LCNI_DB {
             call_user_func($progress_callback, $processed, $updated);
         }
 
-        foreach ($touched_series as $series) {
-            self::rebuild_ohlc_series_metrics($series['symbol'], $series['timeframe']);
-        }
-
-        if (!empty($touched_series)) {
-            self::rebuild_missing_ohlc_indicators(5);
-            self::rebuild_rs_1m_by_exchange(array_keys($touched_event_times), array_keys($touched_timeframes));
-            self::rebuild_rs_1w_by_exchange(array_keys($touched_event_times), array_keys($touched_timeframes));
-            self::rebuild_rs_3m_by_exchange([], array_keys($touched_timeframes));
-            self::rebuild_rs_exchange_signals([], array_keys($touched_timeframes));
-        }
+        $touched_series_values = array_values($touched_series);
+        $touched_event_times_values = array_map('intval', array_keys($touched_event_times));
+        $touched_timeframes_values = array_values(array_keys($touched_timeframes));
 
         self::log_change('import_csv_generic', sprintf('Imported %d/%d rows into %s (append mode).', $updated, $total, $table_key), [
             'table' => $table_key,
@@ -2341,7 +2333,58 @@ class LCNI_DB {
             'processed' => $processed,
             'has_more' => $has_more,
             'table' => $table_key,
+            'touched_series' => $touched_series_values,
+            'touched_event_times' => $touched_event_times_values,
+            'touched_timeframes' => $touched_timeframes_values,
         ];
+    }
+
+    public static function finalize_ohlc_import_post_process($series_list = [], $event_times = [], $timeframes = []) {
+        $normalized_series = [];
+        foreach ((array) $series_list as $series) {
+            if (!is_array($series)) {
+                continue;
+            }
+            $symbol = isset($series['symbol']) ? strtoupper(sanitize_text_field((string) $series['symbol'])) : '';
+            $timeframe = isset($series['timeframe']) ? strtoupper(sanitize_text_field((string) $series['timeframe'])) : '';
+            if ($symbol === '' || $timeframe === '') {
+                continue;
+            }
+            $normalized_series[$symbol . '|' . $timeframe] = [
+                'symbol' => $symbol,
+                'timeframe' => $timeframe,
+            ];
+        }
+
+        $normalized_event_times = [];
+        foreach ((array) $event_times as $event_time) {
+            $event_time = (int) $event_time;
+            if ($event_time > 0) {
+                $normalized_event_times[$event_time] = true;
+            }
+        }
+
+        $normalized_timeframes = [];
+        foreach ((array) $timeframes as $timeframe) {
+            $timeframe = strtoupper(sanitize_text_field((string) $timeframe));
+            if ($timeframe !== '') {
+                $normalized_timeframes[$timeframe] = true;
+            }
+        }
+
+        if (empty($normalized_series)) {
+            return;
+        }
+
+        foreach ($normalized_series as $series) {
+            self::rebuild_ohlc_series_metrics($series['symbol'], $series['timeframe']);
+        }
+
+        self::rebuild_missing_ohlc_indicators(5);
+        self::rebuild_rs_1m_by_exchange(array_keys($normalized_event_times), array_keys($normalized_timeframes));
+        self::rebuild_rs_1w_by_exchange(array_keys($normalized_event_times), array_keys($normalized_timeframes));
+        self::rebuild_rs_3m_by_exchange([], array_keys($normalized_timeframes));
+        self::rebuild_rs_exchange_signals([], array_keys($normalized_timeframes));
     }
 
     public static function count_csv_rows($file_path) {
