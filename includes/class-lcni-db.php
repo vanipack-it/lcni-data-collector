@@ -560,7 +560,9 @@ class LCNI_DB {
         $wpdb->query(
             "CREATE PROCEDURE {$refresh_proc_name}()
             BEGIN
-                REPLACE INTO {$latest_table} (
+                TRUNCATE TABLE {$latest_table};
+
+                INSERT INTO {$latest_table} (
                     symbol,
                     timeframe,
                     event_time,
@@ -586,11 +588,26 @@ class LCNI_DB {
                         timeframe,
                         MAX(event_time) AS max_time
                     FROM {$ohlc_table}
+                    WHERE symbol IS NOT NULL AND symbol <> '' AND timeframe IS NOT NULL AND timeframe <> ''
                     GROUP BY symbol, timeframe
                 ) latest
                     ON o.symbol = latest.symbol
                     AND o.timeframe = latest.timeframe
-                    AND o.event_time = latest.max_time;
+                    AND o.event_time = latest.max_time
+                INNER JOIN (
+                    SELECT
+                        symbol,
+                        timeframe,
+                        event_time,
+                        MAX(id) AS max_id
+                    FROM {$ohlc_table}
+                    WHERE symbol IS NOT NULL AND symbol <> '' AND timeframe IS NOT NULL AND timeframe <> ''
+                    GROUP BY symbol, timeframe, event_time
+                ) tie_break
+                    ON tie_break.symbol = o.symbol
+                    AND tie_break.timeframe = o.timeframe
+                    AND tie_break.event_time = o.event_time
+                    AND tie_break.max_id = o.id;
             END"
         );
 
@@ -699,19 +716,26 @@ class LCNI_DB {
 
         $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
         $latest_table = $wpdb->prefix . 'lcni_ohlc_latest';
-        $where_clause = '';
-        $where_symbol_clause = '';
+        $where_clause = "WHERE symbol IS NOT NULL AND symbol <> '' AND timeframe IS NOT NULL AND timeframe <> ''";
+        $delete_symbols_sql = '';
+        $filtered_symbols = [];
 
         if (!empty($symbols)) {
-            $symbols = array_values(array_filter(array_unique(array_map('strtoupper', (array) $symbols))));
-            if (!empty($symbols)) {
-                $placeholders = implode(', ', array_fill(0, count($symbols), '%s'));
-                $where_clause = $wpdb->prepare("WHERE symbol IN ({$placeholders})", ...$symbols);
-                $where_symbol_clause = $wpdb->prepare("AND o.symbol IN ({$placeholders})", ...$symbols);
+            $filtered_symbols = array_values(array_filter(array_unique(array_map('strtoupper', (array) $symbols))));
+            if (!empty($filtered_symbols)) {
+                $placeholders = implode(', ', array_fill(0, count($filtered_symbols), '%s'));
+                $where_clause .= $wpdb->prepare(" AND symbol IN ({$placeholders})", ...$filtered_symbols);
+                $delete_symbols_sql = $wpdb->prepare("DELETE FROM {$latest_table} WHERE symbol IN ({$placeholders})", ...$filtered_symbols);
             }
         }
 
-        $sql = "REPLACE INTO {$latest_table} (
+        if (empty($filtered_symbols)) {
+            $wpdb->query("TRUNCATE TABLE {$latest_table}");
+        } elseif ($delete_symbols_sql !== '') {
+            $wpdb->query($delete_symbols_sql);
+        }
+
+        $sql = "INSERT INTO {$latest_table} (
                 symbol,
                 timeframe,
                 event_time,
@@ -743,7 +767,20 @@ class LCNI_DB {
                 ON o.symbol = latest.symbol
                 AND o.timeframe = latest.timeframe
                 AND o.event_time = latest.max_time
-            WHERE 1=1 {$where_symbol_clause}";
+            INNER JOIN (
+                SELECT
+                    symbol,
+                    timeframe,
+                    event_time,
+                    MAX(id) AS max_id
+                FROM {$ohlc_table}
+                {$where_clause}
+                GROUP BY symbol, timeframe, event_time
+            ) tie_break
+                ON tie_break.symbol = o.symbol
+                AND tie_break.timeframe = o.timeframe
+                AND tie_break.event_time = o.event_time
+                AND tie_break.max_id = o.id";
 
         return $wpdb->query($sql);
     }
