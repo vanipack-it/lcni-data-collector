@@ -67,12 +67,37 @@
 
   function api(body) {
     const payloadBody = Object.assign({ skip_defaults: true }, body || {});
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 20000);
     return fetch(cfg.restUrl, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': cfg.nonce || '' }, credentials: 'same-origin', body: JSON.stringify(payloadBody)
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': cfg.nonce || '' }, credentials: 'same-origin', body: JSON.stringify(payloadBody), signal: controller.signal
     }).then(async (r) => {
       const payload = await r.json().catch(() => ({}));
       if (!r.ok) throw payload;
       return payload;
+    }).finally(() => {
+      window.clearTimeout(timeoutId);
+    });
+  }
+
+  function buildExportRows(columns) {
+    const sortedRows = sortDataset(state.dataset || []);
+    if (sortedRows.length) return sortedRows;
+
+    const tableRows = Array.from(document.querySelectorAll('.lcni-filter-module tbody tr[data-symbol]'));
+    return tableRows.map((tr) => {
+      const row = {};
+      const cells = Array.from(tr.querySelectorAll('td'));
+      columns.forEach((column, index) => {
+        const cell = cells[index];
+        if (!cell) {
+          row[column] = '';
+          return;
+        }
+        const value = cell.getAttribute('data-cell-value');
+        row[column] = value !== null ? value : (cell.textContent || '').trim();
+      });
+      return row;
     });
   }
 
@@ -241,7 +266,7 @@
   }
 
   function exportCurrentResultToExcel() {
-    if (!state.tableLoaded || !Array.isArray(state.dataset) || !state.dataset.length) {
+    if (!state.tableLoaded) {
       showToast('Chưa có dữ liệu để xuất. Vui lòng bấm Apply Filter trước.');
       return;
     }
@@ -253,16 +278,20 @@
     }
 
     const labels = (cfg.settings || {}).column_labels || {};
-    const sortedRows = sortDataset(state.dataset);
+    const sortedRows = buildExportRows(columns);
+    if (!sortedRows.length) {
+      showToast('Không có dữ liệu hợp lệ để xuất.');
+      return;
+    }
     const header = columns.map((column) => `"${String(labels[column] || column).replace(/"/g, '""')}"`).join(',');
     const rows = sortedRows.map((row) => columns.map((column) => {
       const value = row[column] == null ? '' : row[column];
       return `"${String(value).replace(/"/g, '""')}"`;
     }).join(','));
 
-    const csvContent = [header].concat(rows).join('\r\n');
+    const csvContent = '\uFEFF' + [header].concat(rows).join('\r\n');
     const blob = new Blob([csvContent], { type: 'application/vnd.ms-excel;charset=utf-8;' });
-    const fileName = `LCNi_Filter_${normalizeFilterName(getCurrentFilterName())}.xlsx`;
+    const fileName = `LCNi_Filter_${normalizeFilterName(getCurrentFilterName())}.csv`;
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = fileName;

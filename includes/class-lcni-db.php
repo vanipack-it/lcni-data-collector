@@ -105,6 +105,7 @@ class LCNI_DB {
         self::backfill_ohlc_rs_recommend_status();
         self::backfill_ohlc_rsi_status_and_hanh_vi_gia();
         self::backfill_ohlc_hanh_vi_gia_1w();
+        self::backfill_ohlc_macd_flags();
         self::ensure_ohlc_symbol_type_column();
         self::ensure_ohlc_indexes();
         self::ensure_ohlc_latest_snapshot_infrastructure();
@@ -179,6 +180,12 @@ class LCNI_DB {
             vol_sv_vol_ma20 DECIMAL(12,6) DEFAULT NULL,
             macd DECIMAL(16,8) DEFAULT NULL,
             macd_signal DECIMAL(16,8) DEFAULT NULL,
+            macd_histogram DOUBLE DEFAULT NULL,
+            macd_cat TINYINT DEFAULT 0,
+            macd_tren_0 TINYINT DEFAULT 0,
+            macd_hist_tang TINYINT DEFAULT 0,
+            macd_manh TINYINT DEFAULT 0,
+            macd_diem_dong_luong INT DEFAULT 0,
             rsi DECIMAL(12,6) DEFAULT NULL,
             rsi_status VARCHAR(30) DEFAULT NULL,
             trading_index BIGINT UNSIGNED DEFAULT NULL,
@@ -771,6 +778,12 @@ class LCNI_DB {
             'vol_sv_vol_ma20' => 'DECIMAL(12,6) DEFAULT NULL',
             'macd' => 'DECIMAL(16,8) DEFAULT NULL',
             'macd_signal' => 'DECIMAL(16,8) DEFAULT NULL',
+            'macd_histogram' => 'DOUBLE DEFAULT NULL',
+            'macd_cat' => 'TINYINT DEFAULT 0',
+            'macd_tren_0' => 'TINYINT DEFAULT 0',
+            'macd_hist_tang' => 'TINYINT DEFAULT 0',
+            'macd_manh' => 'TINYINT DEFAULT 0',
+            'macd_diem_dong_luong' => 'INT DEFAULT 0',
             'rsi' => 'DECIMAL(12,6) DEFAULT NULL',
             'rsi_status' => 'VARCHAR(30) DEFAULT NULL',
             'trading_index' => 'BIGINT UNSIGNED DEFAULT NULL',
@@ -924,6 +937,12 @@ class LCNI_DB {
         $latest_event_index_exists = $wpdb->get_var($wpdb->prepare("SHOW INDEX FROM {$table} WHERE Key_name = %s", $latest_event_index_name));
         if ($latest_event_index_exists === null) {
             $wpdb->query("CREATE INDEX {$latest_event_index_name} ON {$table} (symbol, timeframe, event_time)");
+        }
+
+        $macd_filter_index_name = 'idx_macd_loc';
+        $macd_filter_index_exists = $wpdb->get_var($wpdb->prepare("SHOW INDEX FROM {$table} WHERE Key_name = %s", $macd_filter_index_name));
+        if ($macd_filter_index_exists === null) {
+            $wpdb->query("CREATE INDEX {$macd_filter_index_name} ON {$table} (timeframe, macd_cat, macd_manh, macd_diem_dong_luong)");
         }
     }
 
@@ -1596,6 +1615,45 @@ class LCNI_DB {
         );
 
         self::log_change('backfill_ohlc_hanh_vi_gia_1w', 'Backfilled hanh_vi_gia_1w for existing OHLC rows.');
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function backfill_ohlc_macd_flags() {
+        global $wpdb;
+
+        $migration_flag = 'lcni_ohlc_macd_flags_backfilled_v1';
+        if (get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $series_with_missing_values = $wpdb->get_results(
+            "SELECT DISTINCT symbol, timeframe
+            FROM {$table}
+            WHERE macd_histogram IS NULL
+                OR macd_cat IS NULL
+                OR macd_tren_0 IS NULL
+                OR macd_hist_tang IS NULL
+                OR macd_manh IS NULL
+                OR macd_diem_dong_luong IS NULL",
+            ARRAY_A
+        );
+
+        if (empty($series_with_missing_values)) {
+            update_option($migration_flag, 'yes');
+
+            return;
+        }
+
+        foreach ($series_with_missing_values as $series) {
+            self::rebuild_ohlc_series_metrics($series['symbol'], $series['timeframe']);
+        }
+
+        self::log_change(
+            'backfill_ohlc_macd_flags',
+            sprintf('Backfilled MACD realtime filter flags for %d symbol/timeframe series.', count($series_with_missing_values))
+        );
+
         update_option($migration_flag, 'yes');
     }
 
@@ -3071,6 +3129,35 @@ class LCNI_DB {
                 $signal = ($macd - $signal) * $signal_multiplier + $signal;
             }
 
+            $macd_histogram = $macd - $signal;
+            $prev_macd = $i > 0 ? (float) ($rows[$i - 1]['macd'] ?? 0.0) : null;
+            $prev_macd_signal = $i > 0 ? (float) ($rows[$i - 1]['macd_signal'] ?? 0.0) : null;
+            $prev_macd_histogram = $i > 0 ? ($prev_macd - $prev_macd_signal) : null;
+
+            $macd_cat = 0;
+            if ($i > 0 && $macd > $signal && $prev_macd <= $prev_macd_signal) {
+                $macd_cat = 1;
+            } elseif ($i > 0 && $macd < $signal && $prev_macd >= $prev_macd_signal) {
+                $macd_cat = -1;
+            }
+
+            $macd_tren_0 = $macd > 0 ? 1 : 0;
+            $macd_hist_tang = ($i > 0 && $prev_macd_histogram !== null && $macd_histogram > $prev_macd_histogram) ? 1 : 0;
+            $macd_manh = ($macd > $signal && $macd > 0 && $macd_hist_tang === 1) ? 1 : 0;
+            $macd_diem_dong_luong = 0;
+            if ($macd > $signal) {
+                $macd_diem_dong_luong += 30;
+            }
+            if ($macd > 0) {
+                $macd_diem_dong_luong += 30;
+            }
+            if ($macd_histogram > 0) {
+                $macd_diem_dong_luong += 20;
+            }
+            if ($macd_hist_tang === 1) {
+                $macd_diem_dong_luong += 20;
+            }
+
             $rsi = null;
             if ($i > 0) {
                 $change = $close - (float) $closes[$i - 1];
@@ -3182,6 +3269,12 @@ class LCNI_DB {
                     'vol_sv_vol_ma20' => $vol_sv_vol_ma20,
                     'macd' => $macd,
                     'macd_signal' => $signal,
+                    'macd_histogram' => $macd_histogram,
+                    'macd_cat' => $macd_cat,
+                    'macd_tren_0' => $macd_tren_0,
+                    'macd_hist_tang' => $macd_hist_tang,
+                    'macd_manh' => $macd_manh,
+                    'macd_diem_dong_luong' => $macd_diem_dong_luong,
                     'rsi' => $rsi,
                     'rsi_status' => $rsi_status,
                     'xay_nen' => $xay_nen,
@@ -3194,7 +3287,7 @@ class LCNI_DB {
                     'smart_money' => $smart_money,
                 ],
                 ['id' => (int) $rows[$i]['id']],
-                ['%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%s','%s','%d','%s','%s','%s','%s','%s','%s'],
+                ['%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%d','%d','%d','%d','%d','%f','%s','%s','%d','%s','%s','%s','%s','%s','%s'],
                 ['%d']
             );
         }
