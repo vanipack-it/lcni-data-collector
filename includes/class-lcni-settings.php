@@ -191,6 +191,18 @@ class LCNI_Settings {
                 ];
 
                 set_transient($this->get_csv_import_status_key($user_id), $status, HOUR_IN_SECONDS);
+                set_transient($this->get_csv_import_payload_key($user_id), [
+                    'job_id' => $job_id,
+                    'file_path' => (string) $draft['file_path'],
+                    'table_key' => (string) $draft['table_key'],
+                    'mapping' => $mapping,
+                    'options' => $import_options,
+                    'offset_rows' => 0,
+                    'updated_total' => 0,
+                    'accumulated_series' => [],
+                    'accumulated_event_times' => [],
+                    'accumulated_timeframes' => [],
+                ], HOUR_IN_SECONDS);
                 delete_transient($this->get_csv_import_draft_key());
                 wp_schedule_single_event(time() + 1, 'lcni_csv_import_process', [$user_id, [
                     'job_id' => $job_id,
@@ -204,6 +216,15 @@ class LCNI_Settings {
 
                 $this->set_notice('success', 'Đã chuyển import CSV sang chạy nền. Vui lòng theo dõi tiến trình bên dưới.');
             }
+        } elseif ($action === 'pause_csv_import') {
+            $notice = $this->control_csv_import_job('pause');
+            $this->set_notice($notice['type'], $notice['message']);
+        } elseif ($action === 'resume_csv_import') {
+            $notice = $this->control_csv_import_job('resume');
+            $this->set_notice($notice['type'], $notice['message']);
+        } elseif ($action === 'cancel_csv_import') {
+            $notice = $this->control_csv_import_job('cancel');
+            $this->set_notice($notice['type'], $notice['message']);
         } elseif ($action === 'start_seed') {
             $seed_mode = isset($_POST['lcni_seed_mode']) ? $this->sanitize_seed_range_mode(wp_unslash($_POST['lcni_seed_mode'])) : 'full';
             $seed_from_date = isset($_POST['lcni_seed_from_date']) ? $this->sanitize_seed_date(wp_unslash($_POST['lcni_seed_from_date'])) : '';
@@ -620,6 +641,81 @@ class LCNI_Settings {
         return 'lcni_csv_import_status_' . $target_user_id;
     }
 
+    private function get_csv_import_payload_key($user_id = null) {
+        $target_user_id = $user_id === null ? get_current_user_id() : (int) $user_id;
+        return 'lcni_csv_import_payload_' . $target_user_id;
+    }
+
+
+    private function control_csv_import_job($command) {
+        $user_id = get_current_user_id();
+        $status_key = $this->get_csv_import_status_key($user_id);
+        $payload_key = $this->get_csv_import_payload_key($user_id);
+        $status = get_transient($status_key);
+
+        if (!is_array($status) || empty($status['id'])) {
+            return ['type' => 'error', 'message' => 'Chưa có tiến trình import CSV để thao tác.'];
+        }
+
+        if ($command === 'pause') {
+            if (in_array((string) ($status['state'] ?? ''), ['done', 'error', 'cancelled'], true)) {
+                return ['type' => 'error', 'message' => 'Tiến trình import CSV đã kết thúc, không thể tạm dừng.'];
+            }
+
+            $status['state'] = 'paused';
+            $status['message'] = 'Đã tạm dừng import CSV. Bấm Resume để tiếp tục.';
+            $status['updated_at'] = current_time('mysql');
+            set_transient($status_key, $status, HOUR_IN_SECONDS);
+
+            return ['type' => 'success', 'message' => 'Đã tạm dừng tiến trình import CSV.'];
+        }
+
+        if ($command === 'resume') {
+            if (($status['state'] ?? '') !== 'paused') {
+                return ['type' => 'error', 'message' => 'Chỉ có thể tiếp tục khi tiến trình đang ở trạng thái tạm dừng.'];
+            }
+
+            $payload = get_transient($payload_key);
+            if (!is_array($payload) || empty($payload['job_id']) || empty($payload['file_path']) || !file_exists((string) $payload['file_path'])) {
+                $status['state'] = 'error';
+                $status['message'] = 'Không tìm thấy dữ liệu job để resume import CSV.';
+                $status['updated_at'] = current_time('mysql');
+                set_transient($status_key, $status, HOUR_IN_SECONDS);
+
+                return ['type' => 'error', 'message' => 'Không thể resume: thiếu payload hoặc file import đã mất.'];
+            }
+
+            $status['state'] = 'queued';
+            $status['message'] = 'Đã tiếp tục import CSV. Đang chờ xử lý nền...';
+            $status['updated_at'] = current_time('mysql');
+            set_transient($status_key, $status, HOUR_IN_SECONDS);
+
+            wp_schedule_single_event(time() + 1, 'lcni_csv_import_process', [$user_id, $payload]);
+            return ['type' => 'success', 'message' => 'Đã tiếp tục tiến trình import CSV.'];
+        }
+
+        if ($command === 'cancel') {
+            if (in_array((string) ($status['state'] ?? ''), ['done', 'error', 'cancelled'], true)) {
+                return ['type' => 'error', 'message' => 'Tiến trình import CSV đã kết thúc, không thể hủy.'];
+            }
+
+            $payload = get_transient($payload_key);
+            if (is_array($payload) && !empty($payload['file_path']) && is_string($payload['file_path']) && file_exists($payload['file_path'])) {
+                @unlink($payload['file_path']);
+            }
+
+            delete_transient($payload_key);
+            $status['state'] = 'cancelled';
+            $status['message'] = 'Đã hủy tiến trình import CSV.';
+            $status['updated_at'] = current_time('mysql');
+            set_transient($status_key, $status, HOUR_IN_SECONDS);
+
+            return ['type' => 'success', 'message' => 'Đã hủy tiến trình import CSV.'];
+        }
+
+        return ['type' => 'error', 'message' => 'Lệnh điều khiển import CSV không hợp lệ.'];
+    }
+
     private function prepare_csv_import_draft($tmp_file_path, $table_key) {
         $targets = LCNI_DB::get_csv_import_targets();
         if (!isset($targets[$table_key])) {
@@ -673,6 +769,7 @@ class LCNI_Settings {
     public function process_csv_import_job($user_id, $payload = []) {
         $user_id = (int) $user_id;
         $status_key = $this->get_csv_import_status_key($user_id);
+        $payload_key = $this->get_csv_import_payload_key($user_id);
         $existing_status = get_transient($status_key);
         $job_id = isset($payload['job_id']) ? sanitize_text_field((string) $payload['job_id']) : '';
 
@@ -687,6 +784,7 @@ class LCNI_Settings {
                 'message' => 'Payload import không hợp lệ.',
                 'updated_at' => current_time('mysql'),
             ], HOUR_IN_SECONDS);
+            delete_transient($payload_key);
             return;
         }
 
@@ -695,10 +793,36 @@ class LCNI_Settings {
         }
 
         $status = is_array($existing_status) ? $existing_status : [];
+
+        if (($status['state'] ?? '') === 'paused') {
+            return;
+        }
+
+        if (($status['state'] ?? '') === 'cancelled') {
+            delete_transient($payload_key);
+            if (!empty($payload['file_path']) && is_string($payload['file_path']) && file_exists($payload['file_path'])) {
+                @unlink($payload['file_path']);
+            }
+            return;
+        }
+
         $status['state'] = 'running';
         $status['message'] = 'Đang import CSV ở chế độ nền...';
         $status['updated_at'] = current_time('mysql');
         set_transient($status_key, $status, HOUR_IN_SECONDS);
+
+        set_transient($payload_key, [
+            'job_id' => $job_id,
+            'file_path' => (string) $payload['file_path'],
+            'table_key' => (string) $payload['table_key'],
+            'mapping' => isset($payload['mapping']) && is_array($payload['mapping']) ? $payload['mapping'] : [],
+            'options' => isset($payload['options']) && is_array($payload['options']) ? $payload['options'] : [],
+            'offset_rows' => max(0, (int) ($payload['offset_rows'] ?? 0)),
+            'updated_total' => max(0, (int) ($payload['updated_total'] ?? 0)),
+            'accumulated_series' => isset($payload['accumulated_series']) && is_array($payload['accumulated_series']) ? $payload['accumulated_series'] : [],
+            'accumulated_event_times' => isset($payload['accumulated_event_times']) && is_array($payload['accumulated_event_times']) ? $payload['accumulated_event_times'] : [],
+            'accumulated_timeframes' => isset($payload['accumulated_timeframes']) && is_array($payload['accumulated_timeframes']) ? $payload['accumulated_timeframes'] : [],
+        ], HOUR_IN_SECONDS);
 
         $chunk_size = max(200, (int) apply_filters('lcni_csv_import_chunk_size', 1500));
         $offset_rows = max(0, (int) ($payload['offset_rows'] ?? 0));
@@ -784,7 +908,7 @@ class LCNI_Settings {
 
                 set_transient($status_key, $status, HOUR_IN_SECONDS);
 
-                wp_schedule_single_event(time() + 1, 'lcni_csv_import_process', [$user_id, [
+                $next_payload = [
                     'job_id' => $job_id,
                     'file_path' => (string) $payload['file_path'],
                     'table_key' => (string) $payload['table_key'],
@@ -795,7 +919,23 @@ class LCNI_Settings {
                     'accumulated_series' => $accumulated_series,
                     'accumulated_event_times' => $accumulated_event_times,
                     'accumulated_timeframes' => $accumulated_timeframes,
-                ]]);
+                ];
+                set_transient($payload_key, $next_payload, HOUR_IN_SECONDS);
+
+                $latest_status = get_transient($status_key);
+                if (is_array($latest_status) && ($latest_status['state'] ?? '') === 'paused') {
+                    return;
+                }
+
+                if (is_array($latest_status) && ($latest_status['state'] ?? '') === 'cancelled') {
+                    delete_transient($payload_key);
+                    if (!empty($payload['file_path']) && is_string($payload['file_path']) && file_exists($payload['file_path'])) {
+                        @unlink($payload['file_path']);
+                    }
+                    return;
+                }
+
+                wp_schedule_single_event(time() + 1, 'lcni_csv_import_process', [$user_id, $next_payload]);
 
                 return;
             }
@@ -818,6 +958,7 @@ class LCNI_Settings {
 
         $status['updated_at'] = current_time('mysql');
         set_transient($status_key, $status, HOUR_IN_SECONDS);
+        delete_transient($payload_key);
 
         if (!empty($payload['file_path']) && is_string($payload['file_path']) && file_exists($payload['file_path'])) {
             @unlink($payload['file_path']);
@@ -1396,6 +1537,27 @@ class LCNI_Settings {
                     <p id="lcni-csv-import-progress-text" style="margin:8px 0 0;color:#1d2327;">Chưa có tiến trình import CSV.</p>
                 </div>
 
+                <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;">
+                    <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;">
+                        <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                        <input type="hidden" name="lcni_redirect_tab" value="seed_dashboard">
+                        <input type="hidden" name="lcni_admin_action" value="pause_csv_import">
+                        <?php submit_button('Dừng Import CSV', 'secondary', 'submit', false); ?>
+                    </form>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;">
+                        <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                        <input type="hidden" name="lcni_redirect_tab" value="seed_dashboard">
+                        <input type="hidden" name="lcni_admin_action" value="resume_csv_import">
+                        <?php submit_button('Tiếp tục Import CSV', 'secondary', 'submit', false); ?>
+                    </form>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;">
+                        <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                        <input type="hidden" name="lcni_redirect_tab" value="seed_dashboard">
+                        <input type="hidden" name="lcni_admin_action" value="cancel_csv_import">
+                        <?php submit_button('Hủy Import CSV', 'delete', 'submit', false); ?>
+                    </form>
+                </div>
+
                 <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_redirect_tab" value="seed_dashboard"><input type="hidden" name="lcni_admin_action" value="sync_securities"><?php submit_button('Sync Security Definition', 'secondary', 'submit', false); ?></form>
                 <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;padding:8px 10px;background:#fff;border:1px solid #dcdcde;border-radius:6px;">
                     <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
@@ -1532,6 +1694,10 @@ class LCNI_Settings {
                                 const table = info.table ? ('[' + info.table + '] ') : '';
                                 if (info.state === 'running' || info.state === 'queued') {
                                     importProgressText.textContent = table + (info.message || 'Đang xử lý...') + ' (' + processed + '/' + (total > 0 ? total : '?') + ', updated ' + updated + ')';
+                                } else if (info.state === 'paused') {
+                                    importProgressText.textContent = table + (info.message || 'Import CSV đang tạm dừng.');
+                                } else if (info.state === 'cancelled') {
+                                    importProgressText.textContent = table + (info.message || 'Import CSV đã bị hủy.');
                                 } else if (info.state === 'done') {
                                     importProgressText.textContent = table + (info.message || 'Import CSV hoàn tất.');
                                 } else if (info.state === 'error') {
