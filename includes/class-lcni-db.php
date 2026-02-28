@@ -72,6 +72,7 @@ class LCNI_DB {
             $wpdb->prefix . 'lcni_thong_ke_thi_truong',
             $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2',
             $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2_toan_thi_truong',
+            $wpdb->prefix . 'lcni_charts',
         ];
 
         foreach ($required_tables as $table) {
@@ -89,6 +90,7 @@ class LCNI_DB {
         self::ensure_ohlc_indexes();
         self::ensure_ohlc_latest_snapshot_infrastructure();
         self::ensure_market_statistics_schema();
+        self::ensure_chart_builder_schema();
         self::normalize_ohlc_numeric_columns();
         self::sync_symbol_market_icb_mapping();
         self::sync_symbol_tongquan_with_symbols();
@@ -117,6 +119,7 @@ class LCNI_DB {
         self::ensure_ohlc_symbol_type_column();
         self::ensure_ohlc_indexes();
         self::ensure_ohlc_latest_snapshot_infrastructure();
+        self::ensure_chart_builder_schema();
     }
 
     public static function create_tables() {
@@ -140,6 +143,7 @@ class LCNI_DB {
         $market_statistics_table = $wpdb->prefix . 'lcni_thong_ke_thi_truong';
         $icb2_statistics_table = $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2';
         $icb2_market_statistics_table = $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2_toan_thi_truong';
+        $charts_table = $wpdb->prefix . 'lcni_charts';
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
@@ -498,6 +502,20 @@ class LCNI_DB {
             KEY idx_icb2_thi_truong_index (icb2_thi_truong_index)
         ) {$charset_collate};";
 
+        $sql_charts = "CREATE TABLE {$charts_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            name VARCHAR(191) NOT NULL,
+            slug VARCHAR(191) NOT NULL,
+            chart_type VARCHAR(60) NOT NULL DEFAULT 'multi_line',
+            data_source VARCHAR(100) NOT NULL,
+            config_json LONGTEXT NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY unique_slug (slug),
+            KEY idx_data_source (data_source)
+        ) {$charset_collate};";
+
         dbDelta($sql_ohlc);
         dbDelta($sql_security_definition);
         dbDelta($sql_symbols);
@@ -515,6 +533,7 @@ class LCNI_DB {
         dbDelta($sql_market_statistics);
         dbDelta($sql_icb2_statistics);
         dbDelta($sql_icb2_market_statistics);
+        dbDelta($sql_charts);
 
         self::seed_market_reference_data($market_table);
         self::seed_index_name_reference_data($index_name_table);
@@ -527,6 +546,7 @@ class LCNI_DB {
         self::ensure_ohlc_indexes();
         self::ensure_ohlc_latest_snapshot_infrastructure();
         self::ensure_market_statistics_schema();
+        self::ensure_chart_builder_schema();
         self::normalize_ohlc_numeric_columns();
         self::normalize_legacy_ratio_columns();
         self::sync_symbol_tongquan_with_symbols();
@@ -4728,6 +4748,27 @@ class LCNI_DB {
             ['%s', '%s', '%s']
         );
     }
+
+    private static function ensure_chart_builder_schema() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_charts';
+        $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+        if ($exists !== $table) {
+            self::create_tables();
+            return;
+        }
+
+        $columns = $wpdb->get_col("SHOW COLUMNS FROM {$table}");
+        $required_columns = ['id', 'name', 'slug', 'chart_type', 'data_source', 'config_json', 'created_at', 'updated_at'];
+        foreach ($required_columns as $column) {
+            if (!in_array($column, (array) $columns, true)) {
+                self::create_tables();
+                return;
+            }
+        }
+    }
+
 }
 
 if (!function_exists('lcni_convert_candles')) {

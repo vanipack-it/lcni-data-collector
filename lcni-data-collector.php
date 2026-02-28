@@ -2,7 +2,7 @@
 /*
 Plugin Name: LCNI Data Collector
 Description: LCNI Market Data Engine: lấy nến, lưu DB, cron auto update
-Version: 2.3.4
+Version: 5.3.5
 */
 
 if (!defined('ABSPATH')) {
@@ -44,6 +44,8 @@ require_once LCNI_PATH . 'modules/overview/OverviewShortcode.php';
 require_once LCNI_PATH . 'modules/chart/ChartAjax.php';
 require_once LCNI_PATH . 'modules/chart/ChartShortcode.php';
 require_once LCNI_PATH . 'includes/class-lcni-stock-signals-shortcodes.php';
+require_once LCNI_PATH . 'includes/class-lcni-chart-builder-repository.php';
+require_once LCNI_PATH . 'includes/class-lcni-chart-builder-service.php';
 require_once LCNI_PATH . 'includes/class-lcni-stock-detail-router.php';
 require_once LCNI_PATH . 'modules/watchlist/WatchlistRepository.php';
 require_once LCNI_PATH . 'modules/watchlist/WatchlistService.php';
@@ -58,6 +60,7 @@ require_once LCNI_PATH . 'modules/filter/FilterAjax.php';
 require_once LCNI_PATH . 'modules/filter/FilterAdmin.php';
 require_once LCNI_PATH . 'modules/filter/FilterShortcode.php';
 require_once LCNI_PATH . 'modules/filter/class-lcni-filter-module.php';
+require_once LCNI_PATH . 'modules/chart-builder/ChartBuilderShortcode.php';
 
 function lcni_register_custom_cron_schedules($schedules) {
     if (!isset($schedules['lcni_every_minute'])) {
@@ -223,6 +226,7 @@ new LCNI_Stock_Signals_Shortcodes();
 new LCNI_Stock_Detail_Router();
 new LCNI_Watchlist_Module();
 new LCNI_Filter_Module();
+new LCNI_Chart_Builder_Shortcode();
 new LCNI_Update_Data_Page();
 LCNI_Update_Manager::init();
 LCNI_OHLC_Latest_Manager::init();
