@@ -110,7 +110,9 @@ class LCNI_DB {
         self::backfill_ohlc_rsi_status_and_hanh_vi_gia();
         self::backfill_ohlc_hanh_vi_gia_1w();
         self::backfill_ohlc_macd_flags();
+        self::normalize_ohlc_macd_signal_columns();
         self::backfill_ohlc_one_candle();
+        self::sync_frontend_settings_with_new_ohlc_columns();
         self::backfill_market_statistics_tables();
         self::ensure_ohlc_symbol_type_column();
         self::ensure_ohlc_indexes();
@@ -191,9 +193,9 @@ class LCNI_DB {
             macd DECIMAL(16,8) DEFAULT NULL,
             macd_signal DECIMAL(16,8) DEFAULT NULL,
             macd_histogram DOUBLE DEFAULT NULL,
-            macd_cat TINYINT DEFAULT 0,
-            macd_tren_0 TINYINT DEFAULT 0,
-            macd_hist_tang TINYINT DEFAULT 0,
+            macd_cat VARCHAR(30) DEFAULT 'Không cắt signal',
+            macd_tren_0 VARCHAR(20) DEFAULT 'Không trên 0',
+            macd_hist_tang VARCHAR(20) DEFAULT 'Không tăng',
             macd_manh TINYINT DEFAULT 0,
             macd_diem_dong_luong INT DEFAULT 0,
             rsi DECIMAL(12,6) DEFAULT NULL,
@@ -880,9 +882,9 @@ class LCNI_DB {
             'macd' => 'DECIMAL(16,8) DEFAULT NULL',
             'macd_signal' => 'DECIMAL(16,8) DEFAULT NULL',
             'macd_histogram' => 'DOUBLE DEFAULT NULL',
-            'macd_cat' => 'TINYINT DEFAULT 0',
-            'macd_tren_0' => 'TINYINT DEFAULT 0',
-            'macd_hist_tang' => 'TINYINT DEFAULT 0',
+            'macd_cat' => "VARCHAR(30) DEFAULT 'Không cắt signal'",
+            'macd_tren_0' => "VARCHAR(20) DEFAULT 'Không trên 0'",
+            'macd_hist_tang' => "VARCHAR(20) DEFAULT 'Không tăng'",
             'macd_manh' => 'TINYINT DEFAULT 0',
             'macd_diem_dong_luong' => 'INT DEFAULT 0',
             'rsi' => 'DECIMAL(12,6) DEFAULT NULL',
@@ -1515,8 +1517,8 @@ class LCNI_DB {
                 SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Quá bán' THEN 1 ELSE 0 END) AS so_rsi_qua_ban,
                 SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Tham lam' THEN 1 ELSE 0 END) AS so_rsi_tham_lam,
                 SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Sợ hãi' THEN 1 ELSE 0 END) AS so_rsi_so_hai,
-                SUM(CASE WHEN COALESCE(o.macd_cat, '') = 'Cắt lên' THEN 1 ELSE 0 END) AS so_macd_cat_len,
-                SUM(CASE WHEN COALESCE(o.macd_cat, '') = 'Cắt xuống' THEN 1 ELSE 0 END) AS so_macd_cat_xuong
+                SUM(CASE WHEN COALESCE(o.macd_cat, '') IN ('Cắt lên', 'Cắt lên signal') THEN 1 ELSE 0 END) AS so_macd_cat_len,
+                SUM(CASE WHEN COALESCE(o.macd_cat, '') IN ('Cắt xuống', 'Cắt xuống signal') THEN 1 ELSE 0 END) AS so_macd_cat_xuong
             FROM {$ohlc_table} o
             INNER JOIN {$mapping_table} m ON m.symbol = o.symbol
             LEFT JOIN {$icb2_table} i ON i.id_icb2 = m.id_icb2
@@ -2058,7 +2060,7 @@ class LCNI_DB {
     private static function backfill_ohlc_one_candle() {
         global $wpdb;
 
-        $migration_flag = 'lcni_ohlc_one_candle_backfilled_v1';
+        $migration_flag = 'lcni_ohlc_one_candle_backfilled_v2';
         if (get_option($migration_flag) === 'yes') {
             return;
         }
@@ -2067,7 +2069,8 @@ class LCNI_DB {
         $series_with_missing_values = $wpdb->get_results(
             "SELECT DISTINCT symbol, timeframe
             FROM {$table}
-            WHERE one_candle IS NULL",
+            WHERE one_candle IS NULL
+                OR TRIM(IFNULL(one_candle, '')) = ''",
             ARRAY_A
         );
 
@@ -2086,6 +2089,110 @@ class LCNI_DB {
             sprintf('Backfilled one_candle for %d symbol/timeframe series with missing values.', count($series_with_missing_values))
         );
         update_option($migration_flag, 'yes');
+    }
+
+    private static function normalize_ohlc_macd_signal_columns() {
+        global $wpdb;
+
+        $migration_flag = 'lcni_ohlc_macd_signal_labels_migrated_v1';
+        if (get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $wpdb->query("ALTER TABLE {$table} MODIFY COLUMN macd_cat VARCHAR(30) DEFAULT 'Không cắt signal'");
+        $wpdb->query("ALTER TABLE {$table} MODIFY COLUMN macd_tren_0 VARCHAR(20) DEFAULT 'Không trên 0'");
+        $wpdb->query("ALTER TABLE {$table} MODIFY COLUMN macd_hist_tang VARCHAR(20) DEFAULT 'Không tăng'");
+
+        $wpdb->query(
+            "UPDATE {$table}
+            SET
+                macd_cat = CASE
+                    WHEN CAST(macd_cat AS CHAR) IN ('1', 'Cắt lên', 'Cắt lên signal') THEN 'Cắt lên signal'
+                    WHEN CAST(macd_cat AS CHAR) IN ('-1', 'Cắt xuống', 'Cắt xuống signal') THEN 'Cắt xuống signal'
+                    ELSE 'Không cắt signal'
+                END,
+                macd_tren_0 = CASE
+                    WHEN CAST(macd_tren_0 AS CHAR) IN ('1', 'Trên 0') THEN 'Trên 0'
+                    ELSE 'Không trên 0'
+                END,
+                macd_hist_tang = CASE
+                    WHEN CAST(macd_hist_tang AS CHAR) IN ('1', 'Đang tăng') THEN 'Đang tăng'
+                    ELSE 'Không tăng'
+                END"
+        );
+
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function sync_frontend_settings_with_new_ohlc_columns() {
+        $migration_flag = 'lcni_frontend_columns_sync_v233b';
+        if (get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        $new_columns = ['one_candle', 'macd_cat', 'macd_tren_0', 'macd_hist_tang'];
+
+        $criteria_columns = (array) get_option('lcni_filter_criteria_columns', []);
+        if (!empty($criteria_columns)) {
+            update_option('lcni_filter_criteria_columns', self::append_missing_columns($criteria_columns, $new_columns));
+        }
+
+        $table_columns = (array) get_option('lcni_filter_table_columns', []);
+        if (!empty($table_columns)) {
+            update_option('lcni_filter_table_columns', self::append_missing_columns($table_columns, $new_columns));
+        }
+
+        $signals_settings = get_option('lcni_frontend_settings_signals', []);
+        if (is_array($signals_settings)) {
+            $allowed_fields = isset($signals_settings['allowed_fields']) && is_array($signals_settings['allowed_fields']) ? $signals_settings['allowed_fields'] : [];
+            if (!empty($allowed_fields)) {
+                $signals_settings['allowed_fields'] = self::append_missing_columns($allowed_fields, $new_columns);
+                update_option('lcni_frontend_settings_signals', $signals_settings);
+            }
+        }
+
+        $watchlist_settings = get_option('lcni_frontend_settings_watchlist', []);
+        if (is_array($watchlist_settings)) {
+            $allowed_columns = isset($watchlist_settings['allowed_columns']) && is_array($watchlist_settings['allowed_columns']) ? $watchlist_settings['allowed_columns'] : [];
+            if (!empty($allowed_columns)) {
+                $watchlist_settings['allowed_columns'] = self::append_missing_columns($allowed_columns, $new_columns);
+            }
+
+            $default_desktop = isset($watchlist_settings['default_columns_desktop']) && is_array($watchlist_settings['default_columns_desktop']) ? $watchlist_settings['default_columns_desktop'] : [];
+            if (!empty($default_desktop)) {
+                $watchlist_settings['default_columns_desktop'] = self::append_missing_columns($default_desktop, $new_columns);
+            }
+
+            $default_mobile = isset($watchlist_settings['default_columns_mobile']) && is_array($watchlist_settings['default_columns_mobile']) ? $watchlist_settings['default_columns_mobile'] : [];
+            if (!empty($default_mobile)) {
+                $watchlist_settings['default_columns_mobile'] = self::append_missing_columns($default_mobile, $new_columns);
+            }
+
+            if (isset($watchlist_settings['styles']) && is_array($watchlist_settings['styles'])) {
+                $column_order = isset($watchlist_settings['styles']['column_order']) && is_array($watchlist_settings['styles']['column_order']) ? $watchlist_settings['styles']['column_order'] : [];
+                if (!empty($column_order)) {
+                    $watchlist_settings['styles']['column_order'] = self::append_missing_columns($column_order, $new_columns);
+                }
+            }
+
+            update_option('lcni_frontend_settings_watchlist', $watchlist_settings);
+        }
+
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function append_missing_columns($columns, $new_columns) {
+        $normalized = array_values(array_filter(array_map('sanitize_key', (array) $columns)));
+        foreach ((array) $new_columns as $column) {
+            $column = sanitize_key((string) $column);
+            if ($column === '' || in_array($column, $normalized, true)) {
+                continue;
+            }
+            $normalized[] = $column;
+        }
+
+        return $normalized;
     }
 
     private static function has_missing_rs_3m_by_exchange_rows() {
@@ -3447,7 +3554,7 @@ class LCNI_DB {
         $table = $wpdb->prefix . 'lcni_ohlc';
         $rows = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT id, trading_index, close_price, high_price, low_price, volume FROM {$table} WHERE symbol = %s AND timeframe = %s ORDER BY trading_index ASC, event_time ASC, id ASC",
+                "SELECT id, trading_index, open_price, close_price, high_price, low_price, volume FROM {$table} WHERE symbol = %s AND timeframe = %s ORDER BY trading_index ASC, event_time ASC, id ASC",
                 strtoupper((string) $symbol),
                 strtoupper((string) $timeframe)
             ),
@@ -3508,16 +3615,17 @@ class LCNI_DB {
             $prev_macd_signal = $i > 0 ? (float) ($rows[$i - 1]['macd_signal'] ?? 0.0) : null;
             $prev_macd_histogram = $i > 0 ? ($prev_macd - $prev_macd_signal) : null;
 
-            $macd_cat = 0;
+            $macd_cat = 'Không cắt signal';
             if ($i > 0 && $macd > $signal && $prev_macd <= $prev_macd_signal) {
-                $macd_cat = 1;
+                $macd_cat = 'Cắt lên signal';
             } elseif ($i > 0 && $macd < $signal && $prev_macd >= $prev_macd_signal) {
-                $macd_cat = -1;
+                $macd_cat = 'Cắt xuống signal';
             }
 
-            $macd_tren_0 = $macd > 0 ? 1 : 0;
-            $macd_hist_tang = ($i > 0 && $prev_macd_histogram !== null && $macd_histogram > $prev_macd_histogram) ? 1 : 0;
-            $macd_manh = ($macd > $signal && $macd > 0 && $macd_hist_tang === 1) ? 1 : 0;
+            $macd_tren_0 = $macd > 0 ? 'Trên 0' : 'Không trên 0';
+            $macd_hist_tang_flag = ($i > 0 && $prev_macd_histogram !== null && $macd_histogram > $prev_macd_histogram);
+            $macd_hist_tang = $macd_hist_tang_flag ? 'Đang tăng' : 'Không tăng';
+            $macd_manh = ($macd > $signal && $macd > 0 && $macd_hist_tang_flag) ? 1 : 0;
             $macd_diem_dong_luong = 0;
             if ($macd > $signal) {
                 $macd_diem_dong_luong += 30;
@@ -3528,7 +3636,7 @@ class LCNI_DB {
             if ($macd_histogram > 0) {
                 $macd_diem_dong_luong += 20;
             }
-            if ($macd_hist_tang === 1) {
+            if ($macd_hist_tang_flag) {
                 $macd_diem_dong_luong += 20;
             }
 
@@ -3667,9 +3775,7 @@ class LCNI_DB {
                     'smart_money' => $smart_money,
                     'one_candle' => $one_candle,
                 ],
-                ['id' => (int) $rows[$i]['id']],
-                ['%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%d','%d','%d','%d','%d','%f','%s','%s','%d','%s','%s','%s','%s','%s','%s','%s'],
-                ['%d']
+                ['id' => (int) $rows[$i]['id']]
             );
         }
     }
