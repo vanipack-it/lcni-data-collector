@@ -1357,16 +1357,18 @@ class LCNI_DB {
     private static function backfill_market_statistics_tables() {
         global $wpdb;
 
-        $migration_flag = 'lcni_market_statistics_backfilled_v2';
-        if (get_option($migration_flag) === 'yes') {
-            return;
-        }
+        $migration_flag = 'lcni_market_statistics_backfilled_v3';
 
         $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
         $mapping_table = $wpdb->prefix . 'lcni_sym_icb_market';
         $market_statistics_table = $wpdb->prefix . 'lcni_thong_ke_thi_truong';
         $icb2_statistics_table = $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2';
         $icb2_table = $wpdb->prefix . 'lcni_icb2';
+
+        $existing_rows = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$market_statistics_table}");
+        if (get_option($migration_flag) === 'yes' && $existing_rows > 0) {
+            return;
+        }
 
         $wpdb->query("TRUNCATE TABLE {$market_statistics_table}");
         $wpdb->query("TRUNCATE TABLE {$icb2_statistics_table}");
@@ -1393,7 +1395,6 @@ class LCNI_DB {
                 COALESCE(SUM(o.value_traded), 0) AS tong_value_traded
             FROM {$ohlc_table} o
             INNER JOIN {$mapping_table} m ON m.symbol = o.symbol
-            WHERE UPPER(TRIM(COALESCE(o.symbol_type, ''))) IN ('STOCK', 'SYMBOL')
             GROUP BY o.event_time, CAST(COALESCE(NULLIF(TRIM(m.market_id), ''), '0') AS UNSIGNED), o.timeframe"
         );
 
@@ -1425,7 +1426,6 @@ class LCNI_DB {
             FROM {$ohlc_table} o
             INNER JOIN {$mapping_table} m ON m.symbol = o.symbol
             LEFT JOIN {$icb2_table} i ON i.id_icb2 = m.id_icb2
-            WHERE UPPER(TRIM(COALESCE(o.symbol_type, ''))) IN ('STOCK', 'SYMBOL')
             GROUP BY o.event_time, o.timeframe, CAST(COALESCE(NULLIF(TRIM(m.market_id), ''), '0') AS UNSIGNED), COALESCE(i.name_icb2, 'Chưa phân loại')"
         );
 
