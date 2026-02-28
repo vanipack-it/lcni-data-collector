@@ -1,3 +1,10 @@
+## 2026-02-28 (v2.3.2)
+- Nâng version plugin lên `2.3.2`; cập nhật `FilterShortcode::VERSION` để đồng bộ cache-busting frontend Filter.
+- Nâng cấp schema `wp_lcni_thong_ke_nganh_icb_2`: thêm `id`, `thong_ke_icb2_index`, các chỉ số tăng/giảm giá, tỷ lệ MA20/50/100 và chuẩn hoá `tong_value_traded` sang `DECIMAL(24,2)`.
+- Bổ sung bảng mới `wp_lcni_thong_ke_nganh_icb_2_toan_thi_truong` để tổng hợp thống kê toàn thị trường theo `icb_level2 + timeframe + event_time`, có cột `icb2_thi_truong_index` chạy từ cũ -> mới.
+- Cập nhật migration rebuild thống kê (`lcni_market_statistics_backfilled_v5`) để tự động truncate và tính lại đầy đủ 3 bảng: `wp_lcni_thong_ke_thi_truong`, `wp_lcni_thong_ke_nganh_icb_2`, `wp_lcni_thong_ke_nganh_icb_2_toan_thi_truong` từ dữ liệu gốc OHLC.
+- Chuẩn hoá công thức cho nhóm chỉ số: số mã tăng/giảm, RSI trạng thái, smart money, tăng giá kèm vol, phá nền, phần trăm mã trên MA20/50/100 và tổng `value_traded` theo đúng nhóm dữ liệu yêu cầu.
+
 ## 2026-02-28 (v2.3.1c)
 - Nâng version plugin lên `2.3.1c`; cập nhật `FilterShortcode::VERSION` để đồng bộ cache-busting frontend Filter.
 - Tối ưu layout Filter panel trên mobile: ẩn label của 2 dropdown, đặt 2 dropdown liền nhau full-width 100% và ghim sát nhóm nút action ở cuối panel.

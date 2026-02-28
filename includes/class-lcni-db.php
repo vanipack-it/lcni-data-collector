@@ -71,6 +71,7 @@ class LCNI_DB {
             $wpdb->prefix . 'lcni_watchlist_symbols',
             $wpdb->prefix . 'lcni_thong_ke_thi_truong',
             $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2',
+            $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2_toan_thi_truong',
         ];
 
         foreach ($required_tables as $table) {
@@ -135,6 +136,7 @@ class LCNI_DB {
         $watchlist_symbols_table = $wpdb->prefix . 'lcni_watchlist_symbols';
         $market_statistics_table = $wpdb->prefix . 'lcni_thong_ke_thi_truong';
         $icb2_statistics_table = $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2';
+        $icb2_market_statistics_table = $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2_toan_thi_truong';
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
@@ -435,14 +437,21 @@ class LCNI_DB {
         ) {$charset_collate};";
 
         $sql_icb2_statistics = "CREATE TABLE {$icb2_statistics_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            thong_ke_icb2_index BIGINT UNSIGNED NOT NULL DEFAULT 0,
             event_time BIGINT UNSIGNED NOT NULL,
             timeframe VARCHAR(10) NOT NULL,
             marketid SMALLINT UNSIGNED NOT NULL,
             icb_level2 VARCHAR(255) NOT NULL,
+            so_ma_tang_gia INT UNSIGNED NOT NULL DEFAULT 0,
+            so_ma_giam_gia INT UNSIGNED NOT NULL DEFAULT 0,
             so_smart_money INT UNSIGNED NOT NULL DEFAULT 0,
             so_tang_gia_kem_vol INT UNSIGNED NOT NULL DEFAULT 0,
             so_pha_nen INT UNSIGNED NOT NULL DEFAULT 0,
-            tong_value_traded BIGINT UNSIGNED NOT NULL DEFAULT 0,
+            pct_so_ma_tren_ma20 DECIMAL(12,6) NOT NULL DEFAULT 0,
+            pct_so_ma_tren_ma50 DECIMAL(12,6) NOT NULL DEFAULT 0,
+            pct_so_ma_tren_ma100 DECIMAL(12,6) NOT NULL DEFAULT 0,
+            tong_value_traded DECIMAL(24,2) NOT NULL DEFAULT 0,
             so_rsi_qua_mua INT UNSIGNED NOT NULL DEFAULT 0,
             so_rsi_qua_ban INT UNSIGNED NOT NULL DEFAULT 0,
             so_rsi_tham_lam INT UNSIGNED NOT NULL DEFAULT 0,
@@ -451,9 +460,38 @@ class LCNI_DB {
             so_macd_cat_xuong INT UNSIGNED NOT NULL DEFAULT 0,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            PRIMARY KEY  (event_time, timeframe, marketid, icb_level2),
+            PRIMARY KEY  (id),
+            UNIQUE KEY uniq_event_timeframe_market_icb (event_time, timeframe, marketid, icb_level2),
             KEY idx_market_timeframe_icb (marketid, timeframe, icb_level2),
-            KEY idx_event_time (event_time)
+            KEY idx_event_time (event_time, timeframe),
+            KEY idx_thong_ke_icb2_index (thong_ke_icb2_index)
+        ) {$charset_collate};";
+
+        $sql_icb2_market_statistics = "CREATE TABLE {$icb2_market_statistics_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            icb_level2 VARCHAR(255) NOT NULL,
+            event_time BIGINT UNSIGNED NOT NULL,
+            timeframe VARCHAR(10) NOT NULL,
+            icb2_thi_truong_index BIGINT UNSIGNED NOT NULL DEFAULT 0,
+            so_ma_tang_gia INT UNSIGNED NOT NULL DEFAULT 0,
+            so_ma_giam_gia INT UNSIGNED NOT NULL DEFAULT 0,
+            so_rsi_qua_mua INT UNSIGNED NOT NULL DEFAULT 0,
+            so_rsi_qua_ban INT UNSIGNED NOT NULL DEFAULT 0,
+            so_rsi_tham_lam INT UNSIGNED NOT NULL DEFAULT 0,
+            so_rsi_so_hai INT UNSIGNED NOT NULL DEFAULT 0,
+            so_smart_money INT UNSIGNED NOT NULL DEFAULT 0,
+            so_tang_gia_kem_vol INT UNSIGNED NOT NULL DEFAULT 0,
+            so_pha_nen INT UNSIGNED NOT NULL DEFAULT 0,
+            pct_so_ma_tren_ma20 DECIMAL(12,6) NOT NULL DEFAULT 0,
+            pct_so_ma_tren_ma50 DECIMAL(12,6) NOT NULL DEFAULT 0,
+            pct_so_ma_tren_ma100 DECIMAL(12,6) NOT NULL DEFAULT 0,
+            tong_value_traded DECIMAL(24,2) NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            UNIQUE KEY uniq_icb_level2_event_timeframe (icb_level2, event_time, timeframe),
+            KEY idx_event_time (event_time, timeframe),
+            KEY idx_icb2_thi_truong_index (icb2_thi_truong_index)
         ) {$charset_collate};";
 
         dbDelta($sql_ohlc);
@@ -472,6 +510,7 @@ class LCNI_DB {
         dbDelta($sql_watchlist_symbols);
         dbDelta($sql_market_statistics);
         dbDelta($sql_icb2_statistics);
+        dbDelta($sql_icb2_market_statistics);
 
         self::seed_market_reference_data($market_table);
         self::seed_index_name_reference_data($index_name_table);
@@ -1321,6 +1360,7 @@ class LCNI_DB {
 
         $market_statistics_table = $wpdb->prefix . 'lcni_thong_ke_thi_truong';
         $icb2_statistics_table = $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2';
+        $icb2_market_statistics_table = $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2_toan_thi_truong';
 
         $market_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $market_statistics_table));
         if ($market_exists === $market_statistics_table) {
@@ -1350,19 +1390,50 @@ class LCNI_DB {
 
         $icb2_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $icb2_statistics_table));
         if ($icb2_exists === $icb2_statistics_table) {
+            $has_id = $wpdb->get_var("SHOW COLUMNS FROM {$icb2_statistics_table} LIKE 'id'");
+            if ($has_id === null) {
+                $primary_index_rows = $wpdb->get_results($wpdb->prepare("SHOW INDEX FROM {$icb2_statistics_table} WHERE Key_name = %s", 'PRIMARY'), ARRAY_A);
+                if (!empty($primary_index_rows)) {
+                    $wpdb->query("ALTER TABLE {$icb2_statistics_table} DROP PRIMARY KEY");
+                }
+                $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD COLUMN id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY FIRST");
+            }
+
+            $has_index_col = $wpdb->get_var("SHOW COLUMNS FROM {$icb2_statistics_table} LIKE 'thong_ke_icb2_index'");
+            if ($has_index_col === null) {
+                $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD COLUMN thong_ke_icb2_index BIGINT UNSIGNED NOT NULL DEFAULT 0 AFTER id");
+            }
+
+            $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD COLUMN so_ma_tang_gia INT UNSIGNED NOT NULL DEFAULT 0 AFTER icb_level2");
+            $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD COLUMN so_ma_giam_gia INT UNSIGNED NOT NULL DEFAULT 0 AFTER so_ma_tang_gia");
+            $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD COLUMN pct_so_ma_tren_ma20 DECIMAL(12,6) NOT NULL DEFAULT 0 AFTER so_pha_nen");
+            $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD COLUMN pct_so_ma_tren_ma50 DECIMAL(12,6) NOT NULL DEFAULT 0 AFTER pct_so_ma_tren_ma20");
+            $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD COLUMN pct_so_ma_tren_ma100 DECIMAL(12,6) NOT NULL DEFAULT 0 AFTER pct_so_ma_tren_ma50");
+
+            $wpdb->query("ALTER TABLE {$icb2_statistics_table} MODIFY COLUMN tong_value_traded DECIMAL(24,2) NOT NULL DEFAULT 0");
+            $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD UNIQUE KEY uniq_event_timeframe_market_icb (event_time, timeframe, marketid, icb_level2)");
             $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD KEY idx_event_time (event_time, timeframe)");
+            $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD KEY idx_thong_ke_icb2_index (thong_ke_icb2_index)");
+        }
+
+        $icb2_market_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $icb2_market_statistics_table));
+        if ($icb2_market_exists === $icb2_market_statistics_table) {
+            $wpdb->query("ALTER TABLE {$icb2_market_statistics_table} ADD UNIQUE KEY uniq_icb_level2_event_timeframe (icb_level2, event_time, timeframe)");
+            $wpdb->query("ALTER TABLE {$icb2_market_statistics_table} ADD KEY idx_event_time (event_time, timeframe)");
+            $wpdb->query("ALTER TABLE {$icb2_market_statistics_table} ADD KEY idx_icb2_thi_truong_index (icb2_thi_truong_index)");
         }
     }
 
     private static function backfill_market_statistics_tables() {
         global $wpdb;
 
-        $migration_flag = 'lcni_market_statistics_backfilled_v4';
+        $migration_flag = 'lcni_market_statistics_backfilled_v5';
 
         $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
         $mapping_table = $wpdb->prefix . 'lcni_sym_icb_market';
         $market_statistics_table = $wpdb->prefix . 'lcni_thong_ke_thi_truong';
         $icb2_statistics_table = $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2';
+        $icb2_market_statistics_table = $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2_toan_thi_truong';
         $icb2_table = $wpdb->prefix . 'lcni_icb2';
 
         $existing_rows = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$market_statistics_table}");
@@ -1372,6 +1443,7 @@ class LCNI_DB {
 
         $wpdb->query("TRUNCATE TABLE {$market_statistics_table}");
         $wpdb->query("TRUNCATE TABLE {$icb2_statistics_table}");
+        $wpdb->query("TRUNCATE TABLE {$icb2_market_statistics_table}");
 
         $wpdb->query(
             "INSERT INTO {$market_statistics_table}
@@ -1421,15 +1493,20 @@ class LCNI_DB {
 
         $wpdb->query(
             "INSERT INTO {$icb2_statistics_table}
-            (event_time, timeframe, marketid, icb_level2, so_smart_money, so_tang_gia_kem_vol, so_pha_nen, tong_value_traded, so_rsi_qua_mua, so_rsi_qua_ban, so_rsi_tham_lam, so_rsi_so_hai, so_macd_cat_len, so_macd_cat_xuong)
+            (event_time, timeframe, marketid, icb_level2, so_ma_tang_gia, so_ma_giam_gia, so_smart_money, so_tang_gia_kem_vol, so_pha_nen, pct_so_ma_tren_ma20, pct_so_ma_tren_ma50, pct_so_ma_tren_ma100, tong_value_traded, so_rsi_qua_mua, so_rsi_qua_ban, so_rsi_tham_lam, so_rsi_so_hai, so_macd_cat_len, so_macd_cat_xuong)
             SELECT
                 o.event_time,
                 o.timeframe,
                 CAST(COALESCE(NULLIF(TRIM(m.market_id), ''), '0') AS UNSIGNED) AS marketid,
                 COALESCE(i.name_icb2, 'Chưa phân loại') AS icb_level2,
+                SUM(CASE WHEN COALESCE(o.pct_t_1, 0) > 0 THEN 1 ELSE 0 END) AS so_ma_tang_gia,
+                SUM(CASE WHEN COALESCE(o.pct_t_1, 0) < 0 THEN 1 ELSE 0 END) AS so_ma_giam_gia,
                 SUM(CASE WHEN COALESCE(o.smart_money, '') = 'Smart Money' THEN 1 ELSE 0 END) AS so_smart_money,
                 SUM(CASE WHEN COALESCE(o.tang_gia_kem_vol, '') = 'Tăng giá kèm Vol' THEN 1 ELSE 0 END) AS so_tang_gia_kem_vol,
                 SUM(CASE WHEN COALESCE(o.pha_nen, '') = 'Phá nền' THEN 1 ELSE 0 END) AS so_pha_nen,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma20, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma20,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma50, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma50,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma100, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma100,
                 COALESCE(SUM(o.value_traded), 0) AS tong_value_traded,
                 SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Quá mua' THEN 1 ELSE 0 END) AS so_rsi_qua_mua,
                 SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Quá bán' THEN 1 ELSE 0 END) AS so_rsi_qua_ban,
@@ -1443,8 +1520,76 @@ class LCNI_DB {
             GROUP BY o.event_time, o.timeframe, CAST(COALESCE(NULLIF(TRIM(m.market_id), ''), '0') AS UNSIGNED), COALESCE(i.name_icb2, 'Chưa phân loại')"
         );
 
+        $wpdb->query(
+            "UPDATE {$icb2_statistics_table} target
+            INNER JOIN (
+                SELECT
+                    ranked.id,
+                    ranked.icb2_index AS computed_index
+                FROM (
+                    SELECT
+                        src.id,
+                        src.icb_level2,
+                        src.marketid,
+                        (@icb2_rank := IF(@current_icb2 = CONCAT(src.icb_level2, '|', src.marketid), @icb2_rank + 1, 1)) AS icb2_index,
+                        (@current_icb2 := CONCAT(src.icb_level2, '|', src.marketid)) AS current_icb2_marker
+                    FROM {$icb2_statistics_table} src
+                    CROSS JOIN (SELECT @icb2_rank := 0, @current_icb2 := '') vars
+                    ORDER BY src.icb_level2 ASC, src.marketid ASC, src.event_time ASC, src.id ASC
+                ) ranked
+            ) calc ON calc.id = target.id
+            SET target.thong_ke_icb2_index = calc.computed_index"
+        );
+
+        $wpdb->query(
+            "INSERT INTO {$icb2_market_statistics_table}
+            (icb_level2, event_time, timeframe, so_ma_tang_gia, so_ma_giam_gia, so_rsi_qua_mua, so_rsi_qua_ban, so_rsi_tham_lam, so_rsi_so_hai, so_smart_money, so_tang_gia_kem_vol, so_pha_nen, pct_so_ma_tren_ma20, pct_so_ma_tren_ma50, pct_so_ma_tren_ma100, tong_value_traded)
+            SELECT
+                COALESCE(i.name_icb2, 'Chưa phân loại') AS icb_level2,
+                o.event_time,
+                o.timeframe,
+                SUM(CASE WHEN COALESCE(o.pct_t_1, 0) > 0 THEN 1 ELSE 0 END) AS so_ma_tang_gia,
+                SUM(CASE WHEN COALESCE(o.pct_t_1, 0) < 0 THEN 1 ELSE 0 END) AS so_ma_giam_gia,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Quá mua' THEN 1 ELSE 0 END) AS so_rsi_qua_mua,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Quá bán' THEN 1 ELSE 0 END) AS so_rsi_qua_ban,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Tham lam' THEN 1 ELSE 0 END) AS so_rsi_tham_lam,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Sợ hãi' THEN 1 ELSE 0 END) AS so_rsi_so_hai,
+                SUM(CASE WHEN COALESCE(o.smart_money, '') = 'Smart Money' THEN 1 ELSE 0 END) AS so_smart_money,
+                SUM(CASE WHEN COALESCE(o.tang_gia_kem_vol, '') = 'Tăng giá kèm Vol' THEN 1 ELSE 0 END) AS so_tang_gia_kem_vol,
+                SUM(CASE WHEN COALESCE(o.pha_nen, '') = 'Phá nền' THEN 1 ELSE 0 END) AS so_pha_nen,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma20, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma20,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma50, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma50,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma100, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma100,
+                COALESCE(SUM(o.value_traded), 0) AS tong_value_traded
+            FROM {$ohlc_table} o
+            INNER JOIN {$mapping_table} m ON m.symbol = o.symbol
+            LEFT JOIN {$icb2_table} i ON i.id_icb2 = m.id_icb2
+            GROUP BY COALESCE(i.name_icb2, 'Chưa phân loại'), o.event_time, o.timeframe"
+        );
+
+        $wpdb->query(
+            "UPDATE {$icb2_market_statistics_table} target
+            INNER JOIN (
+                SELECT
+                    ranked.id,
+                    ranked.market_index AS computed_index
+                FROM (
+                    SELECT
+                        src.id,
+                        src.icb_level2,
+                        src.timeframe,
+                        (@icb2_market_rank := IF(@current_icb2_market = CONCAT(src.icb_level2, '|', src.timeframe), @icb2_market_rank + 1, 1)) AS market_index,
+                        (@current_icb2_market := CONCAT(src.icb_level2, '|', src.timeframe)) AS current_icb2_market_marker
+                    FROM {$icb2_market_statistics_table} src
+                    CROSS JOIN (SELECT @icb2_market_rank := 0, @current_icb2_market := '') vars
+                    ORDER BY src.icb_level2 ASC, src.timeframe ASC, src.event_time ASC, src.id ASC
+                ) ranked
+            ) calc ON calc.id = target.id
+            SET target.icb2_thi_truong_index = calc.computed_index"
+        );
+
         update_option($migration_flag, 'yes');
-        self::log_change('backfill_market_statistics_tables', 'Rebuilt market statistics and ICB2 statistics from OHLC source.');
+        self::log_change('backfill_market_statistics_tables', 'Rebuilt market statistics, ICB2 statistics and ICB2 market-wide statistics from OHLC source.');
     }
 
     private static function normalize_legacy_ratio_columns() {
