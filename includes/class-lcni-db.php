@@ -69,6 +69,8 @@ class LCNI_DB {
             $wpdb->prefix . 'lcni_saved_filters',
             $wpdb->prefix . 'lcni_watchlists',
             $wpdb->prefix . 'lcni_watchlist_symbols',
+            $wpdb->prefix . 'lcni_thong_ke_thi_truong',
+            $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2',
         ];
 
         foreach ($required_tables as $table) {
@@ -129,6 +131,8 @@ class LCNI_DB {
         $saved_filters_table = $wpdb->prefix . 'lcni_saved_filters';
         $watchlists_table = $wpdb->prefix . 'lcni_watchlists';
         $watchlist_symbols_table = $wpdb->prefix . 'lcni_watchlist_symbols';
+        $market_statistics_table = $wpdb->prefix . 'lcni_thong_ke_thi_truong';
+        $icb2_statistics_table = $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2';
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
@@ -399,6 +403,53 @@ class LCNI_DB {
             KEY idx_symbol (symbol)
         ) {$charset_collate};";
 
+
+        $sql_market_statistics = "CREATE TABLE {$market_statistics_table} (
+            event_time BIGINT UNSIGNED NOT NULL,
+            marketid SMALLINT UNSIGNED NOT NULL,
+            timeframe VARCHAR(10) NOT NULL,
+            so_ma_tang_gia INT UNSIGNED NOT NULL DEFAULT 0,
+            so_ma_giam_gia INT UNSIGNED NOT NULL DEFAULT 0,
+            so_rsi_qua_mua INT UNSIGNED NOT NULL DEFAULT 0,
+            so_rsi_qua_ban INT UNSIGNED NOT NULL DEFAULT 0,
+            so_rsi_tham_lam INT UNSIGNED NOT NULL DEFAULT 0,
+            so_rsi_so_hai INT UNSIGNED NOT NULL DEFAULT 0,
+            so_smart_money INT UNSIGNED NOT NULL DEFAULT 0,
+            so_tang_gia_kem_vol INT UNSIGNED NOT NULL DEFAULT 0,
+            so_pha_nen INT UNSIGNED NOT NULL DEFAULT 0,
+            pct_so_ma_tren_ma20 DECIMAL(6,2) NOT NULL DEFAULT 0.00,
+            pct_so_ma_tren_ma50 DECIMAL(6,2) NOT NULL DEFAULT 0.00,
+            pct_so_ma_tren_ma100 DECIMAL(6,2) NOT NULL DEFAULT 0.00,
+            tong_value_traded BIGINT UNSIGNED NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (event_time, marketid, timeframe),
+            KEY idx_market_timeframe (marketid, timeframe),
+            KEY idx_event_time (event_time)
+        ) {$charset_collate};";
+
+        $sql_icb2_statistics = "CREATE TABLE {$icb2_statistics_table} (
+            event_time BIGINT UNSIGNED NOT NULL,
+            timeframe VARCHAR(10) NOT NULL,
+            marketid SMALLINT UNSIGNED NOT NULL,
+            icb_level2 VARCHAR(255) NOT NULL,
+            so_smart_money INT UNSIGNED NOT NULL DEFAULT 0,
+            so_tang_gia_kem_vol INT UNSIGNED NOT NULL DEFAULT 0,
+            so_pha_nen INT UNSIGNED NOT NULL DEFAULT 0,
+            tong_value_traded BIGINT UNSIGNED NOT NULL DEFAULT 0,
+            so_rsi_qua_mua INT UNSIGNED NOT NULL DEFAULT 0,
+            so_rsi_qua_ban INT UNSIGNED NOT NULL DEFAULT 0,
+            so_rsi_tham_lam INT UNSIGNED NOT NULL DEFAULT 0,
+            so_rsi_so_hai INT UNSIGNED NOT NULL DEFAULT 0,
+            so_macd_cat_len INT UNSIGNED NOT NULL DEFAULT 0,
+            so_macd_cat_xuong INT UNSIGNED NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (event_time, timeframe, marketid, icb_level2),
+            KEY idx_market_timeframe_icb (marketid, timeframe, icb_level2),
+            KEY idx_event_time (event_time)
+        ) {$charset_collate};";
+
         dbDelta($sql_ohlc);
         dbDelta($sql_security_definition);
         dbDelta($sql_symbols);
@@ -413,6 +464,8 @@ class LCNI_DB {
         dbDelta($sql_saved_filters);
         dbDelta($sql_watchlists);
         dbDelta($sql_watchlist_symbols);
+        dbDelta($sql_market_statistics);
+        dbDelta($sql_icb2_statistics);
 
         self::seed_market_reference_data($market_table);
         self::seed_index_name_reference_data($index_name_table);
