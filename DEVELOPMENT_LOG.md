@@ -1,3 +1,9 @@
+## 2026-02-28 00:00 (v2.2.9a)
+- Nâng version plugin lên `2.2.9a` và cập nhật log thay đổi.
+- Fix lỗi `btn_filter_apply` ở Filter Panel có thể bị treo trạng thái không thực thi: gom luồng Apply vào hàm riêng, chặn click lặp khi đang chạy, thêm cơ chế mở khóa fail-safe để nút không bị đơ khi request bị treo.
+- Fix export Excel từ Filter Panel: chuẩn hóa các cột ngày (`date/ngay/event_time/trading_date`) về định dạng `yyyy-mm-dd` trước khi ghi CSV.
+- Bổ sung tạo bảng dữ liệu thống kê theo task: `wp_lcni_thong_ke_thi_truong` và `wp_lcni_thong_ke_nganh_icb_2` vào luồng `create_tables()/ensure_tables_exist()` để tự động được tạo khi kích hoạt plugin hoặc chạy kiểm tra schema.
+
 ## 2026-02-27 08:28 (v2.2.6a)
 - Nâng version plugin lên `2.2.6a` và cập nhật log với mốc ngày giờ cụ thể để dễ nắm bắt thời điểm cập nhật.
 - Fix Filter Panel: di chuyển thông báo kết quả lọc vào bên trong cột 2 (khu vực giá trị), đặt ở phía dưới cùng của cột để dễ theo dõi khi chọn tiêu chí.

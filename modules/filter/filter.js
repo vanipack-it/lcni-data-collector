@@ -265,6 +265,40 @@
     return 'ket-qua-loc';
   }
 
+  function formatExportDateValue(column, value) {
+    const raw = value == null ? '' : String(value).trim();
+    if (!raw) return '';
+    const field = String(column || '').toLowerCase();
+    const isDateField = /(^|_)(date|ngay|event_time|trading_date)(_|$)/.test(field);
+    if (!isDateField) return raw;
+
+    const toYmd = (dateObj) => {
+      if (!(dateObj instanceof Date) || Number.isNaN(dateObj.getTime())) return raw;
+      const year = dateObj.getFullYear();
+      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const day = String(dateObj.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+
+    const dmy = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (dmy) return `${dmy[3]}-${String(dmy[2]).padStart(2, '0')}-${String(dmy[1]).padStart(2, '0')}`;
+
+    const ymdSlash = raw.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+    if (ymdSlash) return `${ymdSlash[1]}-${String(ymdSlash[2]).padStart(2, '0')}-${String(ymdSlash[3]).padStart(2, '0')}`;
+
+    if (/^\d{10,13}$/.test(raw)) {
+      const numeric = Number(raw);
+      if (Number.isFinite(numeric)) {
+        const epoch = raw.length === 13 ? numeric : (numeric * 1000);
+        return toYmd(new Date(epoch));
+      }
+    }
+
+    return toYmd(new Date(raw));
+  }
+
   function exportCurrentResultToExcel() {
     if (!state.tableLoaded) {
       showToast('Chưa có dữ liệu để xuất. Vui lòng bấm Apply Filter trước.');
@@ -285,7 +319,7 @@
     }
     const header = columns.map((column) => `"${String(labels[column] || column).replace(/"/g, '""')}"`).join(',');
     const rows = sortedRows.map((row) => columns.map((column) => {
-      const value = row[column] == null ? '' : row[column];
+      const value = formatExportDateValue(column, row[column]);
       return `"${String(value).replace(/"/g, '""')}"`;
     }).join(','));
 
@@ -746,6 +780,51 @@
     renderTbody(host, await api({ mode: 'filter', page: state.page, limit: state.limit, filters: state.filters, visible_columns: state.visibleColumns }) || {});
     state.tableLoaded = true;
   }
+
+  async function runApplyFilter(host) {
+    if (state.isApplying) return;
+    state.filters = collectFilters(host);
+    state.page = 1;
+    state.columnPanelOpen = false;
+    state.isApplying = true;
+    state.countRequestId += 1;
+    window.clearTimeout(host._lcniCountTimer);
+    if (mobile()) {
+      state.panelHidden = true;
+      const panel = host.querySelector('[data-filter-panel]');
+      if (panel) panel.classList.add('is-collapsed');
+    }
+
+    const applyBtn = host.querySelector('[data-apply-filter]');
+    if (applyBtn) {
+      applyBtn.disabled = true;
+      applyBtn.setAttribute('aria-busy', 'true');
+    }
+
+    const unlockFailsafe = window.setTimeout(() => {
+      state.isApplying = false;
+      const latestButton = host.querySelector('[data-apply-filter]');
+      if (latestButton) {
+        latestButton.disabled = false;
+        latestButton.removeAttribute('aria-busy');
+      }
+      showToast('Đang quá thời gian phản hồi. Vui lòng thử Apply lại.');
+    }, 25000);
+
+    try {
+      await load(host);
+    } catch (error) {
+      showToast((error && error.message) || 'Không thể áp dụng bộ lọc. Vui lòng thử lại.');
+    } finally {
+      window.clearTimeout(unlockFailsafe);
+      state.isApplying = false;
+      const latestButton = host.querySelector('[data-apply-filter]');
+      if (latestButton) {
+        latestButton.disabled = false;
+        latestButton.removeAttribute('aria-busy');
+      }
+    }
+  }
   async function refreshOnly(host) {
     const tbody = host.querySelector('tbody');
     if (!tbody || !state.tableLoaded) return;
@@ -862,28 +941,8 @@
         return;
       }
       if (event.target.closest('[data-apply-filter]')) {
-        if (state.isApplying) return;
-        state.filters = collectFilters(host);
-        state.page = 1;
-        state.columnPanelOpen = false;
-        state.isApplying = true;
-        state.countRequestId += 1;
-        window.clearTimeout(host._lcniCountTimer);
-        if (mobile()) {
-          state.panelHidden = true;
-          const panel = host.querySelector('[data-filter-panel]');
-          if (panel) panel.classList.add('is-collapsed');
-        }
-        const applyBtn = host.querySelector('[data-apply-filter]');
-        if (applyBtn) applyBtn.disabled = true;
-        try {
-          await load(host);
-        } catch (error) {
-          showToast((error && error.message) || 'Không thể áp dụng bộ lọc. Vui lòng thử lại.');
-        } finally {
-          state.isApplying = false;
-          if (applyBtn) applyBtn.disabled = false;
-        }
+        event.preventDefault();
+        await runApplyFilter(host);
         return;
       }
       if (event.target.closest('[data-add-filter-result-watchlist]')) {
