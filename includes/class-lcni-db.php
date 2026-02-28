@@ -1402,35 +1402,19 @@ class LCNI_DB {
             "UPDATE {$market_statistics_table} target
             INNER JOIN (
                 SELECT
-                    src.id,
-                    ((event_rank.event_position - 1) * market_total.total_markets) + market_rank.market_position AS computed_index
-                FROM {$market_statistics_table} src
-                INNER JOIN (
+                    ranked.id,
+                    ranked.market_index AS computed_index
+                FROM (
                     SELECT
-                        event_times.event_time,
-                        (@event_pos := @event_pos + 1) AS event_position
-                    FROM (
-                        SELECT DISTINCT event_time
-                        FROM {$market_statistics_table}
-                        ORDER BY event_time ASC
-                    ) event_times
-                    CROSS JOIN (SELECT @event_pos := 0) event_vars
-                ) event_rank ON event_rank.event_time = src.event_time
-                INNER JOIN (
-                    SELECT
-                        markets.marketid,
-                        (@market_pos := @market_pos + 1) AS market_position
-                    FROM (
-                        SELECT DISTINCT marketid
-                        FROM {$market_statistics_table}
-                        ORDER BY marketid ASC
-                    ) markets
-                    CROSS JOIN (SELECT @market_pos := 0) market_vars
-                ) market_rank ON market_rank.marketid = src.marketid
-                CROSS JOIN (
-                    SELECT COUNT(DISTINCT marketid) AS total_markets
-                    FROM {$market_statistics_table}
-                ) market_total
+                        src.id,
+                        src.marketid,
+                        src.timeframe,
+                        (@market_rank := IF(@current_market = CONCAT(src.marketid, '|', src.timeframe), @market_rank + 1, 1)) AS market_index,
+                        (@current_market := CONCAT(src.marketid, '|', src.timeframe)) AS current_market_marker
+                    FROM {$market_statistics_table} src
+                    CROSS JOIN (SELECT @market_rank := 0, @current_market := '') vars
+                    ORDER BY src.marketid ASC, src.timeframe ASC, src.event_time ASC, src.id ASC
+                ) ranked
             ) calc ON calc.id = target.id
             SET target.thong_ke_thi_truong_index = calc.computed_index"
         );

@@ -37,7 +37,9 @@
     tableLoaded: false,
     countRequestId: 0,
     isApplying: false,
-    applyStartedAt: 0
+    applyStartedAt: 0,
+    hoverRequestId: 0,
+    hoverCellKey: ""
   };
 
   function isMobileViewport() {
@@ -59,6 +61,22 @@
     url.searchParams.set('apply_filter', '1');
     url.searchParams.set(safeField, safeValue);
     return url.toString();
+  }
+
+
+  function parseCellValueForCriteria(rawValue, criterion) {
+    const value = String(rawValue == null ? '' : rawValue).trim();
+    if (!value) return null;
+    if ((criterion || {}).type === 'number') {
+      const numeric = Number(value.replace(/,/g, ''));
+      if (!Number.isFinite(numeric)) return null;
+      return { operator: '=', value: [numeric, numeric] };
+    }
+    return { operator: 'in', value: [value] };
+  }
+
+  function findCriteriaByColumn(column) {
+    return state.criteria.find((item) => item && item.column === column) || null;
   }
 
   function getButtonConfig(key) { return (cfg.buttonConfig || {})[key] || {}; }
@@ -1049,12 +1067,60 @@
     if (query.get('apply_filter') !== '1') return null;
     const filters = [];
     state.criteria.forEach((item) => {
-      if (!item || !item.column || item.type === 'number') return;
+      if (!item || !item.column) return;
       const rawValue = query.get(item.column);
       if (!rawValue) return;
-      filters.push({ column: item.column, operator: 'in', value: [rawValue] });
+      const parsed = parseCellValueForCriteria(rawValue, item);
+      if (!parsed) return;
+      filters.push({ column: item.column, operator: parsed.operator, value: parsed.value });
     });
     return filters.length ? { filters } : null;
+  }
+
+  function ensureHoverHintNode() {
+    let node = document.querySelector('.lcni-filter-cell-hint');
+    if (node) return node;
+    node = document.createElement('div');
+    node.className = 'lcni-filter-cell-hint';
+    node.hidden = true;
+    document.body.appendChild(node);
+    return node;
+  }
+
+  function hideHoverHint() {
+    const node = document.querySelector('.lcni-filter-cell-hint');
+    if (!node) return;
+    node.hidden = true;
+    node.textContent = '';
+    state.hoverCellKey = '';
+  }
+
+  async function showHoverHintForCell(cell, event) {
+    const field = String(cell.getAttribute('data-cell-field') || '').trim();
+    const value = String(cell.getAttribute('data-cell-value') || '').trim();
+    const criterion = findCriteriaByColumn(field);
+    const parsed = parseCellValueForCriteria(value, criterion);
+    if (!field || !criterion || !parsed) return hideHoverHint();
+
+    const requestId = state.hoverRequestId + 1;
+    state.hoverRequestId = requestId;
+    const node = ensureHoverHintNode();
+    node.textContent = 'Đang kiểm tra...';
+    node.style.left = `${event.clientX}px`;
+    node.style.top = `${event.clientY}px`;
+    node.hidden = false;
+
+    try {
+      const payload = await api({ mode: 'count_preview', page: 1, limit: 1, filters: [{ column: field, operator: parsed.operator, value: parsed.value }], visible_columns: ['symbol'] });
+      if (requestId !== state.hoverRequestId) return;
+      const total = Number((payload && payload.total) || 0);
+      node.textContent = `${total.toLocaleString('vi-VN')} mã thỏa tiêu chí này`;
+      node.style.left = `${event.clientX}px`;
+      node.style.top = `${event.clientY}px`;
+      node.hidden = false;
+    } catch (_error) {
+      hideHoverHint();
+    }
   }
 
   function bindRowNavigation() {
@@ -1073,9 +1139,31 @@
         if (detailBase && symbol) window.location.href = detailBase + '?symbol=' + symbol;
         return;
       }
+      const criterion = findCriteriaByColumn(field);
+      const parsed = parseCellValueForCriteria(value, criterion);
       const filterUrl = buildFilterUrl(field, value);
-      if (filterUrl) window.location.href = filterUrl;
+      if (filterUrl && parsed) window.location.href = filterUrl;
     });
+
+    document.addEventListener('mousemove', function (event) {
+      const cell = event.target.closest('[data-lcni-stock-filter] td[data-cell-field]');
+      if (!cell) { hideHoverHint(); return; }
+      const field = String(cell.getAttribute('data-cell-field') || '').trim();
+      const value = String(cell.getAttribute('data-cell-value') || '').trim();
+      const key = `${field}::${value}`;
+      const node = document.querySelector('.lcni-filter-cell-hint');
+      if (node && !node.hidden) {
+        node.style.left = `${event.clientX}px`;
+        node.style.top = `${event.clientY}px`;
+      }
+      if (state.hoverCellKey === key) return;
+      state.hoverCellKey = key;
+      showHoverHintForCell(cell, event).catch(() => {});
+    });
+
+    document.addEventListener('mouseleave', function () {
+      hideHoverHint();
+    }, true);
   }
 
   function boot() {

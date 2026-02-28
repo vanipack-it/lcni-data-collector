@@ -2615,7 +2615,7 @@ private function sanitize_module_title($value, $fallback) {
 
         $mapped = [];
         foreach ((array) $rules as $rule) {
-            $field = sanitize_key((string) ($rule['column'] ?? ''));
+            $field = sanitize_key((string) ($rule['target_field'] ?? ($rule['column'] ?? '')));
             $operator = (string) ($rule['operator'] ?? '');
             $value = sanitize_text_field((string) ($rule['value'] ?? ''));
             $color = sanitize_hex_color((string) ($rule['text_color'] ?? ''));
