@@ -96,6 +96,8 @@ class LCNI_Overview_Ajax {
                 'label_font_size' => $this->sanitize_font_size($styles['label_font_size'] ?? LCNI_Overview_Shortcode::DEFAULT_STYLES['label_font_size'], LCNI_Overview_Shortcode::DEFAULT_STYLES['label_font_size']),
                 'value_font_size' => $this->sanitize_font_size($styles['value_font_size'] ?? LCNI_Overview_Shortcode::DEFAULT_STYLES['value_font_size'], LCNI_Overview_Shortcode::DEFAULT_STYLES['value_font_size']),
                 'value_rules' => $this->sanitize_value_rules($styles['value_rules'] ?? [], $this->default_fields),
+                'global_value_color_rules' => $this->sanitize_global_value_color_rules(get_option('lcni_global_cell_color_rules', []), $this->default_fields),
+                'cell_to_cell_rules' => $this->sanitize_cell_to_cell_rules(get_option('lcni_cell_to_cell_color_rules', []), $this->default_fields),
             ],
         ];
     }
@@ -139,6 +141,87 @@ class LCNI_Overview_Ajax {
         }
 
         return array_slice($normalized, 0, 50);
+    }
+
+
+    private function sanitize_global_value_color_rules($rules, $allowed_fields) {
+        if (!is_array($rules)) {
+            return [];
+        }
+
+        $operators = ['=', '!=', '>', '>=', '<', '<=', 'contains', 'not_contains'];
+        $normalized = [];
+
+        foreach ($rules as $rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+
+            $column = sanitize_key((string) ($rule['column'] ?? ''));
+            $operator = sanitize_text_field((string) ($rule['operator'] ?? ''));
+            $value = sanitize_text_field((string) ($rule['value'] ?? ''));
+            $bg_color = sanitize_hex_color((string) ($rule['bg_color'] ?? ''));
+            $text_color = sanitize_hex_color((string) ($rule['text_color'] ?? ''));
+
+            if (!in_array($column, $allowed_fields, true) || !in_array($operator, $operators, true) || $value === '') {
+                continue;
+            }
+
+            if (!$bg_color && !$text_color) {
+                continue;
+            }
+
+            $normalized[] = [
+                'column' => $column,
+                'operator' => $operator,
+                'value' => $value,
+                'bg_color' => $bg_color,
+                'text_color' => $text_color,
+            ];
+        }
+
+        return array_slice($normalized, 0, 100);
+    }
+
+    private function sanitize_cell_to_cell_rules($rules, $allowed_fields) {
+        if (!is_array($rules)) {
+            return [];
+        }
+
+        $operators = ['=', '!=', '>', '>=', '<', '<=', 'contains', 'not_contains'];
+        $normalized = [];
+
+        foreach ($rules as $rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+
+            $source_field = sanitize_key((string) ($rule['source_field'] ?? ''));
+            $target_field = sanitize_key((string) ($rule['target_field'] ?? ''));
+            $operator = sanitize_text_field((string) ($rule['operator'] ?? ''));
+            $value = sanitize_text_field((string) ($rule['value'] ?? ''));
+            $bg_color = sanitize_hex_color((string) ($rule['bg_color'] ?? ''));
+            $text_color = sanitize_hex_color((string) ($rule['text_color'] ?? ''));
+
+            if (!in_array($source_field, $allowed_fields, true) || !in_array($target_field, $allowed_fields, true) || !in_array($operator, $operators, true) || $value === '') {
+                continue;
+            }
+
+            if (!$bg_color && !$text_color) {
+                continue;
+            }
+
+            $normalized[] = [
+                'source_field' => $source_field,
+                'target_field' => $target_field,
+                'operator' => $operator,
+                'value' => $value,
+                'bg_color' => $bg_color,
+                'text_color' => $text_color,
+            ];
+        }
+
+        return array_slice($normalized, 0, 100);
     }
 
     private function sanitize_hex_color($color, $fallback) {

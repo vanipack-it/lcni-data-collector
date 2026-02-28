@@ -1,3 +1,9 @@
+## 2026-02-28 (v2.3.2a)
+- Nâng version plugin lên `2.3.2a`; đồng bộ `FilterShortcode::VERSION`, `LCNI_Overview_Shortcode::VERSION`, `LCNI_Stock_Signals_Shortcodes::VERSION` để đảm bảo cache-busting frontend.
+- Fix Frontend Settings → Style Config → Cell Color cho Signal Overview/Overview: bổ sung nạp và sanitize rule từ `lcni_global_cell_color_rules` + `lcni_cell_to_cell_color_rules` vào config frontend.
+- Cập nhật renderer Overview/Signals để áp dụng màu theo thứ tự ưu tiên rule khi xung đột: `cell_to_cell_rules` → `global_value_color_rules` → `value_rules` cục bộ, rồi mới fallback `value_color` mặc định.
+- Với rule có `bg_color`, frontend hiển thị nền trực tiếp trên value badge để đồng bộ hành vi với module Filter/Watchlist.
+
 ## 2026-02-28 (v2.3.2)
 - Nâng version plugin lên `2.3.2`; cập nhật `FilterShortcode::VERSION` để đồng bộ cache-busting frontend Filter.
 - Nâng cấp schema `wp_lcni_thong_ke_nganh_icb_2`: thêm `id`, `thong_ke_icb2_index`, các chỉ số tăng/giảm giá, tỷ lệ MA20/50/100 và chuẩn hoá `tong_value_traded` sang `DECIMAL(24,2)`.
