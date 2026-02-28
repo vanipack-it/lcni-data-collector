@@ -1,3 +1,8 @@
+## 2026-02-28 (v2.3.4)
+- Nâng version plugin lên `2.3.4`; đồng bộ `FilterShortcode::VERSION`, `LCNI_Overview_Shortcode::VERSION`, `LCNI_Stock_Signals_Shortcodes::VERSION` để đảm bảo cache-busting frontend.
+- Kiểm tra và xử lý lại task còn dang dở cho bảng `wp_lcni_ohlc`: migration chuẩn hoá `macd_cat`, `macd_tren_0`, `macd_hist_tang` được nâng cấp sang `v2` để tự chạy lại khi còn dữ liệu cũ (`1/-1/0`, `Cắt lên`, `Cắt xuống`) và map về nhãn chuẩn `Cắt lên signal`, `Cắt xuống signal`, `Trên 0`, `Đang tăng`.
+- Bổ sung log change `normalize_ohlc_macd_signal_columns` để ghi nhận số dòng đã được chuẩn hoá trong lần migration.
+
 ## 2026-02-28 (v2.3.3b)
 - Nâng version plugin lên `2.3.3b`; đồng bộ `FilterShortcode::VERSION`, `LCNI_Overview_Shortcode::VERSION`, `LCNI_Stock_Signals_Shortcodes::VERSION` để đảm bảo cache-busting frontend.
 - Fix backfill `one_candle` bị rỗng toàn bộ trên dữ liệu cũ: cập nhật query rebuild indicators lấy thêm `open_price`, mở rộng điều kiện phát hiện giá trị thiếu (`NULL`/chuỗi rỗng) và tăng migration flag lên `lcni_ohlc_one_candle_backfilled_v2`.
