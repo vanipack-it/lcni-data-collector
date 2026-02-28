@@ -1,3 +1,8 @@
+## 2026-02-28 (v2.3.3a)
+- Nâng version plugin lên `2.3.3a`; đồng bộ `FilterShortcode::VERSION`, `LCNI_Overview_Shortcode::VERSION`, `LCNI_Stock_Signals_Shortcodes::VERSION` để đảm bảo cache-busting frontend.
+- Chuẩn hoá migration thống kê lên `lcni_market_statistics_backfilled_v6`, giữ đầy đủ bảng `wp_lcni_thong_ke_nganh_icb_2_toan_thi_truong` với các cột/chỉ số yêu cầu (icb2, RSI trạng thái, MA20/50/100 ratio dạng decimal, smart money, tăng giá kèm vol, phá nền, tổng value traded).
+- Bổ sung cơ chế tự động rebuild 3 bảng thống kê (`wp_lcni_thong_ke_thi_truong`, `wp_lcni_thong_ke_nganh_icb_2`, `wp_lcni_thong_ke_nganh_icb_2_toan_thi_truong`) sau mỗi lần upsert OHLC để dữ liệu thống kê luôn cập nhật theo bảng gốc.
+
 ## 2026-02-28 (v2.3.3)
 - Nâng version plugin lên `2.3.3`; đồng bộ `FilterShortcode::VERSION`, `LCNI_Overview_Shortcode::VERSION`, `LCNI_Stock_Signals_Shortcodes::VERSION` để đảm bảo cache-busting frontend.
 - Mở rộng schema `wp_lcni_ohlc`: thêm cột `one_candle VARCHAR(30) NULL` (sau `close_price`) để lưu mẫu 1 nến (`DOJI`, `HAMMER`, `SHOOTING_STAR`, `MARUBOZU_BULL`, `MARUBOZU_BEAR`, `SPINNING_TOP`, `NONE`).
