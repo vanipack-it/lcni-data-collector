@@ -1,3 +1,10 @@
+## 2026-02-28 (v2.3.3b)
+- Nâng version plugin lên `2.3.3b`; đồng bộ `FilterShortcode::VERSION`, `LCNI_Overview_Shortcode::VERSION`, `LCNI_Stock_Signals_Shortcodes::VERSION` để đảm bảo cache-busting frontend.
+- Fix backfill `one_candle` bị rỗng toàn bộ trên dữ liệu cũ: cập nhật query rebuild indicators lấy thêm `open_price`, mở rộng điều kiện phát hiện giá trị thiếu (`NULL`/chuỗi rỗng) và tăng migration flag lên `lcni_ohlc_one_candle_backfilled_v2`.
+- Chuẩn hoá cột MACD trong `wp_lcni_ohlc`: đổi `macd_cat`, `macd_tren_0`, `macd_hist_tang` sang nhãn text và migrate dữ liệu cũ (`1/-1`) thành `Cắt lên signal` / `Cắt xuống signal`, `Trên 0`, `Đang tăng`.
+- Sửa công thức thống kê ICB2 dùng MACD để tương thích nhãn mới (đếm cả dữ liệu legacy lẫn dữ liệu mới) giúp tránh rỗng giá trị trên `wp_lcni_thong_ke_nganh_icb_2_toan_thi_truong` sau migration.
+- Bổ sung migration đồng bộ option Frontend Settings để tự thêm các cột mới (`one_candle`, `macd_cat`, `macd_tren_0`, `macd_hist_tang`) vào Filter Criteria, Filter Table Columns, LCNi Signals, Watchlist columns/order khi admin đã có cấu hình trước đó.
+
 ## 2026-02-28 (v2.3.3a)
 - Nâng version plugin lên `2.3.3a`; đồng bộ `FilterShortcode::VERSION`, `LCNI_Overview_Shortcode::VERSION`, `LCNI_Stock_Signals_Shortcodes::VERSION` để đảm bảo cache-busting frontend.
 - Chuẩn hoá migration thống kê lên `lcni_market_statistics_backfilled_v6`, giữ đầy đủ bảng `wp_lcni_thong_ke_nganh_icb_2_toan_thi_truong` với các cột/chỉ số yêu cầu (icb2, RSI trạng thái, MA20/50/100 ratio dạng decimal, smart money, tăng giá kèm vol, phá nền, tổng value traded).

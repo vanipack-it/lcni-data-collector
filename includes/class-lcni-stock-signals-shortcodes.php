@@ -7,7 +7,7 @@ if (!defined('ABSPATH')) {
 class LCNI_Stock_Signals_Shortcodes {
 
     const SETTINGS_META_KEY = 'lcni_stock_signals_fields';
-    const VERSION = '2.3.3a';
+    const VERSION = '2.3.3b';
 
     public function __construct() {
         add_action('init', [$this, 'register_shortcodes']);
