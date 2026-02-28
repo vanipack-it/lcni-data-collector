@@ -1,3 +1,9 @@
+## 2026-02-28 (v2.3.1a)
+- Nâng version plugin lên `2.3.1a`; cập nhật `FilterShortcode::VERSION` để đồng bộ cache-busting frontend Filter.
+- Điều chỉnh mobile UX cho shortcode `[lcni_stock_filter]`: lần mở đầu trên mobile sẽ hiển thị panel filter ở row 1 (mặc định mở), bảng kết quả ở row 2, tránh chồng lớp giữa panel và table.
+- Khi ẩn filter panel bằng nút Hide/Filter toggle, giao diện mobile trở lại kiểu hiện tại (panel thu gọn, ưu tiên hiển thị bảng kết quả).
+- Tối ưu chiều cao mobile: ưu tiên hiển thị đầy đủ panel filter; phần bảng kết quả có thể kéo cuộn để xem phần bị che bởi bottom bar.
+
 ## 2026-02-28 (v2.3.0b)
 - Nâng version plugin lên `2.3.0b`; cập nhật `FilterShortcode::VERSION` để đồng bộ cache-busting frontend Filter.
 - Bổ sung migration `lcni_market_statistics_backfilled_v3`: nếu bảng `wp_lcni_thong_ke_thi_truong` đang rỗng, hệ thống sẽ tự động rebuild lại dữ liệu thống kê thay vì bỏ qua do cờ migration cũ.
