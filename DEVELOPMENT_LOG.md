@@ -1,3 +1,9 @@
+## 2026-02-28 (v2.3.0b)
+- Nâng version plugin lên `2.3.0b`; cập nhật `FilterShortcode::VERSION` để đồng bộ cache-busting frontend Filter.
+- Bổ sung migration `lcni_market_statistics_backfilled_v3`: nếu bảng `wp_lcni_thong_ke_thi_truong` đang rỗng, hệ thống sẽ tự động rebuild lại dữ liệu thống kê thay vì bỏ qua do cờ migration cũ.
+- Chuẩn hoá truy vấn backfill thống kê thị trường/ngành: giữ ràng buộc `SYMBOL` qua join `wp_lcni_sym_icb_market`, lấy `marketid` từ `market_id`, nhóm theo `event_time + marketid + timeframe` để tránh tình trạng bảng thống kê trống dữ liệu.
+- Thêm file SQL triển khai nhanh `sql_market_statistics_v2_3_0b.sql` để chạy thủ công khi cần rebuild dữ liệu cho 2 bảng thống kê.
+
 
 ## 2026-02-28 (v2.3.0a)
 - Nâng version plugin lên `2.3.0a`; cập nhật `FilterShortcode::VERSION` để đồng bộ cache-busting frontend Filter.
