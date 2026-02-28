@@ -1,3 +1,8 @@
+## 2026-02-28 (v2.3.1c)
+- Nâng version plugin lên `2.3.1c`; cập nhật `FilterShortcode::VERSION` để đồng bộ cache-busting frontend Filter.
+- Tối ưu layout Filter panel trên mobile: ẩn label của 2 dropdown, đặt 2 dropdown liền nhau full-width 100% và ghim sát nhóm nút action ở cuối panel.
+- Các nút `btn_filter_reload`, `btn_filter_save`, `btn_filter_delete`, `btn_set_default_filter`, `btn_filter_clear`, `btn_filter_apply`, `btn_filter_add_watchlist_bulk`, `btn_filter_export_excel`, `btn_filter_hide` trên mobile tự động xuống cuối panel và hiển thị dạng lưới 2 cột full-width.
+
 ## 2026-02-28 (v2.3.1b)
 - Nâng version plugin lên `2.3.1b`; cập nhật `FilterShortcode::VERSION` để đồng bộ cache-busting frontend Filter.
 - Chỉnh công thức `thong_ke_thi_truong_index` theo rule mới: cố định thứ tự `marketid` tăng dần (1->n) trong từng `event_time`, đồng thời `event_time` vẫn chạy từ cũ -> mới.
