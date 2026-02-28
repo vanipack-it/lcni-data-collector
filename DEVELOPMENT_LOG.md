@@ -1,3 +1,9 @@
+## 2026-02-28 (v2.3.3)
+- Nâng version plugin lên `2.3.3`; đồng bộ `FilterShortcode::VERSION`, `LCNI_Overview_Shortcode::VERSION`, `LCNI_Stock_Signals_Shortcodes::VERSION` để đảm bảo cache-busting frontend.
+- Mở rộng schema `wp_lcni_ohlc`: thêm cột `one_candle VARCHAR(30) NULL` (sau `close_price`) để lưu mẫu 1 nến (`DOJI`, `HAMMER`, `SHOOTING_STAR`, `MARUBOZU_BULL`, `MARUBOZU_BEAR`, `SPINNING_TOP`, `NONE`).
+- Bổ sung logic tính `one_candle` từ OHLC vào pipeline `rebuild_ohlc_indicators`, đảm bảo tự động cập nhật cho cả dữ liệu cũ (backfill migration) và dữ liệu mới insert/upsert.
+- Thêm migration `lcni_ohlc_one_candle_backfilled_v1` + file SQL triển khai nhanh `sql_ohlc_one_candle_v2_3_3.sql`.
+
 ## 2026-02-28 (v2.3.2a)
 - Nâng version plugin lên `2.3.2a`; đồng bộ `FilterShortcode::VERSION`, `LCNI_Overview_Shortcode::VERSION`, `LCNI_Stock_Signals_Shortcodes::VERSION` để đảm bảo cache-busting frontend.
 - Fix Frontend Settings → Style Config → Cell Color cho Signal Overview/Overview: bổ sung nạp và sanitize rule từ `lcni_global_cell_color_rules` + `lcni_cell_to_cell_color_rules` vào config frontend.

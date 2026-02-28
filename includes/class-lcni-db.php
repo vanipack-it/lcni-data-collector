@@ -110,6 +110,7 @@ class LCNI_DB {
         self::backfill_ohlc_rsi_status_and_hanh_vi_gia();
         self::backfill_ohlc_hanh_vi_gia_1w();
         self::backfill_ohlc_macd_flags();
+        self::backfill_ohlc_one_candle();
         self::backfill_market_statistics_tables();
         self::ensure_ohlc_symbol_type_column();
         self::ensure_ohlc_indexes();
@@ -149,6 +150,7 @@ class LCNI_DB {
             high_price DECIMAL(20,2) NOT NULL,
             low_price DECIMAL(20,2) NOT NULL,
             close_price DECIMAL(20,2) NOT NULL,
+            one_candle VARCHAR(30) DEFAULT NULL,
             volume BIGINT UNSIGNED NOT NULL DEFAULT 0,
             value_traded DECIMAL(24,2) NOT NULL DEFAULT 0,
             pct_t_1 DECIMAL(12,6) DEFAULT NULL,
@@ -894,6 +896,7 @@ class LCNI_DB {
             'hanh_vi_gia' => 'VARCHAR(50) DEFAULT NULL',
             'hanh_vi_gia_1w' => 'VARCHAR(50) DEFAULT NULL',
             'smart_money' => 'VARCHAR(30) DEFAULT NULL',
+            'one_candle' => 'VARCHAR(30) DEFAULT NULL',
         ];
 
         foreach ($required_columns as $column_name => $column_definition) {
@@ -2050,6 +2053,39 @@ class LCNI_DB {
         );
 
         return $missing_count > 0;
+    }
+
+    private static function backfill_ohlc_one_candle() {
+        global $wpdb;
+
+        $migration_flag = 'lcni_ohlc_one_candle_backfilled_v1';
+        if (get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $series_with_missing_values = $wpdb->get_results(
+            "SELECT DISTINCT symbol, timeframe
+            FROM {$table}
+            WHERE one_candle IS NULL",
+            ARRAY_A
+        );
+
+        if (empty($series_with_missing_values)) {
+            update_option($migration_flag, 'yes');
+
+            return;
+        }
+
+        foreach ($series_with_missing_values as $series) {
+            self::rebuild_ohlc_series_metrics($series['symbol'], $series['timeframe']);
+        }
+
+        self::log_change(
+            'backfill_ohlc_one_candle',
+            sprintf('Backfilled one_candle for %d symbol/timeframe series with missing values.', count($series_with_missing_values))
+        );
+        update_option($migration_flag, 'yes');
     }
 
     private static function has_missing_rs_3m_by_exchange_rows() {
@@ -3353,6 +3389,7 @@ class LCNI_DB {
                     OR latest.rsi_status IS NULL
                     OR latest.hanh_vi_gia IS NULL
                     OR latest.hanh_vi_gia_1w IS NULL
+                    OR latest.one_candle IS NULL
                     OR latest.rs_exchange_status IS NULL
                     OR latest.rs_exchange_recommend IS NULL
                 LIMIT %d",
@@ -3569,6 +3606,12 @@ class LCNI_DB {
             $previous_close_1w = $i >= 5 ? (float) $rows[$i - 5]['close_price'] : null;
             $previous_volume_1w = $i >= 5 ? (float) $rows[$i - 5]['volume'] : null;
             $hanh_vi_gia_1w = self::determine_hanh_vi_gia_1w($symbol, $close, $previous_close_1w, $volume, $previous_volume_1w);
+            $one_candle = self::determine_one_candle(
+                (float) ($rows[$i]['open_price'] ?? 0),
+                (float) ($rows[$i]['high_price'] ?? 0),
+                (float) ($rows[$i]['low_price'] ?? 0),
+                (float) ($rows[$i]['close_price'] ?? 0)
+            );
             $nen_types[] = $nen_type;
 
             $wpdb->update(
@@ -3621,12 +3664,56 @@ class LCNI_DB {
                     'hanh_vi_gia' => $hanh_vi_gia,
                     'hanh_vi_gia_1w' => $hanh_vi_gia_1w,
                     'smart_money' => $smart_money,
+                    'one_candle' => $one_candle,
                 ],
                 ['id' => (int) $rows[$i]['id']],
-                ['%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%d','%d','%d','%d','%d','%f','%s','%s','%d','%s','%s','%s','%s','%s','%s'],
+                ['%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%d','%d','%d','%d','%d','%f','%s','%s','%d','%s','%s','%s','%s','%s','%s','%s'],
                 ['%d']
             );
         }
+    }
+
+    private static function determine_one_candle($open_price, $high_price, $low_price, $close_price) {
+        $open = (float) $open_price;
+        $high = (float) $high_price;
+        $low = (float) $low_price;
+        $close = (float) $close_price;
+
+        $real_body = abs($close - $open);
+        $range_total = $high - $low;
+
+        if ($range_total <= 0) {
+            return 'NONE';
+        }
+
+        $upper_shadow = $high - max($open, $close);
+        $lower_shadow = min($open, $close) - $low;
+
+        if ($real_body <= $range_total * 0.1) {
+            return 'DOJI';
+        }
+
+        if ($lower_shadow >= $real_body * 2 && $upper_shadow <= $real_body) {
+            return 'HAMMER';
+        }
+
+        if ($upper_shadow >= $real_body * 2 && $lower_shadow <= $real_body) {
+            return 'SHOOTING_STAR';
+        }
+
+        if ($close > $open && $upper_shadow <= $range_total * 0.05 && $lower_shadow <= $range_total * 0.05) {
+            return 'MARUBOZU_BULL';
+        }
+
+        if ($close < $open && $upper_shadow <= $range_total * 0.05 && $lower_shadow <= $range_total * 0.05) {
+            return 'MARUBOZU_BEAR';
+        }
+
+        if ($real_body <= $range_total * 0.3 && $real_body > $range_total * 0.1) {
+            return 'SPINNING_TOP';
+        }
+
+        return 'NONE';
     }
 
     private static function determine_rsi_status($rsi) {
