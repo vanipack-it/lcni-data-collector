@@ -1,3 +1,13 @@
+
+## 2026-02-28 (v2.3.0a)
+- Nâng version plugin lên `2.3.0a`; cập nhật `FilterShortcode::VERSION` để đồng bộ cache-busting frontend Filter.
+- Fix Panel Filter: tăng độ bền nút `btn_filter_apply` bằng cơ chế tự gỡ trạng thái `isApplying` khi bị treo quá thời gian, đồng thời hỗ trợ nhấn Enter trong panel để trigger Apply ngay.
+- Nâng cấp schema bảng `wp_lcni_thong_ke_thi_truong`: thêm `id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY`, thêm `thong_ke_thi_truong_index` và index `idx_event_time (event_time, timeframe)`.
+- Chuẩn hoá dữ liệu thống kê thị trường: tính lại từ `wp_lcni_ohlc` với `GROUP BY event_time, marketid, timeframe`, join `wp_lcni_sym_icb_market`, chỉ lấy `symbol_type` thuộc `STOCK/SYMBOL`.
+- Bổ sung migration rebuild 2 bảng thống kê (`wp_lcni_thong_ke_thi_truong`, `wp_lcni_thong_ke_nganh_icb_2`) để đảm bảo số nhóm `event_time` đồng bộ với dữ liệu nguồn OHLC.
+- Chuẩn hóa 3 cột tỷ lệ `pct_so_ma_tren_ma20/50/100` về dạng ratio (0..1) ở DB và thêm vào nhóm `%` trong Data Format Settings để frontend tự nhân `*100` khi hiển thị.
+- Thêm file SQL triển khai nhanh `sql_market_statistics_v2_3_0a.sql` cho môi trường cần chạy thủ công.
+
 ## 2026-02-28 00:00 (v2.2.9a)
 - Nâng version plugin lên `2.2.9a` và cập nhật log thay đổi.
 - Fix lỗi `btn_filter_apply` ở Filter Panel có thể bị treo trạng thái không thực thi: gom luồng Apply vào hàm riêng, chặn click lặp khi đang chạy, thêm cơ chế mở khóa fail-safe để nút không bị đơ khi request bị treo.

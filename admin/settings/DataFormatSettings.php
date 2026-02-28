@@ -43,6 +43,9 @@ class LCNI_Data_Format_Settings {
         'gia_sv_ma200',
         'vol_sv_vol_ma10',
         'vol_sv_vol_ma20',
+        'pct_so_ma_tren_ma20',
+        'pct_so_ma_tren_ma50',
+        'pct_so_ma_tren_ma100',
     ];
 
     const ALREADY_PERCENT_FIELDS = [

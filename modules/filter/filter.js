@@ -36,7 +36,8 @@
     columnPanelOpen: false,
     tableLoaded: false,
     countRequestId: 0,
-    isApplying: false
+    isApplying: false,
+    applyStartedAt: 0
   };
 
   const sessionKey = cfg.tableSettingsStorageKey || 'lcni_filter_visible_columns_v1';
@@ -705,7 +706,14 @@
   }
 
   function queueEligibleCount(host) {
-    if (state.isApplying) return;
+    if (state.isApplying) {
+      if (state.applyStartedAt > 0 && (Date.now() - state.applyStartedAt) > 26000) {
+        state.isApplying = false;
+        state.applyStartedAt = 0;
+      } else {
+        return;
+      }
+    }
     window.clearTimeout(host._lcniCountTimer);
     host._lcniCountTimer = window.setTimeout(() => {
       updateEligibleCount(host).catch(() => {});
@@ -782,11 +790,19 @@
   }
 
   async function runApplyFilter(host) {
-    if (state.isApplying) return;
+    if (state.isApplying) {
+      if (state.applyStartedAt > 0 && (Date.now() - state.applyStartedAt) > 26000) {
+        state.isApplying = false;
+        state.applyStartedAt = 0;
+      } else {
+        return;
+      }
+    }
     state.filters = collectFilters(host);
     state.page = 1;
     state.columnPanelOpen = false;
     state.isApplying = true;
+    state.applyStartedAt = Date.now();
     state.countRequestId += 1;
     window.clearTimeout(host._lcniCountTimer);
     if (mobile()) {
@@ -803,6 +819,7 @@
 
     const unlockFailsafe = window.setTimeout(() => {
       state.isApplying = false;
+      state.applyStartedAt = 0;
       const latestButton = host.querySelector('[data-apply-filter]');
       if (latestButton) {
         latestButton.disabled = false;
@@ -818,6 +835,7 @@
     } finally {
       window.clearTimeout(unlockFailsafe);
       state.isApplying = false;
+      state.applyStartedAt = 0;
       const latestButton = host.querySelector('[data-apply-filter]');
       if (latestButton) {
         latestButton.disabled = false;
@@ -978,6 +996,16 @@
         updateCriteriaSelectionState(host);
         queueEligibleCount(host);
       }
+    });
+
+    host.addEventListener('keydown', async (event) => {
+      if (event.key !== 'Enter') return;
+      const inCriteriaPanel = event.target.closest('[data-filter-panel]');
+      if (!inCriteriaPanel) return;
+      const isTextLike = event.target.matches('input[type="text"],input[type="search"],input[type="number"],select');
+      if (!isTextLike) return;
+      event.preventDefault();
+      await runApplyFilter(host);
     });
 
     host.addEventListener('change', async (event) => {
