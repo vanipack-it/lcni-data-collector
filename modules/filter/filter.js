@@ -40,6 +40,10 @@
     applyStartedAt: 0
   };
 
+  function isMobileViewport() {
+    return window.matchMedia('(max-width: 767px)').matches;
+  }
+
   const sessionKey = cfg.tableSettingsStorageKey || 'lcni_filter_visible_columns_v1';
   const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
 
@@ -805,12 +809,6 @@
     state.applyStartedAt = Date.now();
     state.countRequestId += 1;
     window.clearTimeout(host._lcniCountTimer);
-    if (mobile()) {
-      state.panelHidden = true;
-      const panel = host.querySelector('[data-filter-panel]');
-      if (panel) panel.classList.add('is-collapsed');
-    }
-
     const applyBtn = host.querySelector('[data-apply-filter]');
     if (applyBtn) {
       applyBtn.disabled = true;
@@ -1082,6 +1080,7 @@
 
   function boot() {
     bindRowNavigation();
+    state.panelHidden = !isMobileViewport();
     const defaultColumns = ((cfg.settings || {}).table_columns || []).slice();
     state.visibleColumns = loadVisibleColumns(defaultColumns);
     if (!state.visibleColumns.includes('symbol')) state.visibleColumns.unshift('symbol');
