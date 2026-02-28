@@ -6,7 +6,7 @@ if (!defined('ABSPATH')) {
 
 class LCNI_Overview_Shortcode {
 
-    const VERSION = '2.2.4a';
+    const VERSION = '2.3.2a';
 
     const DEFAULT_FIELDS = [
         'symbol',

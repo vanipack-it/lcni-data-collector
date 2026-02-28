@@ -110,44 +110,63 @@
     return `${icon}${text}`;
   };
 
-  const evaluateRule = (field, value, rule) => {
-    const targetField = String(rule?.field || "*");
-    if (targetField !== "*" && targetField !== field) {
-      return false;
-    }
+  const resolveOperatorMatch = (rawValue, operator, expected) => {
+    const numericRaw = Number(rawValue);
+    const numericExpected = Number(expected);
+    const bothNumeric = Number.isFinite(numericRaw) && Number.isFinite(numericExpected);
+    const left = bothNumeric ? numericRaw : String(rawValue ?? "").toLowerCase();
+    const right = bothNumeric ? numericExpected : String(expected ?? "").toLowerCase();
 
-    const operator = String(rule?.operator || "");
-    const ruleValue = String(rule?.value ?? "").trim();
-    if (!operator || !ruleValue) {
-      return false;
-    }
+    if (operator === ">") return left > right;
+    if (operator === ">=") return left >= right;
+    if (operator === "<") return left < right;
+    if (operator === "<=") return left <= right;
+    if (operator === "=" || operator === "equals") return left === right;
+    if (operator === "!=") return left !== right;
+    if (operator === "contains") return String(rawValue ?? "").toLowerCase().includes(String(expected ?? "").toLowerCase());
+    if (operator === "not_contains") return !String(rawValue ?? "").toLowerCase().includes(String(expected ?? "").toLowerCase());
+    if (operator === "gt") return bothNumeric && numericRaw > numericExpected;
+    if (operator === "gte") return bothNumeric && numericRaw >= numericExpected;
+    if (operator === "lt") return bothNumeric && numericRaw < numericExpected;
+    if (operator === "lte") return bothNumeric && numericRaw <= numericExpected;
 
-    const leftNumber = Number(value);
-    const rightNumber = Number(ruleValue);
-    const hasNumeric = Number.isFinite(leftNumber) && Number.isFinite(rightNumber);
-    const leftString = String(value ?? "").toLowerCase();
-    const rightString = ruleValue.toLowerCase();
-
-    switch (operator) {
-      case "equals": return hasNumeric ? leftNumber === rightNumber : leftString === rightString;
-      case "contains": return leftString.includes(rightString);
-      case "gt": return hasNumeric && leftNumber > rightNumber;
-      case "gte": return hasNumeric && leftNumber >= rightNumber;
-      case "lt": return hasNumeric && leftNumber < rightNumber;
-      case "lte": return hasNumeric && leftNumber <= rightNumber;
-      default: return false;
-    }
+    return false;
   };
 
-  const resolveValueColor = (field, value, styles) => {
-    const rules = Array.isArray(styles?.value_rules) ? styles.value_rules : [];
-    for (let i = 0; i < rules.length; i += 1) {
-      const rule = rules[i];
-      if (evaluateRule(field, value, rule) && rule.color) {
-        return rule.color;
-      }
+  const resolveFieldStyle = (field, value, payload, styles) => {
+    const cellRules = Array.isArray(styles?.cell_to_cell_rules) ? styles.cell_to_cell_rules : [];
+    for (let index = 0; index < cellRules.length; index += 1) {
+      const rule = cellRules[index] || {};
+      if (rule.target_field !== field) continue;
+      if (!resolveOperatorMatch(payload?.[rule.source_field], rule.operator, rule.value)) continue;
+      return {
+        color: rule.text_color || styles?.value_color || "#111827",
+        background: rule.bg_color || "transparent"
+      };
     }
-    return styles?.value_color || "#111827";
+
+    const globalRules = Array.isArray(styles?.global_value_color_rules) ? styles.global_value_color_rules : [];
+    for (let index = 0; index < globalRules.length; index += 1) {
+      const rule = globalRules[index] || {};
+      if (rule.column !== field) continue;
+      if (!resolveOperatorMatch(value, rule.operator, rule.value)) continue;
+      return {
+        color: rule.text_color || styles?.value_color || "#111827",
+        background: rule.bg_color || "transparent"
+      };
+    }
+
+    const localRules = Array.isArray(styles?.value_rules) ? styles.value_rules : [];
+    for (let index = 0; index < localRules.length; index += 1) {
+      const rule = localRules[index] || {};
+      const targetField = String(rule.field || "*");
+      if (targetField !== "*" && targetField !== field) continue;
+      if (!resolveOperatorMatch(value, rule.operator, rule.value)) continue;
+      if (!rule.color) continue;
+      return { color: rule.color, background: "transparent" };
+    }
+
+    return { color: styles?.value_color || "#111827", background: "transparent" };
   };
 
   const loadSettings = async (settingsApi, fallbackFields) => {
@@ -328,7 +347,14 @@
 
           const valueStrong = document.createElement("strong");
           valueStrong.textContent = formatValue(field, payload[field]);
-          valueStrong.style.color = resolveValueColor(field, payload[field], styles);
+          const resolvedStyle = resolveFieldStyle(field, payload[field], payload, styles);
+          valueStrong.style.color = resolvedStyle.color;
+          if (resolvedStyle.background && resolvedStyle.background !== "transparent") {
+            valueStrong.style.background = resolvedStyle.background;
+            valueStrong.style.padding = "2px 6px";
+            valueStrong.style.borderRadius = "4px";
+            valueStrong.style.display = "inline-block";
+          }
           valueStrong.style.fontSize = `${styles.value_font_size || 14}px`;
 
           item.appendChild(labelEl);
