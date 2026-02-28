@@ -71,6 +71,14 @@
   .lcni-app .lcni-stock-filter .lcni-filter-summary-desktop{display:none;}
   .lcni-app .lcni-stock-filter .lcni-filter-panel,
   .lcni-app .lcni-stock-filter .lcni-column-pop{position:relative;left:auto;right:auto;top:auto;bottom:auto;max-height:none;overflow:auto;z-index:4;margin:0 0 8px;flex:1 1 auto;}
+  .lcni-app .lcni-stock-filter .lcni-filter-panel{display:flex;flex-direction:column;}
+  .lcni-app .lcni-stock-filter .lcni-filter-panel-body{flex:1 1 auto;min-height:0;overflow:auto;}
+  .lcni-app .lcni-stock-filter .lcni-filter-panel-actions{margin-top:auto;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:stretch;padding-top:8px;border-top:1px solid #e5e7eb;background:#fff;}
+  .lcni-app .lcni-stock-filter .lcni-filter-panel-actions .lcni-saved-filter-label{display:none;}
+  .lcni-app .lcni-stock-filter .lcni-filter-panel-actions select{min-width:0;width:100%;}
+  .lcni-app .lcni-stock-filter .lcni-filter-panel-actions [data-saved-filter-select]{grid-column:1 / 2;}
+  .lcni-app .lcni-stock-filter .lcni-filter-panel-actions [data-template-filter-select]{grid-column:2 / 3;}
+  .lcni-app .lcni-stock-filter .lcni-filter-panel-actions .lcni-btn{width:100%;margin:0;}
   .lcni-app .lcni-stock-filter .lcni-filter-panel.is-collapsed{display:none;}
   .lcni-app .lcni-stock-filter .lcni-table-scroll{max-height:none;flex:1 1 auto;min-height:0;overflow:auto;padding-bottom:72px;}
   .lcni-btn-btn_apply_filter span,.lcni-btn-btn_save_filter span,.lcni-btn-btn_filter_reload span,.lcni-btn-btn_filter_delete span,.lcni-btn-btn_filter_save span,.lcni-btn-btn_filter_clear span{display:none;}
