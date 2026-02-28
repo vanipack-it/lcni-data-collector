@@ -382,3 +382,11 @@
 - Bổ sung script `INSERT ... SELECT`/`REPLACE INTO` chỉ tính theo 1 `event_time` + 1 `timeframe` mỗi lần chạy, join với `wp_lcni_sym_icb_market`, chỉ lấy `symbol_type = 'stock'`.
 - Bổ sung logic MACD cắt lên/cắt xuống cho thống kê ngành ICB cấp 2 bằng `LAG(...) OVER (PARTITION BY symbol, timeframe ORDER BY event_time)`.
 - Bổ sung index tối ưu hiệu năng theo yêu cầu: `(symbol, event_time, timeframe)`, `(event_time)`, `(symbol_type)` trên `wp_lcni_ohlc` và index hỗ trợ join/group cho bảng dimension.
+
+## 2026-02-28 (v5.3.5)
+- Nâng version plugin lên `5.3.5`.
+- Thêm tab con **Chart Builder** trong Frontend Setting để tạo biểu đồ data-driven từ admin, chọn template + data source + map field động qua AJAX.
+- Bổ sung hạ tầng bảng `wp_lcni_charts` (lưu `name`, `slug`, `chart_type`, `data_source`, `config_json`) theo mô hình config JSON, không hardcode series.
+- Thêm repository/service cho Chart Builder để sanitize payload, lưu/đọc cấu hình và truy vấn dữ liệu runtime theo config.
+- Thêm shortcode động `[lcni_chart id="..."]` và `[lcni_chart slug="..."]`, render bằng ECharts từ payload JSON; hỗ trợ `sync_group` để đồng bộ nhiều chart trên cùng page.
+- Giữ nguyên kiến trúc module hiện hữu và các shortcode cũ (không thay đổi contract cũ).

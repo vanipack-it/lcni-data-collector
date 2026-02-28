@@ -15,6 +15,7 @@ class LCNI_Settings {
         add_action('wp_ajax_lcni_rule_rebuild_status', [$this, 'ajax_rule_rebuild_status']);
         add_action('wp_ajax_lcni_update_data_status_snapshot', [$this, 'ajax_update_data_status_snapshot']);
         add_action('wp_ajax_lcni_csv_import_status_snapshot', [$this, 'ajax_csv_import_status_snapshot']);
+        add_action('wp_ajax_lcni_chart_builder_fields', [$this, 'ajax_chart_builder_fields']);
     }
 
     public function menu() {
@@ -316,7 +317,7 @@ class LCNI_Settings {
             }
         } elseif ($action === 'save_frontend_settings') {
             $module = isset($_POST['lcni_frontend_module']) ? sanitize_key(wp_unslash($_POST['lcni_frontend_module'])) : '';
-            $allowed_modules = ['signals', 'overview', 'chart', 'chart_analyst', 'watchlist', 'filter', 'column_labels', 'button_style', 'data_format'];
+            $allowed_modules = ['signals', 'overview', 'chart', 'chart_analyst', 'chart_builder', 'watchlist', 'filter', 'column_labels', 'button_style', 'data_format'];
 
             if (!in_array($module, $allowed_modules, true)) {
                 $this->set_notice('error', 'Module frontend không hợp lệ.');
@@ -339,6 +340,16 @@ class LCNI_Settings {
                     ];
                     update_option('lcni_frontend_settings_chart', $this->sanitize_frontend_chart_settings($input));
                     update_option('lcni_frontend_chart_title', $this->sanitize_module_title(isset($_POST['lcni_frontend_module_title']) ? wp_unslash($_POST['lcni_frontend_module_title']) : '', 'Stock Chart'));
+
+                } elseif ($module === 'chart_builder') {
+                    $payload = isset($_POST['lcni_chart_builder']) ? (array) wp_unslash($_POST['lcni_chart_builder']) : [];
+                    $sanitized = LCNI_Chart_Builder_Service::sanitize_payload($payload);
+                    if ($sanitized['name'] === '' || $sanitized['slug'] === '') {
+                        $this->set_notice('error', 'Chart Builder cần name và slug.');
+                    } else {
+                        $chart_id = LCNI_Chart_Builder_Repository::upsert_chart($sanitized);
+                        LCNI_DB::log_change('chart_builder_saved', 'Saved chart builder #' . (int) $chart_id . ' (' . $sanitized['slug'] . ').');
+                    }
 
                 } elseif ($module === 'chart_analyst') {
                     $templates = [];
@@ -616,7 +627,7 @@ class LCNI_Settings {
         $redirect_page = in_array($redirect_page, ['lcni-settings', 'lcni-data-viewer'], true) ? $redirect_page : 'lcni-settings';
         $redirect_url = admin_url('admin.php?page=' . $redirect_page);
 
-        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange', 'lcni-tab-update-runtime', 'lcni-tab-update-ohlc-latest', 'lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format'], true)) {
+        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange', 'lcni-tab-update-runtime', 'lcni-tab-update-ohlc-latest', 'lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-chart-builder', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format'], true)) {
             $redirect_url = add_query_arg('tab', $redirect_tab, $redirect_url);
         }
 
@@ -1405,7 +1416,7 @@ class LCNI_Settings {
 
         $active_tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'general';
         $rule_sub_tabs = ['lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange'];
-        $frontend_sub_tabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format'];
+        $frontend_sub_tabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-chart-builder', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format'];
         $update_data_sub_tabs = ['lcni-tab-update-runtime', 'lcni-tab-update-ohlc-latest'];
         if (in_array($active_tab, $rule_sub_tabs, true)) {
             $active_tab = 'rule_settings';
@@ -2734,6 +2745,7 @@ private function sanitize_module_title($value, $fallback) {
             <button type="button" data-sub-tab="lcni-tab-frontend-overview">Stock Overview</button>
             <button type="button" data-sub-tab="lcni-tab-frontend-chart">Stock Chart</button>
             <button type="button" data-sub-tab="lcni-tab-frontend-chart-analyst">Chart Analyst</button>
+            <button type="button" data-sub-tab="lcni-tab-frontend-chart-builder">Chart Builder</button>
             <button type="button" data-sub-tab="lcni-tab-frontend-watchlist">Watchlist</button>
             <button type="button" data-sub-tab="lcni-tab-frontend-filter">Filter</button>
             <button type="button" data-sub-tab="lcni-tab-frontend-style-config">Style Config</button>
@@ -2744,6 +2756,7 @@ private function sanitize_module_title($value, $fallback) {
         <?php $this->render_frontend_module_form('overview', 'lcni-tab-frontend-overview', $overview_labels, $overview); ?>
         <?php $this->render_frontend_chart_form('chart', 'lcni-tab-frontend-chart', $chart); ?>
         <?php $this->render_frontend_chart_analyst_form('chart_analyst', 'lcni-tab-frontend-chart-analyst', $chart_analyst); ?>
+        <?php $this->render_frontend_chart_builder_form('chart_builder', 'lcni-tab-frontend-chart-builder'); ?>
         <?php $this->render_frontend_watchlist_form('watchlist', 'lcni-tab-frontend-watchlist', $watchlist); ?>
         <?php LCNI_FilterAdmin::render_filter_form('lcni-tab-frontend-filter'); ?>
         <?php $this->render_frontend_button_style_form('button_style', 'lcni-tab-frontend-style-config'); ?>
@@ -2765,7 +2778,7 @@ private function sanitize_module_title($value, $fallback) {
                     });
                 };
                 buttons.forEach((btn) => btn.addEventListener('click', () => activate(btn.getAttribute('data-sub-tab'))));
-                const validTabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format'];
+                const validTabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-chart-builder', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format'];
                 activate(validTabs.includes(current) ? current : 'lcni-tab-frontend-signals');
 
                 const bindFrontendModuleSortable = (form) => {
@@ -2822,6 +2835,87 @@ private function sanitize_module_title($value, $fallback) {
                 document.querySelectorAll('form[data-frontend-module-form]').forEach(bindFrontendModuleSortable);
             })();
         </script>
+        <?php
+    }
+
+    public function ajax_chart_builder_fields() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'forbidden'], 403);
+        }
+
+        $source = isset($_GET['data_source']) ? sanitize_key(wp_unslash($_GET['data_source'])) : '';
+        $fields = LCNI_Chart_Builder_Repository::get_table_columns($source);
+        wp_send_json_success(['fields' => $fields]);
+    }
+
+    private function render_frontend_chart_builder_form($module, $tab_id) {
+        $charts = LCNI_Chart_Builder_Repository::list_charts();
+        $data_sources = [
+            'thong_ke_thi_truong' => 'wp_lcni_thong_ke_thi_truong',
+            'ohlc_latest' => 'wp_lcni_ohlc_latest',
+            'money_flow' => 'wp_lcni_money_flow',
+            'stock_stats' => 'wp_lcni_stock_stats',
+        ];
+        ?>
+        <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form" id="lcni-chart-builder-form">
+                <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
+                <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                <h3>Chart Builder</h3>
+                <p>Tạo shortcode động [lcni_chart id="x"] hoặc [lcni_chart slug="ten-chart"].</p>
+                <table class="form-table" role="presentation"><tbody>
+                    <tr><th><label>Tên chart</label></th><td><input type="text" name="lcni_chart_builder[name]" class="regular-text" required></td></tr>
+                    <tr><th><label>Slug shortcode</label></th><td><input type="text" name="lcni_chart_builder[slug]" class="regular-text" required></td></tr>
+                    <tr><th><label>Chart template</label></th><td><select name="lcni_chart_builder[chart_type]"><option value="market_breadth">Market Breadth</option><option value="rsi_zone">RSI Zone</option><option value="smart_money_flow">Smart Money Flow</option><option value="candlestick">Candlestick</option><option value="multi_line" selected>Multi-line</option></select></td></tr>
+                    <tr><th><label>Data source</label></th><td><select name="lcni_chart_builder[data_source]" id="lcni-chart-builder-source"><?php foreach ($data_sources as $k => $label) : ?><option value="<?php echo esc_attr($k); ?>"><?php echo esc_html($label); ?></option><?php endforeach; ?></select></td></tr>
+                    <tr><th><label>X axis</label></th><td><select name="lcni_chart_builder[xAxis]" id="lcni-chart-builder-xaxis"></select></td></tr>
+                    <tr><th><label>Series 1</label></th><td><input type="text" name="lcni_chart_builder[series_name][]" value="Series 1"> <select name="lcni_chart_builder[series_field][]" class="lcni-chart-builder-field"></select> <select name="lcni_chart_builder[series_type][]"><option value="line">Line</option><option value="bar">Bar</option></select></td></tr>
+                    <tr><th><label>Series 2</label></th><td><input type="text" name="lcni_chart_builder[series_name][]" value="Series 2"> <select name="lcni_chart_builder[series_field][]" class="lcni-chart-builder-field"></select> <select name="lcni_chart_builder[series_type][]"><option value="line">Line</option><option value="bar" selected>Bar</option></select></td></tr>
+                    <tr><th><label>Filter</label></th><td><input type="text" name="lcni_chart_builder[market]" value="VNINDEX" placeholder="market"> <input type="text" name="lcni_chart_builder[timeframe]" value="1D" placeholder="timeframe"></td></tr>
+                </tbody></table>
+                <?php submit_button('Lưu Chart Builder'); ?>
+            </form>
+
+            <h3>Danh sách chart đã tạo</h3>
+            <table class="widefat striped"><thead><tr><th>ID</th><th>Name</th><th>Slug</th><th>Shortcode</th></tr></thead><tbody>
+            <?php if (empty($charts)) : ?>
+                <tr><td colspan="4">Chưa có chart.</td></tr>
+            <?php else : foreach ($charts as $chart) : ?>
+                <tr>
+                    <td><?php echo esc_html((string) $chart['id']); ?></td>
+                    <td><?php echo esc_html((string) $chart['name']); ?></td>
+                    <td><?php echo esc_html((string) $chart['slug']); ?></td>
+                    <td><code>[lcni_chart id="<?php echo esc_attr((string) $chart['id']); ?>"]</code><br><code>[lcni_chart slug="<?php echo esc_attr((string) $chart['slug']); ?>"]</code></td>
+                </tr>
+            <?php endforeach; endif; ?>
+            </tbody></table>
+            <p><em>Đồng bộ nhiều chart: dùng cùng thuộc tính sync_group, ví dụ [lcni_chart slug="a" sync_group="market"]</em></p>
+            <script>
+                (function () {
+                    const source = document.getElementById('lcni-chart-builder-source');
+                    const xAxis = document.getElementById('lcni-chart-builder-xaxis');
+                    const fieldSelects = document.querySelectorAll('.lcni-chart-builder-field');
+                    if (!source || !xAxis || !fieldSelects.length) return;
+
+                    const reloadFields = () => {
+                        const endpoint = '<?php echo esc_js(admin_url('admin-ajax.php')); ?>?action=lcni_chart_builder_fields&data_source=' + encodeURIComponent(source.value);
+                        fetch(endpoint, { credentials: 'same-origin' })
+                            .then((res) => res.json())
+                            .then((json) => {
+                                const fields = (json && json.success && json.data && Array.isArray(json.data.fields)) ? json.data.fields : [];
+                                const html = fields.map((f) => `<option value="${f}">${f}</option>`).join('');
+                                xAxis.innerHTML = html;
+                                fieldSelects.forEach((select) => { select.innerHTML = html; });
+                            });
+                    };
+
+                    source.addEventListener('change', reloadFields);
+                    reloadFields();
+                })();
+            </script>
+        </div>
         <?php
     }
 
