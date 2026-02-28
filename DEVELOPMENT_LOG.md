@@ -390,3 +390,11 @@
 - Thêm repository/service cho Chart Builder để sanitize payload, lưu/đọc cấu hình và truy vấn dữ liệu runtime theo config.
 - Thêm shortcode động `[lcni_chart id="..."]` và `[lcni_chart slug="..."]`, render bằng ECharts từ payload JSON; hỗ trợ `sync_group` để đồng bộ nhiều chart trên cùng page.
 - Giữ nguyên kiến trúc module hiện hữu và các shortcode cũ (không thay đổi contract cũ).
+
+## 2026-02-28 (v5.3.6)
+- Nâng version plugin lên `5.3.6`; đồng bộ `LCNI_Chart_Builder_Shortcode::VERSION` để cache-busting asset Chart Builder.
+- Frontend Setting -> Chart Builder: bổ sung cột **Chart template** trong danh sách chart đã tạo.
+- Frontend Setting -> Chart Builder: thêm action **Sửa** để nạp chart vào form, chỉnh sửa và lưu đè trực tiếp ngay trong danh sách.
+- Frontend Setting -> Chart Builder: nâng cấp phần series thành danh sách kéo thả linh hoạt, hỗ trợ thêm/xóa/reorder nhiều hơn 2 series.
+- Frontend Setting -> Chart Builder: bổ sung ô xem trước, gọi AJAX preview để tải dữ liệu và render biểu đồ ngay trên khung tạo chart trước khi lưu.
+
