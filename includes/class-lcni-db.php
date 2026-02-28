@@ -2094,8 +2094,8 @@ class LCNI_DB {
     private static function normalize_ohlc_macd_signal_columns() {
         global $wpdb;
 
-        $migration_flag = 'lcni_ohlc_macd_signal_labels_migrated_v1';
-        if (get_option($migration_flag) === 'yes') {
+        $migration_flag = 'lcni_ohlc_macd_signal_labels_migrated_v2';
+        if (get_option($migration_flag) === 'yes' && !self::has_legacy_macd_signal_values()) {
             return;
         }
 
@@ -2104,7 +2104,7 @@ class LCNI_DB {
         $wpdb->query("ALTER TABLE {$table} MODIFY COLUMN macd_tren_0 VARCHAR(20) DEFAULT 'Không trên 0'");
         $wpdb->query("ALTER TABLE {$table} MODIFY COLUMN macd_hist_tang VARCHAR(20) DEFAULT 'Không tăng'");
 
-        $wpdb->query(
+        $normalized_rows = $wpdb->query(
             "UPDATE {$table}
             SET
                 macd_cat = CASE
@@ -2122,7 +2122,27 @@ class LCNI_DB {
                 END"
         );
 
+        self::log_change(
+            'normalize_ohlc_macd_signal_columns',
+            sprintf('Normalized MACD signal label columns in wp_lcni_ohlc; affected rows: %d.', (int) $normalized_rows)
+        );
+
         update_option($migration_flag, 'yes');
+    }
+
+    private static function has_legacy_macd_signal_values() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $legacy_count = (int) $wpdb->get_var(
+            "SELECT COUNT(*)
+            FROM {$table}
+            WHERE CAST(macd_cat AS CHAR) IN ('1', '-1', '0', 'Cắt lên', 'Cắt xuống')
+                OR CAST(macd_tren_0 AS CHAR) IN ('1', '0')
+                OR CAST(macd_hist_tang AS CHAR) IN ('1', '0')"
+        );
+
+        return $legacy_count > 0;
     }
 
     private static function sync_frontend_settings_with_new_ohlc_columns() {
