@@ -1357,7 +1357,7 @@ class LCNI_DB {
     private static function backfill_market_statistics_tables() {
         global $wpdb;
 
-        $migration_flag = 'lcni_market_statistics_backfilled_v3';
+        $migration_flag = 'lcni_market_statistics_backfilled_v4';
 
         $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
         $mapping_table = $wpdb->prefix . 'lcni_sym_icb_market';
@@ -1398,11 +1398,41 @@ class LCNI_DB {
             GROUP BY o.event_time, CAST(COALESCE(NULLIF(TRIM(m.market_id), ''), '0') AS UNSIGNED), o.timeframe"
         );
 
-        $wpdb->query('SET @thong_ke_thi_truong_idx := 0');
         $wpdb->query(
-            "UPDATE {$market_statistics_table}
-            SET thong_ke_thi_truong_index = (@thong_ke_thi_truong_idx := @thong_ke_thi_truong_idx + 1)
-            ORDER BY event_time ASC, marketid ASC, timeframe ASC"
+            "UPDATE {$market_statistics_table} target
+            INNER JOIN (
+                SELECT
+                    src.id,
+                    ((event_rank.event_position - 1) * market_total.total_markets) + market_rank.market_position AS computed_index
+                FROM {$market_statistics_table} src
+                INNER JOIN (
+                    SELECT
+                        event_times.event_time,
+                        (@event_pos := @event_pos + 1) AS event_position
+                    FROM (
+                        SELECT DISTINCT event_time
+                        FROM {$market_statistics_table}
+                        ORDER BY event_time ASC
+                    ) event_times
+                    CROSS JOIN (SELECT @event_pos := 0) event_vars
+                ) event_rank ON event_rank.event_time = src.event_time
+                INNER JOIN (
+                    SELECT
+                        markets.marketid,
+                        (@market_pos := @market_pos + 1) AS market_position
+                    FROM (
+                        SELECT DISTINCT marketid
+                        FROM {$market_statistics_table}
+                        ORDER BY marketid ASC
+                    ) markets
+                    CROSS JOIN (SELECT @market_pos := 0) market_vars
+                ) market_rank ON market_rank.marketid = src.marketid
+                CROSS JOIN (
+                    SELECT COUNT(DISTINCT marketid) AS total_markets
+                    FROM {$market_statistics_table}
+                ) market_total
+            ) calc ON calc.id = target.id
+            SET target.thong_ke_thi_truong_index = calc.computed_index"
         );
 
         $wpdb->query(
