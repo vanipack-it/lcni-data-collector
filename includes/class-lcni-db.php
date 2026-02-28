@@ -1427,10 +1427,10 @@ class LCNI_DB {
         }
     }
 
-    private static function backfill_market_statistics_tables() {
+    private static function backfill_market_statistics_tables($force_rebuild = false) {
         global $wpdb;
 
-        $migration_flag = 'lcni_market_statistics_backfilled_v5';
+        $migration_flag = 'lcni_market_statistics_backfilled_v6';
 
         $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
         $mapping_table = $wpdb->prefix . 'lcni_sym_icb_market';
@@ -1440,7 +1440,7 @@ class LCNI_DB {
         $icb2_table = $wpdb->prefix . 'lcni_icb2';
 
         $existing_rows = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$market_statistics_table}");
-        if (get_option($migration_flag) === 'yes' && $existing_rows > 0) {
+        if (!$force_rebuild && get_option($migration_flag) === 'yes' && $existing_rows > 0) {
             return;
         }
 
@@ -3349,6 +3349,7 @@ class LCNI_DB {
             self::rebuild_rs_3m_by_exchange([], array_keys($touched_timeframes));
             self::rebuild_rs_exchange_signals([], array_keys($touched_timeframes));
             self::perform_refresh_ohlc_latest_snapshot(array_column($touched_series, 'symbol'));
+            self::backfill_market_statistics_tables(true);
         }
 
         return [
