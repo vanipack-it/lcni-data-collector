@@ -1,3 +1,9 @@
+## 2026-02-28 (v2.3.1b)
+- Nâng version plugin lên `2.3.1b`; cập nhật `FilterShortcode::VERSION` để đồng bộ cache-busting frontend Filter.
+- Chỉnh công thức `thong_ke_thi_truong_index` theo rule mới: cố định thứ tự `marketid` tăng dần (1->n) trong từng `event_time`, đồng thời `event_time` vẫn chạy từ cũ -> mới.
+- Cập nhật migration backfill thống kê thị trường để áp dụng rule index mới cho toàn bộ dữ liệu cũ.
+- Thêm file SQL triển khai nhanh `sql_market_statistics_v2_3_1b.sql` để rebuild và gán lại `thong_ke_thi_truong_index` theo rule mới.
+
 ## 2026-02-28 (v2.3.1a)
 - Nâng version plugin lên `2.3.1a`; cập nhật `FilterShortcode::VERSION` để đồng bộ cache-busting frontend Filter.
 - Điều chỉnh mobile UX cho shortcode `[lcni_stock_filter]`: lần mở đầu trên mobile sẽ hiển thị panel filter ở row 1 (mặc định mở), bảng kết quả ở row 2, tránh chồng lớp giữa panel và table.
