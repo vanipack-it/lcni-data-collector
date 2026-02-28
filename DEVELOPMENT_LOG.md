@@ -1,7 +1,9 @@
 ## 2026-02-28 (v2.3.1c)
 - Nâng version plugin lên `2.3.1c`; cập nhật `FilterShortcode::VERSION` để đồng bộ cache-busting frontend Filter.
 - Tối ưu layout Filter panel trên mobile: ẩn label của 2 dropdown, đặt 2 dropdown liền nhau full-width 100% và ghim sát nhóm nút action ở cuối panel.
-- Các nút `btn_filter_reload`, `btn_filter_save`, `btn_filter_delete`, `btn_set_default_filter`, `btn_filter_clear`, `btn_filter_apply`, `btn_filter_add_watchlist_bulk`, `btn_filter_export_excel`, `btn_filter_hide` trên mobile tự động xuống cuối panel và hiển thị dạng lưới 2 cột full-width.
+- Các nút `btn_filter_reload`, `btn_filter_save`, `btn_filter_delete`, `btn_set_default_filter`, `btn_filter_clear`, `btn_filter_apply`, `btn_filter_add_watchlist_bulk`, `btn_filter_export_excel`, `btn_filter_hide` trên mobile chuyển sang layout `flex-wrap` tự co theo độ rộng icon + text (không cố định 2 cột), giúp tiết kiệm không gian.
+- Trên mobile, khi mở Filter Panel hệ thống luôn giữ chiều cao hiển thị tối thiểu 70% viewport; vùng action được sticky cuối panel và có bù `safe-area` để tránh bị bottom bar che nút, đồng thời panel có thể giãn thêm khi dữ liệu kết quả ít.
+- Popup đăng nhập từ `btn_filter_add_watchlist_bulk` bổ sung 3 button key mới (`btn_filter_watchlist_login`, `btn_filter_watchlist_register`, `btn_filter_watchlist_close`) để cấu hình style trong Frontend Settings → Style Config → Button (nhóm ngoài bảng).
 
 ## 2026-02-28 (v2.3.1b)
 - Nâng version plugin lên `2.3.1b`; cập nhật `FilterShortcode::VERSION` để đồng bộ cache-busting frontend Filter.

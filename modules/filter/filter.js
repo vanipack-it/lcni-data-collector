@@ -248,7 +248,7 @@
   }
 
   function showAuthModal(message) {
-    showModal(`<h3>${esc(message)}</h3><div class="lcni-filter-modal-actions"><a class="lcni-btn lcni-btn-btn_filter_apply" href="${esc(cfg.loginUrl || '#')}">Login</a><a class="lcni-btn lcni-btn-btn_filter_open" href="${esc((cfg.registerUrl || cfg.loginUrl || '#'))}">Register</a><button type="button" class="lcni-btn lcni-btn-btn_popup_close" data-modal-close>Close</button></div>`);
+    showModal(`<h3>${esc(message)}</h3><div class="lcni-filter-modal-actions"><a class="lcni-btn lcni-btn-btn_filter_watchlist_login" href="${esc(cfg.loginUrl || '#')}">${renderButtonContent('btn_filter_watchlist_login', 'Login')}</a><a class="lcni-btn lcni-btn-btn_filter_watchlist_register" href="${esc((cfg.registerUrl || cfg.loginUrl || '#'))}">${renderButtonContent('btn_filter_watchlist_register', 'Register')}</a><button type="button" class="lcni-btn lcni-btn-btn_filter_watchlist_close" data-modal-close>${renderButtonContent('btn_filter_watchlist_close', 'Close')}</button></div>`);
   }
 
   function normalizeFilterName(raw) {
