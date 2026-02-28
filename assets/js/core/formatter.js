@@ -272,7 +272,7 @@
   function inferColumnFormat(column) {
     const key = normalizeFieldName(column);
     if (key === "event_time") return { type: "event_time" };
-    if (key.indexOf("volume") !== -1 || key === "vol")
+    if (key.indexOf("volume") !== -1 || key === "vol" || key.indexOf("value_traded") !== -1)
       return { type: "volume" };
     if (key.indexOf("rsi") !== -1) return { type: "rsi" };
     if (key.indexOf("macd") !== -1) return { type: "macd" };
