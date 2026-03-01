@@ -155,6 +155,7 @@ class LCNI_DB {
         self::backfill_ohlc_macd_flags();
         self::normalize_ohlc_macd_signal_columns();
         self::backfill_ohlc_one_candle();
+        self::backfill_ohlc_two_candle_pattern();
         self::sync_frontend_settings_with_new_ohlc_columns();
         self::backfill_market_statistics_tables();
         self::ensure_ohlc_symbol_type_column();
@@ -198,6 +199,7 @@ class LCNI_DB {
             low_price DECIMAL(20,2) NOT NULL,
             close_price DECIMAL(20,2) NOT NULL,
             one_candle VARCHAR(30) DEFAULT NULL,
+            two_candle_pattern VARCHAR(40) DEFAULT NULL,
             volume BIGINT UNSIGNED NOT NULL DEFAULT 0,
             value_traded DECIMAL(24,2) NOT NULL DEFAULT 0,
             pct_t_1 DECIMAL(12,6) DEFAULT NULL,
@@ -960,6 +962,7 @@ class LCNI_DB {
             'hanh_vi_gia_1w' => 'VARCHAR(50) DEFAULT NULL',
             'smart_money' => 'VARCHAR(30) DEFAULT NULL',
             'one_candle' => 'VARCHAR(30) DEFAULT NULL',
+            'two_candle_pattern' => 'VARCHAR(40) DEFAULT NULL',
         ];
 
         foreach ($required_columns as $column_name => $column_definition) {
@@ -2611,6 +2614,105 @@ class LCNI_DB {
         update_option($migration_flag, 'yes');
     }
 
+
+    private static function backfill_ohlc_two_candle_pattern() {
+        global $wpdb;
+
+        $migration_flag = 'lcni_ohlc_two_candle_pattern_backfilled_v1';
+        if (get_option($migration_flag) === 'yes' && !self::has_missing_two_candle_pattern_rows()) {
+            return;
+        }
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $updated_rows = (int) $wpdb->query(
+            "WITH candle_lag AS (
+                SELECT
+                    symbol,
+                    timeframe,
+                    trading_index,
+                    open_price,
+                    close_price,
+                    LAG(open_price) OVER (
+                        PARTITION BY symbol, timeframe
+                        ORDER BY trading_index
+                    ) AS prev_open,
+                    LAG(close_price) OVER (
+                        PARTITION BY symbol, timeframe
+                        ORDER BY trading_index
+                    ) AS prev_close,
+                    LAG(high_price) OVER (
+                        PARTITION BY symbol, timeframe
+                        ORDER BY trading_index
+                    ) AS prev_high,
+                    LAG(low_price) OVER (
+                        PARTITION BY symbol, timeframe
+                        ORDER BY trading_index
+                    ) AS prev_low
+                FROM {$table}
+                WHERE UPPER(symbol_type) = 'STOCK'
+            )
+            UPDATE {$table} o
+            JOIN candle_lag c
+                ON o.symbol = c.symbol
+                AND o.timeframe = c.timeframe
+                AND o.trading_index = c.trading_index
+            SET o.two_candle_pattern = CASE
+                WHEN
+                    c.prev_close < c.prev_open
+                    AND c.close_price > c.open_price
+                    AND c.close_price > c.prev_open
+                    AND c.open_price < c.prev_close
+                THEN 'BULLISH_ENGULFING'
+                WHEN
+                    c.prev_close > c.prev_open
+                    AND c.close_price < c.open_price
+                    AND c.close_price < c.prev_open
+                    AND c.open_price > c.prev_close
+                THEN 'BEARISH_ENGULFING'
+                WHEN
+                    c.prev_close < c.prev_open
+                    AND c.close_price > c.open_price
+                    AND c.open_price < c.prev_low
+                    AND c.close_price > (c.prev_open + c.prev_close) / 2
+                    AND c.close_price < c.prev_open
+                THEN 'PIERCING_LINE'
+                WHEN
+                    c.prev_close > c.prev_open
+                    AND c.close_price < c.open_price
+                    AND c.open_price > c.prev_high
+                    AND c.close_price < (c.prev_open + c.prev_close) / 2
+                    AND c.close_price > c.prev_open
+                THEN 'DARK_CLOUD'
+                ELSE 'NONE'
+            END
+            WHERE UPPER(o.symbol_type) = 'STOCK'
+                AND (o.two_candle_pattern IS NULL OR TRIM(IFNULL(o.two_candle_pattern, '')) = '')"
+        );
+
+        if ($updated_rows > 0) {
+            self::log_change(
+                'backfill_ohlc_two_candle_pattern',
+                sprintf('Backfilled two_candle_pattern for %d OHLC rows using window-function lag.', $updated_rows)
+            );
+        }
+
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function has_missing_two_candle_pattern_rows() {
+        global $wpdb;
+
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $missing_count = (int) $wpdb->get_var(
+            "SELECT COUNT(*)
+            FROM {$ohlc_table}
+            WHERE UPPER(symbol_type) = 'STOCK'
+                AND (two_candle_pattern IS NULL OR TRIM(IFNULL(two_candle_pattern, '')) = '')"
+        );
+
+        return $missing_count > 0;
+    }
+
     private static function normalize_ohlc_macd_signal_columns() {
         global $wpdb;
 
@@ -4259,6 +4361,14 @@ class LCNI_DB {
                 (float) ($rows[$i]['low_price'] ?? 0),
                 (float) ($rows[$i]['close_price'] ?? 0)
             );
+            $two_candle_pattern = self::determine_two_candle_pattern(
+                $i > 0 ? (float) ($rows[$i - 1]['open_price'] ?? 0) : null,
+                $i > 0 ? (float) ($rows[$i - 1]['close_price'] ?? 0) : null,
+                $i > 0 ? (float) ($rows[$i - 1]['high_price'] ?? 0) : null,
+                $i > 0 ? (float) ($rows[$i - 1]['low_price'] ?? 0) : null,
+                (float) ($rows[$i]['open_price'] ?? 0),
+                (float) ($rows[$i]['close_price'] ?? 0)
+            );
             $nen_types[] = $nen_type;
 
             $wpdb->update(
@@ -4312,10 +4422,65 @@ class LCNI_DB {
                     'hanh_vi_gia_1w' => $hanh_vi_gia_1w,
                     'smart_money' => $smart_money,
                     'one_candle' => $one_candle,
+                    'two_candle_pattern' => $two_candle_pattern,
                 ],
                 ['id' => (int) $rows[$i]['id']]
             );
         }
+    }
+
+
+    private static function determine_two_candle_pattern($prev_open, $prev_close, $prev_high, $prev_low, $open_price, $close_price) {
+        if ($prev_open === null || $prev_close === null || $prev_high === null || $prev_low === null) {
+            return 'NONE';
+        }
+
+        $prev_open = (float) $prev_open;
+        $prev_close = (float) $prev_close;
+        $prev_high = (float) $prev_high;
+        $prev_low = (float) $prev_low;
+        $open = (float) $open_price;
+        $close = (float) $close_price;
+
+        if (
+            $prev_close < $prev_open
+            && $close > $open
+            && $close > $prev_open
+            && $open < $prev_close
+        ) {
+            return 'BULLISH_ENGULFING';
+        }
+
+        if (
+            $prev_close > $prev_open
+            && $close < $open
+            && $close < $prev_open
+            && $open > $prev_close
+        ) {
+            return 'BEARISH_ENGULFING';
+        }
+
+        if (
+            $prev_close < $prev_open
+            && $close > $open
+            && $open < $prev_low
+            && $close > (($prev_open + $prev_close) / 2)
+            && $close < $prev_open
+        ) {
+            return 'PIERCING_LINE';
+        }
+
+        if (
+            $prev_close > $prev_open
+            && $close < $open
+            && $open > $prev_high
+            && $close < (($prev_open + $prev_close) / 2)
+            && $close > $prev_open
+        ) {
+            return 'DARK_CLOUD';
+        }
+
+        return 'NONE';
     }
 
     private static function determine_one_candle($open_price, $high_price, $low_price, $close_price) {
