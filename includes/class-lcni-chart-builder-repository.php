@@ -103,6 +103,31 @@ class LCNI_Chart_Builder_Repository {
         return is_array($columns) ? array_values(array_filter(array_map('sanitize_key', $columns))) : [];
     }
 
+    public static function get_distinct_field_values($table_key, $field, $limit = 100) {
+        global $wpdb;
+
+        $table = self::get_table_name_by_key(sanitize_key((string) $table_key));
+        $safe_field = sanitize_key((string) $field);
+        if ($table === '' || $safe_field === '') {
+            return [];
+        }
+
+        $columns = self::get_table_columns($table_key);
+        if (!in_array($safe_field, $columns, true)) {
+            return [];
+        }
+
+        $safe_limit = max(1, min(300, (int) $limit));
+        $sql = "SELECT DISTINCT `{$safe_field}` AS v FROM {$table} WHERE `{$safe_field}` IS NOT NULL AND `{$safe_field}` <> '' ORDER BY `{$safe_field}` ASC LIMIT {$safe_limit}";
+        $values = $wpdb->get_col($sql);
+
+        return array_values(array_filter(array_map(static function ($value) {
+            return sanitize_text_field((string) $value);
+        }, (array) $values), static function ($value) {
+            return $value !== '';
+        }));
+    }
+
     private static function build_where_sql($config, $fields_whitelist) {
         $where = [];
         $params = [];

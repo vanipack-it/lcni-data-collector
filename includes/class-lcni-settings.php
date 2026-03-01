@@ -16,6 +16,7 @@ class LCNI_Settings {
         add_action('wp_ajax_lcni_update_data_status_snapshot', [$this, 'ajax_update_data_status_snapshot']);
         add_action('wp_ajax_lcni_csv_import_status_snapshot', [$this, 'ajax_csv_import_status_snapshot']);
         add_action('wp_ajax_lcni_chart_builder_fields', [$this, 'ajax_chart_builder_fields']);
+        add_action('wp_ajax_lcni_chart_builder_filter_values', [$this, 'ajax_chart_builder_filter_values']);
     }
 
     public function menu() {
@@ -2848,6 +2849,17 @@ private function sanitize_module_title($value, $fallback) {
         wp_send_json_success(['fields' => $fields]);
     }
 
+    public function ajax_chart_builder_filter_values() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'forbidden'], 403);
+        }
+
+        $source = isset($_GET['data_source']) ? sanitize_key(wp_unslash($_GET['data_source'])) : '';
+        $field = isset($_GET['field']) ? sanitize_key(wp_unslash($_GET['field'])) : '';
+        $values = LCNI_Chart_Builder_Repository::get_distinct_field_values($source, $field, 120);
+        wp_send_json_success(['values' => $values]);
+    }
+
     private function render_frontend_chart_builder_form($module, $tab_id) {
         $charts = LCNI_Chart_Builder_Repository::list_charts();
         $data_sources = [
@@ -2860,13 +2872,13 @@ private function sanitize_module_title($value, $fallback) {
             'stock_stats' => 'wp_lcni_stock_stats',
         ];
         $chart_templates = [
-            'multi_line' => 'Multi-line',
-            'area_stack' => 'Area Stack',
-            'share_dataset' => 'Share Dataset',
-            'market_breadth' => 'Market Breadth',
-            'rsi_zone' => 'RSI Zone',
-            'smart_money_flow' => 'Smart Money Flow',
-            'candlestick' => 'Candlestick',
+            'multi_line' => ['label' => 'Multi-line', 'axis_slots' => 1, 'series_slots' => 3],
+            'area_stack' => ['label' => 'Area Stack', 'axis_slots' => 1, 'series_slots' => 4],
+            'share_dataset' => ['label' => 'Share Dataset', 'axis_slots' => 1, 'series_slots' => 2],
+            'market_breadth' => ['label' => 'Market Breadth', 'axis_slots' => 1, 'series_slots' => 4],
+            'rsi_zone' => ['label' => 'RSI Zone', 'axis_slots' => 1, 'series_slots' => 2],
+            'smart_money_flow' => ['label' => 'Smart Money Flow', 'axis_slots' => 1, 'series_slots' => 3],
+            'candlestick' => ['label' => 'Candlestick', 'axis_slots' => 1, 'series_slots' => 4],
         ];
         ?>
         <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
@@ -2879,8 +2891,10 @@ private function sanitize_module_title($value, $fallback) {
                 .lcni-chart-builder-pane.active { display:block; }
                 .lcni-chart-grid { display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px; margin-bottom:12px; }
                 .lcni-chart-column { border:1px solid #dcdcde; border-radius:4px; background:#fff; padding:12px; }
-                .lcni-chart-drop-zone { border:1px dashed #8c8f94; border-radius:4px; min-height:38px; padding:8px; margin-bottom:8px; background:#f9f9f9; }
+                .lcni-chart-drop-zone { border:1px dashed #8c8f94; border-radius:4px; min-height:38px; padding:8px; margin-bottom:8px; background:#f9f9f9; display:flex; align-items:center; justify-content:space-between; gap:8px; }
                 .lcni-chart-drop-zone.is-over { background:#e8f0fe; border-color:#2271b1; }
+                .lcni-chart-drop-zone-actions { display:flex; gap:6px; }
+                .lcni-chart-map-cols { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
                 .lcni-chart-source-grid { display:grid; grid-template-rows: 20% 80%; gap:8px; height:360px; }
                 .lcni-chart-source-tables, .lcni-chart-source-fields { border:1px solid #dcdcde; border-radius:4px; padding:8px; overflow:auto; }
                 .lcni-chart-field-pill { display:inline-block; border:1px solid #dcdcde; padding:3px 8px; margin:4px 4px 0 0; border-radius:999px; background:#fff; cursor:grab; }
@@ -2890,6 +2904,10 @@ private function sanitize_module_title($value, $fallback) {
                 .lcni-chart-template-card { border:1px solid #dcdcde; border-radius:6px; padding:10px; background:#fff; }
                 .lcni-chart-library-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
                 .lcni-chart-library-item { border:1px solid #dcdcde; border-radius:8px; padding:12px; background:#fff; position:relative; }
+                .lcni-filter-map-grid { display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
+                .lcni-filter-values { border:1px dashed #c3c4c7; padding:8px; border-radius:4px; max-height:160px; overflow:auto; }
+                .lcni-template-editor-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:99999; }
+                .lcni-template-editor-modal .inner { background:#fff; max-width:760px; margin:4% auto; padding:16px; border-radius:8px; }
             </style>
             <div class="lcni-chart-builder-subtabs" data-lcni-chart-builder-subtabs>
                 <button type="button" class="active" data-pane="builder">Chart Builder</button>
@@ -2905,86 +2923,40 @@ private function sanitize_module_title($value, $fallback) {
                     <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
                     <input type="hidden" name="lcni_chart_builder[id]" id="lcni-chart-builder-id" value="0">
                     <h3>Chart Builder</h3>
-                    <p>Tạo/chỉnh sửa chart và preview realtime trước khi lưu.</p>
                     <div class="lcni-chart-grid">
                         <div class="lcni-chart-column">
                             <p><label>Tên chart<br><input type="text" name="lcni_chart_builder[name]" id="lcni-chart-builder-name" class="regular-text" required></label></p>
                             <p><label>Slug shortcode<br><input type="text" name="lcni_chart_builder[slug]" id="lcni-chart-builder-slug" class="regular-text" required></label></p>
                             <input type="hidden" name="lcni_chart_builder[data_source]" id="lcni-chart-builder-source" value="thong_ke_thi_truong">
                             <input type="hidden" name="lcni_chart_builder[chart_type]" id="lcni-chart-builder-template" value="multi_line">
-                            <p>
-                                <label>Chart template</label><br>
-                                <button type="button" class="button" id="lcni-chart-template-picker-btn">Chọn chart mẫu: <span id="lcni-chart-template-picker-label">Multi-line</span></button>
-                            </p>
-                            <div id="lcni-chart-template-settings" style="margin-top:8px;border:1px solid #dcdcde;padding:8px;border-radius:4px;">
-                                <strong>Tùy chỉnh màu sắc và hiệu ứng</strong>
-                                <p style="margin-top:8px;"><label>Màu mặc định series <input type="color" id="lcni-chart-builder-default-color" value="#5470c6"></label></p>
-                                <p><label>Hiệu ứng đường <select id="lcni-chart-builder-line-style"><option value="solid">Solid</option><option value="dashed">Dashed</option></select></label></p>
-                            </div>
-                            <div id="lcni-chart-template-picker" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:99999;">
-                                <div style="background:#fff;max-width:860px;margin:5% auto;padding:16px;border-radius:8px;">
-                                    <h3 style="margin-top:0;">Chọn Chart mẫu</h3>
-                                    <div class="lcni-chart-template-grid">
-                                        <?php foreach ($chart_templates as $template_key => $template_label) : ?>
-                                            <div class="lcni-chart-template-card" data-template-key="<?php echo esc_attr($template_key); ?>" data-template-label="<?php echo esc_attr($template_label); ?>">
-                                                <div style="height:84px;border:1px solid #dcdcde;border-radius:4px;display:flex;align-items:center;justify-content:center;background:#f6f7f7;"><?php echo esc_html($template_label); ?></div>
-                                                <p style="margin:8px 0 4px;"><strong><?php echo esc_html($template_label); ?></strong></p>
-                                                <button type="button" class="button button-primary lcni-select-chart-template">Chọn</button>
-                                            </div>
-                                        <?php endforeach; ?>
-                                    </div>
-                                    <p style="margin-bottom:0;"><button type="button" class="button" id="lcni-chart-template-picker-close">Đóng</button></p>
-                                </div>
-                            </div>
+                            <p><button type="button" class="button" id="lcni-chart-template-picker-btn">Chọn chart mẫu: <span id="lcni-chart-template-picker-label">Multi-line</span></button></p>
+                            <p><label>Màu mặc định series <input type="color" id="lcni-chart-builder-default-color" value="#5470c6"></label></p>
+                            <p><label>Hiệu ứng đường <select id="lcni-chart-builder-line-style"><option value="solid">Solid</option><option value="dashed">Dashed</option></select></label></p>
                         </div>
                         <div class="lcni-chart-column">
-                            <h4>Axis & Series mapping</h4>
-                            <div class="lcni-chart-drop-zone" data-target="xAxis">Axis X (drag field vào đây)</div>
-                            <input type="hidden" name="lcni_chart_builder[xAxis]" id="lcni-chart-builder-xaxis" value="event_time">
-                            <div id="lcni-series-container">
-                                <div class="lcni-chart-drop-zone" data-target="series-0">Series 1 (drag field)</div>
-                                <input type="hidden" name="lcni_chart_builder[series_name][]" value="Series 1">
-                                <input type="hidden" name="lcni_chart_builder[series_field][]" class="lcni-chart-builder-series-field" value="">
-                                <input type="hidden" name="lcni_chart_builder[series_type][]" value="line">
-                                <input type="hidden" name="lcni_chart_builder[series_color][]" value="#5470c6">
-                                <input type="hidden" name="lcni_chart_builder[series_stack][]" value="1">
-                                <input type="hidden" name="lcni_chart_builder[series_area][]" value="1">
-                                <input type="hidden" name="lcni_chart_builder[series_label_show][]" value="0">
-
-                                <div class="lcni-chart-drop-zone" data-target="series-1">Series 2 (drag field)</div>
-                                <input type="hidden" name="lcni_chart_builder[series_name][]" value="Series 2">
-                                <input type="hidden" name="lcni_chart_builder[series_field][]" class="lcni-chart-builder-series-field" value="">
-                                <input type="hidden" name="lcni_chart_builder[series_type][]" value="line">
-                                <input type="hidden" name="lcni_chart_builder[series_color][]" value="#91cc75">
-                                <input type="hidden" name="lcni_chart_builder[series_stack][]" value="1">
-                                <input type="hidden" name="lcni_chart_builder[series_area][]" value="1">
-                                <input type="hidden" name="lcni_chart_builder[series_label_show][]" value="0">
-                            </div>
-                            <p><button type="button" class="button" id="lcni-chart-builder-add-series">+ Thêm Series</button></p>
+                            <h4>Axis & Series mapping (dynamic theo template)</h4>
+                            <div id="lcni-axis-series-container"></div>
                             <h4>Filter mapping</h4>
-                            <div id="lcni-filter-container">
-                                <div class="lcni-chart-drop-zone" data-target="filter-0">Filter 1 (drag field)</div>
-                                <input type="hidden" name="lcni_chart_builder[filter_field][]" class="lcni-chart-builder-filter-field" value="">
+                            <div class="lcni-filter-map-grid">
+                                <div>
+                                    <strong>Cột A: Field cần lọc</strong>
+                                    <div id="lcni-filter-container"></div>
+                                    <p><button type="button" class="button" id="lcni-chart-builder-add-filter">+ Thêm Filter</button></p>
+                                </div>
+                                <div>
+                                    <strong>Cột B: Value lọc theo field</strong>
+                                    <div id="lcni-filter-values-container"></div>
+                                </div>
                             </div>
-                            <p><button type="button" class="button" id="lcni-chart-builder-add-filter">+ Thêm Filter</button></p>
                         </div>
                         <div class="lcni-chart-column">
                             <div class="lcni-chart-source-grid">
-                                <div class="lcni-chart-source-tables">
-                                    <strong>Data source (20%)</strong>
-                                    <p style="margin-top:8px;"><select id="lcni-chart-builder-source-dup" style="width:100%;"><?php foreach ($data_sources as $k => $label) : ?><option value="<?php echo esc_attr($k); ?>"><?php echo esc_html($label); ?></option><?php endforeach; ?></select></p>
-                                </div>
-                                <div class="lcni-chart-source-fields" id="lcni-chart-builder-fields">
-                                    <strong>Fields (80%)</strong>
-                                    <div id="lcni-chart-builder-fields-list"></div>
-                                </div>
+                                <div class="lcni-chart-source-tables"><strong>Data source (20%)</strong><p style="margin-top:8px;"><select id="lcni-chart-builder-source-dup" style="width:100%;"><?php foreach ($data_sources as $k => $label) : ?><option value="<?php echo esc_attr($k); ?>"><?php echo esc_html($label); ?></option><?php endforeach; ?></select></p></div>
+                                <div class="lcni-chart-source-fields"><strong>Fields (80%)</strong><div id="lcni-chart-builder-fields-list"></div></div>
                             </div>
                         </div>
                     </div>
-                    <div class="lcni-chart-preview">
-                        <h4>Preview chart</h4>
-                        <div id="lcni-chart-builder-preview" class="lcni-chart-preview-canvas"></div>
-                    </div>
+                    <div class="lcni-chart-preview"><h4>Preview chart</h4><div id="lcni-chart-builder-preview" class="lcni-chart-preview-canvas"></div></div>
                     <?php submit_button('Lưu Chart Builder'); ?>
                 </form>
             </div>
@@ -2992,45 +2964,50 @@ private function sanitize_module_title($value, $fallback) {
             <div class="lcni-chart-builder-pane" data-pane="list">
                 <h3>Danh sách chart đã tạo</h3>
                 <table class="widefat striped"><thead><tr><th>ID</th><th>Name</th><th>Slug</th><th>Shortcode</th><th>Action</th></tr></thead><tbody>
-                <?php if (empty($charts)) : ?>
-                    <tr><td colspan="5">Chưa có chart.</td></tr>
-                <?php else : foreach ($charts as $chart) : ?>
-                    <tr>
-                        <td><?php echo esc_html((string) $chart['id']); ?></td>
-                        <td><?php echo esc_html((string) $chart['name']); ?></td>
-                        <td><?php echo esc_html((string) $chart['slug']); ?></td>
-                        <td><code>[lcni_chart id="<?php echo esc_attr((string) $chart['id']); ?>"]</code><br><code>[lcni_chart slug="<?php echo esc_attr((string) $chart['slug']); ?>"]</code></td>
-                        <td><button type="button" class="button lcni-edit-chart" data-chart='<?php echo esc_attr(wp_json_encode($chart)); ?>'>Chỉnh sửa</button></td>
-                    </tr>
+                <?php if (empty($charts)) : ?><tr><td colspan="5">Chưa có chart.</td></tr><?php else : foreach ($charts as $chart) : ?>
+                    <tr><td><?php echo esc_html((string) $chart['id']); ?></td><td><?php echo esc_html((string) $chart['name']); ?></td><td><?php echo esc_html((string) $chart['slug']); ?></td><td><code>[lcni_chart id="<?php echo esc_attr((string) $chart['id']); ?>"]</code><br><code>[lcni_chart slug="<?php echo esc_attr((string) $chart['slug']); ?>"]</code></td><td><button type="button" class="button lcni-edit-chart" data-chart='<?php echo esc_attr(wp_json_encode($chart)); ?>'>Chỉnh sửa</button></td></tr>
                 <?php endforeach; endif; ?>
                 </tbody></table>
-                <p><em>Đồng bộ nhiều chart: dùng cùng thuộc tính sync_group, ví dụ [lcni_chart slug="a" sync_group="market"]</em></p>
             </div>
 
             <div class="lcni-chart-builder-pane" data-pane="library">
                 <h3>Thư viện Chart mẫu</h3>
                 <div class="lcni-chart-library-grid">
-                    <div class="lcni-chart-library-item" data-library-template="area_stack">
-                        <button type="button" class="button" style="position:absolute;top:8px;right:8px;" data-edit-template>Tùy chỉnh</button>
-                        <h4>Area Stack</h4>
-                        <div style="height:88px;border:1px solid #dcdcde;border-radius:4px;background:#f6f7f7;display:flex;align-items:center;justify-content:center;">Area Stack</div>
-                        <p>Area stack có filter, auto tính lại dữ liệu theo filter khi preview/chart thay đổi.</p>
-                        <button type="button" class="button button-primary lcni-load-template" data-template="area_stack">Dùng mẫu</button>
+                    <?php foreach ($chart_templates as $template_key => $template_data) : ?>
+                        <div class="lcni-chart-library-item" data-library-template="<?php echo esc_attr($template_key); ?>">
+                            <button type="button" class="button" style="position:absolute;top:8px;right:8px;" data-edit-template>Tùy chỉnh</button>
+                            <h4><?php echo esc_html($template_data['label']); ?></h4>
+                            <div style="height:88px;border:1px solid #dcdcde;border-radius:4px;background:#f6f7f7;display:flex;align-items:center;justify-content:center;" data-template-thumb><?php echo esc_html($template_data['label']); ?></div>
+                            <p>Template <?php echo esc_html($template_data['label']); ?> có thể tùy chỉnh tên/ảnh/code mẫu.</p>
+                            <button type="button" class="button button-primary lcni-load-template" data-template="<?php echo esc_attr($template_key); ?>">Dùng mẫu</button>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+
+            <div class="lcni-template-editor-modal" id="lcni-template-editor-modal">
+                <div class="inner">
+                    <h3>Tùy chỉnh chart mẫu</h3>
+                    <p><label>Tên template<br><input type="text" id="lcni-template-editor-name" class="regular-text"></label></p>
+                    <p><label>Ảnh đại diện<br><input type="file" id="lcni-template-editor-image" accept="image/*"></label></p>
+                    <p><label>Code chính liên quan<br><textarea id="lcni-template-editor-code" rows="8" style="width:100%;"></textarea></label></p>
+                    <p><button type="button" class="button button-primary" id="lcni-template-editor-save">Lưu</button> <button type="button" class="button" id="lcni-template-editor-close">Đóng</button></p>
+                </div>
+            </div>
+
+            <div id="lcni-chart-template-picker" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:99999;">
+                <div style="background:#fff;max-width:860px;margin:5% auto;padding:16px;border-radius:8px;">
+                    <h3 style="margin-top:0;">Chọn Chart mẫu</h3>
+                    <div class="lcni-chart-template-grid">
+                        <?php foreach ($chart_templates as $template_key => $template_data) : ?>
+                            <div class="lcni-chart-template-card" data-template-key="<?php echo esc_attr($template_key); ?>" data-template-label="<?php echo esc_attr($template_data['label']); ?>">
+                                <div style="height:84px;border:1px solid #dcdcde;border-radius:4px;display:flex;align-items:center;justify-content:center;background:#f6f7f7;"><?php echo esc_html($template_data['label']); ?></div>
+                                <p><strong><?php echo esc_html($template_data['label']); ?></strong></p>
+                                <button type="button" class="button button-primary lcni-select-chart-template">Chọn</button>
+                            </div>
+                        <?php endforeach; ?>
                     </div>
-                    <div class="lcni-chart-library-item" data-library-template="share_dataset">
-                        <button type="button" class="button" style="position:absolute;top:8px;right:8px;" data-edit-template>Tùy chỉnh</button>
-                        <h4>Share Dataset</h4>
-                        <div style="height:88px;border:1px solid #dcdcde;border-radius:4px;background:#f6f7f7;display:flex;align-items:center;justify-content:center;">Share Dataset</div>
-                        <p>Line + Pie theo dataset liên kết, hỗ trợ filter và tự động cập nhật series.</p>
-                        <button type="button" class="button button-primary lcni-load-template" data-template="share_dataset">Dùng mẫu</button>
-                    </div>
-                    <div class="lcni-chart-library-item" data-library-template="multi_line">
-                        <button type="button" class="button" style="position:absolute;top:8px;right:8px;" data-edit-template>Tùy chỉnh</button>
-                        <h4>Multi-line</h4>
-                        <div style="height:88px;border:1px solid #dcdcde;border-radius:4px;background:#f6f7f7;display:flex;align-items:center;justify-content:center;">Multi-line</div>
-                        <p>Mẫu nhiều đường cơ bản để theo dõi nhiều chỉ số cùng trục thời gian.</p>
-                        <button type="button" class="button button-primary lcni-load-template" data-template="multi_line">Dùng mẫu</button>
-                    </div>
+                    <p><button type="button" class="button" id="lcni-chart-template-picker-close">Đóng</button></p>
                 </div>
             </div>
 
@@ -3039,285 +3016,195 @@ private function sanitize_module_title($value, $fallback) {
                 (function () {
                     const tabRoot = document.getElementById('<?php echo esc_js($tab_id); ?>');
                     if (!tabRoot) return;
-
+                    const templateMeta = <?php echo wp_json_encode($chart_templates); ?>;
                     const paneButtons = tabRoot.querySelectorAll('[data-lcni-chart-builder-subtabs] button');
                     const panes = tabRoot.querySelectorAll('.lcni-chart-builder-pane');
-                    paneButtons.forEach((button) => {
-                        button.addEventListener('click', () => {
-                            paneButtons.forEach((btn) => btn.classList.toggle('active', btn === button));
-                            panes.forEach((pane) => pane.classList.toggle('active', pane.getAttribute('data-pane') === button.getAttribute('data-pane')));
-                        });
-                    });
+                    paneButtons.forEach((button) => button.addEventListener('click', () => { paneButtons.forEach((b) => b.classList.toggle('active', b === button)); panes.forEach((p) => p.classList.toggle('active', p.getAttribute('data-pane') === button.getAttribute('data-pane'))); }));
 
                     const source = tabRoot.querySelector('#lcni-chart-builder-source');
                     const sourceDup = tabRoot.querySelector('#lcni-chart-builder-source-dup');
-                    const xAxisInput = tabRoot.querySelector('#lcni-chart-builder-xaxis');
                     const fieldsList = tabRoot.querySelector('#lcni-chart-builder-fields-list');
-                    const dropZones = () => tabRoot.querySelectorAll('.lcni-chart-drop-zone');
-                    const seriesContainer = tabRoot.querySelector('#lcni-series-container');
-                    const addSeriesBtn = tabRoot.querySelector('#lcni-chart-builder-add-series');
-                    const addFilterBtn = tabRoot.querySelector('#lcni-chart-builder-add-filter');
+                    const axisSeriesContainer = tabRoot.querySelector('#lcni-axis-series-container');
                     const filterContainer = tabRoot.querySelector('#lcni-filter-container');
+                    const filterValuesContainer = tabRoot.querySelector('#lcni-filter-values-container');
+                    const addFilterBtn = tabRoot.querySelector('#lcni-chart-builder-add-filter');
+                    const templateInput = tabRoot.querySelector('#lcni-chart-builder-template');
+                    const templateLabel = tabRoot.querySelector('#lcni-chart-template-picker-label');
+                    const previewNode = tabRoot.querySelector('#lcni-chart-builder-preview');
                     const templatePickerBtn = tabRoot.querySelector('#lcni-chart-template-picker-btn');
                     const templatePicker = tabRoot.querySelector('#lcni-chart-template-picker');
-                    const templatePickerClose = tabRoot.querySelector('#lcni-chart-template-picker-close');
-                    const templateLabel = tabRoot.querySelector('#lcni-chart-template-picker-label');
-                    const templateStyleInput = tabRoot.querySelector('#lcni-chart-builder-line-style');
-                    const templateColorInput = tabRoot.querySelector('#lcni-chart-builder-default-color');
-                    const previewNode = tabRoot.querySelector('#lcni-chart-builder-preview');
                     let previewChart = null;
 
-                    const syncSource = (value) => {
-                        if (source && source.value !== value) source.value = value;
-                        if (sourceDup && sourceDup.value !== value) sourceDup.value = value;
+                    const mkDropZone = (target, text, clearCb) => {
+                        const zone = document.createElement('div');
+                        zone.className = 'lcni-chart-drop-zone';
+                        zone.setAttribute('data-target', target);
+                        zone.innerHTML = '<span data-text>' + text + '</span><span class="lcni-chart-drop-zone-actions"><button type="button" class="button-link" data-clear>xóa</button></span>';
+                        zone.querySelector('[data-clear]').addEventListener('click', () => { if (typeof clearCb === 'function') clearCb(zone); renderPreview(); });
+                        zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('is-over'); });
+                        zone.addEventListener('dragleave', () => zone.classList.remove('is-over'));
+                        zone.addEventListener('drop', (e) => {
+                            e.preventDefault(); zone.classList.remove('is-over');
+                            const field = e.dataTransfer.getData('text/plain'); if (!field) return;
+                            const t = zone.getAttribute('data-target') || '';
+                            if (t === 'xAxis') {
+                                let input = tabRoot.querySelector('#lcni-chart-builder-xaxis');
+                                if (!input) { input = document.createElement('input'); input.type = 'hidden'; input.id = 'lcni-chart-builder-xaxis'; input.name = 'lcni_chart_builder[xAxis]'; tabRoot.querySelector('#lcni-chart-builder-form').appendChild(input); }
+                                input.value = field; zone.querySelector('[data-text]').textContent = 'Axis X: ' + field;
+                            } else if (t.indexOf('series-') === 0) {
+                                const idx = Number(t.replace('series-', ''));
+                                const f = tabRoot.querySelectorAll('.lcni-chart-builder-series-field')[idx];
+                                if (f) { f.value = field; zone.querySelector('[data-text]').textContent = 'Series ' + (idx + 1) + ': ' + field; }
+                            } else if (t.indexOf('filter-') === 0) {
+                                const idx = Number(t.replace('filter-', ''));
+                                const f = tabRoot.querySelectorAll('.lcni-chart-builder-filter-field')[idx];
+                                if (f) { f.value = field; zone.querySelector('[data-text]').textContent = 'Filter ' + (idx + 1) + ': ' + field; loadFilterValues(idx, field); }
+                            }
+                            renderPreview();
+                        });
+                        return zone;
+                    };
+
+                    const renderAxisSeriesSlots = () => {
+                        const key = templateInput ? templateInput.value : 'multi_line';
+                        const meta = templateMeta[key] || { axis_slots: 1, series_slots: 2 };
+                        axisSeriesContainer.innerHTML = '';
+                        axisSeriesContainer.appendChild(mkDropZone('xAxis', 'Axis X (drag field vào đây)', (zone) => { const i = tabRoot.querySelector('#lcni-chart-builder-xaxis'); if (i) i.value = ''; zone.querySelector('[data-text]').textContent = 'Axis X (drag field vào đây)'; }));
+                        for (let i = 0; i < meta.series_slots; i += 1) {
+                            axisSeriesContainer.appendChild(mkDropZone('series-' + i, 'Series ' + (i + 1) + ' (drag field)', (zone) => { const f = tabRoot.querySelectorAll('.lcni-chart-builder-series-field')[i]; if (f) f.value = ''; zone.querySelector('[data-text]').textContent = 'Series ' + (i + 1) + ' (drag field)'; }));
+                            ['series_name','series_field','series_type','series_color','series_stack','series_area','series_label_show'].forEach((n) => {
+                                const input = document.createElement('input');
+                                input.type = 'hidden'; input.name = 'lcni_chart_builder[' + n + '][]';
+                                if (n === 'series_name') input.value = 'Series ' + (i + 1);
+                                if (n === 'series_field') input.className = 'lcni-chart-builder-series-field';
+                                if (n === 'series_type') input.value = 'line';
+                                if (n === 'series_stack') input.value = '1';
+                                if (n === 'series_area') input.value = '1';
+                                if (n === 'series_label_show') input.value = '0';
+                                axisSeriesContainer.appendChild(input);
+                            });
+                        }
+                    };
+
+                    const addFilterSlot = (value = '') => {
+                        const idx = tabRoot.querySelectorAll('.lcni-chart-builder-filter-field').length;
+                        const zone = mkDropZone('filter-' + idx, 'Filter ' + (idx + 1) + ' (drag field)', (z) => { const f = tabRoot.querySelectorAll('.lcni-chart-builder-filter-field')[idx]; if (f) f.value = ''; z.querySelector('[data-text]').textContent = 'Filter ' + (idx + 1) + ' (drag field)'; filterValuesContainer.innerHTML = ''; });
+                        filterContainer.appendChild(zone);
+                        const input = document.createElement('input'); input.type = 'hidden'; input.name = 'lcni_chart_builder[filter_field][]'; input.className = 'lcni-chart-builder-filter-field'; input.value = value; filterContainer.appendChild(input);
+                        if (value) { zone.querySelector('[data-text]').textContent = 'Filter ' + (idx + 1) + ': ' + value; loadFilterValues(idx, value); }
+                    };
+
+                    const loadFilterValues = (idx, field) => {
+                        const src = source ? source.value : ''; if (!src || !field) return;
+                        const endpoint = '<?php echo esc_js(admin_url('admin-ajax.php')); ?>?action=lcni_chart_builder_filter_values&data_source=' + encodeURIComponent(src) + '&field=' + encodeURIComponent(field);
+                        fetch(endpoint, { credentials: 'same-origin' }).then((r) => r.json()).then((json) => {
+                            const values = (json && json.success && json.data && Array.isArray(json.data.values)) ? json.data.values : [];
+                            filterValuesContainer.innerHTML = '<div class="lcni-filter-values"><strong>Filter ' + (idx + 1) + ': ' + field + '</strong>' + values.map((v) => '<label style="display:block;"><input type="checkbox" disabled checked> ' + v + '</label>').join('') + '</div>';
+                        });
                     };
 
                     const reloadFields = () => {
-                        const sourceValue = source ? source.value : (sourceDup ? sourceDup.value : '');
-                        if (!sourceValue || !fieldsList) return;
-                        const endpoint = '<?php echo esc_js(admin_url('admin-ajax.php')); ?>?action=lcni_chart_builder_fields&data_source=' + encodeURIComponent(sourceValue);
-                        fetch(endpoint, { credentials: 'same-origin' })
-                            .then((res) => res.json())
-                            .then((json) => {
+                        const src = source ? source.value : (sourceDup ? sourceDup.value : ''); if (!src) return;
+                        fetch('<?php echo esc_js(admin_url('admin-ajax.php')); ?>?action=lcni_chart_builder_fields&data_source=' + encodeURIComponent(src), { credentials: 'same-origin' })
+                            .then((r) => r.json()).then((json) => {
                                 const fields = (json && json.success && json.data && Array.isArray(json.data.fields)) ? json.data.fields : [];
                                 fieldsList.innerHTML = fields.map((f) => '<span class="lcni-chart-field-pill" draggable="true" data-field="' + f + '">' + f + '</span>').join('');
-                                fieldsList.querySelectorAll('[data-field]').forEach((pill) => {
-                                    pill.addEventListener('dragstart', (e) => {
-                                        e.dataTransfer.setData('text/plain', pill.getAttribute('data-field') || '');
-                                    });
-                                });
+                                fieldsList.querySelectorAll('[data-field]').forEach((pill) => pill.addEventListener('dragstart', (e) => e.dataTransfer.setData('text/plain', pill.getAttribute('data-field') || '')));
                             });
                     };
 
-                    const bindDropZones = () => {
-                        dropZones().forEach((zone) => {
-                            zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('is-over'); });
-                            zone.addEventListener('dragleave', () => zone.classList.remove('is-over'));
-                            zone.addEventListener('drop', (e) => {
-                                e.preventDefault();
-                                zone.classList.remove('is-over');
-                                const field = e.dataTransfer.getData('text/plain');
-                                if (!field) return;
-
-                                const target = zone.getAttribute('data-target') || '';
-                                if (target === 'xAxis') {
-                                    xAxisInput.value = field;
-                                    zone.textContent = 'Axis X: ' + field;
-                                    renderPreview();
-                                    return;
-                                }
-
-                                const filterMatch = target.match(/^filter-(\d+)$/);
-                                if (filterMatch) {
-                                    const filterIndex = Number(filterMatch[1]);
-                                    const filterFields = tabRoot.querySelectorAll('.lcni-chart-builder-filter-field');
-                                    if (!filterFields[filterIndex]) return;
-                                    filterFields[filterIndex].value = field;
-                                    zone.textContent = 'Filter ' + (filterIndex + 1) + ': ' + field;
-                                    renderPreview();
-                                    return;
-                                }
-
-                                const match = target.match(/^series-(\d+)$/);
-                                if (!match) return;
-                                const index = Number(match[1]);
-                                const seriesFields = tabRoot.querySelectorAll('.lcni-chart-builder-series-field');
-                                if (!seriesFields[index]) return;
-                                seriesFields[index].value = field;
-                                zone.textContent = 'Series ' + (index + 1) + ': ' + field;
-                                renderPreview();
-                                return;
-                            });
-                        });
-                    };
-
-                    const getPreviewRows = (maxRows = 40) => {
-                        const fields = [];
-                        const xField = xAxisInput ? xAxisInput.value : 'event_time';
-                        if (xField) fields.push(xField);
-                        tabRoot.querySelectorAll('.lcni-chart-builder-series-field').forEach((input) => {
-                            if (input.value) fields.push(input.value);
-                        });
-                        const uniqueFields = Array.from(new Set(fields.filter(Boolean)));
-                        const rows = [];
-                        for (let i = 0; i < maxRows; i += 1) {
-                            const row = {};
-                            uniqueFields.forEach((field) => {
-                                if (field === xField) {
-                                    row[field] = String(i + 1);
-                                } else {
-                                    row[field] = Math.round((Math.sin((i + 1) / 6) + 1.5) * 100 + (Math.random() * 20));
-                                }
-                            });
-                            rows.push(row);
-                        }
-                        return rows;
+                    const getPreviewRows = () => {
+                        const x = (tabRoot.querySelector('#lcni-chart-builder-xaxis') || {}).value || '';
+                        const seriesFields = Array.from(tabRoot.querySelectorAll('.lcni-chart-builder-series-field')).map((i) => i.value).filter(Boolean);
+                        if (!x || !seriesFields.length) return {x:'', rows:[], seriesFields:[]};
+                        const rows = []; for (let i = 0; i < 40; i += 1) { const r = {}; r[x] = String(i + 1); seriesFields.forEach((f) => { r[f] = Math.round((Math.sin((i + 1) / 4) + 1.2) * 80 + (Math.random() * 15)); }); rows.push(r); }
+                        return {x, rows, seriesFields};
                     };
 
                     const renderPreview = () => {
                         if (!previewNode || !window.echarts) return;
                         if (!previewChart) previewChart = window.echarts.init(previewNode);
-                        const xField = xAxisInput ? xAxisInput.value : '';
-                        const seriesFields = Array.from(tabRoot.querySelectorAll('.lcni-chart-builder-series-field')).map((input) => input.value).filter(Boolean);
-                        if (!xField || !seriesFields.length) {
-                            previewChart.clear();
-                            return;
-                        }
-                        const rows = getPreviewRows();
-                        const lineStyle = templateStyleInput ? templateStyleInput.value : 'solid';
-                        const activeTemplate = tabRoot.querySelector('#lcni-chart-builder-template');
-                        const activeTemplateKey = activeTemplate ? activeTemplate.value : 'multi_line';
-                        const defaultColor = templateColorInput ? templateColorInput.value : '#5470c6';
-                        const series = seriesFields.map((field, idx) => ({
-                            name: field,
-                            type: 'line',
-                            smooth: true,
-                            stack: activeTemplateKey === 'area_stack' ? 'Total' : undefined,
-                            areaStyle: activeTemplateKey === 'area_stack' ? {} : undefined,
-                            lineStyle: { type: lineStyle, color: defaultColor },
-                            itemStyle: { color: defaultColor },
-                            data: rows.map((row) => Number(row[field] || 0)),
-                        }));
-                        previewChart.setOption({
-                            tooltip: { trigger: 'axis' },
-                            legend: { top: 'bottom', data: series.map((item) => item.name) },
-                            grid: { left: 40, right: 20, top: 30, bottom: 70 },
-                            xAxis: { type: 'category', data: rows.map((row) => row[xField]) },
-                            yAxis: { type: 'value' },
-                            series,
-                        }, true);
+                        const p = getPreviewRows(); if (!p.x || !p.seriesFields.length) { previewChart.clear(); return; }
+                        const c = (tabRoot.querySelector('#lcni-chart-builder-default-color') || {}).value || '#5470c6';
+                        const ls = (tabRoot.querySelector('#lcni-chart-builder-line-style') || {}).value || 'solid';
+                        previewChart.setOption({ tooltip:{trigger:'axis'}, legend:{top:'bottom', data:p.seriesFields}, xAxis:{type:'category', data:p.rows.map((r)=>r[p.x])}, yAxis:{type:'value'}, series:p.seriesFields.map((f)=>({name:f,type:'line',smooth:true,lineStyle:{type:ls,color:c},itemStyle:{color:c},data:p.rows.map((r)=>Number(r[f]||0))})) }, true);
+                        previewChart.resize();
                     };
 
-                    if (source) {
-                        source.addEventListener('change', () => {
-                            syncSource(source.value);
-                            reloadFields();
-                            renderPreview();
-                        });
-                    }
+                    if (sourceDup) sourceDup.addEventListener('change', () => { if (source) source.value = sourceDup.value; reloadFields(); renderPreview(); });
+                    if (source) source.addEventListener('change', () => { if (sourceDup) sourceDup.value = source.value; reloadFields(); renderPreview(); });
+                    if (addFilterBtn) addFilterBtn.addEventListener('click', () => addFilterSlot(''));
 
-                    if (sourceDup) {
-                        sourceDup.addEventListener('change', () => {
-                            syncSource(sourceDup.value);
-                            reloadFields();
-                            renderPreview();
-                        });
-                    }
+                    if (templatePickerBtn && templatePicker) templatePickerBtn.addEventListener('click', () => { templatePicker.style.display = 'block'; });
+                    const templatePickerClose = tabRoot.querySelector('#lcni-chart-template-picker-close');
+                    if (templatePickerClose && templatePicker) templatePickerClose.addEventListener('click', () => { templatePicker.style.display = 'none'; });
+                    tabRoot.querySelectorAll('.lcni-select-chart-template').forEach((button) => button.addEventListener('click', () => {
+                        const card = button.closest('[data-template-key]'); if (!card || !templateInput) return;
+                        templateInput.value = card.getAttribute('data-template-key') || 'multi_line';
+                        if (templateLabel) templateLabel.textContent = card.getAttribute('data-template-label') || templateInput.value;
+                        renderAxisSeriesSlots(); renderPreview(); if (templatePicker) templatePicker.style.display = 'none';
+                    }));
 
-                    if (addSeriesBtn && seriesContainer) {
-                        addSeriesBtn.addEventListener('click', () => {
-                            const index = seriesContainer.querySelectorAll('.lcni-chart-drop-zone').length;
-                            const html = `
-                                <div class="lcni-chart-drop-zone" data-target="series-${index}">Series ${index + 1} (drag field)</div>
-                                <input type="hidden" name="lcni_chart_builder[series_name][]" value="Series ${index + 1}">
-                                <input type="hidden" name="lcni_chart_builder[series_field][]" class="lcni-chart-builder-series-field" value="">
-                                <input type="hidden" name="lcni_chart_builder[series_type][]" value="line">
-                                <input type="hidden" name="lcni_chart_builder[series_color][]" value="">
-                                <input type="hidden" name="lcni_chart_builder[series_stack][]" value="1">
-                                <input type="hidden" name="lcni_chart_builder[series_area][]" value="1">
-                                <input type="hidden" name="lcni_chart_builder[series_label_show][]" value="0">
-                            `;
-                            const wrapper = document.createElement('div');
-                            wrapper.innerHTML = html;
-                            while (wrapper.firstChild) seriesContainer.appendChild(wrapper.firstChild);
-                            bindDropZones();
-                        });
-                    }
+                    tabRoot.querySelectorAll('.lcni-load-template').forEach((button) => button.addEventListener('click', () => {
+                        if (templateInput) templateInput.value = button.getAttribute('data-template') || 'multi_line';
+                        if (templateLabel) templateLabel.textContent = (templateMeta[templateInput.value] || {}).label || templateInput.value;
+                        renderAxisSeriesSlots(); renderPreview(); paneButtons[0].click();
+                    }));
 
-                    if (addFilterBtn && filterContainer) {
-                        addFilterBtn.addEventListener('click', () => {
-                            const index = filterContainer.querySelectorAll('.lcni-chart-drop-zone').length;
-                            const html = `
-                                <div class="lcni-chart-drop-zone" data-target="filter-${index}">Filter ${index + 1} (drag field)</div>
-                                <input type="hidden" name="lcni_chart_builder[filter_field][]" class="lcni-chart-builder-filter-field" value="">
-                            `;
-                            const wrapper = document.createElement('div');
-                            wrapper.innerHTML = html;
-                            while (wrapper.firstChild) filterContainer.appendChild(wrapper.firstChild);
-                            bindDropZones();
-                        });
-                    }
-
-                    if (templatePickerBtn && templatePicker) {
-                        templatePickerBtn.addEventListener('click', () => {
-                            templatePicker.style.display = 'block';
-                        });
-                    }
-
-                    if (templatePickerClose && templatePicker) {
-                        templatePickerClose.addEventListener('click', () => {
-                            templatePicker.style.display = 'none';
-                        });
-                    }
-
-                    tabRoot.querySelectorAll('.lcni-select-chart-template').forEach((button) => {
-                        button.addEventListener('click', () => {
-                            const card = button.closest('[data-template-key]');
-                            if (!card) return;
-                            const templateKey = card.getAttribute('data-template-key') || 'multi_line';
-                            const templateText = card.getAttribute('data-template-label') || templateKey;
-                            const template = tabRoot.querySelector('#lcni-chart-builder-template');
-                            if (template) template.value = templateKey;
-                            if (templateLabel) templateLabel.textContent = templateText;
-                            if (templatePicker) templatePicker.style.display = 'none';
-                            renderPreview();
-                        });
+                    const editor = tabRoot.querySelector('#lcni-template-editor-modal');
+                    let editingCard = null;
+                    tabRoot.querySelectorAll('[data-edit-template]').forEach((button) => button.addEventListener('click', () => {
+                        editingCard = button.closest('[data-library-template]'); if (!editingCard || !editor) return;
+                        editor.style.display = 'block';
+                        tabRoot.querySelector('#lcni-template-editor-name').value = (editingCard.querySelector('h4') || {}).textContent || '';
+                        tabRoot.querySelector('#lcni-template-editor-code').value = editingCard.getAttribute('data-template-code') || '';
+                    }));
+                    const editorClose = tabRoot.querySelector('#lcni-template-editor-close');
+                    if (editorClose && editor) editorClose.addEventListener('click', () => { editor.style.display = 'none'; editingCard = null; });
+                    const editorSave = tabRoot.querySelector('#lcni-template-editor-save');
+                    if (editorSave && editor) editorSave.addEventListener('click', () => {
+                        if (!editingCard) return;
+                        const name = tabRoot.querySelector('#lcni-template-editor-name').value || '';
+                        const code = tabRoot.querySelector('#lcni-template-editor-code').value || '';
+                        const imageInput = tabRoot.querySelector('#lcni-template-editor-image');
+                        const h4 = editingCard.querySelector('h4'); if (h4 && name) h4.textContent = name;
+                        editingCard.setAttribute('data-template-code', code);
+                        if (imageInput && imageInput.files && imageInput.files[0]) {
+                            const reader = new FileReader();
+                            reader.onload = () => { const thumb = editingCard.querySelector('[data-template-thumb]'); if (thumb) thumb.innerHTML = '<img src="' + reader.result + '" alt="template" style="max-width:100%;max-height:100%;object-fit:cover;">'; };
+                            reader.readAsDataURL(imageInput.files[0]);
+                        }
+                        editor.style.display = 'none';
                     });
 
-                    tabRoot.querySelectorAll('.lcni-load-template').forEach((button) => {
-                        button.addEventListener('click', () => {
-                            const template = tabRoot.querySelector('#lcni-chart-builder-template');
-                            if (template) template.value = button.getAttribute('data-template') || 'multi_line';
-                            if (templateLabel) {
-                                const card = button.closest('[data-library-template]');
-                                templateLabel.textContent = card ? card.getAttribute('data-library-template') : 'multi_line';
-                            }
-                            paneButtons[0].click();
-                            renderPreview();
+                    tabRoot.querySelectorAll('.lcni-edit-chart').forEach((button) => button.addEventListener('click', () => {
+                        let chart = null; let config = {};
+                        try { chart = JSON.parse(button.getAttribute('data-chart') || '{}'); } catch (e) { chart = null; }
+                        try { config = JSON.parse((chart && chart.config_json) || '{}'); } catch (e) { config = {}; }
+                        if (!chart) return;
+                        tabRoot.querySelector('#lcni-chart-builder-id').value = chart.id || 0;
+                        tabRoot.querySelector('#lcni-chart-builder-name').value = chart.name || '';
+                        tabRoot.querySelector('#lcni-chart-builder-slug').value = chart.slug || '';
+                        if (source) source.value = chart.data_source || 'thong_ke_thi_truong';
+                        if (sourceDup) sourceDup.value = source.value;
+                        if (templateInput) templateInput.value = chart.chart_type || 'multi_line';
+                        if (templateLabel) templateLabel.textContent = (templateMeta[templateInput.value] || {}).label || templateInput.value;
+                        renderAxisSeriesSlots();
+                        const xInput = tabRoot.querySelector('#lcni-chart-builder-xaxis'); if (xInput) xInput.value = config.xAxis || '';
+                        const xZone = axisSeriesContainer.querySelector('[data-target="xAxis"] [data-text]'); if (xZone && xInput && xInput.value) xZone.textContent = 'Axis X: ' + xInput.value;
+                        const savedSeries = Array.isArray(config.series) ? config.series : [];
+                        savedSeries.forEach((it, idx) => {
+                            const f = tabRoot.querySelectorAll('.lcni-chart-builder-series-field')[idx];
+                            const zoneText = axisSeriesContainer.querySelector('[data-target="series-' + idx + '"] [data-text]');
+                            if (f && it && it.field) { f.value = it.field; if (zoneText) zoneText.textContent = 'Series ' + (idx + 1) + ': ' + it.field; }
                         });
-                    });
+                        filterContainer.innerHTML = ''; filterValuesContainer.innerHTML = '';
+                        (Array.isArray(config.filters) ? config.filters : ['']).forEach((f) => addFilterSlot(f || ''));
+                        reloadFields(); renderPreview(); paneButtons[0].click();
+                    }));
 
-                    tabRoot.querySelectorAll('[data-edit-template]').forEach((button) => {
-                        button.addEventListener('click', () => {
-                            const card = button.closest('[data-library-template]');
-                            const templateName = card ? card.getAttribute('data-library-template') : '';
-                            const nextTitle = window.prompt('Cập nhật tên chart mẫu', templateName || '');
-                            if (nextTitle && card) {
-                                const h4 = card.querySelector('h4');
-                                if (h4) h4.textContent = nextTitle;
-                            }
-                        });
-                    });
-
-                    tabRoot.querySelectorAll('.lcni-edit-chart').forEach((button) => {
-                        button.addEventListener('click', () => {
-                            let chart = null;
-                            try { chart = JSON.parse(button.getAttribute('data-chart') || '{}'); } catch (e) { chart = null; }
-                            if (!chart) return;
-                            let config = {};
-                            try { config = JSON.parse(chart.config_json || '{}'); } catch (e) { config = {}; }
-
-                            tabRoot.querySelector('#lcni-chart-builder-id').value = chart.id || 0;
-                            tabRoot.querySelector('#lcni-chart-builder-name').value = chart.name || '';
-                            tabRoot.querySelector('#lcni-chart-builder-slug').value = chart.slug || '';
-                            tabRoot.querySelector('#lcni-chart-builder-template').value = chart.chart_type || 'multi_line';
-                            if (templateLabel) templateLabel.textContent = chart.chart_type || 'multi_line';
-                            syncSource(chart.data_source || 'thong_ke_thi_truong');
-                            const filterInputs = tabRoot.querySelectorAll('.lcni-chart-builder-filter-field');
-                            const savedFilters = Array.isArray(config.filters) ? config.filters : [];
-                            filterInputs.forEach((input, idx) => {
-                                const value = savedFilters[idx] || '';
-                                input.value = value;
-                                const zone = filterContainer ? filterContainer.querySelector('[data-target="filter-' + idx + '"]') : null;
-                                if (zone && value) zone.textContent = 'Filter ' + (idx + 1) + ': ' + value;
-                            });
-                            reloadFields();
-                            renderPreview();
-                            paneButtons[0].click();
-                        });
-                    });
-
-                    bindDropZones();
+                    renderAxisSeriesSlots();
+                    addFilterSlot('');
                     reloadFields();
                     renderPreview();
                     window.addEventListener('resize', () => { if (previewChart) previewChart.resize(); });
