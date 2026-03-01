@@ -3901,8 +3901,16 @@ class LCNI_DB {
         return $wpdb->get_col("SELECT symbol FROM {$table} ORDER BY symbol ASC");
     }
 
-    public static function upsert_ohlc_rows($rows) {
+    public static function upsert_ohlc_rows($rows, $options = []) {
         global $wpdb;
+
+        $defaults = [
+            'process_seed_pipeline' => true,
+            'refresh_latest_snapshot' => true,
+        ];
+        $options = wp_parse_args(is_array($options) ? $options : [], $defaults);
+        $process_seed_pipeline = !empty($options['process_seed_pipeline']);
+        $refresh_latest_snapshot = !empty($options['refresh_latest_snapshot']);
 
         if (empty($rows) || !is_array($rows)) {
             return [
@@ -3988,8 +3996,14 @@ class LCNI_DB {
                 array_keys($touched_event_times),
                 array_keys($touched_timeframes)
             );
-            self::process_seed_rebuild_pipeline();
-            self::perform_refresh_ohlc_latest_snapshot(array_column($touched_series, 'symbol'));
+
+            if ($process_seed_pipeline) {
+                self::process_seed_rebuild_pipeline();
+            }
+
+            if ($refresh_latest_snapshot) {
+                self::perform_refresh_ohlc_latest_snapshot(array_column($touched_series, 'symbol'));
+            }
         }
 
         return [

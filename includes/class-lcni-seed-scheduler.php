@@ -134,10 +134,19 @@ class LCNI_SeedScheduler {
         $batch_requests_per_run = self::get_batch_requests_per_run();
         $rate_limit_microseconds = self::get_rate_limit_microseconds();
 
+        $batched_rows = [];
+
         while ($requests < $batch_requests_per_run) {
             $requests++;
 
             if ($to <= $min_from) {
+                if (!empty($batched_rows)) {
+                    LCNI_DB::upsert_ohlc_rows($batched_rows, [
+                        'process_seed_pipeline' => false,
+                        'refresh_latest_snapshot' => false,
+                    ]);
+                }
+
                 LCNI_SeedRepository::mark_done($task_id);
                 LCNI_DB::log_change('seed_task_done', sprintf('Task %d done for %s-%s at from_time boundary.', $task_id, $symbol, $timeframe));
 
@@ -150,6 +159,13 @@ class LCNI_SeedScheduler {
 
             $result = LCNI_HistoryFetcher::fetch($symbol, $timeframe, $to, LCNI_HistoryFetcher::DEFAULT_LIMIT, $min_from);
             if (is_wp_error($result)) {
+                if (!empty($batched_rows)) {
+                    LCNI_DB::upsert_ohlc_rows($batched_rows, [
+                        'process_seed_pipeline' => false,
+                        'refresh_latest_snapshot' => false,
+                    ]);
+                }
+
                 $error_message = (string) $result->get_error_message();
 
                 if (self::is_non_retryable_task_error($error_message)) {
@@ -189,6 +205,13 @@ class LCNI_SeedScheduler {
             $oldest_event_time = isset($result['oldest_event_time']) ? (int) $result['oldest_event_time'] : 0;
 
             if (empty($rows) || $oldest_event_time <= 0 || $oldest_event_time >= $to) {
+                if (!empty($batched_rows)) {
+                    LCNI_DB::upsert_ohlc_rows($batched_rows, [
+                        'process_seed_pipeline' => false,
+                        'refresh_latest_snapshot' => false,
+                    ]);
+                }
+
                 LCNI_SeedRepository::mark_done($task_id);
                 LCNI_DB::log_change('seed_task_done', sprintf('Task %d done for %s-%s.', $task_id, $symbol, $timeframe));
 
@@ -201,12 +224,19 @@ class LCNI_SeedScheduler {
 
             $rows = self::filter_rows_by_from_time($rows, $min_from);
             if (!empty($rows)) {
-                LCNI_DB::upsert_ohlc_rows($rows);
+                $batched_rows = array_merge($batched_rows, $rows);
             }
 
             $to = max(1, $oldest_event_time - 1);
 
             if ($to <= $min_from) {
+                if (!empty($batched_rows)) {
+                    LCNI_DB::upsert_ohlc_rows($batched_rows, [
+                        'process_seed_pipeline' => false,
+                        'refresh_latest_snapshot' => false,
+                    ]);
+                }
+
                 LCNI_SeedRepository::mark_done($task_id);
                 LCNI_DB::log_change('seed_task_done', sprintf('Task %d done for %s-%s (reached configured from_time).', $task_id, $symbol, $timeframe));
 
@@ -219,7 +249,16 @@ class LCNI_SeedScheduler {
 
             LCNI_SeedRepository::update_progress($task_id, $to);
 
-            usleep($rate_limit_microseconds);
+            if ($requests < $batch_requests_per_run) {
+                usleep($rate_limit_microseconds);
+            }
+        }
+
+        if (!empty($batched_rows)) {
+            LCNI_DB::upsert_ohlc_rows($batched_rows, [
+                'process_seed_pipeline' => false,
+                'refresh_latest_snapshot' => false,
+            ]);
         }
 
         return [

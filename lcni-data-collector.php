@@ -195,6 +195,7 @@ function lcni_run_cron_incremental_sync() {
 function lcni_run_seed_batch() {
     LCNI_SeedScheduler::run_batch();
     LCNI_DB::process_seed_rebuild_pipeline();
+    LCNI_DB::refresh_ohlc_latest_snapshot();
 }
 
 function lcni_run_daily_secdef_sync() {
