@@ -6,7 +6,7 @@ if (!defined('ABSPATH')) {
 
 class LCNI_Chart_Builder_Shortcode {
 
-    const VERSION = '5.3.8';
+    const VERSION = '5.3.8a';
 
     public function __construct() {
         add_action('init', [$this, 'register_shortcode']);
@@ -19,7 +19,7 @@ class LCNI_Chart_Builder_Shortcode {
 
     public function register_assets() {
         wp_register_script('lcni-echarts', LCNI_URL . 'assets/vendor/echarts.min.js', [], self::VERSION, true);
-        wp_register_script('lcni-chart-builder', LCNI_URL . 'modules/chart-builder/assets/chart-builder.js', ['lcni-echarts'], self::VERSION, true);
+        wp_register_script('lcni-chart-builder', LCNI_URL . 'modules/chart-builder/assets/chart-builder.js', ['lcni-echarts', 'lcni-main-js'], self::VERSION, true);
     }
 
     public function render_shortcode($atts) {

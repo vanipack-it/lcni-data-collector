@@ -10,8 +10,7 @@ class LCNI_Chart_Builder_Service {
         $config = [
             'xAxis' => sanitize_key((string) ($raw['xAxis'] ?? 'event_time')),
             'series' => [],
-            'timeframe' => sanitize_text_field((string) ($raw['timeframe'] ?? '1D')),
-            'market' => sanitize_text_field((string) ($raw['market'] ?? 'VNINDEX')),
+            'filters' => [],
             'template' => sanitize_key((string) ($raw['template'] ?? 'multi_line')),
         ];
 
@@ -46,6 +45,15 @@ class LCNI_Chart_Builder_Service {
             ];
         }
 
+        $filter_fields = isset($raw['filter_field']) ? (array) $raw['filter_field'] : [];
+        foreach ($filter_fields as $field) {
+            $sanitized = sanitize_key((string) $field);
+            if ($sanitized !== '') {
+                $config['filters'][] = $sanitized;
+            }
+        }
+        $config['filters'] = array_values(array_unique($config['filters']));
+
         return [
             'id' => isset($raw['id']) ? absint($raw['id']) : 0,
             'name' => sanitize_text_field((string) ($raw['name'] ?? '')),
@@ -56,17 +64,65 @@ class LCNI_Chart_Builder_Service {
         ];
     }
 
+    private static function get_column_label_map() {
+        $configured = get_option('lcni_column_labels', []);
+        if (!is_array($configured)) {
+            $configured = [];
+        }
+
+        $label_map = [];
+        foreach ($configured as $key => $item) {
+            if (is_array($item)) {
+                $data_key = sanitize_key((string) ($item['data_key'] ?? ''));
+                $label = sanitize_text_field((string) ($item['label'] ?? ''));
+            } else {
+                $data_key = sanitize_key((string) $key);
+                $label = sanitize_text_field((string) $item);
+            }
+
+            if ($data_key !== '' && $label !== '') {
+                $label_map[$data_key] = $label;
+            }
+        }
+
+        return $label_map;
+    }
+
     public static function build_shortcode_payload($chart) {
         $config = json_decode((string) ($chart['config_json'] ?? '{}'), true);
+        $config = is_array($config) ? $config : [];
         $rows = LCNI_Chart_Builder_Repository::query_chart_data($chart);
+        $label_map = self::get_column_label_map();
+
+        $series_labels = [];
+        foreach ((array) ($config['series'] ?? []) as $item) {
+            $field = sanitize_key((string) ($item['field'] ?? ''));
+            if ($field === '') {
+                continue;
+            }
+            $series_labels[$field] = $label_map[$field] ?? $field;
+        }
+
+        $filter_fields = [];
+        foreach ((array) ($config['filters'] ?? []) as $filter_field) {
+            $sanitized = sanitize_key((string) $filter_field);
+            if ($sanitized !== '') {
+                $filter_fields[] = $sanitized;
+            }
+        }
+        $filter_fields = array_values(array_unique($filter_fields));
 
         return [
             'id' => (int) ($chart['id'] ?? 0),
             'slug' => (string) ($chart['slug'] ?? ''),
             'name' => (string) ($chart['name'] ?? ''),
             'chart_type' => (string) ($chart['chart_type'] ?? 'multi_line'),
-            'config' => is_array($config) ? $config : [],
+            'config' => $config,
             'data' => $rows,
+            'series_labels' => $series_labels,
+            'filter_fields' => $filter_fields,
+            'filter_labels' => array_intersect_key($label_map, array_fill_keys($filter_fields, true)),
+            'filter_options' => LCNI_Chart_Builder_Repository::get_filter_options($chart, $filter_fields),
         ];
     }
 }

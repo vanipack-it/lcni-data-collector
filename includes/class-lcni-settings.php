@@ -2902,14 +2902,12 @@ private function sanitize_module_title($value, $fallback) {
                         <div class="lcni-chart-column">
                             <p><label>Tên chart<br><input type="text" name="lcni_chart_builder[name]" id="lcni-chart-builder-name" class="regular-text" required></label></p>
                             <p><label>Slug shortcode<br><input type="text" name="lcni_chart_builder[slug]" id="lcni-chart-builder-slug" class="regular-text" required></label></p>
+                            <input type="hidden" name="lcni_chart_builder[data_source]" id="lcni-chart-builder-source" value="thong_ke_thi_truong">
                             <p><label>Chart template<br><select name="lcni_chart_builder[chart_type]" id="lcni-chart-builder-template">
                                 <?php foreach ($chart_templates as $template_key => $template_label) : ?>
                                     <option value="<?php echo esc_attr($template_key); ?>" <?php selected($template_key, 'multi_line'); ?>><?php echo esc_html($template_label); ?></option>
                                 <?php endforeach; ?>
                             </select></label></p>
-                            <p><label>Data source<br><select name="lcni_chart_builder[data_source]" id="lcni-chart-builder-source"><?php foreach ($data_sources as $k => $label) : ?><option value="<?php echo esc_attr($k); ?>"><?php echo esc_html($label); ?></option><?php endforeach; ?></select></label></p>
-                            <p><label>Filter market <input type="text" name="lcni_chart_builder[market]" id="lcni-chart-builder-market" value="VNINDEX" placeholder="market"></label></p>
-                            <p><label>Filter timeframe <input type="text" name="lcni_chart_builder[timeframe]" id="lcni-chart-builder-timeframe" value="1D" placeholder="timeframe"></label></p>
                         </div>
                         <div class="lcni-chart-column">
                             <h4>Axis & Series mapping</h4>
@@ -2935,6 +2933,12 @@ private function sanitize_module_title($value, $fallback) {
                                 <input type="hidden" name="lcni_chart_builder[series_label_show][]" value="0">
                             </div>
                             <p><button type="button" class="button" id="lcni-chart-builder-add-series">+ Thêm Series</button></p>
+                            <h4>Filter mapping</h4>
+                            <div id="lcni-filter-container">
+                                <div class="lcni-chart-drop-zone" data-target="filter-0">Filter 1 (drag field)</div>
+                                <input type="hidden" name="lcni_chart_builder[filter_field][]" class="lcni-chart-builder-filter-field" value="">
+                            </div>
+                            <p><button type="button" class="button" id="lcni-chart-builder-add-filter">+ Thêm Filter</button></p>
                         </div>
                         <div class="lcni-chart-column">
                             <div class="lcni-chart-source-grid">
@@ -2984,6 +2988,7 @@ private function sanitize_module_title($value, $fallback) {
                 </div>
             </div>
 
+            <script src="<?php echo esc_url(LCNI_URL . 'assets/vendor/echarts.min.js'); ?>"></script>
             <script>
                 (function () {
                     const tabRoot = document.getElementById('<?php echo esc_js($tab_id); ?>');
@@ -3005,7 +3010,11 @@ private function sanitize_module_title($value, $fallback) {
                     const dropZones = () => tabRoot.querySelectorAll('.lcni-chart-drop-zone');
                     const seriesContainer = tabRoot.querySelector('#lcni-series-container');
                     const addSeriesBtn = tabRoot.querySelector('#lcni-chart-builder-add-series');
+                    const addFilterBtn = tabRoot.querySelector('#lcni-chart-builder-add-filter');
+                    const filterContainer = tabRoot.querySelector('#lcni-filter-container');
                     const areaTemplateBtn = tabRoot.querySelector('#lcni-load-area-stack-template');
+                    const previewNode = tabRoot.querySelector('#lcni-chart-builder-preview');
+                    let previewChart = null;
 
                     const syncSource = (value) => {
                         if (source && source.value !== value) source.value = value;
@@ -3013,8 +3022,9 @@ private function sanitize_module_title($value, $fallback) {
                     };
 
                     const reloadFields = () => {
-                        if (!source || !fieldsList) return;
-                        const endpoint = '<?php echo esc_js(admin_url('admin-ajax.php')); ?>?action=lcni_chart_builder_fields&data_source=' + encodeURIComponent(source.value);
+                        const sourceValue = source ? source.value : (sourceDup ? sourceDup.value : '');
+                        if (!sourceValue || !fieldsList) return;
+                        const endpoint = '<?php echo esc_js(admin_url('admin-ajax.php')); ?>?action=lcni_chart_builder_fields&data_source=' + encodeURIComponent(sourceValue);
                         fetch(endpoint, { credentials: 'same-origin' })
                             .then((res) => res.json())
                             .then((json) => {
@@ -3045,6 +3055,16 @@ private function sanitize_module_title($value, $fallback) {
                                     return;
                                 }
 
+                                const filterMatch = target.match(/^filter-(\d+)$/);
+                                if (filterMatch) {
+                                    const filterIndex = Number(filterMatch[1]);
+                                    const filterFields = tabRoot.querySelectorAll('.lcni-chart-builder-filter-field');
+                                    if (!filterFields[filterIndex]) return;
+                                    filterFields[filterIndex].value = field;
+                                    zone.textContent = 'Filter ' + (filterIndex + 1) + ': ' + field;
+                                    return;
+                                }
+
                                 const match = target.match(/^series-(\d+)$/);
                                 if (!match) return;
                                 const index = Number(match[1]);
@@ -3052,14 +3072,66 @@ private function sanitize_module_title($value, $fallback) {
                                 if (!seriesFields[index]) return;
                                 seriesFields[index].value = field;
                                 zone.textContent = 'Series ' + (index + 1) + ': ' + field;
+                                renderPreview();
+                                return;
                             });
                         });
+                    };
+
+                    const getPreviewRows = (maxRows = 40) => {
+                        const fields = [];
+                        const xField = xAxisInput ? xAxisInput.value : 'event_time';
+                        if (xField) fields.push(xField);
+                        tabRoot.querySelectorAll('.lcni-chart-builder-series-field').forEach((input) => {
+                            if (input.value) fields.push(input.value);
+                        });
+                        const uniqueFields = Array.from(new Set(fields.filter(Boolean)));
+                        const rows = [];
+                        for (let i = 0; i < maxRows; i += 1) {
+                            const row = {};
+                            uniqueFields.forEach((field) => {
+                                if (field === xField) {
+                                    row[field] = String(i + 1);
+                                } else {
+                                    row[field] = Math.round((Math.sin((i + 1) / 6) + 1.5) * 100 + (Math.random() * 20));
+                                }
+                            });
+                            rows.push(row);
+                        }
+                        return rows;
+                    };
+
+                    const renderPreview = () => {
+                        if (!previewNode || !window.echarts) return;
+                        if (!previewChart) previewChart = window.echarts.init(previewNode);
+                        const xField = xAxisInput ? xAxisInput.value : '';
+                        const seriesFields = Array.from(tabRoot.querySelectorAll('.lcni-chart-builder-series-field')).map((input) => input.value).filter(Boolean);
+                        if (!xField || !seriesFields.length) {
+                            previewChart.clear();
+                            return;
+                        }
+                        const rows = getPreviewRows();
+                        const series = seriesFields.map((field, idx) => ({
+                            name: field,
+                            type: 'line',
+                            smooth: true,
+                            data: rows.map((row) => Number(row[field] || 0)),
+                        }));
+                        previewChart.setOption({
+                            tooltip: { trigger: 'axis' },
+                            legend: { top: 8, data: series.map((item) => item.name) },
+                            grid: { left: 40, right: 20, top: 40, bottom: 28 },
+                            xAxis: { type: 'category', data: rows.map((row) => row[xField]) },
+                            yAxis: { type: 'value' },
+                            series,
+                        }, true);
                     };
 
                     if (source) {
                         source.addEventListener('change', () => {
                             syncSource(source.value);
                             reloadFields();
+                            renderPreview();
                         });
                     }
 
@@ -3067,6 +3139,7 @@ private function sanitize_module_title($value, $fallback) {
                         sourceDup.addEventListener('change', () => {
                             syncSource(sourceDup.value);
                             reloadFields();
+                            renderPreview();
                         });
                     }
 
@@ -3086,6 +3159,20 @@ private function sanitize_module_title($value, $fallback) {
                             const wrapper = document.createElement('div');
                             wrapper.innerHTML = html;
                             while (wrapper.firstChild) seriesContainer.appendChild(wrapper.firstChild);
+                            bindDropZones();
+                        });
+                    }
+
+                    if (addFilterBtn && filterContainer) {
+                        addFilterBtn.addEventListener('click', () => {
+                            const index = filterContainer.querySelectorAll('.lcni-chart-drop-zone').length;
+                            const html = `
+                                <div class="lcni-chart-drop-zone" data-target="filter-${index}">Filter ${index + 1} (drag field)</div>
+                                <input type="hidden" name="lcni_chart_builder[filter_field][]" class="lcni-chart-builder-filter-field" value="">
+                            `;
+                            const wrapper = document.createElement('div');
+                            wrapper.innerHTML = html;
+                            while (wrapper.firstChild) filterContainer.appendChild(wrapper.firstChild);
                             bindDropZones();
                         });
                     }
@@ -3110,16 +3197,25 @@ private function sanitize_module_title($value, $fallback) {
                             tabRoot.querySelector('#lcni-chart-builder-name').value = chart.name || '';
                             tabRoot.querySelector('#lcni-chart-builder-slug').value = chart.slug || '';
                             tabRoot.querySelector('#lcni-chart-builder-template').value = chart.chart_type || 'multi_line';
-                            tabRoot.querySelector('#lcni-chart-builder-market').value = config.market || 'VNINDEX';
-                            tabRoot.querySelector('#lcni-chart-builder-timeframe').value = config.timeframe || '1D';
                             syncSource(chart.data_source || 'thong_ke_thi_truong');
+                            const filterInputs = tabRoot.querySelectorAll('.lcni-chart-builder-filter-field');
+                            const savedFilters = Array.isArray(config.filters) ? config.filters : [];
+                            filterInputs.forEach((input, idx) => {
+                                const value = savedFilters[idx] || '';
+                                input.value = value;
+                                const zone = filterContainer ? filterContainer.querySelector('[data-target="filter-' + idx + '"]') : null;
+                                if (zone && value) zone.textContent = 'Filter ' + (idx + 1) + ': ' + value;
+                            });
                             reloadFields();
+                            renderPreview();
                             paneButtons[0].click();
                         });
                     });
 
                     bindDropZones();
                     reloadFields();
+                    renderPreview();
+                    window.addEventListener('resize', () => { if (previewChart) previewChart.resize(); });
                 })();
             </script>
         </div>
@@ -3759,6 +3855,7 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
                 </form>
             </div>
 
+            <script src="<?php echo esc_url(LCNI_URL . 'assets/vendor/echarts.min.js'); ?>"></script>
             <script>
                 (function () {
                     const nav = document.getElementById('lcni-watchlist-sub-tabs');
