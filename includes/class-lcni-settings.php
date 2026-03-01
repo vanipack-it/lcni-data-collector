@@ -2856,62 +2856,269 @@ private function sanitize_module_title($value, $fallback) {
             'money_flow' => 'wp_lcni_money_flow',
             'stock_stats' => 'wp_lcni_stock_stats',
         ];
+        $chart_templates = [
+            'multi_line' => 'Multi-line',
+            'area_stack' => 'Area Stack',
+            'market_breadth' => 'Market Breadth',
+            'rsi_zone' => 'RSI Zone',
+            'smart_money_flow' => 'Smart Money Flow',
+            'candlestick' => 'Candlestick',
+        ];
         ?>
         <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
-            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form" id="lcni-chart-builder-form">
-                <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
-                <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
-                <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
-                <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
-                <h3>Chart Builder</h3>
-                <p>Tạo shortcode động [lcni_chart id="x"] hoặc [lcni_chart slug="ten-chart"].</p>
-                <table class="form-table" role="presentation"><tbody>
-                    <tr><th><label>Tên chart</label></th><td><input type="text" name="lcni_chart_builder[name]" class="regular-text" required></td></tr>
-                    <tr><th><label>Slug shortcode</label></th><td><input type="text" name="lcni_chart_builder[slug]" class="regular-text" required></td></tr>
-                    <tr><th><label>Chart template</label></th><td><select name="lcni_chart_builder[chart_type]"><option value="market_breadth">Market Breadth</option><option value="rsi_zone">RSI Zone</option><option value="smart_money_flow">Smart Money Flow</option><option value="candlestick">Candlestick</option><option value="multi_line" selected>Multi-line</option></select></td></tr>
-                    <tr><th><label>Data source</label></th><td><select name="lcni_chart_builder[data_source]" id="lcni-chart-builder-source"><?php foreach ($data_sources as $k => $label) : ?><option value="<?php echo esc_attr($k); ?>"><?php echo esc_html($label); ?></option><?php endforeach; ?></select></td></tr>
-                    <tr><th><label>X axis</label></th><td><select name="lcni_chart_builder[xAxis]" id="lcni-chart-builder-xaxis"></select></td></tr>
-                    <tr><th><label>Series 1</label></th><td><input type="text" name="lcni_chart_builder[series_name][]" value="Series 1"> <select name="lcni_chart_builder[series_field][]" class="lcni-chart-builder-field"></select> <select name="lcni_chart_builder[series_type][]"><option value="line">Line</option><option value="bar">Bar</option></select></td></tr>
-                    <tr><th><label>Series 2</label></th><td><input type="text" name="lcni_chart_builder[series_name][]" value="Series 2"> <select name="lcni_chart_builder[series_field][]" class="lcni-chart-builder-field"></select> <select name="lcni_chart_builder[series_type][]"><option value="line">Line</option><option value="bar" selected>Bar</option></select></td></tr>
-                    <tr><th><label>Filter</label></th><td><input type="text" name="lcni_chart_builder[market]" value="VNINDEX" placeholder="market"> <input type="text" name="lcni_chart_builder[timeframe]" value="1D" placeholder="timeframe"></td></tr>
-                </tbody></table>
-                <?php submit_button('Lưu Chart Builder'); ?>
-            </form>
+            <style>
+                #<?php echo esc_attr($tab_id); ?> .lcni-front-form { max-width: 100%; }
+                .lcni-chart-builder-subtabs { display:flex; gap:8px; margin-bottom:12px; border-bottom:1px solid #dcdcde; }
+                .lcni-chart-builder-subtabs button { border:1px solid #dcdcde; border-bottom:0; background:#f6f7f7; padding:6px 10px; cursor:pointer; }
+                .lcni-chart-builder-subtabs button.active { background:#fff; font-weight:600; }
+                .lcni-chart-builder-pane { display:none; }
+                .lcni-chart-builder-pane.active { display:block; }
+                .lcni-chart-grid { display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px; margin-bottom:12px; }
+                .lcni-chart-column { border:1px solid #dcdcde; border-radius:4px; background:#fff; padding:12px; }
+                .lcni-chart-drop-zone { border:1px dashed #8c8f94; border-radius:4px; min-height:38px; padding:8px; margin-bottom:8px; background:#f9f9f9; }
+                .lcni-chart-drop-zone.is-over { background:#e8f0fe; border-color:#2271b1; }
+                .lcni-chart-source-grid { display:grid; grid-template-rows: 20% 80%; gap:8px; height:360px; }
+                .lcni-chart-source-tables, .lcni-chart-source-fields { border:1px solid #dcdcde; border-radius:4px; padding:8px; overflow:auto; }
+                .lcni-chart-field-pill { display:inline-block; border:1px solid #dcdcde; padding:3px 8px; margin:4px 4px 0 0; border-radius:999px; background:#fff; cursor:grab; }
+                .lcni-chart-preview { border:1px solid #dcdcde; border-radius:4px; padding:8px; background:#fff; }
+                .lcni-chart-preview-canvas { width:100%; height:380px; }
+            </style>
+            <div class="lcni-chart-builder-subtabs" data-lcni-chart-builder-subtabs>
+                <button type="button" class="active" data-pane="builder">Chart Builder</button>
+                <button type="button" data-pane="list">List Chart</button>
+                <button type="button" data-pane="library">Thư viện Chart mẫu</button>
+            </div>
 
-            <h3>Danh sách chart đã tạo</h3>
-            <table class="widefat striped"><thead><tr><th>ID</th><th>Name</th><th>Slug</th><th>Shortcode</th></tr></thead><tbody>
-            <?php if (empty($charts)) : ?>
-                <tr><td colspan="4">Chưa có chart.</td></tr>
-            <?php else : foreach ($charts as $chart) : ?>
-                <tr>
-                    <td><?php echo esc_html((string) $chart['id']); ?></td>
-                    <td><?php echo esc_html((string) $chart['name']); ?></td>
-                    <td><?php echo esc_html((string) $chart['slug']); ?></td>
-                    <td><code>[lcni_chart id="<?php echo esc_attr((string) $chart['id']); ?>"]</code><br><code>[lcni_chart slug="<?php echo esc_attr((string) $chart['slug']); ?>"]</code></td>
-                </tr>
-            <?php endforeach; endif; ?>
-            </tbody></table>
-            <p><em>Đồng bộ nhiều chart: dùng cùng thuộc tính sync_group, ví dụ [lcni_chart slug="a" sync_group="market"]</em></p>
+            <div class="lcni-chart-builder-pane active" data-pane="builder">
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form" id="lcni-chart-builder-form">
+                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                    <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                    <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
+                    <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                    <input type="hidden" name="lcni_chart_builder[id]" id="lcni-chart-builder-id" value="0">
+                    <h3>Chart Builder</h3>
+                    <p>Tạo/chỉnh sửa chart và preview realtime trước khi lưu.</p>
+                    <div class="lcni-chart-grid">
+                        <div class="lcni-chart-column">
+                            <p><label>Tên chart<br><input type="text" name="lcni_chart_builder[name]" id="lcni-chart-builder-name" class="regular-text" required></label></p>
+                            <p><label>Slug shortcode<br><input type="text" name="lcni_chart_builder[slug]" id="lcni-chart-builder-slug" class="regular-text" required></label></p>
+                            <p><label>Chart template<br><select name="lcni_chart_builder[chart_type]" id="lcni-chart-builder-template">
+                                <?php foreach ($chart_templates as $template_key => $template_label) : ?>
+                                    <option value="<?php echo esc_attr($template_key); ?>" <?php selected($template_key, 'multi_line'); ?>><?php echo esc_html($template_label); ?></option>
+                                <?php endforeach; ?>
+                            </select></label></p>
+                            <p><label>Data source<br><select name="lcni_chart_builder[data_source]" id="lcni-chart-builder-source"><?php foreach ($data_sources as $k => $label) : ?><option value="<?php echo esc_attr($k); ?>"><?php echo esc_html($label); ?></option><?php endforeach; ?></select></label></p>
+                            <p><label>Filter market <input type="text" name="lcni_chart_builder[market]" id="lcni-chart-builder-market" value="VNINDEX" placeholder="market"></label></p>
+                            <p><label>Filter timeframe <input type="text" name="lcni_chart_builder[timeframe]" id="lcni-chart-builder-timeframe" value="1D" placeholder="timeframe"></label></p>
+                        </div>
+                        <div class="lcni-chart-column">
+                            <h4>Axis & Series mapping</h4>
+                            <div class="lcni-chart-drop-zone" data-target="xAxis">Axis X (drag field vào đây)</div>
+                            <input type="hidden" name="lcni_chart_builder[xAxis]" id="lcni-chart-builder-xaxis" value="event_time">
+                            <div id="lcni-series-container">
+                                <div class="lcni-chart-drop-zone" data-target="series-0">Series 1 (drag field)</div>
+                                <input type="hidden" name="lcni_chart_builder[series_name][]" value="Series 1">
+                                <input type="hidden" name="lcni_chart_builder[series_field][]" class="lcni-chart-builder-series-field" value="">
+                                <input type="hidden" name="lcni_chart_builder[series_type][]" value="line">
+                                <input type="hidden" name="lcni_chart_builder[series_color][]" value="#5470c6">
+                                <input type="hidden" name="lcni_chart_builder[series_stack][]" value="1">
+                                <input type="hidden" name="lcni_chart_builder[series_area][]" value="1">
+                                <input type="hidden" name="lcni_chart_builder[series_label_show][]" value="0">
+
+                                <div class="lcni-chart-drop-zone" data-target="series-1">Series 2 (drag field)</div>
+                                <input type="hidden" name="lcni_chart_builder[series_name][]" value="Series 2">
+                                <input type="hidden" name="lcni_chart_builder[series_field][]" class="lcni-chart-builder-series-field" value="">
+                                <input type="hidden" name="lcni_chart_builder[series_type][]" value="line">
+                                <input type="hidden" name="lcni_chart_builder[series_color][]" value="#91cc75">
+                                <input type="hidden" name="lcni_chart_builder[series_stack][]" value="1">
+                                <input type="hidden" name="lcni_chart_builder[series_area][]" value="1">
+                                <input type="hidden" name="lcni_chart_builder[series_label_show][]" value="0">
+                            </div>
+                            <p><button type="button" class="button" id="lcni-chart-builder-add-series">+ Thêm Series</button></p>
+                        </div>
+                        <div class="lcni-chart-column">
+                            <div class="lcni-chart-source-grid">
+                                <div class="lcni-chart-source-tables">
+                                    <strong>Data source (20%)</strong>
+                                    <p style="margin-top:8px;"><select id="lcni-chart-builder-source-dup" style="width:100%;"><?php foreach ($data_sources as $k => $label) : ?><option value="<?php echo esc_attr($k); ?>"><?php echo esc_html($label); ?></option><?php endforeach; ?></select></p>
+                                </div>
+                                <div class="lcni-chart-source-fields" id="lcni-chart-builder-fields">
+                                    <strong>Fields (80%)</strong>
+                                    <div id="lcni-chart-builder-fields-list"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="lcni-chart-preview">
+                        <h4>Preview chart</h4>
+                        <div id="lcni-chart-builder-preview" class="lcni-chart-preview-canvas"></div>
+                    </div>
+                    <?php submit_button('Lưu Chart Builder'); ?>
+                </form>
+            </div>
+
+            <div class="lcni-chart-builder-pane" data-pane="list">
+                <h3>Danh sách chart đã tạo</h3>
+                <table class="widefat striped"><thead><tr><th>ID</th><th>Name</th><th>Slug</th><th>Shortcode</th><th>Action</th></tr></thead><tbody>
+                <?php if (empty($charts)) : ?>
+                    <tr><td colspan="5">Chưa có chart.</td></tr>
+                <?php else : foreach ($charts as $chart) : ?>
+                    <tr>
+                        <td><?php echo esc_html((string) $chart['id']); ?></td>
+                        <td><?php echo esc_html((string) $chart['name']); ?></td>
+                        <td><?php echo esc_html((string) $chart['slug']); ?></td>
+                        <td><code>[lcni_chart id="<?php echo esc_attr((string) $chart['id']); ?>"]</code><br><code>[lcni_chart slug="<?php echo esc_attr((string) $chart['slug']); ?>"]</code></td>
+                        <td><button type="button" class="button lcni-edit-chart" data-chart='<?php echo esc_attr(wp_json_encode($chart)); ?>'>Chỉnh sửa</button></td>
+                    </tr>
+                <?php endforeach; endif; ?>
+                </tbody></table>
+                <p><em>Đồng bộ nhiều chart: dùng cùng thuộc tính sync_group, ví dụ [lcni_chart slug="a" sync_group="market"]</em></p>
+            </div>
+
+            <div class="lcni-chart-builder-pane" data-pane="library">
+                <h3>Thư viện Chart mẫu</h3>
+                <div class="widefat" style="padding:12px; background:#fff; border:1px solid #dcdcde;">
+                    <h4>Area Stack</h4>
+                    <p>Mẫu area stack theo ECharts. Bấm nút để nạp sẵn vào Chart Builder.</p>
+                    <button type="button" class="button button-primary" id="lcni-load-area-stack-template">Dùng mẫu Area Stack</button>
+                </div>
+            </div>
+
             <script>
                 (function () {
-                    const source = document.getElementById('lcni-chart-builder-source');
-                    const xAxis = document.getElementById('lcni-chart-builder-xaxis');
-                    const fieldSelects = document.querySelectorAll('.lcni-chart-builder-field');
-                    if (!source || !xAxis || !fieldSelects.length) return;
+                    const tabRoot = document.getElementById('<?php echo esc_js($tab_id); ?>');
+                    if (!tabRoot) return;
+
+                    const paneButtons = tabRoot.querySelectorAll('[data-lcni-chart-builder-subtabs] button');
+                    const panes = tabRoot.querySelectorAll('.lcni-chart-builder-pane');
+                    paneButtons.forEach((button) => {
+                        button.addEventListener('click', () => {
+                            paneButtons.forEach((btn) => btn.classList.toggle('active', btn === button));
+                            panes.forEach((pane) => pane.classList.toggle('active', pane.getAttribute('data-pane') === button.getAttribute('data-pane')));
+                        });
+                    });
+
+                    const source = tabRoot.querySelector('#lcni-chart-builder-source');
+                    const sourceDup = tabRoot.querySelector('#lcni-chart-builder-source-dup');
+                    const xAxisInput = tabRoot.querySelector('#lcni-chart-builder-xaxis');
+                    const fieldsList = tabRoot.querySelector('#lcni-chart-builder-fields-list');
+                    const dropZones = () => tabRoot.querySelectorAll('.lcni-chart-drop-zone');
+                    const seriesContainer = tabRoot.querySelector('#lcni-series-container');
+                    const addSeriesBtn = tabRoot.querySelector('#lcni-chart-builder-add-series');
+                    const areaTemplateBtn = tabRoot.querySelector('#lcni-load-area-stack-template');
+
+                    const syncSource = (value) => {
+                        if (source && source.value !== value) source.value = value;
+                        if (sourceDup && sourceDup.value !== value) sourceDup.value = value;
+                    };
 
                     const reloadFields = () => {
+                        if (!source || !fieldsList) return;
                         const endpoint = '<?php echo esc_js(admin_url('admin-ajax.php')); ?>?action=lcni_chart_builder_fields&data_source=' + encodeURIComponent(source.value);
                         fetch(endpoint, { credentials: 'same-origin' })
                             .then((res) => res.json())
                             .then((json) => {
                                 const fields = (json && json.success && json.data && Array.isArray(json.data.fields)) ? json.data.fields : [];
-                                const html = fields.map((f) => `<option value="${f}">${f}</option>`).join('');
-                                xAxis.innerHTML = html;
-                                fieldSelects.forEach((select) => { select.innerHTML = html; });
+                                fieldsList.innerHTML = fields.map((f) => '<span class="lcni-chart-field-pill" draggable="true" data-field="' + f + '">' + f + '</span>').join('');
+                                fieldsList.querySelectorAll('[data-field]').forEach((pill) => {
+                                    pill.addEventListener('dragstart', (e) => {
+                                        e.dataTransfer.setData('text/plain', pill.getAttribute('data-field') || '');
+                                    });
+                                });
                             });
                     };
 
-                    source.addEventListener('change', reloadFields);
+                    const bindDropZones = () => {
+                        dropZones().forEach((zone) => {
+                            zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('is-over'); });
+                            zone.addEventListener('dragleave', () => zone.classList.remove('is-over'));
+                            zone.addEventListener('drop', (e) => {
+                                e.preventDefault();
+                                zone.classList.remove('is-over');
+                                const field = e.dataTransfer.getData('text/plain');
+                                if (!field) return;
+
+                                const target = zone.getAttribute('data-target') || '';
+                                if (target === 'xAxis') {
+                                    xAxisInput.value = field;
+                                    zone.textContent = 'Axis X: ' + field;
+                                    return;
+                                }
+
+                                const match = target.match(/^series-(\d+)$/);
+                                if (!match) return;
+                                const index = Number(match[1]);
+                                const seriesFields = tabRoot.querySelectorAll('.lcni-chart-builder-series-field');
+                                if (!seriesFields[index]) return;
+                                seriesFields[index].value = field;
+                                zone.textContent = 'Series ' + (index + 1) + ': ' + field;
+                            });
+                        });
+                    };
+
+                    if (source) {
+                        source.addEventListener('change', () => {
+                            syncSource(source.value);
+                            reloadFields();
+                        });
+                    }
+
+                    if (sourceDup) {
+                        sourceDup.addEventListener('change', () => {
+                            syncSource(sourceDup.value);
+                            reloadFields();
+                        });
+                    }
+
+                    if (addSeriesBtn && seriesContainer) {
+                        addSeriesBtn.addEventListener('click', () => {
+                            const index = seriesContainer.querySelectorAll('.lcni-chart-drop-zone').length;
+                            const html = `
+                                <div class="lcni-chart-drop-zone" data-target="series-${index}">Series ${index + 1} (drag field)</div>
+                                <input type="hidden" name="lcni_chart_builder[series_name][]" value="Series ${index + 1}">
+                                <input type="hidden" name="lcni_chart_builder[series_field][]" class="lcni-chart-builder-series-field" value="">
+                                <input type="hidden" name="lcni_chart_builder[series_type][]" value="line">
+                                <input type="hidden" name="lcni_chart_builder[series_color][]" value="">
+                                <input type="hidden" name="lcni_chart_builder[series_stack][]" value="1">
+                                <input type="hidden" name="lcni_chart_builder[series_area][]" value="1">
+                                <input type="hidden" name="lcni_chart_builder[series_label_show][]" value="0">
+                            `;
+                            const wrapper = document.createElement('div');
+                            wrapper.innerHTML = html;
+                            while (wrapper.firstChild) seriesContainer.appendChild(wrapper.firstChild);
+                            bindDropZones();
+                        });
+                    }
+
+                    if (areaTemplateBtn) {
+                        areaTemplateBtn.addEventListener('click', () => {
+                            const template = tabRoot.querySelector('#lcni-chart-builder-template');
+                            if (template) template.value = 'area_stack';
+                            paneButtons[0].click();
+                        });
+                    }
+
+                    tabRoot.querySelectorAll('.lcni-edit-chart').forEach((button) => {
+                        button.addEventListener('click', () => {
+                            let chart = null;
+                            try { chart = JSON.parse(button.getAttribute('data-chart') || '{}'); } catch (e) { chart = null; }
+                            if (!chart) return;
+                            let config = {};
+                            try { config = JSON.parse(chart.config_json || '{}'); } catch (e) { config = {}; }
+
+                            tabRoot.querySelector('#lcni-chart-builder-id').value = chart.id || 0;
+                            tabRoot.querySelector('#lcni-chart-builder-name').value = chart.name || '';
+                            tabRoot.querySelector('#lcni-chart-builder-slug').value = chart.slug || '';
+                            tabRoot.querySelector('#lcni-chart-builder-template').value = chart.chart_type || 'multi_line';
+                            tabRoot.querySelector('#lcni-chart-builder-market').value = config.market || 'VNINDEX';
+                            tabRoot.querySelector('#lcni-chart-builder-timeframe').value = config.timeframe || '1D';
+                            syncSource(chart.data_source || 'thong_ke_thi_truong');
+                            reloadFields();
+                            paneButtons[0].click();
+                        });
+                    });
+
+                    bindDropZones();
                     reloadFields();
                 })();
             </script>
