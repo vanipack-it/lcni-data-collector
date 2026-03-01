@@ -51,6 +51,45 @@ class LCNI_DB {
         ['id' => 6, 'index_name' => 'VNXALL', 'marketid' => '0', 'symbol_type' => 'INDEX', 'symbol' => 'VNXALL'],
     ];
 
+    /**
+     * Build standardized symbol/timeframe series list from raw DB rows.
+     *
+     * @param array $series_rows
+     * @return array<int, array{symbol:string,timeframe:string}>
+     */
+    private static function normalize_series_rows($series_rows) {
+        $normalized = [];
+
+        foreach ((array) $series_rows as $series) {
+            $symbol = strtoupper(trim((string) ($series['symbol'] ?? '')));
+            $timeframe = strtoupper(trim((string) ($series['timeframe'] ?? '')));
+            if ($symbol === '' || $timeframe === '') {
+                continue;
+            }
+
+            $normalized[] = [
+                'symbol' => $symbol,
+                'timeframe' => $timeframe,
+            ];
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * Fetch all distinct symbol/timeframe pairs in OHLC table.
+     *
+     * @return array<int, array{symbol:string,timeframe:string}>
+     */
+    private static function get_all_ohlc_series() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $rows = $wpdb->get_results("SELECT DISTINCT symbol, timeframe FROM {$table}", ARRAY_A);
+
+        return self::normalize_series_rows($rows);
+    }
+
     public static function ensure_tables_exist() {
         global $wpdb;
 
@@ -1242,24 +1281,7 @@ class LCNI_DB {
     }
 
     public static function enqueue_rule_rebuild() {
-        global $wpdb;
-
-        $table = $wpdb->prefix . 'lcni_ohlc';
-        $all_series = $wpdb->get_results("SELECT DISTINCT symbol, timeframe FROM {$table}", ARRAY_A);
-        $tasks = [];
-
-        foreach ((array) $all_series as $series) {
-            $symbol = strtoupper(trim((string) ($series['symbol'] ?? '')));
-            $timeframe = strtoupper(trim((string) ($series['timeframe'] ?? '')));
-            if ($symbol === '' || $timeframe === '') {
-                continue;
-            }
-
-            $tasks[] = [
-                'symbol' => $symbol,
-                'timeframe' => $timeframe,
-            ];
-        }
+        $tasks = self::get_all_ohlc_series();
 
         update_option(self::RULE_REBUILD_TASKS_OPTION, $tasks, false);
         update_option(
@@ -1359,10 +1381,7 @@ class LCNI_DB {
     }
 
     public static function rebuild_all_ohlc_metrics() {
-        global $wpdb;
-
-        $table = $wpdb->prefix . 'lcni_ohlc';
-        $all_series = $wpdb->get_results("SELECT DISTINCT symbol, timeframe FROM {$table}", ARRAY_A);
+        $all_series = self::get_all_ohlc_series();
 
         if (empty($all_series)) {
             return 0;
@@ -1378,6 +1397,43 @@ class LCNI_DB {
         self::rebuild_rs_exchange_signals();
 
         return count($all_series);
+    }
+
+    /**
+     * @param string $table
+     * @param array<int, array{symbol:string,timeframe:string}> $series_list
+     * @return array<int, int>
+     */
+    private static function collect_distinct_event_times_for_series($table, $series_list) {
+        global $wpdb;
+
+        if (empty($series_list)) {
+            return [];
+        }
+
+        $clauses = [];
+        $params = [];
+
+        foreach ($series_list as $series) {
+            $symbol = strtoupper(trim((string) ($series['symbol'] ?? '')));
+            $timeframe = strtoupper(trim((string) ($series['timeframe'] ?? '')));
+            if ($symbol === '' || $timeframe === '') {
+                continue;
+            }
+
+            $clauses[] = '(symbol = %s AND timeframe = %s)';
+            $params[] = $symbol;
+            $params[] = $timeframe;
+        }
+
+        if (empty($clauses)) {
+            return [];
+        }
+
+        $sql = "SELECT DISTINCT event_time FROM {$table} WHERE " . implode(' OR ', $clauses);
+        $event_times = $wpdb->get_col($wpdb->prepare($sql, $params));
+
+        return array_values(array_unique(array_map('intval', (array) $event_times)));
     }
 
     private static function ensure_market_statistics_schema() {
@@ -3556,20 +3612,11 @@ class LCNI_DB {
         foreach ($missing_series as $series) {
             self::rebuild_ohlc_series_metrics($series['symbol'], $series['timeframe']);
             $timeframes[$series['timeframe']] = true;
+        }
 
-            $series_event_times = $wpdb->get_col(
-                $wpdb->prepare(
-                    "SELECT DISTINCT event_time
-                    FROM {$table}
-                    WHERE symbol = %s AND timeframe = %s",
-                    $series['symbol'],
-                    $series['timeframe']
-                )
-            );
-
-            foreach ((array) $series_event_times as $event_time) {
-                $event_times[(int) $event_time] = true;
-            }
+        $series_event_times = self::collect_distinct_event_times_for_series($table, $missing_series);
+        foreach ($series_event_times as $event_time) {
+            $event_times[(int) $event_time] = true;
         }
 
         if (!empty($timeframes)) {
