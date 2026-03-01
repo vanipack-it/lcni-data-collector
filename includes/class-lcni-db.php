@@ -157,6 +157,7 @@ class LCNI_DB {
         self::backfill_ohlc_one_candle();
         self::backfill_ohlc_two_candle_pattern();
         self::backfill_ohlc_three_candle_pattern();
+        self::backfill_ohlc_breakout_metrics();
         self::sync_frontend_settings_with_new_ohlc_columns();
         self::backfill_market_statistics_tables();
         self::ensure_ohlc_symbol_type_column();
@@ -202,6 +203,20 @@ class LCNI_DB {
             one_candle VARCHAR(30) DEFAULT NULL,
             two_candle_pattern VARCHAR(40) DEFAULT NULL,
             three_candle_pattern VARCHAR(50) DEFAULT NULL,
+            pct_to_h1m DECIMAL(8,2) DEFAULT NULL,
+            pct_to_h3m DECIMAL(8,2) DEFAULT NULL,
+            pct_to_h6m DECIMAL(8,2) DEFAULT NULL,
+            pct_to_h1y DECIMAL(8,2) DEFAULT NULL,
+            trang_thai_h1m VARCHAR(40) DEFAULT NULL,
+            trang_thai_h3m VARCHAR(40) DEFAULT NULL,
+            trang_thai_h6m VARCHAR(40) DEFAULT NULL,
+            trang_thai_h1y VARCHAR(40) DEFAULT NULL,
+            compression_1m DECIMAL(8,2) DEFAULT NULL,
+            position_1m VARCHAR(40) DEFAULT NULL,
+            position_3m VARCHAR(40) DEFAULT NULL,
+            position_6m VARCHAR(40) DEFAULT NULL,
+            position_1y VARCHAR(40) DEFAULT NULL,
+            breakout_potential_score INT DEFAULT NULL,
             volume BIGINT UNSIGNED NOT NULL DEFAULT 0,
             value_traded DECIMAL(24,2) NOT NULL DEFAULT 0,
             pct_t_1 DECIMAL(12,6) DEFAULT NULL,
@@ -966,6 +981,20 @@ class LCNI_DB {
             'one_candle' => 'VARCHAR(30) DEFAULT NULL',
             'two_candle_pattern' => 'VARCHAR(40) DEFAULT NULL',
             'three_candle_pattern' => 'VARCHAR(50) DEFAULT NULL',
+            'pct_to_h1m' => 'DECIMAL(8,2) DEFAULT NULL',
+            'pct_to_h3m' => 'DECIMAL(8,2) DEFAULT NULL',
+            'pct_to_h6m' => 'DECIMAL(8,2) DEFAULT NULL',
+            'pct_to_h1y' => 'DECIMAL(8,2) DEFAULT NULL',
+            'trang_thai_h1m' => 'VARCHAR(40) DEFAULT NULL',
+            'trang_thai_h3m' => 'VARCHAR(40) DEFAULT NULL',
+            'trang_thai_h6m' => 'VARCHAR(40) DEFAULT NULL',
+            'trang_thai_h1y' => 'VARCHAR(40) DEFAULT NULL',
+            'compression_1m' => 'DECIMAL(8,2) DEFAULT NULL',
+            'position_1m' => 'VARCHAR(40) DEFAULT NULL',
+            'position_3m' => 'VARCHAR(40) DEFAULT NULL',
+            'position_6m' => 'VARCHAR(40) DEFAULT NULL',
+            'position_1y' => 'VARCHAR(40) DEFAULT NULL',
+            'breakout_potential_score' => 'INT DEFAULT NULL',
         ];
 
         foreach ($required_columns as $column_name => $column_definition) {
@@ -1120,6 +1149,14 @@ class LCNI_DB {
         $macd_filter_index_exists = $wpdb->get_var($wpdb->prepare("SHOW INDEX FROM {$table} WHERE Key_name = %s", $macd_filter_index_name));
         if ($macd_filter_index_exists === null) {
             $wpdb->query("CREATE INDEX {$macd_filter_index_name} ON {$table} (timeframe, macd_cat, macd_manh, macd_diem_dong_luong)");
+        }
+
+        foreach (['h1m', 'h3m', 'h6m', 'h1y'] as $high_column) {
+            $index_name = 'idx_' . $high_column;
+            $index_exists = $wpdb->get_var($wpdb->prepare("SHOW INDEX FROM {$table} WHERE Key_name = %s", $index_name));
+            if ($index_exists === null) {
+                $wpdb->query("CREATE INDEX {$index_name} ON {$table} ({$high_column})");
+            }
         }
     }
 
@@ -2587,6 +2624,119 @@ class LCNI_DB {
         );
 
         return $missing_count > 0;
+    }
+
+    private static function backfill_ohlc_breakout_metrics() {
+        global $wpdb;
+
+        $migration_flag = 'lcni_ohlc_breakout_metrics_backfilled_v1';
+        if (get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $updated_rows = (int) $wpdb->query(
+            "UPDATE {$table}
+            SET
+                pct_to_h1m = (close_price - h1m) / NULLIF(h1m, 0) * 100,
+                pct_to_h3m = (close_price - h3m) / NULLIF(h3m, 0) * 100,
+                pct_to_h6m = (close_price - h6m) / NULLIF(h6m, 0) * 100,
+                pct_to_h1y = (close_price - h1y) / NULLIF(h1y, 0) * 100,
+                trang_thai_h1m = CASE
+                    WHEN h1m IS NULL OR h1m = 0 THEN NULL
+                    WHEN close_price > h1m * 1.03 THEN 'Vượt mạnh'
+                    WHEN close_price > h1m THEN 'Vượt đỉnh'
+                    WHEN close_price >= h1m * 0.97 THEN 'Rất gần đỉnh'
+                    WHEN close_price >= h1m * 0.95 THEN 'Gần đỉnh'
+                    ELSE 'Xa đỉnh'
+                END,
+                trang_thai_h3m = CASE
+                    WHEN h3m IS NULL OR h3m = 0 THEN NULL
+                    WHEN close_price > h3m * 1.03 THEN 'Vượt mạnh'
+                    WHEN close_price > h3m THEN 'Vượt đỉnh'
+                    WHEN close_price >= h3m * 0.97 THEN 'Rất gần đỉnh'
+                    WHEN close_price >= h3m * 0.95 THEN 'Gần đỉnh'
+                    ELSE 'Xa đỉnh'
+                END,
+                trang_thai_h6m = CASE
+                    WHEN h6m IS NULL OR h6m = 0 THEN NULL
+                    WHEN close_price > h6m * 1.03 THEN 'Vượt mạnh'
+                    WHEN close_price > h6m THEN 'Vượt đỉnh'
+                    WHEN close_price >= h6m * 0.97 THEN 'Rất gần đỉnh'
+                    WHEN close_price >= h6m * 0.95 THEN 'Gần đỉnh'
+                    ELSE 'Xa đỉnh'
+                END,
+                trang_thai_h1y = CASE
+                    WHEN h1y IS NULL OR h1y = 0 THEN NULL
+                    WHEN close_price > h1y * 1.03 THEN 'Vượt mạnh'
+                    WHEN close_price > h1y THEN 'Vượt đỉnh'
+                    WHEN close_price >= h1y * 0.97 THEN 'Rất gần đỉnh'
+                    WHEN close_price >= h1y * 0.95 THEN 'Gần đỉnh'
+                    ELSE 'Xa đỉnh'
+                END,
+                compression_1m = (h1m - l1m) / NULLIF(h1m, 0) * 100,
+                position_1m = CASE
+                    WHEN h1m IS NULL OR l1m IS NULL OR NULLIF((h1m - l1m), 0) IS NULL THEN NULL
+                    WHEN ((close_price - l1m) / NULLIF((h1m - l1m), 0) * 100) <= 20 THEN 'Sát đáy'
+                    WHEN ((close_price - l1m) / NULLIF((h1m - l1m), 0) * 100) <= 50 THEN 'Dưới trung vị'
+                    WHEN ((close_price - l1m) / NULLIF((h1m - l1m), 0) * 100) <= 80 THEN 'Trên trung vị'
+                    ELSE 'Sát đỉnh'
+                END,
+                position_3m = CASE
+                    WHEN h3m IS NULL OR l3m IS NULL OR NULLIF((h3m - l3m), 0) IS NULL THEN NULL
+                    WHEN ((close_price - l3m) / NULLIF((h3m - l3m), 0) * 100) <= 20 THEN 'Sát đáy'
+                    WHEN ((close_price - l3m) / NULLIF((h3m - l3m), 0) * 100) <= 50 THEN 'Dưới trung vị'
+                    WHEN ((close_price - l3m) / NULLIF((h3m - l3m), 0) * 100) <= 80 THEN 'Trên trung vị'
+                    ELSE 'Sát đỉnh'
+                END,
+                position_6m = CASE
+                    WHEN h6m IS NULL OR l6m IS NULL OR NULLIF((h6m - l6m), 0) IS NULL THEN NULL
+                    WHEN ((close_price - l6m) / NULLIF((h6m - l6m), 0) * 100) <= 20 THEN 'Sát đáy'
+                    WHEN ((close_price - l6m) / NULLIF((h6m - l6m), 0) * 100) <= 50 THEN 'Dưới trung vị'
+                    WHEN ((close_price - l6m) / NULLIF((h6m - l6m), 0) * 100) <= 80 THEN 'Trên trung vị'
+                    ELSE 'Sát đỉnh'
+                END,
+                position_1y = CASE
+                    WHEN h1y IS NULL OR l1y IS NULL OR NULLIF((h1y - l1y), 0) IS NULL THEN NULL
+                    WHEN ((close_price - l1y) / NULLIF((h1y - l1y), 0) * 100) <= 20 THEN 'Sát đáy'
+                    WHEN ((close_price - l1y) / NULLIF((h1y - l1y), 0) * 100) <= 50 THEN 'Dưới trung vị'
+                    WHEN ((close_price - l1y) / NULLIF((h1y - l1y), 0) * 100) <= 80 THEN 'Trên trung vị'
+                    ELSE 'Sát đỉnh'
+                END,
+                breakout_potential_score = LEAST(10,
+                    (CASE WHEN (CASE
+                        WHEN h1m IS NULL OR h1m = 0 THEN NULL
+                        WHEN close_price > h1m * 1.03 THEN 'Vượt mạnh'
+                        WHEN close_price > h1m THEN 'Vượt đỉnh'
+                        WHEN close_price >= h1m * 0.97 THEN 'Rất gần đỉnh'
+                        WHEN close_price >= h1m * 0.95 THEN 'Gần đỉnh'
+                        ELSE 'Xa đỉnh'
+                    END) = 'Rất gần đỉnh' THEN 2 ELSE 0 END)
+                    + (CASE WHEN ((h1m - l1m) / NULLIF(h1m, 0) * 100) < 10 THEN 2 ELSE 0 END)
+                    + (CASE WHEN rsi >= 60 THEN 1 ELSE 0 END)
+                    + (CASE WHEN ma20 IS NOT NULL AND close_price > ma20 THEN 1 ELSE 0 END)
+                    + (CASE WHEN tang_gia_kem_vol = 'Tăng giá kèm Vol' THEN 1 ELSE 0 END)
+                    + (CASE WHEN smart_money = 'Smart Money' THEN 2 ELSE 0 END)
+                    + (CASE WHEN (CASE
+                        WHEN h3m IS NULL OR h3m = 0 THEN NULL
+                        WHEN close_price > h3m * 1.03 THEN 'Vượt mạnh'
+                        WHEN close_price > h3m THEN 'Vượt đỉnh'
+                        WHEN close_price >= h3m * 0.97 THEN 'Rất gần đỉnh'
+                        WHEN close_price >= h3m * 0.95 THEN 'Gần đỉnh'
+                        ELSE 'Xa đỉnh'
+                    END) = 'Rất gần đỉnh' THEN 1 ELSE 0 END)
+                )
+            WHERE UPPER(symbol_type) = 'STOCK'"
+        );
+
+        if ($updated_rows > 0) {
+            self::log_change(
+                'backfill_ohlc_breakout_metrics',
+                sprintf('Backfilled breakout metric columns for %d OHLC rows.', $updated_rows)
+            );
+        }
+
+        update_option($migration_flag, 'yes');
     }
 
     private static function backfill_ohlc_one_candle() {
@@ -4500,6 +4650,25 @@ class LCNI_DB {
                 (float) ($rows[$i]['open_price'] ?? 0),
                 (float) ($rows[$i]['close_price'] ?? 0)
             );
+
+            $h1m = self::window_max($highs, $i, 21);
+            $h3m = self::window_max($highs, $i, 63);
+            $h6m = self::window_max($highs, $i, 126);
+            $h1y = self::window_max($highs, $i, 252);
+            $l1m = self::window_min($lows, $i, 21);
+            $l3m = self::window_min($lows, $i, 63);
+            $l6m = self::window_min($lows, $i, 126);
+            $l1y = self::window_min($lows, $i, 252);
+            $pct_to_h1m = self::safe_ratio_pct($close, $h1m);
+            $pct_to_h3m = self::safe_ratio_pct($close, $h3m);
+            $pct_to_h6m = self::safe_ratio_pct($close, $h6m);
+            $pct_to_h1y = self::safe_ratio_pct($close, $h1y);
+            $trang_thai_h1m = self::determine_peak_status($close, $h1m);
+            $trang_thai_h3m = self::determine_peak_status($close, $h3m);
+            $trang_thai_h6m = self::determine_peak_status($close, $h6m);
+            $trang_thai_h1y = self::determine_peak_status($close, $h1y);
+            $compression_1m = ($h1m !== null && $l1m !== null) ? self::safe_ratio_pct($h1m - $l1m, $h1m) : null;
+
             $nen_types[] = $nen_type;
 
             $wpdb->update(
@@ -4517,14 +4686,14 @@ class LCNI_DB {
                     'ma50' => self::normalize_nullable_price($ma50),
                     'ma100' => self::normalize_nullable_price($ma100),
                     'ma200' => self::normalize_nullable_price($ma200),
-                    'h1m' => self::normalize_nullable_price(self::window_max($highs, $i, 21)),
-                    'h3m' => self::normalize_nullable_price(self::window_max($highs, $i, 63)),
-                    'h6m' => self::normalize_nullable_price(self::window_max($highs, $i, 126)),
-                    'h1y' => self::normalize_nullable_price(self::window_max($highs, $i, 252)),
-                    'l1m' => self::normalize_nullable_price(self::window_min($lows, $i, 21)),
-                    'l3m' => self::normalize_nullable_price(self::window_min($lows, $i, 63)),
-                    'l6m' => self::normalize_nullable_price(self::window_min($lows, $i, 126)),
-                    'l1y' => self::normalize_nullable_price(self::window_min($lows, $i, 252)),
+                    'h1m' => self::normalize_nullable_price($h1m),
+                    'h3m' => self::normalize_nullable_price($h3m),
+                    'h6m' => self::normalize_nullable_price($h6m),
+                    'h1y' => self::normalize_nullable_price($h1y),
+                    'l1m' => self::normalize_nullable_price($l1m),
+                    'l3m' => self::normalize_nullable_price($l3m),
+                    'l6m' => self::normalize_nullable_price($l6m),
+                    'l1y' => self::normalize_nullable_price($l1y),
                     'vol_ma10' => $vol_ma10,
                     'vol_ma20' => $vol_ma20,
                     'gia_sv_ma10' => self::safe_ratio_pct($close, $ma10),
@@ -4555,12 +4724,122 @@ class LCNI_DB {
                     'one_candle' => $one_candle,
                     'two_candle_pattern' => $two_candle_pattern,
                     'three_candle_pattern' => $three_candle_pattern,
+                    'pct_to_h1m' => $pct_to_h1m !== null ? $pct_to_h1m * 100 : null,
+                    'pct_to_h3m' => $pct_to_h3m !== null ? $pct_to_h3m * 100 : null,
+                    'pct_to_h6m' => $pct_to_h6m !== null ? $pct_to_h6m * 100 : null,
+                    'pct_to_h1y' => $pct_to_h1y !== null ? $pct_to_h1y * 100 : null,
+                    'trang_thai_h1m' => $trang_thai_h1m,
+                    'trang_thai_h3m' => $trang_thai_h3m,
+                    'trang_thai_h6m' => $trang_thai_h6m,
+                    'trang_thai_h1y' => $trang_thai_h1y,
+                    'compression_1m' => $compression_1m !== null ? $compression_1m * 100 : null,
+                    'position_1m' => self::determine_range_position($close, $l1m, $h1m),
+                    'position_3m' => self::determine_range_position($close, $l3m, $h3m),
+                    'position_6m' => self::determine_range_position($close, $l6m, $h6m),
+                    'position_1y' => self::determine_range_position($close, $l1y, $h1y),
+                    'breakout_potential_score' => self::calculate_breakout_potential_score(
+                        $trang_thai_h1m,
+                        $compression_1m !== null ? $compression_1m * 100 : null,
+                        $rsi,
+                        $close,
+                        $ma20,
+                        $tang_gia_kem_vol,
+                        $smart_money,
+                        $trang_thai_h3m
+                    ),
                 ],
                 ['id' => (int) $rows[$i]['id']]
             );
         }
     }
 
+
+    private static function determine_peak_status($close_price, $high_value) {
+        if ($high_value === null || (float) $high_value <= 0) {
+            return null;
+        }
+
+        $close = (float) $close_price;
+        $high = (float) $high_value;
+
+        if ($close > $high * 1.03) {
+            return 'Vượt mạnh';
+        }
+
+        if ($close > $high) {
+            return 'Vượt đỉnh';
+        }
+
+        if ($close >= $high * 0.97) {
+            return 'Rất gần đỉnh';
+        }
+
+        if ($close >= $high * 0.95) {
+            return 'Gần đỉnh';
+        }
+
+        return 'Xa đỉnh';
+    }
+
+    private static function determine_range_position($close_price, $low_value, $high_value) {
+        if ($low_value === null || $high_value === null) {
+            return null;
+        }
+
+        $range = (float) $high_value - (float) $low_value;
+        if ($range == 0.0) {
+            return null;
+        }
+
+        $pos = (((float) $close_price - (float) $low_value) / $range) * 100;
+        if ($pos <= 20) {
+            return 'Sát đáy';
+        }
+
+        if ($pos <= 50) {
+            return 'Dưới trung vị';
+        }
+
+        if ($pos <= 80) {
+            return 'Trên trung vị';
+        }
+
+        return 'Sát đỉnh';
+    }
+
+    private static function calculate_breakout_potential_score($trang_thai_h1m, $compression_1m, $rsi, $close_price, $ma20, $tang_gia_kem_vol, $smart_money, $trang_thai_h3m) {
+        $score = 0;
+
+        if ($trang_thai_h1m === 'Rất gần đỉnh') {
+            $score += 2;
+        }
+
+        if ($compression_1m !== null && (float) $compression_1m < 10) {
+            $score += 2;
+        }
+
+        if ($rsi !== null && (float) $rsi >= 60) {
+            $score += 1;
+        }
+
+        if ($ma20 !== null && (float) $close_price > (float) $ma20) {
+            $score += 1;
+        }
+
+        if ($tang_gia_kem_vol === 'Tăng giá kèm Vol') {
+            $score += 1;
+        }
+
+        if ($smart_money === 'Smart Money') {
+            $score += 2;
+        }
+
+        if ($trang_thai_h3m === 'Rất gần đỉnh') {
+            $score += 1;
+        }
+
+        return max(0, min(10, $score));
+    }
 
     private static function determine_two_candle_pattern($prev_open, $prev_close, $prev_high, $prev_low, $open_price, $close_price) {
         if ($prev_open === null || $prev_close === null || $prev_high === null || $prev_low === null) {

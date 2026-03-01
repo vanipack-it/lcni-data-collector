@@ -1,3 +1,11 @@
+## 2026-03-01 10:05 (v5.3.7d)
+- Nâng version plugin lên `5.3.7d`.
+- Mở rộng schema `wp_lcni_ohlc` chỉ bằng cách thêm các cột breakout mới: `pct_to_h*`, `trang_thai_h*`, `compression_1m`, `position_*`, `breakout_potential_score` (không thay đổi cột cũ).
+- Bổ sung migration `backfill_ohlc_breakout_metrics` để tính đầy đủ các cột mới bằng `NULLIF` tránh chia 0, hỗ trợ backfill dữ liệu cũ và tái chạy an toàn qua migration flag.
+- Tích hợp tính toán breakout metrics vào pipeline rebuild runtime để row mới insert có đủ dữ liệu ngay khi xử lý theo chuỗi `symbol + timeframe`.
+- Bổ sung đảm bảo index cho `wp_lcni_ohlc`: `(symbol, timeframe, event_time)` và index đơn trên `h1m`, `h3m`, `h6m`, `h1y` nhằm tối ưu truy vấn lọc/batch update.
+- Thứ tự tính `two_candle_pattern` tiếp tục được giữ trước nhóm breakout mới để đảm bảo ưu tiên nhận diện nến theo nhóm và tránh tăng tải do re-scan không cần thiết.
+
 ## 2026-03-01 09:10 (v5.3.7c)
 - Nâng version plugin lên `5.3.7c`.
 - Mở rộng schema `wp_lcni_ohlc` thêm cột `three_candle_pattern VARCHAR(50) NULL` (không bổ sung các cột `is_*`).
