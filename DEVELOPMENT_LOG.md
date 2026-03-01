@@ -1,3 +1,10 @@
+## 2026-03-01 09:10 (v5.3.7c)
+- Nâng version plugin lên `5.3.7c`.
+- Mở rộng schema `wp_lcni_ohlc` thêm cột `three_candle_pattern VARCHAR(50) NULL` (không bổ sung các cột `is_*`).
+- Bổ sung migration/backfill `three_candle_pattern` cho dữ liệu cũ chưa tính bằng `WITH ... LAG(...,1/2) OVER (PARTITION BY symbol, timeframe ORDER BY trading_index)` theo thứ tự ưu tiên `MORNING_STAR` → `EVENING_STAR` → `THREE_WHITE_SOLDIERS` → `THREE_BLACK_CROWS` → `NONE`, chỉ áp dụng `symbol_type='stock'`.
+- Tích hợp tính `three_candle_pattern` vào pipeline rebuild runtime để row mới insert được tính ngay trong cùng chuỗi `symbol + timeframe`.
+- Bổ sung chỉ mục `idx_symbol_tf_ti (symbol, timeframe, trading_index)` để tối ưu truy vấn window function/backfill theo khóa logic.
+
 ## 2026-03-01 (v5.3.7a)
 
 

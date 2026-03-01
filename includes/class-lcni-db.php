@@ -156,6 +156,7 @@ class LCNI_DB {
         self::normalize_ohlc_macd_signal_columns();
         self::backfill_ohlc_one_candle();
         self::backfill_ohlc_two_candle_pattern();
+        self::backfill_ohlc_three_candle_pattern();
         self::sync_frontend_settings_with_new_ohlc_columns();
         self::backfill_market_statistics_tables();
         self::ensure_ohlc_symbol_type_column();
@@ -200,6 +201,7 @@ class LCNI_DB {
             close_price DECIMAL(20,2) NOT NULL,
             one_candle VARCHAR(30) DEFAULT NULL,
             two_candle_pattern VARCHAR(40) DEFAULT NULL,
+            three_candle_pattern VARCHAR(50) DEFAULT NULL,
             volume BIGINT UNSIGNED NOT NULL DEFAULT 0,
             value_traded DECIMAL(24,2) NOT NULL DEFAULT 0,
             pct_t_1 DECIMAL(12,6) DEFAULT NULL,
@@ -963,6 +965,7 @@ class LCNI_DB {
             'smart_money' => 'VARCHAR(30) DEFAULT NULL',
             'one_candle' => 'VARCHAR(30) DEFAULT NULL',
             'two_candle_pattern' => 'VARCHAR(40) DEFAULT NULL',
+            'three_candle_pattern' => 'VARCHAR(50) DEFAULT NULL',
         ];
 
         foreach ($required_columns as $column_name => $column_definition) {
@@ -1105,6 +1108,12 @@ class LCNI_DB {
         $latest_event_index_exists = $wpdb->get_var($wpdb->prepare("SHOW INDEX FROM {$table} WHERE Key_name = %s", $latest_event_index_name));
         if ($latest_event_index_exists === null) {
             $wpdb->query("CREATE INDEX {$latest_event_index_name} ON {$table} (symbol, timeframe, event_time)");
+        }
+
+        $symbol_tf_ti_index_name = 'idx_symbol_tf_ti';
+        $symbol_tf_ti_index_exists = $wpdb->get_var($wpdb->prepare("SHOW INDEX FROM {$table} WHERE Key_name = %s", $symbol_tf_ti_index_name));
+        if ($symbol_tf_ti_index_exists === null) {
+            $wpdb->query("CREATE INDEX {$symbol_tf_ti_index_name} ON {$table} (symbol, timeframe, trading_index)");
         }
 
         $macd_filter_index_name = 'idx_macd_loc';
@@ -2697,6 +2706,120 @@ class LCNI_DB {
         }
 
         update_option($migration_flag, 'yes');
+    }
+
+    private static function backfill_ohlc_three_candle_pattern() {
+        global $wpdb;
+
+        $migration_flag = 'lcni_ohlc_three_candle_pattern_backfilled_v1';
+        if (get_option($migration_flag) === 'yes' && !self::has_missing_three_candle_pattern_rows()) {
+            return;
+        }
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $updated_rows = (int) $wpdb->query(
+            "WITH candle_lag AS (
+                SELECT
+                    symbol,
+                    timeframe,
+                    trading_index,
+                    open_price,
+                    close_price,
+                    LAG(open_price, 1) OVER (
+                        PARTITION BY symbol, timeframe
+                        ORDER BY trading_index
+                    ) AS prev1_open,
+                    LAG(close_price, 1) OVER (
+                        PARTITION BY symbol, timeframe
+                        ORDER BY trading_index
+                    ) AS prev1_close,
+                    LAG(high_price, 1) OVER (
+                        PARTITION BY symbol, timeframe
+                        ORDER BY trading_index
+                    ) AS prev1_high,
+                    LAG(low_price, 1) OVER (
+                        PARTITION BY symbol, timeframe
+                        ORDER BY trading_index
+                    ) AS prev1_low,
+                    LAG(open_price, 2) OVER (
+                        PARTITION BY symbol, timeframe
+                        ORDER BY trading_index
+                    ) AS prev2_open,
+                    LAG(close_price, 2) OVER (
+                        PARTITION BY symbol, timeframe
+                        ORDER BY trading_index
+                    ) AS prev2_close,
+                    LAG(high_price, 2) OVER (
+                        PARTITION BY symbol, timeframe
+                        ORDER BY trading_index
+                    ) AS prev2_high,
+                    LAG(low_price, 2) OVER (
+                        PARTITION BY symbol, timeframe
+                        ORDER BY trading_index
+                    ) AS prev2_low
+                FROM {$table}
+                WHERE UPPER(symbol_type) = 'STOCK'
+            )
+            UPDATE {$table} o
+            JOIN candle_lag c
+                ON o.symbol = c.symbol
+                AND o.timeframe = c.timeframe
+                AND o.trading_index = c.trading_index
+            SET o.three_candle_pattern = CASE
+                WHEN
+                    c.prev2_close < c.prev2_open
+                    AND ABS(c.prev1_close - c.prev1_open) < ABS(c.prev2_close - c.prev2_open) * 0.5
+                    AND c.close_price > c.open_price
+                    AND c.close_price > (c.prev2_open + c.prev2_close) / 2
+                THEN 'MORNING_STAR'
+                WHEN
+                    c.prev2_close > c.prev2_open
+                    AND ABS(c.prev1_close - c.prev1_open) < ABS(c.prev2_close - c.prev2_open) * 0.5
+                    AND c.close_price < c.open_price
+                    AND c.close_price < (c.prev2_open + c.prev2_close) / 2
+                THEN 'EVENING_STAR'
+                WHEN
+                    c.prev2_close > c.prev2_open
+                    AND c.prev1_close > c.prev1_open
+                    AND c.close_price > c.open_price
+                    AND c.prev1_close > c.prev2_close
+                    AND c.close_price > c.prev1_close
+                THEN 'THREE_WHITE_SOLDIERS'
+                WHEN
+                    c.prev2_close < c.prev2_open
+                    AND c.prev1_close < c.prev1_open
+                    AND c.close_price < c.open_price
+                    AND c.prev1_close < c.prev2_close
+                    AND c.close_price < c.prev1_close
+                THEN 'THREE_BLACK_CROWS'
+                ELSE 'NONE'
+            END
+            WHERE UPPER(o.symbol_type) = 'STOCK'
+                AND (o.three_candle_pattern IS NULL OR TRIM(IFNULL(o.three_candle_pattern, '')) = '')"
+        );
+
+        if ($updated_rows > 0) {
+            self::log_change(
+                'backfill_ohlc_three_candle_pattern',
+                sprintf('Backfilled three_candle_pattern for %d OHLC rows using window-function lag.', $updated_rows)
+            );
+        }
+
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function has_missing_three_candle_pattern_rows() {
+        global $wpdb;
+
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $missing_count = (int) $wpdb->get_var(
+            "SELECT COUNT(*)
+            FROM {$ohlc_table}
+            WHERE UPPER(symbol_type) = 'STOCK'
+                AND (three_candle_pattern IS NULL OR TRIM(IFNULL(three_candle_pattern, '')) = '')"
+        );
+
+        return $missing_count > 0;
     }
 
     private static function has_missing_two_candle_pattern_rows() {
@@ -4369,6 +4492,14 @@ class LCNI_DB {
                 (float) ($rows[$i]['open_price'] ?? 0),
                 (float) ($rows[$i]['close_price'] ?? 0)
             );
+            $three_candle_pattern = self::determine_three_candle_pattern(
+                $i > 1 ? (float) ($rows[$i - 2]['open_price'] ?? 0) : null,
+                $i > 1 ? (float) ($rows[$i - 2]['close_price'] ?? 0) : null,
+                $i > 0 ? (float) ($rows[$i - 1]['open_price'] ?? 0) : null,
+                $i > 0 ? (float) ($rows[$i - 1]['close_price'] ?? 0) : null,
+                (float) ($rows[$i]['open_price'] ?? 0),
+                (float) ($rows[$i]['close_price'] ?? 0)
+            );
             $nen_types[] = $nen_type;
 
             $wpdb->update(
@@ -4423,6 +4554,7 @@ class LCNI_DB {
                     'smart_money' => $smart_money,
                     'one_candle' => $one_candle,
                     'two_candle_pattern' => $two_candle_pattern,
+                    'three_candle_pattern' => $three_candle_pattern,
                 ],
                 ['id' => (int) $rows[$i]['id']]
             );
@@ -4478,6 +4610,59 @@ class LCNI_DB {
             && $close > $prev_open
         ) {
             return 'DARK_CLOUD';
+        }
+
+        return 'NONE';
+    }
+
+    private static function determine_three_candle_pattern($prev2_open, $prev2_close, $prev1_open, $prev1_close, $open_price, $close_price) {
+        if ($prev2_open === null || $prev2_close === null || $prev1_open === null || $prev1_close === null) {
+            return 'NONE';
+        }
+
+        $prev2_open = (float) $prev2_open;
+        $prev2_close = (float) $prev2_close;
+        $prev1_open = (float) $prev1_open;
+        $prev1_close = (float) $prev1_close;
+        $open = (float) $open_price;
+        $close = (float) $close_price;
+
+        if (
+            $prev2_close < $prev2_open
+            && abs($prev1_close - $prev1_open) < abs($prev2_close - $prev2_open) * 0.5
+            && $close > $open
+            && $close > (($prev2_open + $prev2_close) / 2)
+        ) {
+            return 'MORNING_STAR';
+        }
+
+        if (
+            $prev2_close > $prev2_open
+            && abs($prev1_close - $prev1_open) < abs($prev2_close - $prev2_open) * 0.5
+            && $close < $open
+            && $close < (($prev2_open + $prev2_close) / 2)
+        ) {
+            return 'EVENING_STAR';
+        }
+
+        if (
+            $prev2_close > $prev2_open
+            && $prev1_close > $prev1_open
+            && $close > $open
+            && $prev1_close > $prev2_close
+            && $close > $prev1_close
+        ) {
+            return 'THREE_WHITE_SOLDIERS';
+        }
+
+        if (
+            $prev2_close < $prev2_open
+            && $prev1_close < $prev1_open
+            && $close < $open
+            && $prev1_close < $prev2_close
+            && $close < $prev1_close
+        ) {
+            return 'THREE_BLACK_CROWS';
         }
 
         return 'NONE';
