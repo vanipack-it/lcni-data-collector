@@ -69,8 +69,11 @@ class LCNI_Chart_Builder_Repository {
         global $wpdb;
 
         return [
+            'ohlc' => $wpdb->prefix . 'lcni_ohlc',
             'thong_ke_thi_truong' => $wpdb->prefix . 'lcni_thong_ke_thi_truong',
             'ohlc_latest' => $wpdb->prefix . 'lcni_ohlc_latest',
+            'thong_ke_nganh_icb_2' => $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2',
+            'thong_ke_nganh_icb_2_toan_thi_truong' => $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2_toan_thi_truong',
             'money_flow' => $wpdb->prefix . 'lcni_money_flow',
             'stock_stats' => $wpdb->prefix . 'lcni_stock_stats',
         ];
