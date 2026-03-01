@@ -17,6 +17,7 @@ class LCNI_Data_Format_Settings {
         'screener',
         'watchlist',
         'market_overview',
+        'chart_builder',
     ];
 
     const MODULE_SCOPE_LABELS = [
@@ -26,6 +27,7 @@ class LCNI_Data_Format_Settings {
         'screener' => 'Screener',
         'watchlist' => 'Watchlist',
         'market_overview' => 'Market Overview',
+        'chart_builder' => 'Chart Builder',
     ];
 
     const MULTIPLY_100_FIELDS = [
