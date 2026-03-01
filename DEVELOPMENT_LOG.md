@@ -1,4 +1,12 @@
 ## 2026-03-01 (v5.3.7a)
+
+
+## 2026-03-01 08:23 (v5.3.7b)
+- Nâng version plugin lên `5.3.7b`.
+- Mở rộng schema `wp_lcni_ohlc` thêm cột `two_candle_pattern VARCHAR(40) NULL` (không bổ sung các cột `is_*`).
+- Bổ sung migration backfill `two_candle_pattern` cho dữ liệu cũ chưa tính bằng `WITH ... LAG(...) OVER (PARTITION BY symbol, timeframe ORDER BY trading_index)` theo đúng thứ tự ưu tiên: `BULLISH_ENGULFING` → `BEARISH_ENGULFING` → `PIERCING_LINE` → `DARK_CLOUD` → `NONE`.
+- Tích hợp tính `two_candle_pattern` vào pipeline rebuild runtime theo từng chuỗi `symbol + timeframe` để các row mới insert được tính ngay, đồng thời chỉ backfill phần dữ liệu còn thiếu nhằm giảm tải hệ thống.
+
 - Nâng version plugin lên `5.3.7a`.
 - Nâng cấp workflow seed/rebuild theo pha: sau ingest chỉ ghi queue dirty (`series_metrics` -> `rs_metrics` -> `market_stats`) rồi xử lý nối tiếp theo nhóm để giảm tải đồng thời lên DB/API.
 - Bổ sung watermark cho từng nhóm rebuild để hỗ trợ resume/idempotent khi job bị gián đoạn, không cần chạy lại toàn cục.
