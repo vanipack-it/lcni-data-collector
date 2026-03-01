@@ -2875,6 +2875,7 @@ private function sanitize_module_title($value, $fallback) {
             'multi_line' => ['label' => 'Multi-line', 'axis_slots' => 1, 'series_slots' => 3],
             'area_stack' => ['label' => 'Area Stack', 'axis_slots' => 1, 'series_slots' => 4],
             'share_dataset' => ['label' => 'Share Dataset', 'axis_slots' => 1, 'series_slots' => 2],
+            'heatmap_matrix' => ['label' => 'Heatmap Matrix', 'axis_slots' => 2, 'series_slots' => 1],
             'market_breadth' => ['label' => 'Market Breadth', 'axis_slots' => 1, 'series_slots' => 4],
             'rsi_zone' => ['label' => 'RSI Zone', 'axis_slots' => 1, 'series_slots' => 2],
             'smart_money_flow' => ['label' => 'Smart Money Flow', 'axis_slots' => 1, 'series_slots' => 3],
@@ -3051,6 +3052,10 @@ private function sanitize_module_title($value, $fallback) {
                                 let input = tabRoot.querySelector('#lcni-chart-builder-xaxis');
                                 if (!input) { input = document.createElement('input'); input.type = 'hidden'; input.id = 'lcni-chart-builder-xaxis'; input.name = 'lcni_chart_builder[xAxis]'; tabRoot.querySelector('#lcni-chart-builder-form').appendChild(input); }
                                 input.value = field; zone.querySelector('[data-text]').textContent = 'Axis X: ' + field;
+                            } else if (t === 'yAxis') {
+                                let input = tabRoot.querySelector('#lcni-chart-builder-yaxis');
+                                if (!input) { input = document.createElement('input'); input.type = 'hidden'; input.id = 'lcni-chart-builder-yaxis'; input.name = 'lcni_chart_builder[yAxis]'; tabRoot.querySelector('#lcni-chart-builder-form').appendChild(input); }
+                                input.value = field; zone.querySelector('[data-text]').textContent = 'Axis Y: ' + field;
                             } else if (t.indexOf('series-') === 0) {
                                 const idx = Number(t.replace('series-', ''));
                                 const f = tabRoot.querySelectorAll('.lcni-chart-builder-series-field')[idx];
@@ -3070,6 +3075,11 @@ private function sanitize_module_title($value, $fallback) {
                         const meta = templateMeta[key] || { axis_slots: 1, series_slots: 2 };
                         axisSeriesContainer.innerHTML = '';
                         axisSeriesContainer.appendChild(mkDropZone('xAxis', 'Axis X (drag field vào đây)', (zone) => { const i = tabRoot.querySelector('#lcni-chart-builder-xaxis'); if (i) i.value = ''; zone.querySelector('[data-text]').textContent = 'Axis X (drag field vào đây)'; }));
+                        if (Number(meta.axis_slots || 1) > 1) {
+                            axisSeriesContainer.appendChild(mkDropZone('yAxis', 'Axis Y (drag field vào đây)', (zone) => { const i = tabRoot.querySelector('#lcni-chart-builder-yaxis'); if (i) i.value = ''; zone.querySelector('[data-text]').textContent = 'Axis Y (drag field vào đây)'; }));
+                            let yInput = tabRoot.querySelector('#lcni-chart-builder-yaxis');
+                            if (!yInput) { yInput = document.createElement('input'); yInput.type = 'hidden'; yInput.id = 'lcni-chart-builder-yaxis'; yInput.name = 'lcni_chart_builder[yAxis]'; tabRoot.querySelector('#lcni-chart-builder-form').appendChild(yInput); }
+                        }
                         for (let i = 0; i < meta.series_slots; i += 1) {
                             axisSeriesContainer.appendChild(mkDropZone('series-' + i, 'Series ' + (i + 1) + ' (drag field)', (zone) => { const f = tabRoot.querySelectorAll('.lcni-chart-builder-series-field')[i]; if (f) f.value = ''; zone.querySelector('[data-text]').textContent = 'Series ' + (i + 1) + ' (drag field)'; }));
                             ['series_name','series_field','series_type','series_color','series_stack','series_area','series_label_show'].forEach((n) => {
@@ -3115,10 +3125,20 @@ private function sanitize_module_title($value, $fallback) {
 
                     const getPreviewRows = () => {
                         const x = (tabRoot.querySelector('#lcni-chart-builder-xaxis') || {}).value || '';
+                        const y = (tabRoot.querySelector('#lcni-chart-builder-yaxis') || {}).value || '';
                         const seriesFields = Array.from(tabRoot.querySelectorAll('.lcni-chart-builder-series-field')).map((i) => i.value).filter(Boolean);
-                        if (!x || !seriesFields.length) return {x:'', rows:[], seriesFields:[]};
-                        const rows = []; for (let i = 0; i < 40; i += 1) { const r = {}; r[x] = String(i + 1); seriesFields.forEach((f) => { r[f] = Math.round((Math.sin((i + 1) / 4) + 1.2) * 80 + (Math.random() * 15)); }); rows.push(r); }
-                        return {x, rows, seriesFields};
+                        if (!x || !seriesFields.length) return {x:'', y:'', rows:[], seriesFields:[]};
+                        const rows = [];
+                        for (let i = 0; i < 40; i += 1) {
+                            const r = {};
+                            r[x] = String(i + 1);
+                            if (y) {
+                                r[y] = 'Group ' + ((i % 6) + 1);
+                            }
+                            seriesFields.forEach((f) => { r[f] = Math.round((Math.sin((i + 1) / 4) + 1.2) * 80 + (Math.random() * 15)); });
+                            rows.push(r);
+                        }
+                        return {x, y, rows, seriesFields};
                     };
 
                     const renderPreview = () => {
@@ -3127,6 +3147,56 @@ private function sanitize_module_title($value, $fallback) {
                         const p = getPreviewRows(); if (!p.x || !p.seriesFields.length) { previewChart.clear(); return; }
                         const c = (tabRoot.querySelector('#lcni-chart-builder-default-color') || {}).value || '#5470c6';
                         const ls = (tabRoot.querySelector('#lcni-chart-builder-line-style') || {}).value || 'solid';
+                        const templateKey = (templateInput || {}).value || 'multi_line';
+
+                        if (templateKey === 'heatmap_matrix') {
+                            const xData = Array.from(new Set(p.rows.map((r) => String(r[p.x] || '')))).filter(Boolean);
+                            const yField = p.y || '';
+                            const yData = yField
+                                ? Array.from(new Set(p.rows.map((r) => String(r[yField] || '')))).filter(Boolean)
+                                : ['Group 1'];
+                            const valueField = p.seriesFields[0] || '';
+                            const data = p.rows.map((row) => {
+                                const xIndex = xData.indexOf(String(row[p.x] || ''));
+                                const yValue = yField ? String(row[yField] || '') : 'Group 1';
+                                const yIndex = yData.indexOf(yValue);
+                                return [xIndex, yIndex, Number(row[valueField] || 0)];
+                            }).filter((item) => item[0] > -1 && item[1] > -1);
+
+                            previewChart.setOption({
+                                tooltip: {
+                                    position: 'top',
+                                    formatter: (params) => {
+                                        const xv = xData[params.data[0]] || '';
+                                        const yv = yData[params.data[1]] || '';
+                                        return yv + '<br/>' + xv + ': ' + params.data[2] + '%';
+                                    },
+                                },
+                                grid: { height: '80%', top: '10%' },
+                                xAxis: { type: 'category', data: xData, splitArea: { show: true } },
+                                yAxis: { type: 'category', data: yData, splitArea: { show: true } },
+                                dataZoom: [{ type: 'slider', xAxisIndex: 0, bottom: 48 }, { type: 'inside', xAxisIndex: 0 }],
+                                visualMap: {
+                                    min: 0,
+                                    max: 30,
+                                    calculable: true,
+                                    orient: 'horizontal',
+                                    left: 'center',
+                                    bottom: '2%',
+                                    inRange: { color: ['#d73027', '#fee08b', '#1a9850'] },
+                                },
+                                series: [{
+                                    name: '%GTGD',
+                                    type: 'heatmap',
+                                    data,
+                                    label: { show: true, formatter: '{c}%' },
+                                    emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.5)' } },
+                                }],
+                            }, true);
+                            previewChart.resize();
+                            return;
+                        }
+
                         previewChart.setOption({ tooltip:{trigger:'axis'}, legend:{top:'bottom', data:p.seriesFields}, xAxis:{type:'category', data:p.rows.map((r)=>r[p.x])}, yAxis:{type:'value'}, series:p.seriesFields.map((f)=>({name:f,type:'line',smooth:true,lineStyle:{type:ls,color:c},itemStyle:{color:c},data:p.rows.map((r)=>Number(r[f]||0))})) }, true);
                         previewChart.resize();
                     };
@@ -3192,6 +3262,8 @@ private function sanitize_module_title($value, $fallback) {
                         renderAxisSeriesSlots();
                         const xInput = tabRoot.querySelector('#lcni-chart-builder-xaxis'); if (xInput) xInput.value = config.xAxis || '';
                         const xZone = axisSeriesContainer.querySelector('[data-target="xAxis"] [data-text]'); if (xZone && xInput && xInput.value) xZone.textContent = 'Axis X: ' + xInput.value;
+                        const yInput = tabRoot.querySelector('#lcni-chart-builder-yaxis'); if (yInput) yInput.value = config.yAxis || '';
+                        const yZone = axisSeriesContainer.querySelector('[data-target="yAxis"] [data-text]'); if (yZone && yInput && yInput.value) yZone.textContent = 'Axis Y: ' + yInput.value;
                         const savedSeries = Array.isArray(config.series) ? config.series : [];
                         savedSeries.forEach((it, idx) => {
                             const f = tabRoot.querySelectorAll('.lcni-chart-builder-series-field')[idx];

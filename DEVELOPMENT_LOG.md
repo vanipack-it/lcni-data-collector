@@ -1,3 +1,10 @@
+## 2026-03-01 11:00 (v5.3.8d)
+- Nâng version plugin lên `5.3.8d`.
+- Bổ sung chart template `heatmap_matrix` trong Chart Builder để dựng Heatmap theo data source `wp_lcni_thong_ke_nganh_icb_2` với map field chuẩn: `x=timeframe`, `y=ICB2`, `value=percent_value`.
+- Chuẩn hoá payload backend cho template heatmap theo contract JSON `{"x": [...], "y": [...], "data": [[xIndex, yIndex, value], ...]}` để frontend ECharts render trực tiếp.
+- Frontend Chart Builder hỗ trợ render option heatmap cố định (tooltip, visualMap, label phần trăm), thêm `dataZoom` slider/inside cho trục X khi dữ liệu dài.
+- Mở rộng UI kéo-thả Chart Builder hỗ trợ thêm slot `Axis Y` cho các template cần 2 trục category (đặc biệt heatmap).
+
 ## 2026-03-01 10:05 (v5.3.7d)
 - Nâng version plugin lên `5.3.7d`.
 - Mở rộng schema `wp_lcni_ohlc` chỉ bằng cách thêm các cột breakout mới: `pct_to_h*`, `trang_thai_h*`, `compression_1m`, `position_*`, `breakout_potential_score` (không thay đổi cột cũ).

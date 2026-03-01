@@ -251,6 +251,13 @@ Ví dụ: khi truy cập `?symbol=FPT`, chart sẽ tự đổi theo `FPT`.
 
 ## Changelog
 
+### 5.3.8d
+
+- Thêm template **Heatmap Matrix** cho Chart Builder, hỗ trợ map `x=timeframe`, `y=ICB2`, `value=percent_value` và output JSON chuẩn `{x,y,data}` với format ECharts `[xIndex, yIndex, value]`.
+- Bổ sung cấu hình render heatmap cố định theo ECharts: tooltip theo trục X/Y, label `%`, visualMap màu nền có thể tuỳ biến theo rule.
+- Bổ sung `dataZoom` dạng slider + inside cho trục X để xử lý dữ liệu `event_time` dài.
+- Giữ cơ chế `sync_group` để có thể đồng bộ dữ liệu/liên kết interaction giữa các chart khi dùng chung group.
+
 ### 5.3.8b
 
 - Bổ sung template **Share Dataset** cho Chart Builder (line + pie theo dataset liên kết), hỗ trợ filter và tự động cập nhật chart theo giá trị lọc.

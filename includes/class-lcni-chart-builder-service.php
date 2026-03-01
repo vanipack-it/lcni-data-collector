@@ -9,6 +9,7 @@ class LCNI_Chart_Builder_Service {
     public static function sanitize_payload($raw) {
         $config = [
             'xAxis' => sanitize_key((string) ($raw['xAxis'] ?? 'event_time')),
+            'yAxis' => sanitize_key((string) ($raw['yAxis'] ?? '')),
             'series' => [],
             'filters' => [],
             'template' => sanitize_key((string) ($raw['template'] ?? 'multi_line')),
@@ -112,11 +113,54 @@ class LCNI_Chart_Builder_Service {
         }
         $filter_fields = array_values(array_unique($filter_fields));
 
+        $chart_type = (string) ($chart['chart_type'] ?? 'multi_line');
+        if ($chart_type === 'heatmap_matrix') {
+            $x_axis = sanitize_key((string) ($config['xAxis'] ?? 'timeframe'));
+            $y_axis = sanitize_key((string) ($config['yAxis'] ?? 'icb2'));
+            $value_field = '';
+            foreach ((array) ($config['series'] ?? []) as $item) {
+                $candidate = sanitize_key((string) ($item['field'] ?? ''));
+                if ($candidate !== '') {
+                    $value_field = $candidate;
+                    break;
+                }
+            }
+
+            $x_values = [];
+            $y_values = [];
+            $matrix = [];
+
+            foreach ((array) $rows as $row) {
+                $x_value = sanitize_text_field((string) ($row[$x_axis] ?? ''));
+                $y_value = sanitize_text_field((string) ($row[$y_axis] ?? ''));
+                if ($x_value === '' || $y_value === '') {
+                    continue;
+                }
+
+                if (!isset($x_values[$x_value])) {
+                    $x_values[$x_value] = count($x_values);
+                }
+                if (!isset($y_values[$y_value])) {
+                    $y_values[$y_value] = count($y_values);
+                }
+
+                $raw_value = $value_field !== '' ? ($row[$value_field] ?? null) : null;
+                $value = is_numeric($raw_value) ? (float) $raw_value : null;
+                $matrix[] = [$x_values[$x_value], $y_values[$y_value], $value];
+            }
+
+            $rows = [
+                'x' => array_keys($x_values),
+                'y' => array_keys($y_values),
+                'data' => $matrix,
+            ];
+        }
+
         return [
             'id' => (int) ($chart['id'] ?? 0),
             'slug' => (string) ($chart['slug'] ?? ''),
             'name' => (string) ($chart['name'] ?? ''),
-            'chart_type' => (string) ($chart['chart_type'] ?? 'multi_line'),
+            'chart_type' => $chart_type,
             'config' => $config,
             'data' => $rows,
             'series_labels' => $series_labels,

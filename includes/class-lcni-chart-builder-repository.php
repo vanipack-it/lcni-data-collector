@@ -183,6 +183,11 @@ class LCNI_Chart_Builder_Repository {
         $series = is_array($config['series'] ?? null) ? $config['series'] : [];
         $fields = [$x_axis];
 
+        $y_axis = sanitize_key((string) ($config['yAxis'] ?? ''));
+        if ($y_axis !== '' && in_array($y_axis, $all_columns, true)) {
+            $fields[] = $y_axis;
+        }
+
         foreach ($series as $item) {
             $field = sanitize_key((string) ($item['field'] ?? ''));
             if ($field !== '' && in_array($field, $all_columns, true)) {

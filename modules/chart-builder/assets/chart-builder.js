@@ -88,7 +88,59 @@
 
     const isAreaStack = chartType === 'area_stack';
     const isShareDataset = chartType === 'share_dataset';
+    const isHeatmapMatrix = chartType === 'heatmap_matrix';
     const preparedRows = normalizeRowsByTemplate(rows, chartType, cfg);
+
+    if (isHeatmapMatrix) {
+      const xData = Array.isArray(rows.x) ? rows.x : [];
+      const yData = Array.isArray(rows.y) ? rows.y : [];
+      const matrixData = Array.isArray(rows.data) ? rows.data : [];
+      const maxValue = matrixData.reduce((acc, item) => {
+        const value = Number(Array.isArray(item) ? item[2] : 0);
+        return Number.isFinite(value) ? Math.max(acc, value) : acc;
+      }, 0);
+
+      return {
+        title: { text: payload.name || '' },
+        tooltip: {
+          position: 'top',
+          formatter: (params) => {
+            const xLabel = xData[params.data[0]] || '';
+            const yLabel = yData[params.data[1]] || '';
+            return yLabel + '<br/>' + xLabel + ': ' + params.data[2] + '%';
+          },
+        },
+        grid: { height: '72%', top: '10%' },
+        xAxis: { type: 'category', data: xData, splitArea: { show: true } },
+        yAxis: { type: 'category', data: yData, splitArea: { show: true } },
+        dataZoom: [
+          { type: 'slider', xAxisIndex: 0, bottom: 52, height: 16 },
+          { type: 'inside', xAxisIndex: 0 },
+        ],
+        visualMap: {
+          min: 0,
+          max: maxValue > 0 ? maxValue : 30,
+          calculable: true,
+          orient: 'horizontal',
+          left: 'center',
+          bottom: '2%',
+          inRange: { color: ['#d73027', '#fee08b', '#1a9850'] },
+        },
+        series: [{
+          name: '%GTGD',
+          type: 'heatmap',
+          data: matrixData,
+          label: { show: true, formatter: '{c}%' },
+          emphasis: {
+            itemStyle: {
+              shadowBlur: 10,
+              shadowColor: 'rgba(0,0,0,0.5)',
+            },
+          },
+        }],
+        animationDurationUpdate: 300,
+      };
+    }
 
     const series = seriesCfg.map((item, index) => {
       const hasColor = typeof item.color === 'string' && item.color.trim() !== '';
