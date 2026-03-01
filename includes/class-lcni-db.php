@@ -13,6 +13,8 @@ class LCNI_DB {
     const RULE_REBUILD_TASKS_OPTION = 'lcni_rule_rebuild_tasks';
     const RULE_REBUILD_STATUS_OPTION = 'lcni_rule_rebuild_status';
     const RULE_REBUILD_BATCH_SIZE = 5;
+    const SEED_REBUILD_QUEUE_OPTION = 'lcni_seed_rebuild_queue_v1';
+    const SEED_REBUILD_WATERMARK_OPTION = 'lcni_seed_rebuild_watermark_v1';
     const DEFAULT_MARKETS = [
         ['market_id' => '1', 'exchange' => 'UPCOM'],
         ['market_id' => '2', 'exchange' => 'HOSE'],
@@ -1301,6 +1303,448 @@ class LCNI_DB {
         }
 
         return count($tasks);
+    }
+
+
+    private static function get_seed_rebuild_queue() {
+        $queue = get_option(self::SEED_REBUILD_QUEUE_OPTION, []);
+
+        return is_array($queue) ? $queue : [];
+    }
+
+    private static function normalize_seed_rebuild_group_item($item, $group) {
+        $normalized = [
+            'keys' => [],
+            'priority' => 100,
+            'retry_count' => 0,
+            'updated_at' => current_time('mysql'),
+        ];
+
+        if (is_array($item)) {
+            $normalized['keys'] = isset($item['keys']) && is_array($item['keys']) ? $item['keys'] : [];
+            $normalized['priority'] = isset($item['priority']) ? (int) $item['priority'] : 100;
+            $normalized['retry_count'] = isset($item['retry_count']) ? max(0, (int) $item['retry_count']) : 0;
+            $normalized['updated_at'] = !empty($item['updated_at']) ? (string) $item['updated_at'] : current_time('mysql');
+        }
+
+        if ($group === 'series_metrics') {
+            $normalized['keys']['symbol'] = strtoupper(trim((string) ($normalized['keys']['symbol'] ?? '')));
+            $normalized['keys']['timeframe'] = strtoupper(trim((string) ($normalized['keys']['timeframe'] ?? '')));
+            if ($normalized['keys']['symbol'] === '' || $normalized['keys']['timeframe'] === '') {
+                return null;
+            }
+        } elseif ($group === 'rs_metrics') {
+            $normalized['keys']['event_time'] = (int) ($normalized['keys']['event_time'] ?? 0);
+            $normalized['keys']['timeframe'] = strtoupper(trim((string) ($normalized['keys']['timeframe'] ?? '')));
+            if ($normalized['keys']['event_time'] <= 0 || $normalized['keys']['timeframe'] === '') {
+                return null;
+            }
+        } elseif ($group === 'market_stats') {
+            $normalized['keys']['event_time'] = (int) ($normalized['keys']['event_time'] ?? 0);
+            $normalized['keys']['timeframe'] = strtoupper(trim((string) ($normalized['keys']['timeframe'] ?? '')));
+            if ($normalized['keys']['event_time'] <= 0 || $normalized['keys']['timeframe'] === '') {
+                return null;
+            }
+            if (isset($normalized['keys']['market_id']) && $normalized['keys']['market_id'] !== '') {
+                $normalized['keys']['market_id'] = (int) $normalized['keys']['market_id'];
+            }
+            if (isset($normalized['keys']['icb2']) && $normalized['keys']['icb2'] !== '') {
+                $normalized['keys']['icb2'] = trim((string) $normalized['keys']['icb2']);
+            }
+        } else {
+            return null;
+        }
+
+        return $normalized;
+    }
+
+    private static function enqueue_seed_rebuild_tasks($touched_series = [], $touched_event_times = [], $touched_timeframes = []) {
+        $series = self::normalize_series_rows($touched_series);
+        $event_times = array_values(array_unique(array_map('intval', (array) $touched_event_times)));
+        $timeframes = array_values(array_unique(array_filter(array_map(static function ($timeframe) {
+            return strtoupper(trim((string) $timeframe));
+        }, (array) $touched_timeframes))));
+
+        if (empty($series) && empty($event_times) && empty($timeframes)) {
+            return;
+        }
+
+        $queue = self::get_seed_rebuild_queue();
+        if (!isset($queue['series_metrics']) || !is_array($queue['series_metrics'])) {
+            $queue['series_metrics'] = [];
+        }
+        if (!isset($queue['rs_metrics']) || !is_array($queue['rs_metrics'])) {
+            $queue['rs_metrics'] = [];
+        }
+        if (!isset($queue['market_stats']) || !is_array($queue['market_stats'])) {
+            $queue['market_stats'] = [];
+        }
+
+        foreach ($series as $series_item) {
+            $key = $series_item['symbol'] . '|' . $series_item['timeframe'];
+            $queue['series_metrics'][$key] = [
+                'keys' => [
+                    'symbol' => $series_item['symbol'],
+                    'timeframe' => $series_item['timeframe'],
+                ],
+                'priority' => 10,
+                'retry_count' => 0,
+                'updated_at' => current_time('mysql'),
+            ];
+        }
+
+        foreach ($event_times as $event_time) {
+            foreach ($timeframes as $timeframe) {
+                $rs_key = $event_time . '|' . $timeframe;
+                $queue['rs_metrics'][$rs_key] = [
+                    'keys' => [
+                        'event_time' => $event_time,
+                        'timeframe' => $timeframe,
+                    ],
+                    'priority' => 20,
+                    'retry_count' => 0,
+                    'updated_at' => current_time('mysql'),
+                ];
+
+                $market_key = $event_time . '|' . $timeframe;
+                $queue['market_stats'][$market_key] = [
+                    'keys' => [
+                        'event_time' => $event_time,
+                        'timeframe' => $timeframe,
+                    ],
+                    'priority' => 30,
+                    'retry_count' => 0,
+                    'updated_at' => current_time('mysql'),
+                ];
+            }
+        }
+
+        update_option(self::SEED_REBUILD_QUEUE_OPTION, $queue, false);
+    }
+
+    public static function process_seed_rebuild_pipeline($batch_sizes = []) {
+        $queue = self::get_seed_rebuild_queue();
+
+        $groups = [
+            'series_metrics' => isset($queue['series_metrics']) && is_array($queue['series_metrics']) ? $queue['series_metrics'] : [],
+            'rs_metrics' => isset($queue['rs_metrics']) && is_array($queue['rs_metrics']) ? $queue['rs_metrics'] : [],
+            'market_stats' => isset($queue['market_stats']) && is_array($queue['market_stats']) ? $queue['market_stats'] : [],
+        ];
+
+        $defaults = [
+            'series_metrics' => max(1, (int) get_option('lcni_seed_rebuild_series_batch_size', 120)),
+            'rs_metrics' => max(1, (int) get_option('lcni_seed_rebuild_rs_batch_size', 200)),
+            'market_stats' => max(1, (int) get_option('lcni_seed_rebuild_market_batch_size', 120)),
+        ];
+        $batch_limits = array_merge($defaults, is_array($batch_sizes) ? $batch_sizes : []);
+
+        $processed = [
+            'series_metrics' => 0,
+            'rs_metrics' => 0,
+            'market_stats' => 0,
+        ];
+
+        $series_batch = [];
+        foreach ($groups['series_metrics'] as $task_key => $task_item) {
+            if ($processed['series_metrics'] >= (int) $batch_limits['series_metrics']) {
+                break;
+            }
+            $normalized = self::normalize_seed_rebuild_group_item($task_item, 'series_metrics');
+            if ($normalized === null) {
+                unset($groups['series_metrics'][$task_key]);
+                continue;
+            }
+            $series_batch[$task_key] = $normalized;
+            unset($groups['series_metrics'][$task_key]);
+            $processed['series_metrics']++;
+        }
+
+        foreach ($series_batch as $task_item) {
+            self::rebuild_ohlc_series_metrics($task_item['keys']['symbol'], $task_item['keys']['timeframe']);
+        }
+
+        if ($processed['series_metrics'] > 0 && self::is_peak_hours_mode()) {
+            $batch_limits['rs_metrics'] = max(1, (int) floor((int) $batch_limits['rs_metrics'] / 2));
+            $batch_limits['market_stats'] = 0;
+        }
+
+        $rs_event_times = [];
+        $rs_timeframes = [];
+        foreach ($groups['rs_metrics'] as $task_key => $task_item) {
+            if ($processed['rs_metrics'] >= (int) $batch_limits['rs_metrics']) {
+                break;
+            }
+            $normalized = self::normalize_seed_rebuild_group_item($task_item, 'rs_metrics');
+            if ($normalized === null) {
+                unset($groups['rs_metrics'][$task_key]);
+                continue;
+            }
+            $rs_event_times[(int) $normalized['keys']['event_time']] = true;
+            $rs_timeframes[(string) $normalized['keys']['timeframe']] = true;
+            unset($groups['rs_metrics'][$task_key]);
+            $processed['rs_metrics']++;
+        }
+
+        if (!empty($rs_timeframes)) {
+            self::rebuild_rs_1m_by_exchange(array_keys($rs_event_times), array_keys($rs_timeframes));
+            self::rebuild_rs_1w_by_exchange(array_keys($rs_event_times), array_keys($rs_timeframes));
+            self::rebuild_rs_3m_by_exchange(array_keys($rs_event_times), array_keys($rs_timeframes));
+            self::rebuild_rs_exchange_signals(array_keys($rs_event_times), array_keys($rs_timeframes));
+        }
+
+        if ((int) $batch_limits['market_stats'] > 0) {
+            $market_event_times = [];
+            $market_timeframes = [];
+            foreach ($groups['market_stats'] as $task_key => $task_item) {
+                if ($processed['market_stats'] >= (int) $batch_limits['market_stats']) {
+                    break;
+                }
+                $normalized = self::normalize_seed_rebuild_group_item($task_item, 'market_stats');
+                if ($normalized === null) {
+                    unset($groups['market_stats'][$task_key]);
+                    continue;
+                }
+                $market_event_times[(int) $normalized['keys']['event_time']] = true;
+                $market_timeframes[(string) $normalized['keys']['timeframe']] = true;
+                unset($groups['market_stats'][$task_key]);
+                $processed['market_stats']++;
+            }
+
+            if (!empty($market_timeframes)) {
+                self::rebuild_market_statistics_incremental(array_keys($market_event_times), array_keys($market_timeframes));
+            }
+        }
+
+        $new_queue = [
+            'series_metrics' => $groups['series_metrics'],
+            'rs_metrics' => $groups['rs_metrics'],
+            'market_stats' => $groups['market_stats'],
+        ];
+        update_option(self::SEED_REBUILD_QUEUE_OPTION, $new_queue, false);
+
+        $remaining = [
+            'series_metrics' => count($new_queue['series_metrics']),
+            'rs_metrics' => count($new_queue['rs_metrics']),
+            'market_stats' => count($new_queue['market_stats']),
+        ];
+
+        if (array_sum($processed) > 0) {
+            $watermark = get_option(self::SEED_REBUILD_WATERMARK_OPTION, []);
+            if (!is_array($watermark)) {
+                $watermark = [];
+            }
+            $now = current_time('mysql');
+            foreach ($processed as $group => $count) {
+                if ($count > 0) {
+                    $watermark[$group] = [
+                        'last_processed_at' => $now,
+                        'processed' => (int) $count,
+                    ];
+                }
+            }
+            update_option(self::SEED_REBUILD_WATERMARK_OPTION, $watermark, false);
+        }
+
+        return [
+            'processed' => $processed,
+            'remaining' => $remaining,
+            'done' => array_sum($remaining) === 0,
+            'degraded_mode' => self::is_peak_hours_mode(),
+        ];
+    }
+
+    private static function is_peak_hours_mode() {
+        $degraded = get_option('lcni_seed_rebuild_degraded_mode', 'auto');
+        if ($degraded === 'always') {
+            return true;
+        }
+        if ($degraded === 'off') {
+            return false;
+        }
+
+        $hour = (int) wp_date('G', current_time('timestamp'));
+
+        return $hour >= 8 && $hour <= 14;
+    }
+
+    private static function rebuild_market_statistics_incremental($event_times = [], $timeframes = []) {
+        if (empty($event_times) || empty($timeframes)) {
+            return 0;
+        }
+
+        global $wpdb;
+
+        $event_times = array_values(array_unique(array_filter(array_map('intval', (array) $event_times), static function ($value) {
+            return $value > 0;
+        })));
+        $timeframes = array_values(array_unique(array_filter(array_map(static function ($timeframe) {
+            return strtoupper(trim((string) $timeframe));
+        }, (array) $timeframes))));
+
+        if (empty($event_times) || empty($timeframes)) {
+            return 0;
+        }
+
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $mapping_table = $wpdb->prefix . 'lcni_sym_icb_market';
+        $market_statistics_table = $wpdb->prefix . 'lcni_thong_ke_thi_truong';
+        $icb2_statistics_table = $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2';
+        $icb2_market_statistics_table = $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2_toan_thi_truong';
+        $icb2_table = $wpdb->prefix . 'lcni_icb2';
+
+        $event_placeholders = implode(', ', array_fill(0, count($event_times), '%d'));
+        $timeframe_placeholders = implode(', ', array_fill(0, count($timeframes), '%s'));
+
+        $where_sql = "o.event_time IN ({$event_placeholders}) AND o.timeframe IN ({$timeframe_placeholders})";
+        $where_params = array_merge($event_times, $timeframes);
+
+        $delete_market_sql = "DELETE FROM {$market_statistics_table} WHERE event_time IN ({$event_placeholders}) AND timeframe IN ({$timeframe_placeholders})";
+        $wpdb->query($wpdb->prepare($delete_market_sql, $where_params));
+        $delete_icb2_sql = "DELETE FROM {$icb2_statistics_table} WHERE event_time IN ({$event_placeholders}) AND timeframe IN ({$timeframe_placeholders})";
+        $wpdb->query($wpdb->prepare($delete_icb2_sql, $where_params));
+        $delete_icb2_market_sql = "DELETE FROM {$icb2_market_statistics_table} WHERE event_time IN ({$event_placeholders}) AND timeframe IN ({$timeframe_placeholders})";
+        $wpdb->query($wpdb->prepare($delete_icb2_market_sql, $where_params));
+
+        $insert_market_sql = "INSERT INTO {$market_statistics_table}
+            (event_time, marketid, timeframe, so_ma_tang_gia, so_ma_giam_gia, so_rsi_qua_mua, so_rsi_qua_ban, so_rsi_tham_lam, so_rsi_so_hai, so_smart_money, so_tang_gia_kem_vol, so_pha_nen, pct_so_ma_tren_ma20, pct_so_ma_tren_ma50, pct_so_ma_tren_ma100, tong_value_traded)
+            SELECT
+                o.event_time,
+                CAST(COALESCE(NULLIF(TRIM(m.market_id), ''), '0') AS UNSIGNED) AS marketid,
+                o.timeframe,
+                SUM(CASE WHEN COALESCE(o.pct_t_1, 0) > 0 THEN 1 ELSE 0 END) AS so_ma_tang_gia,
+                SUM(CASE WHEN COALESCE(o.pct_t_1, 0) < 0 THEN 1 ELSE 0 END) AS so_ma_giam_gia,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Quá mua' THEN 1 ELSE 0 END) AS so_rsi_qua_mua,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Quá bán' THEN 1 ELSE 0 END) AS so_rsi_qua_ban,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Tham lam' THEN 1 ELSE 0 END) AS so_rsi_tham_lam,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Sợ hãi' THEN 1 ELSE 0 END) AS so_rsi_so_hai,
+                SUM(CASE WHEN COALESCE(o.smart_money, '') = 'Smart Money' THEN 1 ELSE 0 END) AS so_smart_money,
+                SUM(CASE WHEN COALESCE(o.tang_gia_kem_vol, '') = 'Tăng giá kèm Vol' THEN 1 ELSE 0 END) AS so_tang_gia_kem_vol,
+                SUM(CASE WHEN COALESCE(o.pha_nen, '') = 'Phá nền' THEN 1 ELSE 0 END) AS so_pha_nen,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma20, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma20,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma50, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma50,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma100, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma100,
+                COALESCE(SUM(o.value_traded), 0) AS tong_value_traded
+            FROM {$ohlc_table} o
+            INNER JOIN {$mapping_table} m ON m.symbol = o.symbol
+            WHERE {$where_sql}
+            GROUP BY o.event_time, CAST(COALESCE(NULLIF(TRIM(m.market_id), ''), '0') AS UNSIGNED), o.timeframe";
+        $wpdb->query($wpdb->prepare($insert_market_sql, $where_params));
+
+        $insert_icb2_sql = "INSERT INTO {$icb2_statistics_table}
+            (event_time, timeframe, marketid, icb_level2, so_ma_tang_gia, so_ma_giam_gia, so_smart_money, so_tang_gia_kem_vol, so_pha_nen, pct_so_ma_tren_ma20, pct_so_ma_tren_ma50, pct_so_ma_tren_ma100, tong_value_traded, so_rsi_qua_mua, so_rsi_qua_ban, so_rsi_tham_lam, so_rsi_so_hai, so_macd_cat_len, so_macd_cat_xuong)
+            SELECT
+                o.event_time,
+                o.timeframe,
+                CAST(COALESCE(NULLIF(TRIM(m.market_id), ''), '0') AS UNSIGNED) AS marketid,
+                COALESCE(i.name_icb2, 'Chưa phân loại') AS icb_level2,
+                SUM(CASE WHEN COALESCE(o.pct_t_1, 0) > 0 THEN 1 ELSE 0 END) AS so_ma_tang_gia,
+                SUM(CASE WHEN COALESCE(o.pct_t_1, 0) < 0 THEN 1 ELSE 0 END) AS so_ma_giam_gia,
+                SUM(CASE WHEN COALESCE(o.smart_money, '') = 'Smart Money' THEN 1 ELSE 0 END) AS so_smart_money,
+                SUM(CASE WHEN COALESCE(o.tang_gia_kem_vol, '') = 'Tăng giá kèm Vol' THEN 1 ELSE 0 END) AS so_tang_gia_kem_vol,
+                SUM(CASE WHEN COALESCE(o.pha_nen, '') = 'Phá nền' THEN 1 ELSE 0 END) AS so_pha_nen,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma20, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma20,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma50, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma50,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma100, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma100,
+                COALESCE(SUM(o.value_traded), 0) AS tong_value_traded,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Quá mua' THEN 1 ELSE 0 END) AS so_rsi_qua_mua,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Quá bán' THEN 1 ELSE 0 END) AS so_rsi_qua_ban,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Tham lam' THEN 1 ELSE 0 END) AS so_rsi_tham_lam,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Sợ hãi' THEN 1 ELSE 0 END) AS so_rsi_so_hai,
+                SUM(CASE WHEN COALESCE(o.macd_cat, '') IN ('Cắt lên signal', 'Cat len signal') THEN 1 ELSE 0 END) AS so_macd_cat_len,
+                SUM(CASE WHEN COALESCE(o.macd_cat, '') IN ('Cắt xuống signal', 'Cat xuong signal') THEN 1 ELSE 0 END) AS so_macd_cat_xuong
+            FROM {$ohlc_table} o
+            INNER JOIN {$mapping_table} m ON m.symbol = o.symbol
+            LEFT JOIN {$icb2_table} i ON i.id_icb2 = m.id_icb2
+            WHERE {$where_sql}
+            GROUP BY o.event_time, o.timeframe, CAST(COALESCE(NULLIF(TRIM(m.market_id), ''), '0') AS UNSIGNED), COALESCE(i.name_icb2, 'Chưa phân loại')";
+        $wpdb->query($wpdb->prepare($insert_icb2_sql, $where_params));
+
+        $insert_icb2_market_sql = "INSERT INTO {$icb2_market_statistics_table}
+            (icb_level2, event_time, timeframe, so_ma_tang_gia, so_ma_giam_gia, so_rsi_qua_mua, so_rsi_qua_ban, so_rsi_tham_lam, so_rsi_so_hai, so_smart_money, so_tang_gia_kem_vol, so_pha_nen, pct_so_ma_tren_ma20, pct_so_ma_tren_ma50, pct_so_ma_tren_ma100, tong_value_traded)
+            SELECT
+                COALESCE(i.name_icb2, 'Chưa phân loại') AS icb_level2,
+                o.event_time,
+                o.timeframe,
+                SUM(CASE WHEN COALESCE(o.pct_t_1, 0) > 0 THEN 1 ELSE 0 END) AS so_ma_tang_gia,
+                SUM(CASE WHEN COALESCE(o.pct_t_1, 0) < 0 THEN 1 ELSE 0 END) AS so_ma_giam_gia,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Quá mua' THEN 1 ELSE 0 END) AS so_rsi_qua_mua,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Quá bán' THEN 1 ELSE 0 END) AS so_rsi_qua_ban,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Tham lam' THEN 1 ELSE 0 END) AS so_rsi_tham_lam,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Sợ hãi' THEN 1 ELSE 0 END) AS so_rsi_so_hai,
+                SUM(CASE WHEN COALESCE(o.smart_money, '') = 'Smart Money' THEN 1 ELSE 0 END) AS so_smart_money,
+                SUM(CASE WHEN COALESCE(o.tang_gia_kem_vol, '') = 'Tăng giá kèm Vol' THEN 1 ELSE 0 END) AS so_tang_gia_kem_vol,
+                SUM(CASE WHEN COALESCE(o.pha_nen, '') = 'Phá nền' THEN 1 ELSE 0 END) AS so_pha_nen,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma20, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma20,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma50, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma50,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma100, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma100,
+                COALESCE(SUM(o.value_traded), 0) AS tong_value_traded
+            FROM {$ohlc_table} o
+            INNER JOIN {$mapping_table} m ON m.symbol = o.symbol
+            LEFT JOIN {$icb2_table} i ON i.id_icb2 = m.id_icb2
+            WHERE {$where_sql}
+            GROUP BY COALESCE(i.name_icb2, 'Chưa phân loại'), o.event_time, o.timeframe";
+        $wpdb->query($wpdb->prepare($insert_icb2_market_sql, $where_params));
+
+        self::reindex_market_statistics_tables();
+        self::log_change('backfill_market_statistics_incremental', sprintf('Incremental rebuild done for %d event_times x %d timeframes.', count($event_times), count($timeframes)));
+
+        return count($event_times) * count($timeframes);
+    }
+
+    private static function reindex_market_statistics_tables() {
+        global $wpdb;
+
+        $market_statistics_table = $wpdb->prefix . 'lcni_thong_ke_thi_truong';
+        $icb2_statistics_table = $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2';
+        $icb2_market_statistics_table = $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2_toan_thi_truong';
+
+        $wpdb->query(
+            "UPDATE {$market_statistics_table} target
+            INNER JOIN (
+                SELECT ranked.id, ranked.market_index AS computed_index
+                FROM (
+                    SELECT src.id,
+                           (@market_rank := IF(@current_market = CONCAT(src.marketid, '|', src.timeframe), @market_rank + 1, 1)) AS market_index,
+                           (@current_market := CONCAT(src.marketid, '|', src.timeframe)) AS current_market_marker
+                    FROM {$market_statistics_table} src
+                    CROSS JOIN (SELECT @market_rank := 0, @current_market := '') vars
+                    ORDER BY src.marketid ASC, src.timeframe ASC, src.event_time ASC, src.id ASC
+                ) ranked
+            ) calc ON calc.id = target.id
+            SET target.thong_ke_thi_truong_index = calc.computed_index"
+        );
+
+        $wpdb->query(
+            "UPDATE {$icb2_statistics_table} target
+            INNER JOIN (
+                SELECT ranked.id, ranked.icb2_index AS computed_index
+                FROM (
+                    SELECT src.id,
+                           (@icb2_rank := IF(@current_icb2 = CONCAT(src.icb_level2, '|', src.marketid), @icb2_rank + 1, 1)) AS icb2_index,
+                           (@current_icb2 := CONCAT(src.icb_level2, '|', src.marketid)) AS current_icb2_marker
+                    FROM {$icb2_statistics_table} src
+                    CROSS JOIN (SELECT @icb2_rank := 0, @current_icb2 := '') vars
+                    ORDER BY src.icb_level2 ASC, src.marketid ASC, src.event_time ASC, src.id ASC
+                ) ranked
+            ) calc ON calc.id = target.id
+            SET target.thong_ke_icb2_index = calc.computed_index"
+        );
+
+        $wpdb->query(
+            "UPDATE {$icb2_market_statistics_table} target
+            INNER JOIN (
+                SELECT ranked.id, ranked.market_index AS computed_index
+                FROM (
+                    SELECT src.id,
+                           (@icb2_market_rank := IF(@current_icb2_market = CONCAT(src.icb_level2, '|', src.timeframe), @icb2_market_rank + 1, 1)) AS market_index,
+                           (@current_icb2_market := CONCAT(src.icb_level2, '|', src.timeframe)) AS current_icb2_market_marker
+                    FROM {$icb2_market_statistics_table} src
+                    CROSS JOIN (SELECT @icb2_market_rank := 0, @current_icb2_market := '') vars
+                    ORDER BY src.icb_level2 ASC, src.timeframe ASC, src.event_time ASC, src.id ASC
+                ) ranked
+            ) calc ON calc.id = target.id
+            SET target.icb2_thi_truong_index = calc.computed_index"
+        );
     }
 
     public static function process_rule_rebuild_batch($batch_size = self::RULE_REBUILD_BATCH_SIZE) {
@@ -3538,21 +3982,14 @@ class LCNI_DB {
             }
         }
 
-        foreach ($touched_series as $series) {
-            self::rebuild_ohlc_series_metrics($series['symbol'], $series['timeframe']);
-        }
-
         if (!empty($touched_series)) {
-            self::rebuild_missing_ohlc_indicators(5);
-            self::rebuild_rs_1m_by_exchange(array_keys($touched_event_times), array_keys($touched_timeframes));
-            self::rebuild_rs_1w_by_exchange(array_keys($touched_event_times), array_keys($touched_timeframes));
-            // pct_3m values are recalculated for the full symbol/timeframe series above.
-            // Rebuild RS 3M for the whole timeframe scope so rows that become eligible
-            // after historical backfills are not left NULL.
-            self::rebuild_rs_3m_by_exchange([], array_keys($touched_timeframes));
-            self::rebuild_rs_exchange_signals([], array_keys($touched_timeframes));
+            self::enqueue_seed_rebuild_tasks(
+                array_values($touched_series),
+                array_keys($touched_event_times),
+                array_keys($touched_timeframes)
+            );
+            self::process_seed_rebuild_pipeline();
             self::perform_refresh_ohlc_latest_snapshot(array_column($touched_series, 'symbol'));
-            self::backfill_market_statistics_tables(true);
         }
 
         return [
