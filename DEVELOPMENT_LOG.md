@@ -1,3 +1,10 @@
+## 2026-03-01 (v5.3.7a)
+- Nâng version plugin lên `5.3.7a`.
+- Nâng cấp workflow seed/rebuild theo pha: sau ingest chỉ ghi queue dirty (`series_metrics` -> `rs_metrics` -> `market_stats`) rồi xử lý nối tiếp theo nhóm để giảm tải đồng thời lên DB/API.
+- Bổ sung watermark cho từng nhóm rebuild để hỗ trợ resume/idempotent khi job bị gián đoạn, không cần chạy lại toàn cục.
+- Thay cơ chế rebuild thống kê thị trường sau mỗi upsert từ full `TRUNCATE + INSERT` sang incremental theo `event_time + timeframe` bị chạm, sau đó reindex để giữ nguyên cấu trúc dữ liệu và kết quả API.
+- Thêm degraded mode theo giờ cao điểm: ưu tiên Nhóm 1 và giới hạn Nhóm 2, trì hoãn Nhóm 3 để giảm ảnh hưởng p95/p99 khi web đang phục vụ request.
+
 ## 2026-03-01 (v5.3.7)
 - Nâng version plugin lên `5.3.7`.
 - Tối ưu pipeline xử lý dữ liệu seed/recalc cột bằng cách gom chuẩn hóa danh sách series `symbol + timeframe` vào helper dùng chung để tránh lặp logic nhiều nơi, giữ nguyên output dữ liệu.
