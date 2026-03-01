@@ -1,3 +1,9 @@
+## 2026-03-01 (v5.3.7)
+- Nâng version plugin lên `5.3.7`.
+- Tối ưu pipeline xử lý dữ liệu seed/recalc cột bằng cách gom chuẩn hóa danh sách series `symbol + timeframe` vào helper dùng chung để tránh lặp logic nhiều nơi, giữ nguyên output dữ liệu.
+- Tối ưu bước rebuild indicator thiếu: thay vì query `event_time` riêng cho từng series, chuyển sang gom điều kiện và lấy `event_time` DISTINCT trong một truy vấn để giảm số lượng round-trip DB khi xử lý batch lớn.
+- Không thay đổi cấu trúc bảng, không đổi contract API, không đổi layout/frontend; chỉ tối ưu luồng xử lý data.
+
 ## 2026-02-28 (v2.3.4)
 - Nâng version plugin lên `2.3.4`; đồng bộ `FilterShortcode::VERSION`, `LCNI_Overview_Shortcode::VERSION`, `LCNI_Stock_Signals_Shortcodes::VERSION` để đảm bảo cache-busting frontend.
 - Kiểm tra và xử lý lại task còn dang dở cho bảng `wp_lcni_ohlc`: migration chuẩn hoá `macd_cat`, `macd_tren_0`, `macd_hist_tang` được nâng cấp sang `v2` để tự chạy lại khi còn dữ liệu cũ (`1/-1/0`, `Cắt lên`, `Cắt xuống`) và map về nhãn chuẩn `Cắt lên signal`, `Cắt xuống signal`, `Trên 0`, `Đang tăng`.
