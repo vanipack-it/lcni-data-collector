@@ -248,3 +248,14 @@ Shortcode chart đọc theo query param:
 ```
 
 Ví dụ: khi truy cập `?symbol=FPT`, chart sẽ tự đổi theo `FPT`.
+
+## Changelog
+
+### 5.3.8b
+
+- Bổ sung template **Share Dataset** cho Chart Builder (line + pie theo dataset liên kết), hỗ trợ filter và tự động cập nhật chart theo giá trị lọc.
+- Sửa template **Area Stack** để filter hoạt động ổn định và auto render lại trong preview/chart khi thay đổi mapping.
+- Cập nhật vị trí legend/label về phía dưới khung chart cho các mẫu chart builder.
+- Mở rộng danh sách Data Source cho Chart Builder: `wp_lcni_ohlc`, `wp_lcni_ohlc_latest`, `wp_lcni_thong_ke_nganh_icb_2`, `wp_lcni_thong_ke_nganh_icb_2_toan_thi_truong`, `wp_lcni_thong_ke_thi_truong`.
+- Cải tiến UI Chart Builder: thay dropdown chart template bằng nút mở popup chọn mẫu (tên + nút chọn), thêm khu vực tùy chỉnh màu sắc/hiệu ứng ngay dưới phần chọn mẫu.
+- Cải tiến tab **Thư viện Chart mẫu** theo dạng ô vuông (tên, mô tả, nút Dùng mẫu, nút Tùy chỉnh nhanh).
