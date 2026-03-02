@@ -638,11 +638,23 @@ class LCNI_DB {
             $wpdb->query("ALTER TABLE {$latest_table} MODIFY COLUMN id BIGINT UNSIGNED DEFAULT NULL");
         }
 
-        $primary_key_columns = $wpdb->get_results($wpdb->prepare("SHOW INDEX FROM {$latest_table} WHERE Key_name = %s ORDER BY Seq_in_index ASC", 'PRIMARY'), ARRAY_A);
+        $primary_key_columns = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT COLUMN_NAME
+                FROM information_schema.statistics
+                WHERE table_schema = DATABASE()
+                    AND table_name = %s
+                    AND index_name = %s
+                ORDER BY seq_in_index ASC",
+                $latest_table,
+                'PRIMARY'
+            ),
+            ARRAY_A
+        );
         $current_primary_columns = [];
         foreach ((array) $primary_key_columns as $primary_key_column) {
-            if (isset($primary_key_column['Column_name'])) {
-                $current_primary_columns[] = (string) $primary_key_column['Column_name'];
+            if (isset($primary_key_column['COLUMN_NAME'])) {
+                $current_primary_columns[] = (string) $primary_key_column['COLUMN_NAME'];
             }
         }
 
@@ -656,9 +668,8 @@ class LCNI_DB {
         self::sync_ohlc_symbol_type_values($ohlc_table);
         self::sync_ohlc_symbol_type_values($latest_table);
 
-        $wpdb->query("DROP PROCEDURE IF EXISTS {$sync_proc_name}");
         $wpdb->query(
-            "CREATE PROCEDURE {$sync_proc_name}()
+            "CREATE OR REPLACE PROCEDURE {$sync_proc_name}()
             BEGIN
                 DECLARE done INT DEFAULT FALSE;
                 DECLARE col_name VARCHAR(100);
@@ -694,9 +705,8 @@ class LCNI_DB {
             END"
         );
 
-        $wpdb->query("DROP PROCEDURE IF EXISTS {$refresh_proc_name}");
         $wpdb->query(
-            "CREATE PROCEDURE {$refresh_proc_name}()
+            "CREATE OR REPLACE PROCEDURE {$refresh_proc_name}()
             BEGIN
                 DECLARE v_max_event_time BIGINT DEFAULT NULL;
 
