@@ -1,3 +1,9 @@
+## 2026-03-02 09:01 (v5.3.9g)
+- Nâng version plugin lên `5.3.9g`.
+- Fix lưu cấu hình Member Login/Register/Quote không còn bị trả về mặc định khi submit theo từng tab.
+- Chuyển `Background image URL` và `CSV URL` sang upload file, ghi nhớ URL file để render frontend.
+- Sửa Chart Builder frontend áp dụng đúng `Data Format` cho heatmap label/tooltip và mapping field ở chế độ `share_dataset`.
+
 ## 2026-03-02 06:09 (v5.3.9f)
 - Nâng version plugin lên `5.3.9f`.
 - Mở rộng cấu hình `[lcni_member_login]` và `[lcni_member_register]`: căn giữa form, tùy chỉnh kích thước/màu input & button, icon Font Awesome submit, hỗ trợ ảnh nền.

@@ -113,7 +113,7 @@
           formatter: (params) => {
             const xLabel = xData[params.data[0]] || '';
             const yLabel = yData[params.data[1]] || '';
-            return yLabel + '<br/>' + xLabel + ': ' + params.data[2] + '%';
+            return yLabel + '<br/>' + xLabel + ': ' + formatValue(params.data[2], 'percent');
           },
         },
         grid: { height: '72%', top: '10%' },
@@ -136,7 +136,7 @@
           name: '%GTGD',
           type: 'heatmap',
           data: matrixData,
-          label: { show: true, formatter: '{c}%' },
+          label: { show: true, formatter: (item) => formatValue(item.value && item.value[2], 'percent') },
           emphasis: {
             itemStyle: {
               shadowBlur: 10,
@@ -217,7 +217,7 @@
       dataset: isShareDataset ? {
         source: [
           [xAxis].concat(series.map((item) => item.name)),
-          ...preparedRows.map((row) => [row[xAxis]].concat(series.map((item) => Number(row[item.name] || row[item.field] || 0)))),
+          ...preparedRows.map((row) => [row[xAxis]].concat(series.map((item) => Number(row[item.field] || row[item.name] || 0)))),
         ],
       } : undefined,
       xAxis: { type: 'category', boundaryGap: !isAreaStack, data: axisData },
