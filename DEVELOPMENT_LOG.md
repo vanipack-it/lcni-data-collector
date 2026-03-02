@@ -1,3 +1,10 @@
+## 2026-03-02 06:09 (v5.3.9f)
+- Nâng version plugin lên `5.3.9f`.
+- Mở rộng cấu hình `[lcni_member_login]` và `[lcni_member_register]`: căn giữa form, tùy chỉnh kích thước/màu input & button, icon Font Awesome submit, hỗ trợ ảnh nền.
+- Bổ sung tab Quote dùng chung cho Login/Register: tùy chỉnh kích thước, bo viền, màu nền/viền/chữ, font size, blur nền, quote list và nguồn CSV (mỗi dòng 1 quote) để random khi tải form.
+- Sửa luồng submit login shortcode để xác thực trực tiếp bằng `wp_signon`, tránh redirect sang `wp-login.php` trắng và trả về đúng Redirect URL.
+- Cập nhật điều hướng Member trong menu LCNI Data và thêm lối tắt tab Member tại Frontend Setting.
+
 ## 2026-03-02 12:00 (v5.3.9c)
 - Nâng version plugin lên `5.3.9c`.
 - Thêm module Member với 2 shortcode mới `[lcni_member_login]` và `[lcni_member_register]`, dùng user/auth chuẩn WordPress.
