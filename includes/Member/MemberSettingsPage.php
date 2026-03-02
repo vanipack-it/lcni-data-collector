@@ -46,17 +46,27 @@ class LCNI_Member_Settings_Page {
     }
 
     public function sanitize_login_settings($input) {
-        return $this->sanitize_common_settings($input, ['remember_me']);
+        return $this->sanitize_common_settings($input, ['remember_me'], 'lcni_member_login_bg_image_file');
     }
 
     public function sanitize_register_settings($input) {
-        $sanitized = $this->sanitize_common_settings($input, ['auto_login']);
+        $sanitized = $this->sanitize_common_settings($input, ['auto_login'], 'lcni_member_register_bg_image_file');
         $sanitized['default_role'] = sanitize_key($input['default_role'] ?? 'subscriber');
         return $sanitized;
     }
 
     public function sanitize_quote_settings($input) {
         $input = is_array($input) ? $input : [];
+        $current = get_option('lcni_member_quote_settings', []);
+        if (is_array($current)) {
+            $input = wp_parse_args($input, $current);
+        }
+
+        $quote_csv_url = $this->handle_uploaded_file(
+            'lcni_member_quote_csv_file',
+            ['csv' => 'text/csv', 'txt' => 'text/plain'],
+            (string) ($input['quote_csv_url'] ?? '')
+        );
 
         return [
             'width' => max(200, absint($input['width'] ?? 500)),
@@ -68,17 +78,36 @@ class LCNI_Member_Settings_Page {
             'text_color' => sanitize_hex_color($input['text_color'] ?? '#334155'),
             'font_size' => max(10, absint($input['font_size'] ?? 16)),
             'quote_list' => sanitize_textarea_field($input['quote_list'] ?? ''),
-            'quote_csv_url' => esc_url_raw($input['quote_csv_url'] ?? ''),
+            'quote_csv_url' => esc_url_raw($quote_csv_url),
         ];
     }
 
-    private function sanitize_common_settings($input, $bool_keys) {
+    private function sanitize_common_settings($input, $bool_keys, $background_upload_field) {
         $input = is_array($input) ? $input : [];
+        $option_key = in_array('remember_me', $bool_keys, true)
+            ? 'lcni_member_login_settings'
+            : 'lcni_member_register_settings';
+        $current = get_option($option_key, []);
+        if (is_array($current)) {
+            $input = wp_parse_args($input, $current);
+        }
+
+        $background_image = $this->handle_uploaded_file(
+            $background_upload_field,
+            [
+                'jpg|jpeg|jpe' => 'image/jpeg',
+                'gif' => 'image/gif',
+                'png' => 'image/png',
+                'webp' => 'image/webp',
+            ],
+            (string) ($input['background_image'] ?? '')
+        );
+
         $sanitized = [
             'font' => sanitize_text_field($input['font'] ?? ''),
             'text_color' => sanitize_hex_color($input['text_color'] ?? '#1f2937'),
             'background' => sanitize_hex_color($input['background'] ?? '#ffffff'),
-            'background_image' => esc_url_raw($input['background_image'] ?? ''),
+            'background_image' => esc_url_raw($background_image),
             'border_color' => sanitize_hex_color($input['border_color'] ?? '#d1d5db'),
             'border_radius' => absint($input['border_radius'] ?? 8),
             'input_height' => max(32, absint($input['input_height'] ?? 40)),
@@ -106,6 +135,27 @@ class LCNI_Member_Settings_Page {
         return $sanitized;
     }
 
+    private function handle_uploaded_file($field_name, $mimes, $fallback_url) {
+        if (empty($_FILES[$field_name]['tmp_name'])) {
+            return (string) $fallback_url;
+        }
+
+        if (!function_exists('wp_handle_upload')) {
+            require_once ABSPATH . 'wp-admin/includes/file.php';
+        }
+
+        $uploaded = wp_handle_upload($_FILES[$field_name], [
+            'test_form' => false,
+            'mimes' => $mimes,
+        ]);
+
+        if (is_array($uploaded) && !empty($uploaded['url'])) {
+            return (string) $uploaded['url'];
+        }
+
+        return (string) $fallback_url;
+    }
+
     public function render() {
         $tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'login';
         $login = get_option('lcni_member_login_settings', []);
@@ -122,14 +172,23 @@ class LCNI_Member_Settings_Page {
                 <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-member-settings&tab=saas')); ?>" class="nav-tab <?php echo $tab === 'saas' ? 'nav-tab-active' : ''; ?>">Gói SaaS</a>
             </h2>
             <?php if ($tab === 'login' || $tab === 'register') : ?>
-                <form method="post" action="options.php">
+                <form method="post" action="options.php" enctype="multipart/form-data">
                     <?php settings_fields('lcni_member_settings'); ?>
                     <?php $key = $tab === 'login' ? 'lcni_member_login_settings' : 'lcni_member_register_settings'; $v = $tab === 'login' ? $login : $register; ?>
                     <table class="form-table">
                         <tr><th>Font</th><td><input name="<?php echo esc_attr($key); ?>[font]" value="<?php echo esc_attr($v['font'] ?? 'inherit'); ?>" class="regular-text"></td></tr>
                         <tr><th>Text color</th><td><input type="color" name="<?php echo esc_attr($key); ?>[text_color]" value="<?php echo esc_attr($v['text_color'] ?? '#1f2937'); ?>"></td></tr>
                         <tr><th>Background</th><td><input type="color" name="<?php echo esc_attr($key); ?>[background]" value="<?php echo esc_attr($v['background'] ?? '#ffffff'); ?>"></td></tr>
-                        <tr><th>Background image URL</th><td><input name="<?php echo esc_attr($key); ?>[background_image]" value="<?php echo esc_attr($v['background_image'] ?? ''); ?>" class="regular-text"></td></tr>
+                        <tr>
+                            <th>Background image</th>
+                            <td>
+                                <input type="file" name="<?php echo $tab === 'login' ? 'lcni_member_login_bg_image_file' : 'lcni_member_register_bg_image_file'; ?>" accept="image/*">
+                                <input type="hidden" name="<?php echo esc_attr($key); ?>[background_image]" value="<?php echo esc_attr($v['background_image'] ?? ''); ?>">
+                                <?php if (!empty($v['background_image'])) : ?>
+                                    <p class="description">Đang dùng: <code><?php echo esc_html($v['background_image']); ?></code></p>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
                         <tr><th>Border color</th><td><input type="color" name="<?php echo esc_attr($key); ?>[border_color]" value="<?php echo esc_attr($v['border_color'] ?? '#d1d5db'); ?>"></td></tr>
                         <tr><th>Border radius</th><td><input type="number" name="<?php echo esc_attr($key); ?>[border_radius]" value="<?php echo esc_attr($v['border_radius'] ?? 8); ?>"> px</td></tr>
                         <tr><th>Input height</th><td><input type="number" name="<?php echo esc_attr($key); ?>[input_height]" value="<?php echo esc_attr($v['input_height'] ?? 40); ?>"> px</td></tr>
@@ -157,7 +216,7 @@ class LCNI_Member_Settings_Page {
                     <?php submit_button('Lưu'); ?>
                 </form>
             <?php elseif ($tab === 'quote') : ?>
-                <form method="post" action="options.php">
+                <form method="post" action="options.php" enctype="multipart/form-data">
                     <?php settings_fields('lcni_member_settings'); ?>
                     <table class="form-table">
                         <tr><th>Quote width</th><td><input type="number" name="lcni_member_quote_settings[width]" value="<?php echo esc_attr($quote_settings['width'] ?? 500); ?>"> px</td></tr>
@@ -169,7 +228,16 @@ class LCNI_Member_Settings_Page {
                         <tr><th>Text color</th><td><input type="color" name="lcni_member_quote_settings[text_color]" value="<?php echo esc_attr($quote_settings['text_color'] ?? '#334155'); ?>"></td></tr>
                         <tr><th>Font size</th><td><input type="number" name="lcni_member_quote_settings[font_size]" value="<?php echo esc_attr($quote_settings['font_size'] ?? 16); ?>"> px</td></tr>
                         <tr><th>Quote list (1 dòng 1 quote)</th><td><textarea name="lcni_member_quote_settings[quote_list]" class="large-text" rows="5"><?php echo esc_textarea($quote_settings['quote_list'] ?? ''); ?></textarea></td></tr>
-                        <tr><th>CSV URL (mỗi dòng 1 quote)</th><td><input name="lcni_member_quote_settings[quote_csv_url]" value="<?php echo esc_attr($quote_settings['quote_csv_url'] ?? ''); ?>" class="regular-text"></td></tr>
+                        <tr>
+                            <th>CSV file (mỗi dòng 1 quote)</th>
+                            <td>
+                                <input type="file" name="lcni_member_quote_csv_file" accept=".csv,.txt,text/csv,text/plain">
+                                <input type="hidden" name="lcni_member_quote_settings[quote_csv_url]" value="<?php echo esc_attr($quote_settings['quote_csv_url'] ?? ''); ?>">
+                                <?php if (!empty($quote_settings['quote_csv_url'])) : ?>
+                                    <p class="description">Đang dùng: <code><?php echo esc_html($quote_settings['quote_csv_url']); ?></code></p>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
                     </table>
                     <?php submit_button('Lưu'); ?>
                 </form>
