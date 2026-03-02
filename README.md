@@ -258,6 +258,13 @@ Ví dụ: khi truy cập `?symbol=FPT`, chart sẽ tự đổi theo `FPT`.
 - Bổ sung `dataZoom` dạng slider + inside cho trục X để xử lý dữ liệu `event_time` dài.
 - Giữ cơ chế `sync_group` để có thể đồng bộ dữ liệu/liên kết interaction giữa các chart khi dùng chung group.
 
+### 5.3.9a
+
+- Fix template **Heatmap Matrix** không render dữ liệu ra frontend trong một số cấu hình mapping, đồng thời áp dụng màu heatmap từ config chart.
+- Cập nhật khu vực **Frontend Setting → Chart Builder → Chart Builder**: gom tùy chỉnh hiển thị frontend (màu series mặc định, hiệu ứng đường, màu heatmap low/mid/high).
+- Thay logic **Hiệu ứng đường** cột 1 sang hỗ trợ **Dynamic theo Template chart** (ngoài Solid/Dashed), tự gán kiểu line theo template.
+- Fix cửa sổ **Preview chart** chưa hiển thị đúng trong một số trạng thái đổi tab/chọn template bằng cơ chế re-render + resize chủ động.
+
 ### 5.3.8b
 
 - Bổ sung template **Share Dataset** cho Chart Builder (line + pie theo dataset liên kết), hỗ trợ filter và tự động cập nhật chart theo giá trị lọc.

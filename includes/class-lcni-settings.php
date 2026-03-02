@@ -2931,8 +2931,17 @@ private function sanitize_module_title($value, $fallback) {
                             <input type="hidden" name="lcni_chart_builder[data_source]" id="lcni-chart-builder-source" value="thong_ke_thi_truong">
                             <input type="hidden" name="lcni_chart_builder[chart_type]" id="lcni-chart-builder-template" value="multi_line">
                             <p><button type="button" class="button" id="lcni-chart-template-picker-btn">Chọn chart mẫu: <span id="lcni-chart-template-picker-label">Multi-line</span></button></p>
-                            <p><label>Màu mặc định series <input type="color" id="lcni-chart-builder-default-color" value="#5470c6"></label></p>
-                            <p><label>Hiệu ứng đường <select id="lcni-chart-builder-line-style"><option value="solid">Solid</option><option value="dashed">Dashed</option></select></label></p>
+                            <div style="border:1px solid #dcdcde;border-radius:6px;padding:10px;background:#f8f9fa;">
+                                <h4 style="margin:0 0 8px;">Tùy chỉnh hiển thị frontend</h4>
+                                <p><label>Màu mặc định series <input type="color" id="lcni-chart-builder-default-color" value="#5470c6"></label></p>
+                                <p><label>Hiệu ứng đường <select id="lcni-chart-builder-line-style"><option value="dynamic">Dynamic theo Template</option><option value="solid">Solid</option><option value="dashed">Dashed</option></select></label></p>
+                                <p style="margin-bottom:6px;"><strong>Màu heatmap (template Heatmap Matrix)</strong></p>
+                                <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;">
+                                    <label>Low <input type="color" id="lcni-chart-builder-heatmap-low" value="#d73027"></label>
+                                    <label>Mid <input type="color" id="lcni-chart-builder-heatmap-mid" value="#fee08b"></label>
+                                    <label>High <input type="color" id="lcni-chart-builder-heatmap-high" value="#1a9850"></label>
+                                </div>
+                            </div>
                         </div>
                         <div class="lcni-chart-column">
                             <h4>Axis & Series mapping (dynamic theo template)</h4>
@@ -3020,7 +3029,16 @@ private function sanitize_module_title($value, $fallback) {
                     const templateMeta = <?php echo wp_json_encode($chart_templates); ?>;
                     const paneButtons = tabRoot.querySelectorAll('[data-lcni-chart-builder-subtabs] button');
                     const panes = tabRoot.querySelectorAll('.lcni-chart-builder-pane');
-                    paneButtons.forEach((button) => button.addEventListener('click', () => { paneButtons.forEach((b) => b.classList.toggle('active', b === button)); panes.forEach((p) => p.classList.toggle('active', p.getAttribute('data-pane') === button.getAttribute('data-pane'))); }));
+                    paneButtons.forEach((button) => button.addEventListener('click', () => {
+                        paneButtons.forEach((b) => b.classList.toggle('active', b === button));
+                        panes.forEach((p) => p.classList.toggle('active', p.getAttribute('data-pane') === button.getAttribute('data-pane')));
+                        if (button.getAttribute('data-pane') === 'builder') {
+                            requestAnimationFrame(() => {
+                                renderPreview();
+                                if (previewChart) previewChart.resize();
+                            });
+                        }
+                    }));
 
                     const source = tabRoot.querySelector('#lcni-chart-builder-source');
                     const sourceDup = tabRoot.querySelector('#lcni-chart-builder-source-dup');
@@ -3070,6 +3088,19 @@ private function sanitize_module_title($value, $fallback) {
                         return zone;
                     };
 
+                    const resolveLineStyleByTemplate = (templateKey, lineStyle, index) => {
+                        if (lineStyle === 'solid' || lineStyle === 'dashed') {
+                            return lineStyle;
+                        }
+                        if (templateKey === 'share_dataset' || templateKey === 'market_breadth' || templateKey === 'smart_money_flow') {
+                            return index % 2 === 0 ? 'solid' : 'dashed';
+                        }
+                        if (templateKey === 'area_stack' || templateKey === 'rsi_zone') {
+                            return 'solid';
+                        }
+                        return 'solid';
+                    };
+
                     const renderAxisSeriesSlots = () => {
                         const key = templateInput ? templateInput.value : 'multi_line';
                         const meta = templateMeta[key] || { axis_slots: 1, series_slots: 2 };
@@ -3082,7 +3113,7 @@ private function sanitize_module_title($value, $fallback) {
                         }
                         for (let i = 0; i < meta.series_slots; i += 1) {
                             axisSeriesContainer.appendChild(mkDropZone('series-' + i, 'Series ' + (i + 1) + ' (drag field)', (zone) => { const f = tabRoot.querySelectorAll('.lcni-chart-builder-series-field')[i]; if (f) f.value = ''; zone.querySelector('[data-text]').textContent = 'Series ' + (i + 1) + ' (drag field)'; }));
-                            ['series_name','series_field','series_type','series_color','series_stack','series_area','series_label_show'].forEach((n) => {
+                            ['series_name','series_field','series_type','series_color','series_stack','series_area','series_label_show','series_line_style'].forEach((n) => {
                                 const input = document.createElement('input');
                                 input.type = 'hidden'; input.name = 'lcni_chart_builder[' + n + '][]';
                                 if (n === 'series_name') input.value = 'Series ' + (i + 1);
@@ -3091,9 +3122,32 @@ private function sanitize_module_title($value, $fallback) {
                                 if (n === 'series_stack') input.value = '1';
                                 if (n === 'series_area') input.value = '1';
                                 if (n === 'series_label_show') input.value = '0';
+                                if (n === 'series_line_style') input.className = 'lcni-chart-builder-series-line-style';
                                 axisSeriesContainer.appendChild(input);
                             });
                         }
+                        const heatmapLow = tabRoot.querySelector('#lcni-chart-builder-heatmap-low');
+                        const heatmapMid = tabRoot.querySelector('#lcni-chart-builder-heatmap-mid');
+                        const heatmapHigh = tabRoot.querySelector('#lcni-chart-builder-heatmap-high');
+                        [
+                            { id: 'lcni-chart-builder-heatmap-low-hidden', name: 'lcni_chart_builder[heatmap_color_low]', value: heatmapLow ? heatmapLow.value : '#d73027' },
+                            { id: 'lcni-chart-builder-heatmap-mid-hidden', name: 'lcni_chart_builder[heatmap_color_mid]', value: heatmapMid ? heatmapMid.value : '#fee08b' },
+                            { id: 'lcni-chart-builder-heatmap-high-hidden', name: 'lcni_chart_builder[heatmap_color_high]', value: heatmapHigh ? heatmapHigh.value : '#1a9850' },
+                        ].forEach((meta) => {
+                            let input = tabRoot.querySelector('#' + meta.id);
+                            if (!input) {
+                                input = document.createElement('input');
+                                input.type = 'hidden';
+                                input.id = meta.id;
+                                input.name = meta.name;
+                                tabRoot.querySelector('#lcni-chart-builder-form').appendChild(input);
+                            }
+                            input.value = meta.value;
+                        });
+                        const lineStyle = (tabRoot.querySelector('#lcni-chart-builder-line-style') || {}).value || 'dynamic';
+                        tabRoot.querySelectorAll('.lcni-chart-builder-series-line-style').forEach((input, index) => {
+                            input.value = resolveLineStyleByTemplate(key, lineStyle, index);
+                        });
                     };
 
                     const addFilterSlot = (value = '') => {
@@ -3148,6 +3202,12 @@ private function sanitize_module_title($value, $fallback) {
                         const c = (tabRoot.querySelector('#lcni-chart-builder-default-color') || {}).value || '#5470c6';
                         const ls = (tabRoot.querySelector('#lcni-chart-builder-line-style') || {}).value || 'solid';
                         const templateKey = (templateInput || {}).value || 'multi_line';
+                        const seriesLineStyles = Array.from(tabRoot.querySelectorAll('.lcni-chart-builder-series-line-style')).map((i) => i.value || 'solid');
+                        const heatmapColors = [
+                            ((tabRoot.querySelector('#lcni-chart-builder-heatmap-low') || {}).value || '#d73027'),
+                            ((tabRoot.querySelector('#lcni-chart-builder-heatmap-mid') || {}).value || '#fee08b'),
+                            ((tabRoot.querySelector('#lcni-chart-builder-heatmap-high') || {}).value || '#1a9850'),
+                        ];
 
                         if (templateKey === 'heatmap_matrix') {
                             const xData = Array.from(new Set(p.rows.map((r) => String(r[p.x] || '')))).filter(Boolean);
@@ -3183,7 +3243,7 @@ private function sanitize_module_title($value, $fallback) {
                                     orient: 'horizontal',
                                     left: 'center',
                                     bottom: '2%',
-                                    inRange: { color: ['#d73027', '#fee08b', '#1a9850'] },
+                                    inRange: { color: heatmapColors },
                                 },
                                 series: [{
                                     name: '%GTGD',
@@ -3197,9 +3257,16 @@ private function sanitize_module_title($value, $fallback) {
                             return;
                         }
 
-                        previewChart.setOption({ tooltip:{trigger:'axis'}, legend:{top:'bottom', data:p.seriesFields}, xAxis:{type:'category', data:p.rows.map((r)=>r[p.x])}, yAxis:{type:'value'}, series:p.seriesFields.map((f)=>({name:f,type:'line',smooth:true,lineStyle:{type:ls,color:c},itemStyle:{color:c},data:p.rows.map((r)=>Number(r[f]||0))})) }, true);
+                        previewChart.setOption({ tooltip:{trigger:'axis'}, legend:{top:'bottom', data:p.seriesFields}, xAxis:{type:'category', data:p.rows.map((r)=>r[p.x])}, yAxis:{type:'value'}, series:p.seriesFields.map((f,index)=>({name:f,type:'line',smooth:true,lineStyle:{type:resolveLineStyleByTemplate(templateKey, ls, index),color:c},itemStyle:{color:c},data:p.rows.map((r)=>Number(r[f]||0))})) }, true);
                         previewChart.resize();
                     };
+
+                    ['#lcni-chart-builder-default-color', '#lcni-chart-builder-line-style', '#lcni-chart-builder-heatmap-low', '#lcni-chart-builder-heatmap-mid', '#lcni-chart-builder-heatmap-high'].forEach((selector) => {
+                        const input = tabRoot.querySelector(selector);
+                        if (!input) return;
+                        input.addEventListener('input', () => { renderAxisSeriesSlots(); renderPreview(); });
+                        input.addEventListener('change', () => { renderAxisSeriesSlots(); renderPreview(); });
+                    });
 
                     if (sourceDup) sourceDup.addEventListener('change', () => { if (source) source.value = sourceDup.value; reloadFields(); renderPreview(); });
                     if (source) source.addEventListener('change', () => { if (sourceDup) sourceDup.value = source.value; reloadFields(); renderPreview(); });
@@ -3269,7 +3336,18 @@ private function sanitize_module_title($value, $fallback) {
                             const f = tabRoot.querySelectorAll('.lcni-chart-builder-series-field')[idx];
                             const zoneText = axisSeriesContainer.querySelector('[data-target="series-' + idx + '"] [data-text]');
                             if (f && it && it.field) { f.value = it.field; if (zoneText) zoneText.textContent = 'Series ' + (idx + 1) + ': ' + it.field; }
+                            const lineStyleInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-line-style')[idx];
+                            if (lineStyleInput && it && it.line_style) {
+                                lineStyleInput.value = it.line_style;
+                            }
                         });
+                        const heatmapCfg = config.heatmap || {};
+                        const heatmapLow = tabRoot.querySelector('#lcni-chart-builder-heatmap-low');
+                        const heatmapMid = tabRoot.querySelector('#lcni-chart-builder-heatmap-mid');
+                        const heatmapHigh = tabRoot.querySelector('#lcni-chart-builder-heatmap-high');
+                        if (heatmapLow && heatmapCfg.low) heatmapLow.value = heatmapCfg.low;
+                        if (heatmapMid && heatmapCfg.mid) heatmapMid.value = heatmapCfg.mid;
+                        if (heatmapHigh && heatmapCfg.high) heatmapHigh.value = heatmapCfg.high;
                         filterContainer.innerHTML = ''; filterValuesContainer.innerHTML = '';
                         (Array.isArray(config.filters) ? config.filters : ['']).forEach((f) => addFilterSlot(f || ''));
                         reloadFields(); renderPreview(); paneButtons[0].click();

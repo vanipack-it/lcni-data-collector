@@ -95,6 +95,12 @@
       const xData = Array.isArray(rows.x) ? rows.x : [];
       const yData = Array.isArray(rows.y) ? rows.y : [];
       const matrixData = Array.isArray(rows.data) ? rows.data : [];
+      const heatmapCfg = cfg.heatmap || {};
+      const heatmapColors = [
+        heatmapCfg.low || '#d73027',
+        heatmapCfg.mid || '#fee08b',
+        heatmapCfg.high || '#1a9850',
+      ];
       const maxValue = matrixData.reduce((acc, item) => {
         const value = Number(Array.isArray(item) ? item[2] : 0);
         return Number.isFinite(value) ? Math.max(acc, value) : acc;
@@ -124,7 +130,7 @@
           orient: 'horizontal',
           left: 'center',
           bottom: '2%',
-          inRange: { color: ['#d73027', '#fee08b', '#1a9850'] },
+          inRange: { color: heatmapColors },
         },
         series: [{
           name: '%GTGD',
@@ -165,9 +171,10 @@
         baseSeries.type = 'line';
         baseSeries.smooth = true;
         baseSeries.emphasis = { focus: 'series' };
-        if (item.line_style === 'dashed') {
-          baseSeries.lineStyle = Object.assign({}, baseSeries.lineStyle || {}, { type: 'dashed' });
-        }
+      }
+
+      if (item.line_style === 'dashed') {
+        baseSeries.lineStyle = Object.assign({}, baseSeries.lineStyle || {}, { type: 'dashed' });
       }
 
       if (hasColor) {
