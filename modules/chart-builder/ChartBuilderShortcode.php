@@ -6,7 +6,7 @@ if (!defined('ABSPATH')) {
 
 class LCNI_Chart_Builder_Shortcode {
 
-    const VERSION = '5.3.9g';
+    const VERSION = '5.3.9h';
 
     public function __construct() {
         add_action('init', [$this, 'register_shortcode']);
