@@ -15,12 +15,13 @@ class LCNI_Member_Settings_Page {
     }
 
     public function add_menu() {
-        add_submenu_page('lcni-settings', 'Frontend Settings Member', 'Frontend Settings → Member', 'manage_options', 'lcni-member-settings', [$this, 'render']);
+        add_submenu_page('lcni-settings', 'Member', 'Member', 'manage_options', 'lcni-member-settings', [$this, 'render']);
     }
 
     public function register_settings() {
         register_setting('lcni_member_settings', 'lcni_member_login_settings', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_login_settings'], 'default' => []]);
         register_setting('lcni_member_settings', 'lcni_member_register_settings', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_register_settings'], 'default' => []]);
+        register_setting('lcni_member_settings', 'lcni_member_quote_settings', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_quote_settings'], 'default' => []]);
 
         if (!empty($_POST['lcni_member_create_package'])) {
             check_admin_referer('lcni_member_saas_action');
@@ -50,8 +51,25 @@ class LCNI_Member_Settings_Page {
 
     public function sanitize_register_settings($input) {
         $sanitized = $this->sanitize_common_settings($input, ['auto_login']);
-        $sanitized['default_role'] = sanitize_key($input['default_role']);
+        $sanitized['default_role'] = sanitize_key($input['default_role'] ?? 'subscriber');
         return $sanitized;
+    }
+
+    public function sanitize_quote_settings($input) {
+        $input = is_array($input) ? $input : [];
+
+        return [
+            'width' => max(200, absint($input['width'] ?? 500)),
+            'height' => max(60, absint($input['height'] ?? 120)),
+            'border_radius' => absint($input['border_radius'] ?? 12),
+            'background' => sanitize_hex_color($input['background'] ?? '#f8fafc'),
+            'background_blur' => absint($input['background_blur'] ?? 0),
+            'border_color' => sanitize_hex_color($input['border_color'] ?? '#d1d5db'),
+            'text_color' => sanitize_hex_color($input['text_color'] ?? '#334155'),
+            'font_size' => max(10, absint($input['font_size'] ?? 16)),
+            'quote_list' => sanitize_textarea_field($input['quote_list'] ?? ''),
+            'quote_csv_url' => esc_url_raw($input['quote_csv_url'] ?? ''),
+        ];
     }
 
     private function sanitize_common_settings($input, $bool_keys) {
@@ -60,11 +78,21 @@ class LCNI_Member_Settings_Page {
             'font' => sanitize_text_field($input['font'] ?? ''),
             'text_color' => sanitize_hex_color($input['text_color'] ?? '#1f2937'),
             'background' => sanitize_hex_color($input['background'] ?? '#ffffff'),
-            'border' => sanitize_text_field($input['border'] ?? '1px solid #d1d5db'),
+            'background_image' => esc_url_raw($input['background_image'] ?? ''),
+            'border_color' => sanitize_hex_color($input['border_color'] ?? '#d1d5db'),
             'border_radius' => absint($input['border_radius'] ?? 8),
-            'button_style' => sanitize_text_field($input['button_style'] ?? 'background:#2563eb;color:#fff;border:none;'),
+            'input_height' => max(32, absint($input['input_height'] ?? 40)),
+            'input_width' => max(120, absint($input['input_width'] ?? 320)),
+            'input_bg' => sanitize_hex_color($input['input_bg'] ?? '#ffffff'),
+            'input_border_color' => sanitize_hex_color($input['input_border_color'] ?? '#d1d5db'),
+            'input_text_color' => sanitize_hex_color($input['input_text_color'] ?? '#111827'),
+            'button_height' => max(30, absint($input['button_height'] ?? 42)),
+            'button_width' => max(100, absint($input['button_width'] ?? 180)),
+            'button_bg' => sanitize_hex_color($input['button_bg'] ?? '#2563eb'),
+            'button_border_color' => sanitize_hex_color($input['button_border_color'] ?? '#1d4ed8'),
+            'button_text_color' => sanitize_hex_color($input['button_text_color'] ?? '#ffffff'),
+            'button_icon_class' => sanitize_text_field($input['button_icon_class'] ?? 'fa-solid fa-right-to-bracket'),
             'redirect_url' => esc_url_raw($input['redirect_url'] ?? ''),
-            'quote_list' => sanitize_textarea_field($input['quote_list'] ?? ''),
             'label_username' => sanitize_text_field($input['label_username'] ?? 'Username'),
             'label_email' => sanitize_text_field($input['label_email'] ?? 'Email'),
             'label_password' => sanitize_text_field($input['label_password'] ?? 'Password'),
@@ -82,13 +110,15 @@ class LCNI_Member_Settings_Page {
         $tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'login';
         $login = get_option('lcni_member_login_settings', []);
         $register = get_option('lcni_member_register_settings', []);
+        $quote_settings = get_option('lcni_member_quote_settings', []);
         $packages = $this->service->get_package_options();
         ?>
         <div class="wrap">
-            <h1>Frontend Settings → Member</h1>
+            <h1>LCNI Data → Frontend Setting → Member</h1>
             <h2 class="nav-tab-wrapper">
                 <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-member-settings&tab=login')); ?>" class="nav-tab <?php echo $tab === 'login' ? 'nav-tab-active' : ''; ?>">Login</a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-member-settings&tab=register')); ?>" class="nav-tab <?php echo $tab === 'register' ? 'nav-tab-active' : ''; ?>">Register</a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-member-settings&tab=quote')); ?>" class="nav-tab <?php echo $tab === 'quote' ? 'nav-tab-active' : ''; ?>">Quote</a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-member-settings&tab=saas')); ?>" class="nav-tab <?php echo $tab === 'saas' ? 'nav-tab-active' : ''; ?>">Gói SaaS</a>
             </h2>
             <?php if ($tab === 'login' || $tab === 'register') : ?>
@@ -97,13 +127,23 @@ class LCNI_Member_Settings_Page {
                     <?php $key = $tab === 'login' ? 'lcni_member_login_settings' : 'lcni_member_register_settings'; $v = $tab === 'login' ? $login : $register; ?>
                     <table class="form-table">
                         <tr><th>Font</th><td><input name="<?php echo esc_attr($key); ?>[font]" value="<?php echo esc_attr($v['font'] ?? 'inherit'); ?>" class="regular-text"></td></tr>
-                        <tr><th>Text color</th><td><input name="<?php echo esc_attr($key); ?>[text_color]" value="<?php echo esc_attr($v['text_color'] ?? '#1f2937'); ?>"></td></tr>
-                        <tr><th>Background</th><td><input name="<?php echo esc_attr($key); ?>[background]" value="<?php echo esc_attr($v['background'] ?? '#ffffff'); ?>"></td></tr>
-                        <tr><th>Border</th><td><input name="<?php echo esc_attr($key); ?>[border]" value="<?php echo esc_attr($v['border'] ?? '1px solid #d1d5db'); ?>" class="regular-text"></td></tr>
-                        <tr><th>Border radius</th><td><input type="number" name="<?php echo esc_attr($key); ?>[border_radius]" value="<?php echo esc_attr($v['border_radius'] ?? 8); ?>"></td></tr>
-                        <tr><th>Button style</th><td><input name="<?php echo esc_attr($key); ?>[button_style]" value="<?php echo esc_attr($v['button_style'] ?? 'background:#2563eb;color:#fff;border:none;'); ?>" class="regular-text"></td></tr>
+                        <tr><th>Text color</th><td><input type="color" name="<?php echo esc_attr($key); ?>[text_color]" value="<?php echo esc_attr($v['text_color'] ?? '#1f2937'); ?>"></td></tr>
+                        <tr><th>Background</th><td><input type="color" name="<?php echo esc_attr($key); ?>[background]" value="<?php echo esc_attr($v['background'] ?? '#ffffff'); ?>"></td></tr>
+                        <tr><th>Background image URL</th><td><input name="<?php echo esc_attr($key); ?>[background_image]" value="<?php echo esc_attr($v['background_image'] ?? ''); ?>" class="regular-text"></td></tr>
+                        <tr><th>Border color</th><td><input type="color" name="<?php echo esc_attr($key); ?>[border_color]" value="<?php echo esc_attr($v['border_color'] ?? '#d1d5db'); ?>"></td></tr>
+                        <tr><th>Border radius</th><td><input type="number" name="<?php echo esc_attr($key); ?>[border_radius]" value="<?php echo esc_attr($v['border_radius'] ?? 8); ?>"> px</td></tr>
+                        <tr><th>Input height</th><td><input type="number" name="<?php echo esc_attr($key); ?>[input_height]" value="<?php echo esc_attr($v['input_height'] ?? 40); ?>"> px</td></tr>
+                        <tr><th>Input width</th><td><input type="number" name="<?php echo esc_attr($key); ?>[input_width]" value="<?php echo esc_attr($v['input_width'] ?? 320); ?>"> px</td></tr>
+                        <tr><th>Input background</th><td><input type="color" name="<?php echo esc_attr($key); ?>[input_bg]" value="<?php echo esc_attr($v['input_bg'] ?? '#ffffff'); ?>"></td></tr>
+                        <tr><th>Input border color</th><td><input type="color" name="<?php echo esc_attr($key); ?>[input_border_color]" value="<?php echo esc_attr($v['input_border_color'] ?? '#d1d5db'); ?>"></td></tr>
+                        <tr><th>Input text color</th><td><input type="color" name="<?php echo esc_attr($key); ?>[input_text_color]" value="<?php echo esc_attr($v['input_text_color'] ?? '#111827'); ?>"></td></tr>
+                        <tr><th>Button height</th><td><input type="number" name="<?php echo esc_attr($key); ?>[button_height]" value="<?php echo esc_attr($v['button_height'] ?? 42); ?>"> px</td></tr>
+                        <tr><th>Button width</th><td><input type="number" name="<?php echo esc_attr($key); ?>[button_width]" value="<?php echo esc_attr($v['button_width'] ?? 180); ?>"> px</td></tr>
+                        <tr><th>Button background</th><td><input type="color" name="<?php echo esc_attr($key); ?>[button_bg]" value="<?php echo esc_attr($v['button_bg'] ?? '#2563eb'); ?>"></td></tr>
+                        <tr><th>Button border color</th><td><input type="color" name="<?php echo esc_attr($key); ?>[button_border_color]" value="<?php echo esc_attr($v['button_border_color'] ?? '#1d4ed8'); ?>"></td></tr>
+                        <tr><th>Button text color</th><td><input type="color" name="<?php echo esc_attr($key); ?>[button_text_color]" value="<?php echo esc_attr($v['button_text_color'] ?? '#ffffff'); ?>"></td></tr>
+                        <tr><th>Submit icon class</th><td><input name="<?php echo esc_attr($key); ?>[button_icon_class]" value="<?php echo esc_attr($v['button_icon_class'] ?? 'fa-solid fa-right-to-bracket'); ?>" class="regular-text"><p class="description">Ví dụ: fa-solid fa-arrow-right</p></td></tr>
                         <tr><th>Redirect URL</th><td><input name="<?php echo esc_attr($key); ?>[redirect_url]" value="<?php echo esc_attr($v['redirect_url'] ?? ''); ?>" class="regular-text"></td></tr>
-                        <tr><th>Quote list (1 dòng 1 quote)</th><td><textarea name="<?php echo esc_attr($key); ?>[quote_list]" class="large-text" rows="5"><?php echo esc_textarea($v['quote_list'] ?? ''); ?></textarea></td></tr>
                         <tr><th>Label username</th><td><input name="<?php echo esc_attr($key); ?>[label_username]" value="<?php echo esc_attr($v['label_username'] ?? 'Username'); ?>"></td></tr>
                         <?php if ($tab === 'register') : ?><tr><th>Label email</th><td><input name="<?php echo esc_attr($key); ?>[label_email]" value="<?php echo esc_attr($v['label_email'] ?? 'Email'); ?>"></td></tr><?php endif; ?>
                         <tr><th>Label password</th><td><input name="<?php echo esc_attr($key); ?>[label_password]" value="<?php echo esc_attr($v['label_password'] ?? 'Password'); ?>"></td></tr>
@@ -113,6 +153,23 @@ class LCNI_Member_Settings_Page {
                             <tr><th>Role mặc định</th><td><input name="<?php echo esc_attr($key); ?>[default_role]" value="<?php echo esc_attr($v['default_role'] ?? 'subscriber'); ?>"></td></tr>
                             <tr><th>Auto login</th><td><label><input type="checkbox" name="<?php echo esc_attr($key); ?>[auto_login]" value="1" <?php checked(!empty($v['auto_login'])); ?>> Bật</label></td></tr>
                         <?php endif; ?>
+                    </table>
+                    <?php submit_button('Lưu'); ?>
+                </form>
+            <?php elseif ($tab === 'quote') : ?>
+                <form method="post" action="options.php">
+                    <?php settings_fields('lcni_member_settings'); ?>
+                    <table class="form-table">
+                        <tr><th>Quote width</th><td><input type="number" name="lcni_member_quote_settings[width]" value="<?php echo esc_attr($quote_settings['width'] ?? 500); ?>"> px</td></tr>
+                        <tr><th>Quote height</th><td><input type="number" name="lcni_member_quote_settings[height]" value="<?php echo esc_attr($quote_settings['height'] ?? 120); ?>"> px</td></tr>
+                        <tr><th>Border radius</th><td><input type="number" name="lcni_member_quote_settings[border_radius]" value="<?php echo esc_attr($quote_settings['border_radius'] ?? 12); ?>"> px</td></tr>
+                        <tr><th>Background color</th><td><input type="color" name="lcni_member_quote_settings[background]" value="<?php echo esc_attr($quote_settings['background'] ?? '#f8fafc'); ?>"></td></tr>
+                        <tr><th>Blur nền (px)</th><td><input type="number" name="lcni_member_quote_settings[background_blur]" value="<?php echo esc_attr($quote_settings['background_blur'] ?? 0); ?>"></td></tr>
+                        <tr><th>Border color</th><td><input type="color" name="lcni_member_quote_settings[border_color]" value="<?php echo esc_attr($quote_settings['border_color'] ?? '#d1d5db'); ?>"></td></tr>
+                        <tr><th>Text color</th><td><input type="color" name="lcni_member_quote_settings[text_color]" value="<?php echo esc_attr($quote_settings['text_color'] ?? '#334155'); ?>"></td></tr>
+                        <tr><th>Font size</th><td><input type="number" name="lcni_member_quote_settings[font_size]" value="<?php echo esc_attr($quote_settings['font_size'] ?? 16); ?>"> px</td></tr>
+                        <tr><th>Quote list (1 dòng 1 quote)</th><td><textarea name="lcni_member_quote_settings[quote_list]" class="large-text" rows="5"><?php echo esc_textarea($quote_settings['quote_list'] ?? ''); ?></textarea></td></tr>
+                        <tr><th>CSV URL (mỗi dòng 1 quote)</th><td><input name="lcni_member_quote_settings[quote_csv_url]" value="<?php echo esc_attr($quote_settings['quote_csv_url'] ?? ''); ?>" class="regular-text"></td></tr>
                     </table>
                     <?php submit_button('Lưu'); ?>
                 </form>

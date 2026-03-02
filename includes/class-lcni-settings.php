@@ -2752,6 +2752,7 @@ private function sanitize_module_title($value, $fallback) {
             <button type="button" data-sub-tab="lcni-tab-frontend-style-config">Style Config</button>
             <button type="button" data-sub-tab="lcni-tab-frontend-column-label">Column Label</button>
             <button type="button" data-sub-tab="lcni-tab-frontend-data-format">Data Format</button>
+            <button type="button" data-sub-tab="lcni-tab-frontend-member">Member</button>
         </div>
         <?php $this->render_frontend_module_form('signals', 'lcni-tab-frontend-signals', $signals_labels, $signals); ?>
         <?php $this->render_frontend_module_form('overview', 'lcni-tab-frontend-overview', $overview_labels, $overview); ?>
@@ -2763,6 +2764,13 @@ private function sanitize_module_title($value, $fallback) {
         <?php $this->render_frontend_button_style_form('button_style', 'lcni-tab-frontend-style-config'); ?>
         <?php $this->render_global_column_label_form('column_labels', 'lcni-tab-frontend-column-label', $watchlist); ?>
         <?php $this->render_frontend_data_format_form('data_format', 'lcni-tab-frontend-data-format'); ?>
+        <div id="lcni-tab-frontend-member" class="lcni-sub-tab-content">
+            <div class="lcni-front-form">
+                <h3>Member Frontend Settings</h3>
+                <p>Cấu hình shortcode Member được tách riêng trong tab Member.</p>
+                <p><a class="button button-primary" href="<?php echo esc_url(admin_url('admin.php?page=lcni-member-settings')); ?>">Mở tab Member</a></p>
+            </div>
+        </div>
         <script>
             (function() {
                 const nav = document.getElementById('lcni-front-sub-tabs');
@@ -2773,13 +2781,13 @@ private function sanitize_module_title($value, $fallback) {
                 const activate = function(tabId){
                     buttons.forEach((btn) => btn.classList.toggle('active', btn.getAttribute('data-sub-tab') === tabId));
                     panes.forEach((pane) => {
-                        if (pane.id === 'lcni-tab-frontend-signals' || pane.id === 'lcni-tab-frontend-overview' || pane.id === 'lcni-tab-frontend-chart' || pane.id === 'lcni-tab-frontend-chart-analyst' || pane.id === 'lcni-tab-frontend-chart-builder' || pane.id === 'lcni-tab-frontend-watchlist' || pane.id === 'lcni-tab-frontend-filter' || pane.id === 'lcni-tab-frontend-style-config' || pane.id === 'lcni-tab-frontend-column-label' || pane.id === 'lcni-tab-frontend-data-format') {
+                        if (pane.id === 'lcni-tab-frontend-signals' || pane.id === 'lcni-tab-frontend-overview' || pane.id === 'lcni-tab-frontend-chart' || pane.id === 'lcni-tab-frontend-chart-analyst' || pane.id === 'lcni-tab-frontend-chart-builder' || pane.id === 'lcni-tab-frontend-watchlist' || pane.id === 'lcni-tab-frontend-filter' || pane.id === 'lcni-tab-frontend-style-config' || pane.id === 'lcni-tab-frontend-column-label' || pane.id === 'lcni-tab-frontend-data-format' || pane.id === 'lcni-tab-frontend-member') {
                             pane.classList.toggle('active', pane.id === tabId);
                         }
                     });
                 };
                 buttons.forEach((btn) => btn.addEventListener('click', () => activate(btn.getAttribute('data-sub-tab'))));
-                const validTabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-chart-builder', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format'];
+                const validTabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-chart-builder', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format', 'lcni-tab-frontend-member'];
                 activate(validTabs.includes(current) ? current : 'lcni-tab-frontend-signals');
 
                 const bindFrontendModuleSortable = (form) => {
