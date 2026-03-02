@@ -245,6 +245,10 @@
   };
 
   const filterRows = (rows, activeFilter) => {
+    if (!Array.isArray(rows)) {
+      return rows;
+    }
+
     if (!activeFilter || !activeFilter.field || activeFilter.value === '') {
       return rows;
     }
@@ -318,7 +322,7 @@
 
       if (!window.echarts) return;
       const payload = parsePayload(node);
-      const allRows = Array.isArray(payload.data) ? payload.data : [];
+      const allRows = payload.data || [];
       const chart = window.echarts.init(node);
       let activeFilter = { field: '', value: '' };
 
