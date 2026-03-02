@@ -668,8 +668,9 @@ class LCNI_DB {
         self::sync_ohlc_symbol_type_values($ohlc_table);
         self::sync_ohlc_symbol_type_values($latest_table);
 
+        $wpdb->query("DROP PROCEDURE IF EXISTS {$sync_proc_name}");
         $wpdb->query(
-            "CREATE OR REPLACE PROCEDURE {$sync_proc_name}()
+            "CREATE PROCEDURE {$sync_proc_name}()
             BEGIN
                 DECLARE done INT DEFAULT FALSE;
                 DECLARE col_name VARCHAR(100);
@@ -705,8 +706,9 @@ class LCNI_DB {
             END"
         );
 
+        $wpdb->query("DROP PROCEDURE IF EXISTS {$refresh_proc_name}");
         $wpdb->query(
-            "CREATE OR REPLACE PROCEDURE {$refresh_proc_name}()
+            "CREATE PROCEDURE {$refresh_proc_name}()
             BEGIN
                 DECLARE v_max_event_time BIGINT DEFAULT NULL;
 
@@ -1948,17 +1950,14 @@ class LCNI_DB {
 
         $market_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $market_statistics_table));
         if ($market_exists === $market_statistics_table) {
-            $has_id = $wpdb->get_var("SHOW COLUMNS FROM {$market_statistics_table} LIKE 'id'");
-            if ($has_id === null) {
-                $primary_index_rows = $wpdb->get_results($wpdb->prepare("SHOW INDEX FROM {$market_statistics_table} WHERE Key_name = %s", 'PRIMARY'), ARRAY_A);
-                if (!empty($primary_index_rows)) {
+            if (!self::table_has_column($market_statistics_table, 'id')) {
+                if (self::table_has_primary_key($market_statistics_table)) {
                     $wpdb->query("ALTER TABLE {$market_statistics_table} DROP PRIMARY KEY");
                 }
                 $wpdb->query("ALTER TABLE {$market_statistics_table} ADD COLUMN id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY FIRST");
             }
 
-            $has_index_col = $wpdb->get_var("SHOW COLUMNS FROM {$market_statistics_table} LIKE 'thong_ke_thi_truong_index'");
-            if ($has_index_col === null) {
+            if (!self::table_has_column($market_statistics_table, 'thong_ke_thi_truong_index')) {
                 $wpdb->query("ALTER TABLE {$market_statistics_table} ADD COLUMN thong_ke_thi_truong_index BIGINT UNSIGNED NOT NULL DEFAULT 0 AFTER id");
             }
 
@@ -1967,44 +1966,98 @@ class LCNI_DB {
             $wpdb->query("ALTER TABLE {$market_statistics_table} MODIFY COLUMN pct_so_ma_tren_ma100 DECIMAL(12,6) NOT NULL DEFAULT 0");
             $wpdb->query("ALTER TABLE {$market_statistics_table} MODIFY COLUMN tong_value_traded DECIMAL(24,2) NOT NULL DEFAULT 0");
 
-            $wpdb->query("ALTER TABLE {$market_statistics_table} ADD UNIQUE KEY uniq_event_market_timeframe (event_time, marketid, timeframe)");
-            $wpdb->query("ALTER TABLE {$market_statistics_table} ADD KEY idx_event_time (event_time, timeframe)");
-            $wpdb->query("ALTER TABLE {$market_statistics_table} ADD KEY idx_thong_ke_thi_truong_index (thong_ke_thi_truong_index)");
+            self::add_unique_key_if_missing($market_statistics_table, 'uniq_event_market_timeframe', '(event_time, marketid, timeframe)');
+            self::add_index_if_missing($market_statistics_table, 'idx_event_time', '(event_time, timeframe)');
+            self::add_index_if_missing($market_statistics_table, 'idx_thong_ke_thi_truong_index', '(thong_ke_thi_truong_index)');
         }
 
         $icb2_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $icb2_statistics_table));
         if ($icb2_exists === $icb2_statistics_table) {
-            $has_id = $wpdb->get_var("SHOW COLUMNS FROM {$icb2_statistics_table} LIKE 'id'");
-            if ($has_id === null) {
-                $primary_index_rows = $wpdb->get_results($wpdb->prepare("SHOW INDEX FROM {$icb2_statistics_table} WHERE Key_name = %s", 'PRIMARY'), ARRAY_A);
-                if (!empty($primary_index_rows)) {
+            if (!self::table_has_column($icb2_statistics_table, 'id')) {
+                if (self::table_has_primary_key($icb2_statistics_table)) {
                     $wpdb->query("ALTER TABLE {$icb2_statistics_table} DROP PRIMARY KEY");
                 }
                 $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD COLUMN id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY FIRST");
             }
 
-            $has_index_col = $wpdb->get_var("SHOW COLUMNS FROM {$icb2_statistics_table} LIKE 'thong_ke_icb2_index'");
-            if ($has_index_col === null) {
+            if (!self::table_has_column($icb2_statistics_table, 'thong_ke_icb2_index')) {
                 $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD COLUMN thong_ke_icb2_index BIGINT UNSIGNED NOT NULL DEFAULT 0 AFTER id");
             }
 
-            $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD COLUMN so_ma_tang_gia INT UNSIGNED NOT NULL DEFAULT 0 AFTER icb_level2");
-            $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD COLUMN so_ma_giam_gia INT UNSIGNED NOT NULL DEFAULT 0 AFTER so_ma_tang_gia");
-            $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD COLUMN pct_so_ma_tren_ma20 DECIMAL(12,6) NOT NULL DEFAULT 0 AFTER so_pha_nen");
-            $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD COLUMN pct_so_ma_tren_ma50 DECIMAL(12,6) NOT NULL DEFAULT 0 AFTER pct_so_ma_tren_ma20");
-            $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD COLUMN pct_so_ma_tren_ma100 DECIMAL(12,6) NOT NULL DEFAULT 0 AFTER pct_so_ma_tren_ma50");
+            if (!self::table_has_column($icb2_statistics_table, 'so_ma_tang_gia')) {
+                $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD COLUMN so_ma_tang_gia INT UNSIGNED NOT NULL DEFAULT 0 AFTER icb_level2");
+            }
+            if (!self::table_has_column($icb2_statistics_table, 'so_ma_giam_gia')) {
+                $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD COLUMN so_ma_giam_gia INT UNSIGNED NOT NULL DEFAULT 0 AFTER so_ma_tang_gia");
+            }
+            if (!self::table_has_column($icb2_statistics_table, 'pct_so_ma_tren_ma20')) {
+                $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD COLUMN pct_so_ma_tren_ma20 DECIMAL(12,6) NOT NULL DEFAULT 0 AFTER so_pha_nen");
+            }
+            if (!self::table_has_column($icb2_statistics_table, 'pct_so_ma_tren_ma50')) {
+                $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD COLUMN pct_so_ma_tren_ma50 DECIMAL(12,6) NOT NULL DEFAULT 0 AFTER pct_so_ma_tren_ma20");
+            }
+            if (!self::table_has_column($icb2_statistics_table, 'pct_so_ma_tren_ma100')) {
+                $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD COLUMN pct_so_ma_tren_ma100 DECIMAL(12,6) NOT NULL DEFAULT 0 AFTER pct_so_ma_tren_ma50");
+            }
 
             $wpdb->query("ALTER TABLE {$icb2_statistics_table} MODIFY COLUMN tong_value_traded DECIMAL(24,2) NOT NULL DEFAULT 0");
-            $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD UNIQUE KEY uniq_event_timeframe_market_icb (event_time, timeframe, marketid, icb_level2)");
-            $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD KEY idx_event_time (event_time, timeframe)");
-            $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD KEY idx_thong_ke_icb2_index (thong_ke_icb2_index)");
+            self::add_unique_key_if_missing($icb2_statistics_table, 'uniq_event_timeframe_market_icb', '(event_time, timeframe, marketid, icb_level2)');
+            self::add_index_if_missing($icb2_statistics_table, 'idx_event_time', '(event_time, timeframe)');
+            self::add_index_if_missing($icb2_statistics_table, 'idx_thong_ke_icb2_index', '(thong_ke_icb2_index)');
         }
 
         $icb2_market_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $icb2_market_statistics_table));
         if ($icb2_market_exists === $icb2_market_statistics_table) {
-            $wpdb->query("ALTER TABLE {$icb2_market_statistics_table} ADD UNIQUE KEY uniq_icb_level2_event_timeframe (icb_level2, event_time, timeframe)");
-            $wpdb->query("ALTER TABLE {$icb2_market_statistics_table} ADD KEY idx_event_time (event_time, timeframe)");
-            $wpdb->query("ALTER TABLE {$icb2_market_statistics_table} ADD KEY idx_icb2_thi_truong_index (icb2_thi_truong_index)");
+            self::add_unique_key_if_missing($icb2_market_statistics_table, 'uniq_icb_level2_event_timeframe', '(icb_level2, event_time, timeframe)');
+            self::add_index_if_missing($icb2_market_statistics_table, 'idx_event_time', '(event_time, timeframe)');
+            self::add_index_if_missing($icb2_market_statistics_table, 'idx_icb2_thi_truong_index', '(icb2_thi_truong_index)');
+        }
+    }
+
+    private static function table_has_column($table, $column_name) {
+        global $wpdb;
+
+        $column = $wpdb->get_row($wpdb->prepare("SHOW COLUMNS FROM {$table} LIKE %s", $column_name), ARRAY_A);
+
+        return is_array($column);
+    }
+
+    private static function table_has_primary_key($table) {
+        global $wpdb;
+
+        $primary_index_rows = $wpdb->get_results(
+            $wpdb->prepare(
+                'SELECT index_name FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = %s AND index_name = %s LIMIT 1',
+                $table,
+                'PRIMARY'
+            ),
+            ARRAY_A
+        );
+
+        return !empty($primary_index_rows);
+    }
+
+    private static function table_has_index($table, $index_name) {
+        global $wpdb;
+
+        $index_exists = $wpdb->get_var($wpdb->prepare('SHOW INDEX FROM ' . $table . ' WHERE Key_name = %s', $index_name));
+
+        return $index_exists !== null;
+    }
+
+    private static function add_index_if_missing($table, $index_name, $columns_sql) {
+        global $wpdb;
+
+        if (!self::table_has_index($table, $index_name)) {
+            $wpdb->query("ALTER TABLE {$table} ADD KEY {$index_name} {$columns_sql}");
+        }
+    }
+
+    private static function add_unique_key_if_missing($table, $index_name, $columns_sql) {
+        global $wpdb;
+
+        if (!self::table_has_index($table, $index_name)) {
+            $wpdb->query("ALTER TABLE {$table} ADD UNIQUE KEY {$index_name} {$columns_sql}");
         }
     }
 
