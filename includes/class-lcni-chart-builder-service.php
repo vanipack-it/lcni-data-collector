@@ -22,6 +22,7 @@ class LCNI_Chart_Builder_Service {
         $series_stacks = isset($raw['series_stack']) ? (array) $raw['series_stack'] : [];
         $series_area = isset($raw['series_area']) ? (array) $raw['series_area'] : [];
         $series_labels = isset($raw['series_label_show']) ? (array) $raw['series_label_show'] : [];
+        $series_line_styles = isset($raw['series_line_style']) ? (array) $raw['series_line_style'] : [];
 
         $count = max(count($series_names), count($series_fields), count($series_types), count($series_colors));
         for ($i = 0; $i < $count; $i++) {
@@ -32,6 +33,7 @@ class LCNI_Chart_Builder_Service {
             $stack = !empty($series_stacks[$i]);
             $area = !empty($series_area[$i]);
             $label_show = !empty($series_labels[$i]);
+            $line_style = sanitize_key((string) ($series_line_styles[$i] ?? 'solid'));
             if ($name === '' || $field === '') {
                 continue;
             }
@@ -43,8 +45,18 @@ class LCNI_Chart_Builder_Service {
                 'stack' => $stack,
                 'area' => $area,
                 'label_show' => $label_show,
+                'line_style' => in_array($line_style, ['solid', 'dashed'], true) ? $line_style : 'solid',
             ];
         }
+
+        $heatmap_low = sanitize_hex_color((string) ($raw['heatmap_color_low'] ?? '')) ?: '#d73027';
+        $heatmap_mid = sanitize_hex_color((string) ($raw['heatmap_color_mid'] ?? '')) ?: '#fee08b';
+        $heatmap_high = sanitize_hex_color((string) ($raw['heatmap_color_high'] ?? '')) ?: '#1a9850';
+        $config['heatmap'] = [
+            'low' => $heatmap_low,
+            'mid' => $heatmap_mid,
+            'high' => $heatmap_high,
+        ];
 
         $filter_fields = isset($raw['filter_field']) ? (array) $raw['filter_field'] : [];
         foreach ($filter_fields as $field) {

@@ -1,3 +1,10 @@
+## 2026-03-02 09:30 (v5.3.9a)
+- Nâng version plugin lên `5.3.9a`.
+- Fix template `heatmap_matrix` render dữ liệu ra biểu đồ frontend ổn định, đồng bộ màu heatmap theo cấu hình trong Chart Builder.
+- Đưa nhóm tùy chỉnh màu sắc/hiệu ứng vào khối cấu hình frontend của **Frontend Setting → Chart Builder → Chart Builder**, gồm màu series mặc định + bộ màu heatmap (low/mid/high).
+- Cập nhật `Màu mặc định series` và `Hiệu ứng đường` ở cột 1: thêm tùy chọn `Dynamic theo Template chart`, tự sinh line style per-series theo template.
+- Fix lỗi cửa sổ preview không hiển thị chart trong một số trạng thái chuyển tab/template bằng cách re-render + resize khi quay lại tab Builder và khi thay đổi các tùy chỉnh hiển thị.
+
 ## 2026-03-01 11:00 (v5.3.8d)
 - Nâng version plugin lên `5.3.8d`.
 - Bổ sung chart template `heatmap_matrix` trong Chart Builder để dựng Heatmap theo data source `wp_lcni_thong_ke_nganh_icb_2` với map field chuẩn: `x=timeframe`, `y=ICB2`, `value=percent_value`.
