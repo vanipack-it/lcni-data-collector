@@ -1,3 +1,10 @@
+## 2026-03-02 10:15 (v5.3.9b)
+- Nâng version plugin lên `5.3.9b`.
+- Fix hiển thị Heatmap Matrix ngoài frontend: giữ nguyên payload object `{x,y,data}` khi render chart builder, tránh ép về mảng rỗng làm heatmap mất dữ liệu.
+- Cập nhật Frontend Setting → Chart Builder → Tab Chart Builder, cột 1: bỏ toàn bộ khối `Tùy chỉnh hiển thị frontend` (màu mặc định series, dynamic solid/dashed, màu heatmap low/mid/high).
+- Cải tiến cột 2 `Axis & Series mapping`: mỗi row series có thêm nút `Tùy chỉnh thuộc tính` mở panel để chỉnh `type/color/line style/stack/area/label`, và tự đồng bộ theo template.
+- Bổ sung tài liệu `docs_chart_builder_template_guideline.md` hướng dẫn chuẩn code tạo template chart mới để tự động hỗ trợ tùy chỉnh trong admin.
+
 ## 2026-03-02 09:30 (v5.3.9a)
 - Nâng version plugin lên `5.3.9a`.
 - Fix template `heatmap_matrix` render dữ liệu ra biểu đồ frontend ổn định, đồng bộ màu heatmap theo cấu hình trong Chart Builder.

@@ -2894,7 +2894,9 @@ private function sanitize_module_title($value, $fallback) {
                 .lcni-chart-column { border:1px solid #dcdcde; border-radius:4px; background:#fff; padding:12px; }
                 .lcni-chart-drop-zone { border:1px dashed #8c8f94; border-radius:4px; min-height:38px; padding:8px; margin-bottom:8px; background:#f9f9f9; display:flex; align-items:center; justify-content:space-between; gap:8px; }
                 .lcni-chart-drop-zone.is-over { background:#e8f0fe; border-color:#2271b1; }
-                .lcni-chart-drop-zone-actions { display:flex; gap:6px; }
+                .lcni-chart-drop-zone-actions { display:flex; gap:6px; align-items:center; }
+                .lcni-chart-drop-zone-properties { border:1px solid #dcdcde; border-radius:4px; padding:8px; margin:-4px 0 10px; background:#fff; }
+                .lcni-chart-drop-zone-properties label { display:block; margin-bottom:6px; }
                 .lcni-chart-map-cols { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
                 .lcni-chart-source-grid { display:grid; grid-template-rows: 20% 80%; gap:8px; height:360px; }
                 .lcni-chart-source-tables, .lcni-chart-source-fields { border:1px solid #dcdcde; border-radius:4px; padding:8px; overflow:auto; }
@@ -2931,17 +2933,7 @@ private function sanitize_module_title($value, $fallback) {
                             <input type="hidden" name="lcni_chart_builder[data_source]" id="lcni-chart-builder-source" value="thong_ke_thi_truong">
                             <input type="hidden" name="lcni_chart_builder[chart_type]" id="lcni-chart-builder-template" value="multi_line">
                             <p><button type="button" class="button" id="lcni-chart-template-picker-btn">Chọn chart mẫu: <span id="lcni-chart-template-picker-label">Multi-line</span></button></p>
-                            <div style="border:1px solid #dcdcde;border-radius:6px;padding:10px;background:#f8f9fa;">
-                                <h4 style="margin:0 0 8px;">Tùy chỉnh hiển thị frontend</h4>
-                                <p><label>Màu mặc định series <input type="color" id="lcni-chart-builder-default-color" value="#5470c6"></label></p>
-                                <p><label>Hiệu ứng đường <select id="lcni-chart-builder-line-style"><option value="dynamic">Dynamic theo Template</option><option value="solid">Solid</option><option value="dashed">Dashed</option></select></label></p>
-                                <p style="margin-bottom:6px;"><strong>Màu heatmap (template Heatmap Matrix)</strong></p>
-                                <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;">
-                                    <label>Low <input type="color" id="lcni-chart-builder-heatmap-low" value="#d73027"></label>
-                                    <label>Mid <input type="color" id="lcni-chart-builder-heatmap-mid" value="#fee08b"></label>
-                                    <label>High <input type="color" id="lcni-chart-builder-heatmap-high" value="#1a9850"></label>
-                                </div>
-                            </div>
+                            <p style="color:#646970;">Cột này chỉ giữ thông tin định danh chart. Tùy chỉnh series/axis được quản lý tại cột Axis &amp; Series mapping.</p>
                         </div>
                         <div class="lcni-chart-column">
                             <h4>Axis & Series mapping (dynamic theo template)</h4>
@@ -3054,11 +3046,39 @@ private function sanitize_module_title($value, $fallback) {
                     const templatePicker = tabRoot.querySelector('#lcni-chart-template-picker');
                     let previewChart = null;
 
-                    const mkDropZone = (target, text, clearCb) => {
+                    const mkDropZone = (target, text, clearCb, options = {}) => {
                         const zone = document.createElement('div');
                         zone.className = 'lcni-chart-drop-zone';
                         zone.setAttribute('data-target', target);
-                        zone.innerHTML = '<span data-text>' + text + '</span><span class="lcni-chart-drop-zone-actions"><button type="button" class="button-link" data-clear>xóa</button></span>';
+                        zone.innerHTML = '<span data-text>' + text + '</span><span class="lcni-chart-drop-zone-actions"><button type="button" class="button-link" data-properties>Tùy chỉnh thuộc tính</button><button type="button" class="button-link" data-clear>xóa</button></span>';
+                        const isSeriesZone = options.type === 'series';
+                        const panelId = isSeriesZone ? ('lcni-series-properties-' + (options.index || 0)) : '';
+                        let propertiesPanel = null;
+                        if (isSeriesZone) {
+                            propertiesPanel = document.createElement('div');
+                            propertiesPanel.className = 'lcni-chart-drop-zone-properties';
+                            propertiesPanel.id = panelId;
+                            propertiesPanel.style.display = 'none';
+                            propertiesPanel.innerHTML = '<label>Kiểu hiển thị <select data-prop="series-type"><option value="line">Line</option><option value="bar">Bar</option></select></label>' +
+                                '<label>Màu series <input type="color" data-prop="series-color" value="#5470c6"></label>' +
+                                '<label>Line style <select data-prop="series-line-style"><option value="solid">Solid</option><option value="dashed">Dashed</option></select></label>' +
+                                '<label><input type="checkbox" data-prop="series-stack" checked> Stack (template hỗ trợ)</label>' +
+                                '<label><input type="checkbox" data-prop="series-area" checked> Area (template hỗ trợ)</label>' +
+                                '<label><input type="checkbox" data-prop="series-label-show"> Hiển thị label</label>';
+                            zone.insertAdjacentElement('afterend', propertiesPanel);
+
+                            const propertyButton = zone.querySelector('[data-properties]');
+                            if (propertyButton) {
+                                propertyButton.addEventListener('click', () => {
+                                    propertiesPanel.style.display = propertiesPanel.style.display === 'none' ? 'block' : 'none';
+                                });
+                            }
+
+                            propertiesPanel.querySelectorAll('[data-prop]').forEach((control) => {
+                                control.addEventListener('input', () => { if (typeof options.onPropertiesChange === 'function') options.onPropertiesChange(propertiesPanel, options.index || 0); renderPreview(); });
+                                control.addEventListener('change', () => { if (typeof options.onPropertiesChange === 'function') options.onPropertiesChange(propertiesPanel, options.index || 0); renderPreview(); });
+                            });
+                        }
                         zone.querySelector('[data-clear]').addEventListener('click', () => { if (typeof clearCb === 'function') clearCb(zone); renderPreview(); });
                         zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('is-over'); });
                         zone.addEventListener('dragleave', () => zone.classList.remove('is-over'));
@@ -3085,20 +3105,68 @@ private function sanitize_module_title($value, $fallback) {
                             }
                             renderPreview();
                         });
+                        if (!isSeriesZone) { const propertyButton = zone.querySelector('[data-properties]'); if (propertyButton) propertyButton.style.display = 'none'; }
                         return zone;
                     };
 
-                    const resolveLineStyleByTemplate = (templateKey, lineStyle, index) => {
-                        if (lineStyle === 'solid' || lineStyle === 'dashed') {
-                            return lineStyle;
-                        }
-                        if (templateKey === 'share_dataset' || templateKey === 'market_breadth' || templateKey === 'smart_money_flow') {
-                            return index % 2 === 0 ? 'solid' : 'dashed';
-                        }
-                        if (templateKey === 'area_stack' || templateKey === 'rsi_zone') {
-                            return 'solid';
-                        }
-                        return 'solid';
+
+                    const syncSeriesPropertiesFromPanel = (panel, index) => {
+                        if (!panel) return;
+                        const typeInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-type')[index];
+                        const colorInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-color')[index];
+                        const lineStyleInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-line-style')[index];
+                        const stackInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-stack')[index];
+                        const areaInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-area')[index];
+                        const labelInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-label-show')[index];
+                        const typeControl = panel.querySelector('[data-prop="series-type"]');
+                        const colorControl = panel.querySelector('[data-prop="series-color"]');
+                        const lineStyleControl = panel.querySelector('[data-prop="series-line-style"]');
+                        const stackControl = panel.querySelector('[data-prop="series-stack"]');
+                        const areaControl = panel.querySelector('[data-prop="series-area"]');
+                        const labelControl = panel.querySelector('[data-prop="series-label-show"]');
+                        if (typeInput && typeControl) typeInput.value = typeControl.value || 'line';
+                        if (colorInput && colorControl) colorInput.value = colorControl.value || '#5470c6';
+                        if (lineStyleInput && lineStyleControl) lineStyleInput.value = lineStyleControl.value || 'solid';
+                        if (stackInput && stackControl) stackInput.value = stackControl.checked ? '1' : '0';
+                        if (areaInput && areaControl) areaInput.value = areaControl.checked ? '1' : '0';
+                        if (labelInput && labelControl) labelInput.value = labelControl.checked ? '1' : '0';
+                    };
+
+                    const applySeriesPropertiesToPanel = (panel, index) => {
+                        if (!panel) return;
+                        const typeInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-type')[index];
+                        const colorInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-color')[index];
+                        const lineStyleInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-line-style')[index];
+                        const stackInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-stack')[index];
+                        const areaInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-area')[index];
+                        const labelInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-label-show')[index];
+                        const typeControl = panel.querySelector('[data-prop="series-type"]');
+                        const colorControl = panel.querySelector('[data-prop="series-color"]');
+                        const lineStyleControl = panel.querySelector('[data-prop="series-line-style"]');
+                        const stackControl = panel.querySelector('[data-prop="series-stack"]');
+                        const areaControl = panel.querySelector('[data-prop="series-area"]');
+                        const labelControl = panel.querySelector('[data-prop="series-label-show"]');
+                        if (typeControl) typeControl.value = (typeInput && typeInput.value) ? typeInput.value : 'line';
+                        if (colorControl) colorControl.value = (colorInput && colorInput.value) ? colorInput.value : '#5470c6';
+                        if (lineStyleControl) lineStyleControl.value = (lineStyleInput && lineStyleInput.value) ? lineStyleInput.value : 'solid';
+                        if (stackControl) stackControl.checked = !(stackInput && stackInput.value === '0');
+                        if (areaControl) areaControl.checked = !(areaInput && areaInput.value === '0');
+                        if (labelControl) labelControl.checked = !!(labelInput && labelInput.value === '1');
+                    };
+
+                    const applyTemplateProperties = () => {
+                        const key = templateInput ? templateInput.value : 'multi_line';
+                        const areaTemplates = ['area_stack'];
+                        const dashedTemplates = ['share_dataset', 'market_breadth', 'smart_money_flow'];
+                        tabRoot.querySelectorAll('.lcni-chart-drop-zone-properties').forEach((panel, index) => {
+                            const stackControl = panel.querySelector('[data-prop="series-stack"]');
+                            const areaControl = panel.querySelector('[data-prop="series-area"]');
+                            const lineStyleControl = panel.querySelector('[data-prop="series-line-style"]');
+                            if (stackControl) stackControl.checked = areaTemplates.indexOf(key) > -1;
+                            if (areaControl) areaControl.checked = areaTemplates.indexOf(key) > -1;
+                            if (lineStyleControl) lineStyleControl.value = dashedTemplates.indexOf(key) > -1 && (index % 2 === 1) ? 'dashed' : 'solid';
+                            syncSeriesPropertiesFromPanel(panel, index);
+                        });
                     };
 
                     const renderAxisSeriesSlots = () => {
@@ -3112,42 +3180,21 @@ private function sanitize_module_title($value, $fallback) {
                             if (!yInput) { yInput = document.createElement('input'); yInput.type = 'hidden'; yInput.id = 'lcni-chart-builder-yaxis'; yInput.name = 'lcni_chart_builder[yAxis]'; tabRoot.querySelector('#lcni-chart-builder-form').appendChild(yInput); }
                         }
                         for (let i = 0; i < meta.series_slots; i += 1) {
-                            axisSeriesContainer.appendChild(mkDropZone('series-' + i, 'Series ' + (i + 1) + ' (drag field)', (zone) => { const f = tabRoot.querySelectorAll('.lcni-chart-builder-series-field')[i]; if (f) f.value = ''; zone.querySelector('[data-text]').textContent = 'Series ' + (i + 1) + ' (drag field)'; }));
+                            axisSeriesContainer.appendChild(mkDropZone('series-' + i, 'Series ' + (i + 1) + ' (drag field)', (zone) => { const f = tabRoot.querySelectorAll('.lcni-chart-builder-series-field')[i]; if (f) f.value = ''; zone.querySelector('[data-text]').textContent = 'Series ' + (i + 1) + ' (drag field)'; }, { type: 'series', index: i, onPropertiesChange: syncSeriesPropertiesFromPanel }));
                             ['series_name','series_field','series_type','series_color','series_stack','series_area','series_label_show','series_line_style'].forEach((n) => {
                                 const input = document.createElement('input');
                                 input.type = 'hidden'; input.name = 'lcni_chart_builder[' + n + '][]';
                                 if (n === 'series_name') input.value = 'Series ' + (i + 1);
                                 if (n === 'series_field') input.className = 'lcni-chart-builder-series-field';
-                                if (n === 'series_type') input.value = 'line';
-                                if (n === 'series_stack') input.value = '1';
-                                if (n === 'series_area') input.value = '1';
-                                if (n === 'series_label_show') input.value = '0';
-                                if (n === 'series_line_style') input.className = 'lcni-chart-builder-series-line-style';
+                                if (n === 'series_color') { input.className = 'lcni-chart-builder-series-color'; input.value = '#5470c6'; }
+                                if (n === 'series_type') { input.value = 'line'; input.className = 'lcni-chart-builder-series-type'; }
+                                if (n === 'series_stack') { input.value = '1'; input.className = 'lcni-chart-builder-series-stack'; }
+                                if (n === 'series_area') { input.value = '1'; input.className = 'lcni-chart-builder-series-area'; }
+                                if (n === 'series_label_show') { input.value = '0'; input.className = 'lcni-chart-builder-series-label-show'; }
+                                if (n === 'series_line_style') { input.className = 'lcni-chart-builder-series-line-style'; input.value = 'solid'; }
                                 axisSeriesContainer.appendChild(input);
                             });
                         }
-                        const heatmapLow = tabRoot.querySelector('#lcni-chart-builder-heatmap-low');
-                        const heatmapMid = tabRoot.querySelector('#lcni-chart-builder-heatmap-mid');
-                        const heatmapHigh = tabRoot.querySelector('#lcni-chart-builder-heatmap-high');
-                        [
-                            { id: 'lcni-chart-builder-heatmap-low-hidden', name: 'lcni_chart_builder[heatmap_color_low]', value: heatmapLow ? heatmapLow.value : '#d73027' },
-                            { id: 'lcni-chart-builder-heatmap-mid-hidden', name: 'lcni_chart_builder[heatmap_color_mid]', value: heatmapMid ? heatmapMid.value : '#fee08b' },
-                            { id: 'lcni-chart-builder-heatmap-high-hidden', name: 'lcni_chart_builder[heatmap_color_high]', value: heatmapHigh ? heatmapHigh.value : '#1a9850' },
-                        ].forEach((meta) => {
-                            let input = tabRoot.querySelector('#' + meta.id);
-                            if (!input) {
-                                input = document.createElement('input');
-                                input.type = 'hidden';
-                                input.id = meta.id;
-                                input.name = meta.name;
-                                tabRoot.querySelector('#lcni-chart-builder-form').appendChild(input);
-                            }
-                            input.value = meta.value;
-                        });
-                        const lineStyle = (tabRoot.querySelector('#lcni-chart-builder-line-style') || {}).value || 'dynamic';
-                        tabRoot.querySelectorAll('.lcni-chart-builder-series-line-style').forEach((input, index) => {
-                            input.value = resolveLineStyleByTemplate(key, lineStyle, index);
-                        });
                     };
 
                     const addFilterSlot = (value = '') => {
@@ -3199,15 +3246,8 @@ private function sanitize_module_title($value, $fallback) {
                         if (!previewNode || !window.echarts) return;
                         if (!previewChart) previewChart = window.echarts.init(previewNode);
                         const p = getPreviewRows(); if (!p.x || !p.seriesFields.length) { previewChart.clear(); return; }
-                        const c = (tabRoot.querySelector('#lcni-chart-builder-default-color') || {}).value || '#5470c6';
-                        const ls = (tabRoot.querySelector('#lcni-chart-builder-line-style') || {}).value || 'solid';
                         const templateKey = (templateInput || {}).value || 'multi_line';
-                        const seriesLineStyles = Array.from(tabRoot.querySelectorAll('.lcni-chart-builder-series-line-style')).map((i) => i.value || 'solid');
-                        const heatmapColors = [
-                            ((tabRoot.querySelector('#lcni-chart-builder-heatmap-low') || {}).value || '#d73027'),
-                            ((tabRoot.querySelector('#lcni-chart-builder-heatmap-mid') || {}).value || '#fee08b'),
-                            ((tabRoot.querySelector('#lcni-chart-builder-heatmap-high') || {}).value || '#1a9850'),
-                        ];
+                        const heatmapColors = ['#d73027', '#fee08b', '#1a9850'];
 
                         if (templateKey === 'heatmap_matrix') {
                             const xData = Array.from(new Set(p.rows.map((r) => String(r[p.x] || '')))).filter(Boolean);
@@ -3257,18 +3297,11 @@ private function sanitize_module_title($value, $fallback) {
                             return;
                         }
 
-                        previewChart.setOption({ tooltip:{trigger:'axis'}, legend:{top:'bottom', data:p.seriesFields}, xAxis:{type:'category', data:p.rows.map((r)=>r[p.x])}, yAxis:{type:'value'}, series:p.seriesFields.map((f,index)=>({name:f,type:'line',smooth:true,lineStyle:{type:resolveLineStyleByTemplate(templateKey, ls, index),color:c},itemStyle:{color:c},data:p.rows.map((r)=>Number(r[f]||0))})) }, true);
+                        previewChart.setOption({ tooltip:{trigger:'axis'}, legend:{top:'bottom', data:p.seriesFields}, xAxis:{type:'category', data:p.rows.map((r)=>r[p.x])}, yAxis:{type:'value'}, series:p.seriesFields.map((f,index)=>{ const typeInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-type')[index]; const colorInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-color')[index]; const lineStyleInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-line-style')[index]; const stackInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-stack')[index]; const areaInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-area')[index]; const labelInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-label-show')[index]; const type = (typeInput && typeInput.value) || 'line'; const color = (colorInput && colorInput.value) || '#5470c6'; return {name:f,type,smooth:type!=='bar',stack:stackInput&&stackInput.value==='1'?'Total':undefined,areaStyle:areaInput&&areaInput.value==='1'?{}:undefined,label:labelInput&&labelInput.value==='1'?{show:true,position:'top'}:undefined,lineStyle:{type:(lineStyleInput&&lineStyleInput.value)||'solid',color:color},itemStyle:{color:color},data:p.rows.map((r)=>Number(r[f]||0))};}) }, true);
                         previewChart.resize();
                     };
 
-                    ['#lcni-chart-builder-default-color', '#lcni-chart-builder-line-style', '#lcni-chart-builder-heatmap-low', '#lcni-chart-builder-heatmap-mid', '#lcni-chart-builder-heatmap-high'].forEach((selector) => {
-                        const input = tabRoot.querySelector(selector);
-                        if (!input) return;
-                        input.addEventListener('input', () => { renderAxisSeriesSlots(); renderPreview(); });
-                        input.addEventListener('change', () => { renderAxisSeriesSlots(); renderPreview(); });
-                    });
-
-                    if (sourceDup) sourceDup.addEventListener('change', () => { if (source) source.value = sourceDup.value; reloadFields(); renderPreview(); });
+                                        if (sourceDup) sourceDup.addEventListener('change', () => { if (source) source.value = sourceDup.value; reloadFields(); renderPreview(); });
                     if (source) source.addEventListener('change', () => { if (sourceDup) sourceDup.value = source.value; reloadFields(); renderPreview(); });
                     if (addFilterBtn) addFilterBtn.addEventListener('click', () => addFilterSlot(''));
 
@@ -3279,13 +3312,13 @@ private function sanitize_module_title($value, $fallback) {
                         const card = button.closest('[data-template-key]'); if (!card || !templateInput) return;
                         templateInput.value = card.getAttribute('data-template-key') || 'multi_line';
                         if (templateLabel) templateLabel.textContent = card.getAttribute('data-template-label') || templateInput.value;
-                        renderAxisSeriesSlots(); renderPreview(); if (templatePicker) templatePicker.style.display = 'none';
+                        renderAxisSeriesSlots(); applyTemplateProperties(); renderPreview(); if (templatePicker) templatePicker.style.display = 'none';
                     }));
 
                     tabRoot.querySelectorAll('.lcni-load-template').forEach((button) => button.addEventListener('click', () => {
                         if (templateInput) templateInput.value = button.getAttribute('data-template') || 'multi_line';
                         if (templateLabel) templateLabel.textContent = (templateMeta[templateInput.value] || {}).label || templateInput.value;
-                        renderAxisSeriesSlots(); renderPreview(); paneButtons[0].click();
+                        renderAxisSeriesSlots(); applyTemplateProperties(); renderPreview(); paneButtons[0].click();
                     }));
 
                     const editor = tabRoot.querySelector('#lcni-template-editor-modal');
@@ -3337,23 +3370,27 @@ private function sanitize_module_title($value, $fallback) {
                             const zoneText = axisSeriesContainer.querySelector('[data-target="series-' + idx + '"] [data-text]');
                             if (f && it && it.field) { f.value = it.field; if (zoneText) zoneText.textContent = 'Series ' + (idx + 1) + ': ' + it.field; }
                             const lineStyleInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-line-style')[idx];
-                            if (lineStyleInput && it && it.line_style) {
-                                lineStyleInput.value = it.line_style;
-                            }
+                            const typeInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-type')[idx];
+                            const colorInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-color')[idx];
+                            const stackInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-stack')[idx];
+                            const areaInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-area')[idx];
+                            const labelInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-label-show')[idx];
+                            if (lineStyleInput && it && it.line_style) lineStyleInput.value = it.line_style;
+                            if (typeInput && it && it.type) typeInput.value = it.type;
+                            if (colorInput && it && it.color) colorInput.value = it.color;
+                            if (stackInput) stackInput.value = it && it.stack ? '1' : '0';
+                            if (areaInput) areaInput.value = it && it.area ? '1' : '0';
+                            if (labelInput) labelInput.value = it && it.label_show ? '1' : '0';
+                            const panel = tabRoot.querySelector('#lcni-series-properties-' + idx);
+                            applySeriesPropertiesToPanel(panel, idx);
                         });
-                        const heatmapCfg = config.heatmap || {};
-                        const heatmapLow = tabRoot.querySelector('#lcni-chart-builder-heatmap-low');
-                        const heatmapMid = tabRoot.querySelector('#lcni-chart-builder-heatmap-mid');
-                        const heatmapHigh = tabRoot.querySelector('#lcni-chart-builder-heatmap-high');
-                        if (heatmapLow && heatmapCfg.low) heatmapLow.value = heatmapCfg.low;
-                        if (heatmapMid && heatmapCfg.mid) heatmapMid.value = heatmapCfg.mid;
-                        if (heatmapHigh && heatmapCfg.high) heatmapHigh.value = heatmapCfg.high;
                         filterContainer.innerHTML = ''; filterValuesContainer.innerHTML = '';
                         (Array.isArray(config.filters) ? config.filters : ['']).forEach((f) => addFilterSlot(f || ''));
                         reloadFields(); renderPreview(); paneButtons[0].click();
                     }));
 
                     renderAxisSeriesSlots();
+                    applyTemplateProperties();
                     addFilterSlot('');
                     reloadFields();
                     renderPreview();

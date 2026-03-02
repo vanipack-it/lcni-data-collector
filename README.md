@@ -251,6 +251,13 @@ Ví dụ: khi truy cập `?symbol=FPT`, chart sẽ tự đổi theo `FPT`.
 
 ## Changelog
 
+### 5.3.9b
+
+- Fix lỗi Heatmap Matrix chưa hiển thị dữ liệu ngoài frontend do payload object bị xử lý sai kiểu; hiện đã render ổn định với dữ liệu `{x,y,data}`.
+- Tab **Frontend Setting → Chart Builder → Chart Builder**: cột 1 đã bỏ toàn bộ khối **Tùy chỉnh hiển thị frontend** (màu series mặc định, hiệu ứng đường Dynamic/Solid/Dashed, màu heatmap low/mid/high).
+- Cột 2 **Axis & Series mapping**: thêm nút **Tùy chỉnh thuộc tính** cạnh nút xóa ở từng row series, mở panel để chỉnh thuộc tính và sync động theo template.
+- Thêm tài liệu `docs_chart_builder_template_guideline.md` để chuẩn hóa cách tạo template chart mới dễ tùy chỉnh trong admin.
+
 ### 5.3.8d
 
 - Thêm template **Heatmap Matrix** cho Chart Builder, hỗ trợ map `x=timeframe`, `y=ICB2`, `value=percent_value` và output JSON chuẩn `{x,y,data}` với format ECharts `[xIndex, yIndex, value]`.
