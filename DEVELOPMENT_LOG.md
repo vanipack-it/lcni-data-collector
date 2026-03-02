@@ -1,3 +1,11 @@
+## 2026-03-02 13:20 (v5.3.9h)
+- Nâng version plugin lên `5.3.9h`.
+- `[lcni_member_login]` đưa label/input/nút vào form box riêng và thêm tùy chỉnh màu nền, màu viền, bo viền cho khung.
+- `[lcni_member_login]` căn trái đồng bộ label và input; thêm nút `Đăng ký` nằm ngang với nút đăng nhập theo tỷ lệ 50/50 full-width.
+- `[lcni_member_login]` bổ sung tùy chỉnh chọn trang mở khi click nút `Đăng ký`.
+- `[lcni_member_register]` đưa label/input/nút vào form box riêng, hỗ trợ tùy chỉnh nền/viền/bo viền và căn trái các trường.
+- Nâng cấp Quote: cho phép tùy chỉnh font family, căn lề, hiệu ứng chữ và preview 1 dòng ngay tại trang cấu hình.
+
 ## 2026-03-02 09:01 (v5.3.9g)
 - Nâng version plugin lên `5.3.9g`.
 - Fix lưu cấu hình Member Login/Register/Quote không còn bị trả về mặc định khi submit theo từng tab.

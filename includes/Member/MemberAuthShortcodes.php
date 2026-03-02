@@ -27,6 +27,7 @@ class LCNI_Member_Auth_Shortcodes {
 
         ob_start();
         echo '<form method="post" class="lcni-member-form lcni-member-login" style="' . esc_attr($this->container_style($settings)) . '">';
+        echo '<div class="lcni-member-form-box" style="' . esc_attr($this->form_box_style($settings)) . '">';
         wp_nonce_field('lcni_member_login_action', 'lcni_member_login_nonce');
         echo '<input type="hidden" name="lcni_member_login_submit" value="1">';
         if ($quote !== '') {
@@ -41,12 +42,23 @@ class LCNI_Member_Auth_Shortcodes {
         $button_label = $this->setting_text($settings, 'label_button', 'Submit');
         $button_icon = !empty($settings['button_icon_class']) ? '<i class="' . esc_attr($settings['button_icon_class']) . '"></i> ' : '';
 
-        echo '<p><label>' . esc_html($username_label) . '</label><input style="' . esc_attr($this->input_style($settings)) . '" type="text" name="log" required></p>';
-        echo '<p><label>' . esc_html($password_label) . '</label><input style="' . esc_attr($this->input_style($settings)) . '" type="password" name="pwd" required></p>';
+        echo '<p style="margin:0;display:flex;flex-direction:column;gap:6px;"><label style="text-align:left;">' . esc_html($username_label) . '</label><input style="' . esc_attr($this->input_style($settings)) . '" type="text" name="log" required></p>';
+        echo '<p style="margin:0;display:flex;flex-direction:column;gap:6px;"><label style="text-align:left;">' . esc_html($password_label) . '</label><input style="' . esc_attr($this->input_style($settings)) . '" type="password" name="pwd" required></p>';
         if (!empty($settings['remember_me'])) {
-            echo '<p><label><input type="checkbox" name="rememberme" value="1"> ' . esc_html__('Remember Me') . '</label></p>';
+            echo '<p style="margin:0;align-self:flex-start;"><label><input type="checkbox" name="rememberme" value="1"> ' . esc_html__('Remember Me') . '</label></p>';
         }
-        echo '<p><button type="submit" style="' . esc_attr($this->button_style($settings)) . '">' . wp_kses_post($button_icon) . esc_html($button_label) . '</button></p>';
+        $register_button_label = $this->setting_text($settings, 'register_button_label', 'Đăng ký');
+        $register_url = !empty($settings['register_page_id']) ? get_permalink(absint($settings['register_page_id'])) : '';
+
+        echo '<div style="display:flex;width:100%;gap:0;">';
+        echo '<button type="submit" style="' . esc_attr($this->button_style($settings, true)) . '">' . wp_kses_post($button_icon) . esc_html($button_label) . '</button>';
+        if (!empty($register_url)) {
+            echo '<a href="' . esc_url($register_url) . '" style="' . esc_attr($this->button_style($settings, true)) . 'text-decoration:none;">' . esc_html($register_button_label) . '</a>';
+        } else {
+            echo '<button type="button" disabled style="' . esc_attr($this->button_style($settings, true)) . 'opacity:0.7;cursor:not-allowed;">' . esc_html($register_button_label) . '</button>';
+        }
+        echo '</div>';
+        echo '</div>';
         echo '</form>';
 
         return ob_get_clean();
@@ -63,6 +75,7 @@ class LCNI_Member_Auth_Shortcodes {
 
         ob_start();
         echo '<form method="post" class="lcni-member-form lcni-member-register" style="' . esc_attr($this->container_style($settings)) . '">';
+        echo '<div class="lcni-member-form-box" style="' . esc_attr($this->form_box_style($settings)) . '">';
         wp_nonce_field('lcni_member_register_action', 'lcni_member_register_nonce');
         echo '<input type="hidden" name="lcni_member_register_submit" value="1">';
         if ($quote !== '') {
@@ -78,10 +91,13 @@ class LCNI_Member_Auth_Shortcodes {
         $button_label = $this->setting_text($settings, 'label_button', 'Submit');
         $button_icon = !empty($settings['button_icon_class']) ? '<i class="' . esc_attr($settings['button_icon_class']) . '"></i> ' : '';
 
-        echo '<p><label>' . esc_html($username_label) . '</label><input style="' . esc_attr($this->input_style($settings)) . '" type="text" name="username" required></p>';
-        echo '<p><label>' . esc_html($email_label) . '</label><input style="' . esc_attr($this->input_style($settings)) . '" type="email" name="email" required></p>';
-        echo '<p><label>' . esc_html($password_label) . '</label><input style="' . esc_attr($this->input_style($settings)) . '" type="password" name="password" required></p>';
-        echo '<p><button type="submit" style="' . esc_attr($this->button_style($settings)) . '">' . wp_kses_post($button_icon) . esc_html($button_label) . '</button></p>';
+        echo '<p style="margin:0;display:flex;flex-direction:column;gap:6px;"><label style="text-align:left;">' . esc_html($username_label) . '</label><input style="' . esc_attr($this->input_style($settings)) . '" type="text" name="username" required></p>';
+        echo '<p style="margin:0;display:flex;flex-direction:column;gap:6px;"><label style="text-align:left;">' . esc_html($email_label) . '</label><input style="' . esc_attr($this->input_style($settings)) . '" type="email" name="email" required></p>';
+        echo '<p style="margin:0;display:flex;flex-direction:column;gap:6px;"><label style="text-align:left;">' . esc_html($password_label) . '</label><input style="' . esc_attr($this->input_style($settings)) . '" type="password" name="password" required></p>';
+        echo '<div style="display:flex;width:100%;">';
+        echo '<button type="submit" style="' . esc_attr($this->button_style($settings, true)) . '">' . wp_kses_post($button_icon) . esc_html($button_label) . '</button>';
+        echo '</div>';
+        echo '</div>';
         echo '</form>';
 
         return ob_get_clean();
@@ -203,9 +219,14 @@ class LCNI_Member_Auth_Shortcodes {
         $settings = get_option('lcni_member_quote_settings', []);
         $blur = absint($settings['background_blur'] ?? 0);
         $blur_style = $blur > 0 ? 'backdrop-filter:blur(' . $blur . 'px);' : '';
+        $effect = $settings['effect'] ?? 'normal';
+        $font_style = $effect === 'italic' ? 'font-style:italic;' : '';
+        $font_weight = $effect === 'bold' ? 'font-weight:700;' : '';
+        $text_transform = $effect === 'uppercase' ? 'text-transform:uppercase;' : '';
+        $text_shadow = $effect === 'shadow' ? 'text-shadow:1px 1px 2px rgba(15,23,42,0.35);' : '';
 
         return sprintf(
-            'width:%dpx;min-height:%dpx;margin:0 auto 16px auto;padding:12px;border-radius:%dpx;border:1px solid %s;background:%s;color:%s;font-size:%dpx;%s',
+            'width:%dpx;min-height:%dpx;margin:0 auto 16px auto;padding:12px;border-radius:%dpx;border:1px solid %s;background:%s;color:%s;font-size:%dpx;font-family:%s;text-align:%s;%s%s%s%s%s',
             max(200, absint($settings['width'] ?? 500)),
             max(60, absint($settings['height'] ?? 120)),
             absint($settings['border_radius'] ?? 12),
@@ -213,13 +234,19 @@ class LCNI_Member_Auth_Shortcodes {
             esc_attr($settings['background'] ?? '#f8fafc'),
             esc_attr($settings['text_color'] ?? '#334155'),
             max(10, absint($settings['font_size'] ?? 16)),
-            $blur_style
+            esc_attr($settings['font_family'] ?? 'inherit'),
+            esc_attr($settings['text_align'] ?? 'left'),
+            $blur_style,
+            $font_style,
+            $font_weight,
+            $text_transform,
+            $text_shadow
         );
     }
 
     private function input_style($settings) {
         return sprintf(
-            'height:%dpx;width:%dpx;max-width:100%%;background:%s;border:1px solid %s;color:%s;border-radius:6px;padding:0 10px;',
+            'height:%dpx;width:%dpx;max-width:100%%;background:%s;border:1px solid %s;color:%s;border-radius:6px;padding:0 10px;box-sizing:border-box;display:block;text-align:left;',
             max(32, absint($settings['input_height'] ?? 40)),
             max(120, absint($settings['input_width'] ?? 320)),
             esc_attr($settings['input_bg'] ?? '#ffffff'),
@@ -228,17 +255,28 @@ class LCNI_Member_Auth_Shortcodes {
         );
     }
 
-    private function button_style($settings) {
+    private function button_style($settings, $full_width = false) {
+        $width = $full_width ? 'width:50%;flex:1 1 50%;' : sprintf('width:%dpx;', max(100, absint($settings['button_width'] ?? 180)));
+
         return sprintf(
-            'height:%dpx;width:%dpx;max-width:100%%;background:%s;border:1px solid %s;color:%s;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;',
+            'height:%dpx;%smax-width:100%%;background:%s;border:1px solid %s;color:%s;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;box-sizing:border-box;',
             max(30, absint($settings['button_height'] ?? 42)),
-            max(100, absint($settings['button_width'] ?? 180)),
+            $width,
             esc_attr($settings['button_bg'] ?? '#2563eb'),
             esc_attr($settings['button_border_color'] ?? '#1d4ed8'),
             esc_attr($settings['button_text_color'] ?? '#ffffff')
         );
     }
 
+
+    private function form_box_style($settings) {
+        return sprintf(
+            'width:100%%;max-width:520px;background:%s;border:1px solid %s;border-radius:%dpx;padding:16px;display:flex;flex-direction:column;gap:12px;box-sizing:border-box;',
+            esc_attr($settings['form_box_background'] ?? '#ffffff'),
+            esc_attr($settings['form_box_border_color'] ?? '#d1d5db'),
+            absint($settings['form_box_border_radius'] ?? 10)
+        );
+    }
     private function container_style($settings) {
         $background_color = esc_attr($settings['background'] ?? '#ffffff');
         $background_image = !empty($settings['background_image'])
