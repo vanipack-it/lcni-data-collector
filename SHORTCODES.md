@@ -101,3 +101,21 @@ Ví dụ:
 [lcni_filter]
 ```
 
+
+## 6) Member module
+
+### `[lcni_member_login]`
+Render form đăng nhập user WordPress mặc định ở frontend.
+
+Ví dụ:
+```text
+[lcni_member_login]
+```
+
+### `[lcni_member_register]`
+Render form đăng ký user WordPress ở frontend.
+
+Ví dụ:
+```text
+[lcni_member_register]
+```

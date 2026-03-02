@@ -2,7 +2,7 @@
 /*
 Plugin Name: LCNI Data Collector
 Description: LCNI Market Data Engine: lấy nến, lưu DB, cron auto update
-Version: 5.3.9b
+Version: 5.3.9c
 */
 
 if (!defined('ABSPATH')) {
@@ -61,6 +61,12 @@ require_once LCNI_PATH . 'modules/filter/FilterAdmin.php';
 require_once LCNI_PATH . 'modules/filter/FilterShortcode.php';
 require_once LCNI_PATH . 'modules/filter/class-lcni-filter-module.php';
 require_once LCNI_PATH . 'modules/chart-builder/ChartBuilderShortcode.php';
+require_once LCNI_PATH . 'includes/Member/SaasRepository.php';
+require_once LCNI_PATH . 'includes/Member/SaasService.php';
+require_once LCNI_PATH . 'includes/Member/MemberSettingsPage.php';
+require_once LCNI_PATH . 'includes/Member/MemberAuthShortcodes.php';
+require_once LCNI_PATH . 'includes/Member/PermissionMiddleware.php';
+require_once LCNI_PATH . 'includes/Member/MemberModule.php';
 
 function lcni_register_custom_cron_schedules($schedules) {
     if (!isset($schedules['lcni_every_minute'])) {
@@ -77,6 +83,7 @@ function lcni_register_custom_cron_schedules($schedules) {
 function lcni_activate_plugin() {
     LCNI_DB::create_tables();
     LCNI_DB::run_pending_migrations();
+    LCNI_Member_Module::activate();
     lcni_ensure_cron_scheduled();
     (new LCNI_Stock_Detail_Router())->register_rewrite_rule();
     flush_rewrite_rules();
@@ -230,6 +237,7 @@ new LCNI_Watchlist_Module();
 new LCNI_Filter_Module();
 new LCNI_Chart_Builder_Shortcode();
 new LCNI_Update_Data_Page();
+new LCNI_Member_Module();
 LCNI_Update_Manager::init();
 LCNI_OHLC_Latest_Manager::init();
 new LCNI_Rest_API();

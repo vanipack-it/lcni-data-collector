@@ -1,3 +1,11 @@
+## 2026-03-02 12:00 (v5.3.9c)
+- Nâng version plugin lên `5.3.9c`.
+- Thêm module Member với 2 shortcode mới `[lcni_member_login]` và `[lcni_member_register]`, dùng user/auth chuẩn WordPress.
+- Thêm trang cấu hình `Frontend Settings → Member` gồm 3 tab: `Login`, `Register`, `Gói SaaS`.
+- Login/Register hỗ trợ style frontend (font, màu, background, border/radius, button), quote ngẫu nhiên, label tùy chỉnh, redirect, remember me/auto login, role mặc định.
+- Thêm module quản lý gói SaaS với bảng `wp_lcni_saas_packages`, `wp_lcni_saas_permissions`, `wp_lcni_user_packages`.
+- Thêm middleware kiểm tra quyền trước khi render shortcode và truy cập REST API (`/lcni/v1/stock*`, `/lcni/v1/filter*`).
+
 ## 2026-03-02 10:15 (v5.3.9b)
 - Nâng version plugin lên `5.3.9b`.
 - Fix hiển thị Heatmap Matrix ngoài frontend: giữ nguyên payload object `{x,y,data}` khi render chart builder, tránh ép về mảng rỗng làm heatmap mất dữ liệu.
