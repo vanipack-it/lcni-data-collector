@@ -146,7 +146,10 @@
     }).then(async (r) => {
       const payload = await r.json().catch(() => ({}));
       if (!r.ok) throw payload;
-      return payload;
+      if (payload && typeof payload === 'object' && payload.success === false) {
+        throw payload.data || payload;
+      }
+      return payload && typeof payload === 'object' && Object.prototype.hasOwnProperty.call(payload, 'data') ? payload.data : payload;
     });
   }
 
