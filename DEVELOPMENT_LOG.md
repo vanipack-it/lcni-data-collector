@@ -1,3 +1,10 @@
+## 2026-03-03 10:30 (v5.4.1)
+- Nâng version plugin lên `5.4.1`.
+- `[lcni_watchlist]` fix luồng thêm mã bằng input: chuẩn hoá symbol trước submit, thêm hiệu ứng icon AJAX (spinner → check), refresh lại toàn bộ bảng watchlist sau khi thêm thành công để mã mới hiển thị ngay.
+- `[lcni_watchlist]` fix lưu cột hiển thị theo từng thiết bị (desktop/mobile): endpoint settings nhận đúng `device`, lưu user meta theo `devices.desktop/mobile`, không còn bị trả về default sau khi lưu.
+- `[lcni_stock_filter]` fix popup thêm vào watchlist ở nút cạnh symbol: luôn tải danh sách watchlist user hiện tại, hỗ trợ tạo watchlist mới từ popup khi user muốn tách danh sách.
+- `[lcni_stock_filter]` fix trường hợp chưa có watchlist: nhập tên + xác nhận sẽ tạo watchlist và thêm symbol ngay (không còn tạo xong nhưng danh sách rỗng).
+
 ## 2026-03-02 13:20 (v5.3.9h)
 - Nâng version plugin lên `5.3.9h`.
 - `[lcni_member_login]` đưa label/input/nút vào form box riêng và thêm tùy chỉnh màu nền, màu viền, bo viền cho khung.

@@ -366,23 +366,65 @@
     const activeId = Number(data.active_watchlist_id || 0);
 
     if (!watchlists.length) {
-      showModal(`<h3>Tạo watchlist mới</h3><form data-create-watchlist-form><input type="text" name="name" placeholder="Tên watchlist" required><div class="lcni-filter-modal-actions"><button type="submit" class="lcni-btn lcni-btn-btn_popup_confirm">${renderButtonContent('btn_popup_confirm', '+ New')}</button><button type="button" class="lcni-btn lcni-btn-btn_popup_close" data-modal-close>Close</button></div></form>`);
+      showModal(`<h3>Tạo watchlist mới cho ${esc(symbol)}</h3><form data-create-watchlist-form><input type="text" name="name" placeholder="Tên watchlist" required><div class="lcni-filter-modal-actions"><button type="submit" class="lcni-btn lcni-btn-btn_popup_confirm">${renderButtonContent('btn_popup_confirm', '+ New')}</button><button type="button" class="lcni-btn lcni-btn-btn_popup_close" data-modal-close>Close</button></div></form>`);
       const form = document.querySelector('[data-create-watchlist-form]');
       if (!form) return;
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
+        const submitBtn = form.querySelector('button[type="submit"]');
+        const submitIcon = submitBtn ? submitBtn.querySelector('i') : null;
         const name = String((form.querySelector('input[name="name"]') || {}).value || '').trim();
         if (!name) return;
-        await watchlistApi('/create', { method: 'POST', body: { name } });
-        closeModal();
-        openWatchlistSelector(symbol).catch(() => {});
+        if (submitBtn) submitBtn.disabled = true;
+        if (submitIcon) submitIcon.className = 'fa-solid fa-spinner fa-spin';
+        try {
+          const created = await watchlistApi('/create', { method: 'POST', body: { name } });
+          const watchlistId = Number(created && created.id ? created.id : 0);
+          if (!watchlistId) throw new Error('Không thể tạo watchlist');
+          const payload = await watchlistApi('/add-symbol', { method: 'POST', body: { symbol, watchlist_id: watchlistId } });
+          const watchlistName = String((payload && (payload.watchlist_name || payload.name)) || name || '').trim();
+          closeModal();
+          showToast('Đã thêm mã ' + symbol + ' thành công vào watchlist: ' + watchlistName + '.');
+        } catch (error) {
+          showToast((error && error.message) || 'Không thể thêm vào watchlist');
+        } finally {
+          if (submitBtn) submitBtn.disabled = false;
+        }
       }, { once: true });
       return;
     }
 
-    showModal(`<h3>Chọn watchlist cho ${esc(symbol)}</h3><form data-select-watchlist-form><div class="lcni-filter-watchlist-options">${watchlists.map((w) => `<label><input type="radio" name="watchlist_id" value="${Number(w.id || 0)}" ${(Number(w.id || 0) === activeId) ? 'checked' : ''}> ${esc(w.name || '')}</label>`).join('')}</div><div class="lcni-filter-modal-actions"><button type="submit" class="lcni-btn lcni-btn-btn_popup_confirm">${renderButtonContent('btn_popup_confirm', 'Confirm')}</button><button type="button" class="lcni-btn lcni-btn-btn_popup_close" data-modal-close>Close</button></div></form>`);
+    showModal(`<h3>Chọn watchlist cho ${esc(symbol)}</h3><form data-select-watchlist-form><div class="lcni-filter-watchlist-options">${watchlists.map((w) => `<label><input type="radio" name="watchlist_id" value="${Number(w.id || 0)}" ${(Number(w.id || 0) === activeId) ? 'checked' : ''}> ${esc(w.name || '')}</label>`).join('')}</div><div class="lcni-filter-modal-actions"><button type="submit" class="lcni-btn lcni-btn-btn_popup_confirm">${renderButtonContent('btn_popup_confirm', 'Confirm')}</button><button type="button" class="lcni-btn lcni-btn-btn_watchlist_new" data-open-watchlist-create>${renderButtonContent('btn_watchlist_new', '+ New')}</button><button type="button" class="lcni-btn lcni-btn-btn_popup_close" data-modal-close>Close</button></div></form>`);
     const form = document.querySelector('[data-select-watchlist-form]');
     if (!form) return;
+
+    const openCreateBtn = form.querySelector('[data-open-watchlist-create]');
+    if (openCreateBtn) {
+      openCreateBtn.addEventListener('click', async (event) => {
+        event.preventDefault();
+        closeModal();
+        showModal(`<h3>Tạo watchlist mới cho ${esc(symbol)}</h3><form data-create-watchlist-form><input type="text" name="name" placeholder="Tên watchlist" required><div class="lcni-filter-modal-actions"><button type="submit" class="lcni-btn lcni-btn-btn_popup_confirm">${renderButtonContent('btn_popup_confirm', '+ New')}</button><button type="button" class="lcni-btn lcni-btn-btn_popup_close" data-modal-close>Close</button></div></form>`);
+        const createForm = document.querySelector('[data-create-watchlist-form]');
+        if (!createForm) return;
+        createForm.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const name = String((createForm.querySelector('input[name="name"]') || {}).value || '').trim();
+          if (!name) return;
+          try {
+            const created = await watchlistApi('/create', { method: 'POST', body: { name } });
+            const watchlistId = Number(created && created.id ? created.id : 0);
+            if (!watchlistId) throw new Error('Không thể tạo watchlist');
+            const payload = await watchlistApi('/add-symbol', { method: 'POST', body: { symbol, watchlist_id: watchlistId } });
+            const watchlistName = String((payload && (payload.watchlist_name || payload.name)) || name || '').trim();
+            closeModal();
+            showToast('Đã thêm mã ' + symbol + ' thành công vào watchlist: ' + watchlistName + '.');
+          } catch (error) {
+            showToast((error && error.message) || 'Không thể thêm vào watchlist');
+          }
+        }, { once: true });
+      }, { once: true });
+    }
+
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const selected = form.querySelector('input[name="watchlist_id"]:checked');
@@ -404,6 +446,7 @@
       }
     }, { once: true });
   }
+
 
 
   async function openBulkWatchlistSelector(symbols) {
