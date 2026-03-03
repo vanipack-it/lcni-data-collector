@@ -15,6 +15,8 @@ class LCNI_DB {
     const RULE_REBUILD_BATCH_SIZE = 5;
     const SEED_REBUILD_QUEUE_OPTION = 'lcni_seed_rebuild_queue_v1';
     const SEED_REBUILD_WATERMARK_OPTION = 'lcni_seed_rebuild_watermark_v1';
+    const SCHEMA_ENSURE_LOCK_OPTION = 'lcni_schema_ensure_lock_v1';
+    const SCHEMA_ENSURE_LOCK_TTL = 120;
     const DEFAULT_MARKETS = [
         ['market_id' => '1', 'exchange' => 'UPCOM'],
         ['market_id' => '2', 'exchange' => 'HOSE'],
@@ -95,46 +97,73 @@ class LCNI_DB {
     public static function ensure_tables_exist() {
         global $wpdb;
 
-        $required_tables = [
-            $wpdb->prefix . 'lcni_ohlc',
-            $wpdb->prefix . 'lcni_security_definition',
-            $wpdb->prefix . 'lcni_symbols',
-            $wpdb->prefix . 'lcni_symbol_tongquan',
-            $wpdb->prefix . 'lcni_change_logs',
-            $wpdb->prefix . 'lcni_seed_tasks',
-            $wpdb->prefix . 'lcni_marketid',
-            $wpdb->prefix . 'lcni_indexname',
-            $wpdb->prefix . 'lcni_icb2',
-            $wpdb->prefix . 'lcni_sym_icb_market',
-            $wpdb->prefix . 'lcni_watchlist',
-            $wpdb->prefix . 'lcni_saved_filters',
-            $wpdb->prefix . 'lcni_watchlists',
-            $wpdb->prefix . 'lcni_watchlist_symbols',
-            $wpdb->prefix . 'lcni_thong_ke_thi_truong',
-            $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2',
-            $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2_toan_thi_truong',
-            $wpdb->prefix . 'lcni_charts',
-        ];
-
-        foreach ($required_tables as $table) {
-            $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
-            if ($exists !== $table) {
-                self::create_tables();
-                return;
-            }
+        if (!self::acquire_schema_ensure_lock()) {
+            return;
         }
 
-        self::ensure_ohlc_indicator_columns();
-        self::ensure_ohlc_symbol_type_column();
-        self::ensure_symbol_market_icb_columns();
-        self::ensure_symbol_tongquan_columns();
-        self::ensure_ohlc_indexes();
-        self::ensure_ohlc_latest_snapshot_infrastructure();
-        self::ensure_market_statistics_schema();
-        self::ensure_chart_builder_schema();
-        self::normalize_ohlc_numeric_columns();
-        self::sync_symbol_market_icb_mapping();
-        self::sync_symbol_tongquan_with_symbols();
+        try {
+
+            $required_tables = [
+                $wpdb->prefix . 'lcni_ohlc',
+                $wpdb->prefix . 'lcni_security_definition',
+                $wpdb->prefix . 'lcni_symbols',
+                $wpdb->prefix . 'lcni_symbol_tongquan',
+                $wpdb->prefix . 'lcni_change_logs',
+                $wpdb->prefix . 'lcni_seed_tasks',
+                $wpdb->prefix . 'lcni_marketid',
+                $wpdb->prefix . 'lcni_indexname',
+                $wpdb->prefix . 'lcni_icb2',
+                $wpdb->prefix . 'lcni_sym_icb_market',
+                $wpdb->prefix . 'lcni_watchlist',
+                $wpdb->prefix . 'lcni_saved_filters',
+                $wpdb->prefix . 'lcni_watchlists',
+                $wpdb->prefix . 'lcni_watchlist_symbols',
+                $wpdb->prefix . 'lcni_thong_ke_thi_truong',
+                $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2',
+                $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2_toan_thi_truong',
+                $wpdb->prefix . 'lcni_charts',
+            ];
+
+            foreach ($required_tables as $table) {
+                $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+                if ($exists !== $table) {
+                    self::create_tables();
+                    return;
+                }
+            }
+
+            self::ensure_ohlc_indicator_columns();
+            self::ensure_ohlc_symbol_type_column();
+            self::ensure_symbol_market_icb_columns();
+            self::ensure_symbol_tongquan_columns();
+            self::ensure_ohlc_indexes();
+            self::ensure_ohlc_latest_snapshot_infrastructure();
+            self::ensure_market_statistics_schema();
+            self::ensure_chart_builder_schema();
+            self::normalize_ohlc_numeric_columns();
+            self::sync_symbol_market_icb_mapping();
+            self::sync_symbol_tongquan_with_symbols();
+        } finally {
+            self::release_schema_ensure_lock();
+        }
+    }
+
+    private static function acquire_schema_ensure_lock() {
+        $now = time();
+        $ttl = max(30, (int) self::SCHEMA_ENSURE_LOCK_TTL);
+        $existing = (int) get_option(self::SCHEMA_ENSURE_LOCK_OPTION, 0);
+
+        if ($existing > 0 && ($now - $existing) < $ttl) {
+            return false;
+        }
+
+        delete_option(self::SCHEMA_ENSURE_LOCK_OPTION);
+
+        return add_option(self::SCHEMA_ENSURE_LOCK_OPTION, (string) $now, '', 'no');
+    }
+
+    private static function release_schema_ensure_lock() {
+        delete_option(self::SCHEMA_ENSURE_LOCK_OPTION);
     }
 
     public static function run_pending_migrations() {
@@ -2017,9 +2046,15 @@ class LCNI_DB {
     private static function table_has_column($table, $column_name) {
         global $wpdb;
 
-        $column = $wpdb->get_row($wpdb->prepare("SHOW COLUMNS FROM {$table} LIKE %s", $column_name), ARRAY_A);
+        $count = (int) $wpdb->get_var(
+            $wpdb->prepare(
+                'SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = %s AND column_name = %s',
+                $table,
+                $column_name
+            )
+        );
 
-        return is_array($column);
+        return $count > 0;
     }
 
     private static function table_has_primary_key($table) {
@@ -2040,9 +2075,15 @@ class LCNI_DB {
     private static function table_has_index($table, $index_name) {
         global $wpdb;
 
-        $index_exists = $wpdb->get_var($wpdb->prepare('SHOW INDEX FROM ' . $table . ' WHERE Key_name = %s', $index_name));
+        $count = (int) $wpdb->get_var(
+            $wpdb->prepare(
+                'SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = %s AND index_name = %s',
+                $table,
+                $index_name
+            )
+        );
 
-        return $index_exists !== null;
+        return $count > 0;
     }
 
     private static function add_index_if_missing($table, $index_name, $columns_sql) {
