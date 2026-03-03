@@ -108,7 +108,8 @@ class LCNI_WatchlistController {
     public function save_settings(WP_REST_Request $request) {
         if (!$this->verify_rest_nonce($request)) return new WP_Error('invalid_nonce', 'Nonce không hợp lệ.', ['status' => 403]);
         $columns = $request->get_param('columns');
-        $saved = $this->service->save_user_columns(get_current_user_id(), is_array($columns) ? $columns : []);
+        $device = $request->get_param('device') === 'mobile' ? 'mobile' : 'desktop';
+        $saved = $this->service->save_user_columns(get_current_user_id(), is_array($columns) ? $columns : [], $device);
         wp_send_json_success(['columns' => $saved, 'allowed_columns' => $this->service->get_allowed_columns()]);
     }
 

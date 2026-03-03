@@ -435,17 +435,57 @@ class LCNI_WatchlistService {
         if (!is_array($saved) || empty($saved)) {
             return $this->get_default_columns($device);
         }
+
+        if (isset($saved['devices']) && is_array($saved['devices'])) {
+            $saved = isset($saved['devices'][$device]) && is_array($saved['devices'][$device]) ? $saved['devices'][$device] : [];
+        }
+
         $columns = array_values(array_intersect($allowed_columns, array_map('sanitize_key', $saved)));
         return !empty($columns) ? $columns : $this->get_default_columns($device);
     }
 
-    public function save_user_columns($user_id, $columns) {
+    public function save_user_columns($user_id, $columns, $device = 'desktop') {
+        $device = $device === 'mobile' ? 'mobile' : 'desktop';
         $allowed_columns = $this->get_allowed_columns();
         $normalized = array_values(array_intersect($allowed_columns, array_map('sanitize_key', (array) $columns)));
         if (empty($normalized)) {
-            $normalized = $this->get_default_columns();
+            $normalized = $this->get_default_columns($device);
         }
-        update_user_meta($user_id, self::USER_SETTINGS_META_KEY, wp_json_encode(['columns' => $normalized, 'updated_at' => current_time('mysql')]));
+
+        $saved = get_user_meta($user_id, self::USER_SETTINGS_META_KEY, true);
+        if (is_string($saved) && $saved !== '') {
+            $decoded = json_decode($saved, true);
+            if (is_array($decoded)) {
+                $saved = $decoded;
+            }
+        }
+
+        $desktopColumns = [];
+        $mobileColumns = [];
+        if (is_array($saved) && isset($saved['devices']) && is_array($saved['devices'])) {
+            $desktopColumns = isset($saved['devices']['desktop']) && is_array($saved['devices']['desktop']) ? $saved['devices']['desktop'] : [];
+            $mobileColumns = isset($saved['devices']['mobile']) && is_array($saved['devices']['mobile']) ? $saved['devices']['mobile'] : [];
+        } elseif (is_array($saved) && isset($saved['columns']) && is_array($saved['columns'])) {
+            $desktopColumns = $saved['columns'];
+            $mobileColumns = $saved['columns'];
+        } elseif (is_array($saved)) {
+            $desktopColumns = $saved;
+            $mobileColumns = $saved;
+        }
+
+        if ($device === 'mobile') {
+            $mobileColumns = $normalized;
+        } else {
+            $desktopColumns = $normalized;
+        }
+
+        update_user_meta($user_id, self::USER_SETTINGS_META_KEY, wp_json_encode([
+            'devices' => [
+                'desktop' => array_values(array_intersect($allowed_columns, array_map('sanitize_key', (array) $desktopColumns))),
+                'mobile' => array_values(array_intersect($allowed_columns, array_map('sanitize_key', (array) $mobileColumns))),
+            ],
+            'updated_at' => current_time('mysql'),
+        ]));
         $this->clear_user_cache($user_id);
         return $normalized;
     }
