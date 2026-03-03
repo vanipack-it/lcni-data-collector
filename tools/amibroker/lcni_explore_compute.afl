@@ -1,0 +1,304 @@
+/*
+  LCNI AmiBroker Explore - Indicator Compute Export
+  Mục tiêu:
+  - WP giữ raw OHLC (symbol,timeframe,event_time,OHLCV,value_traded)
+  - AmiBroker tính các cột dẫn xuất để sync ngược DB
+
+  Output column names bám theo schema lcni_ohlc để import trực tiếp.
+*/
+
+SetOption("NoDefaultColumns", True);
+SetBarsRequired(10000, 10000);
+
+// ---------- Helpers ----------
+function NzNum(x, v)
+{
+    return IIf(IsNull(x), v, x);
+}
+
+function SafeRatioPct(n, d)
+{
+    return IIf(IsNull(d) OR d == 0, Null, (n - d) / d);
+}
+
+function ChangePct(src, bars)
+{
+    prev = Ref(src, -bars);
+    return IIf(IsNull(prev) OR prev == 0, Null, (src - prev) / prev);
+}
+
+function PeakStatus(closev, hv)
+{
+    // Quy ước gần giống logic WP: càng gần đỉnh -> trạng thái mạnh hơn
+    pct = SafeRatioPct(closev, hv); // âm khi dưới đỉnh
+    return WriteIf(IsNull(pct), "",
+           WriteIf(pct >= -0.03, "Gan dinh",
+           WriteIf(pct >= -0.10, "Duoi dinh",
+           "Xa dinh")));
+}
+
+function OneCandlePattern()
+{
+    body = abs(C - O);
+    range = H - L;
+    upper = H - Max(C, O);
+    lower = Min(C, O) - L;
+
+    doji = range > 0 AND body / range <= 0.1;
+    hammer = range > 0 AND lower / range >= 0.45 AND body / range <= 0.4;
+    shooting = range > 0 AND upper / range >= 0.45 AND body / range <= 0.4;
+
+    return WriteIf(doji, "Doji",
+           WriteIf(hammer, "Hammer",
+           WriteIf(shooting, "Shooting Star",
+           WriteIf(C > O, "Bull", "Bear"))));
+}
+
+function TwoCandlePattern()
+{
+    bullEngulf = Ref(C, -1) < Ref(O, -1) AND C > O AND C >= Ref(O, -1) AND O <= Ref(C, -1);
+    bearEngulf = Ref(C, -1) > Ref(O, -1) AND C < O AND C <= Ref(O, -1) AND O >= Ref(C, -1);
+
+    return WriteIf(bullEngulf, "Bullish Engulfing",
+           WriteIf(bearEngulf, "Bearish Engulfing", "None"));
+}
+
+function ThreeCandlePattern()
+{
+    threeWhite = Ref(C,-2) > Ref(O,-2) AND Ref(C,-1) > Ref(O,-1) AND C > O
+                 AND Ref(C,-1) > Ref(C,-2) AND C > Ref(C,-1);
+    threeBlack = Ref(C,-2) < Ref(O,-2) AND Ref(C,-1) < Ref(O,-1) AND C < O
+                 AND Ref(C,-1) < Ref(C,-2) AND C < Ref(C,-1);
+
+    return WriteIf(threeWhite, "Three White Soldiers",
+           WriteIf(threeBlack, "Three Black Crows", "None"));
+}
+
+function MarketIdText()
+{
+    // Nếu môi trường Ami có hàm MarketID() custom thì dùng trực tiếp.
+    // Fallback: dùng market mặc định từ ParamStr để map với wp_lcni_marketid.
+    mid = "";
+    mid = WriteIf(StrLen( mid ) > 0, mid, ParamStr("market_id_fallback", "0"));
+    return mid;
+}
+
+// ---------- Core series ----------
+symbol = Name();
+timeframe = "1D";
+event_time = DateTimeConvert(2, DateTime()); // unix epoch seconds
+
+open_price = O;
+high_price = H;
+low_price = L;
+close_price = C;
+volume = V;
+value_traded = C * V;
+
+// Momentum / trend
+pct_t_1 = ChangePct(C, 1);
+pct_t_3 = ChangePct(C, 3);
+pct_1w = ChangePct(C, 5);
+pct_1m = ChangePct(C, 21);
+pct_3m = ChangePct(C, 63);
+pct_6m = ChangePct(C, 126);
+pct_1y = ChangePct(C, 252);
+
+ma10 = MA(C, 10);
+ma20 = MA(C, 20);
+ma50 = MA(C, 50);
+ma100 = MA(C, 100);
+ma200 = MA(C, 200);
+
+vol_ma10 = MA(V, 10);
+vol_ma20 = MA(V, 20);
+
+gia_sv_ma10 = SafeRatioPct(C, ma10);
+gia_sv_ma20 = SafeRatioPct(C, ma20);
+gia_sv_ma50 = SafeRatioPct(C, ma50);
+gia_sv_ma100 = SafeRatioPct(C, ma100);
+gia_sv_ma200 = SafeRatioPct(C, ma200);
+
+vol_sv_vol_ma10 = SafeRatioPct(V, vol_ma10);
+vol_sv_vol_ma20 = SafeRatioPct(V, vol_ma20);
+
+// MACD / RSI
+macd = MACD(12, 26);
+macd_signal = Signal(12, 26, 9);
+macd_histogram = macd - macd_signal;
+
+macd_cat = WriteIf(Cross(macd, macd_signal), "Cắt lên signal",
+           WriteIf(Cross(macd_signal, macd), "Cắt xuống signal", "Không cắt signal"));
+macd_tren_0 = WriteIf(macd > 0, "Trên 0", "Không trên 0");
+macd_hist_tang = WriteIf(macd_histogram > Ref(macd_histogram, -1), "Đang tăng", "Không tăng");
+macd_manh = IIf(macd > macd_signal AND macd > 0 AND macd_histogram > Ref(macd_histogram, -1), 1, 0);
+macd_diem_dong_luong =
+    30 * IIf(macd > macd_signal, 1, 0)
+  + 30 * IIf(macd > 0, 1, 0)
+  + 20 * IIf(macd_histogram > 0, 1, 0)
+  + 20 * IIf(macd_histogram > Ref(macd_histogram, -1), 1, 0);
+
+rsi = RSI(14);
+rsi_status = WriteIf(rsi >= 80, "Quá mua",
+             WriteIf(rsi <= 20, "Quá bán",
+             WriteIf(rsi >= 60, "Tham lam",
+             WriteIf(rsi <= 40, "Sợ hãi", "Trung tính"))));
+
+// Price structure/window
+h1m = HHV(H, 21); h3m = HHV(H, 63); h6m = HHV(H, 126); h1y = HHV(H, 252);
+l1m = LLV(L, 21); l3m = LLV(L, 63); l6m = LLV(L, 126); l1y = LLV(L, 252);
+
+pct_to_h1m = SafeRatioPct(C, h1m) * 100;
+pct_to_h3m = SafeRatioPct(C, h3m) * 100;
+pct_to_h6m = SafeRatioPct(C, h6m) * 100;
+pct_to_h1y = SafeRatioPct(C, h1y) * 100;
+
+trang_thai_h1m = PeakStatus(C, h1m);
+trang_thai_h3m = PeakStatus(C, h3m);
+trang_thai_h6m = PeakStatus(C, h6m);
+trang_thai_h1y = PeakStatus(C, h1y);
+
+compression_1m = IIf(h1m == 0 OR IsNull(h1m) OR IsNull(l1m), Null, ((h1m - l1m) / h1m) * 100);
+
+position_1m = WriteIf(C >= MA(C, 20), "Trên MA20", "Dưới MA20");
+position_3m = WriteIf(C >= MA(C, 50), "Trên MA50", "Dưới MA50");
+position_6m = WriteIf(C >= MA(C, 100), "Trên MA100", "Dưới MA100");
+position_1y = WriteIf(C >= MA(C, 200), "Trên MA200", "Dưới MA200");
+
+breakout_potential_score =
+    25 * IIf(C > ma20, 1, 0)
+  + 25 * IIf(V > vol_ma20, 1, 0)
+  + 25 * IIf(macd > macd_signal, 1, 0)
+  + 25 * IIf(rsi >= 50 AND rsi <= 75, 1, 0);
+
+// Pattern / rule signal (heuristic gần logic WP)
+one_candle = OneCandlePattern();
+two_candle_pattern = TwoCandlePattern();
+three_candle_pattern = ThreeCandlePattern();
+
+xay_nen = WriteIf(
+    rsi >= 38.5 AND rsi <= 75.8
+    AND abs(gia_sv_ma10) <= 0.05
+    AND abs(gia_sv_ma20) <= 0.07
+    AND abs(gia_sv_ma50) <= 0.10
+    AND abs(vol_sv_vol_ma20) <= 0.10
+    AND V >= 100000
+    AND abs(pct_t_1) <= 0.03
+    AND abs(pct_1w) <= 0.05
+    AND abs(pct_1m) <= 0.10
+    AND abs(pct_3m) <= 0.15,
+    "Xây nền", "Không"
+);
+
+xay_nen_count_30 = Sum(IIf(xay_nen == "Xây nền", 1, 0), 30);
+
+nen_type = WriteIf(xay_nen_count_30 >= 24, "Nền chặt",
+           WriteIf(xay_nen_count_30 >= 15, "Nền vừa", "Nền lỏng"));
+
+pha_nen = WriteIf(pct_t_1 >= 0.03 AND vol_sv_vol_ma20 >= 0.5, "Phá nền", "Không");
+
+market_id = MarketIdText();
+pct_req = IIf(market_id == "1", 0.03, IIf(market_id == "2", 0.06, 0.10)); // 1=HOSE,2=HNX,khác=UPCOM
+
+// volume boost theo rule WP
+boost_ok = V >= vol_ma10 * 1 AND V >= vol_ma20 * 1.5;
+tang_gia_kem_vol = WriteIf(pct_t_1 >= pct_req AND boost_ok, "Tăng giá kèm Vol", "Không");
+
+hanh_vi_gia = WriteIf(C > O AND pct_t_1 > 0.01, "Tăng", WriteIf(C < O AND pct_t_1 < -0.01, "Giảm", "Đi ngang"));
+hanh_vi_gia_1w = WriteIf(pct_1w > 0.03, "Tăng", WriteIf(pct_1w < -0.03, "Giảm", "Đi ngang"));
+
+smart_money = WriteIf((C > O AND V > vol_ma20 * 1.5 AND rsi >= 45), "Smart Money", "Không");
+
+// RS theo sàn - placeholder nếu bạn có universe + market composite trong Ami
+rs_1m_by_exchange = Null;
+rs_1w_by_exchange = Null;
+rs_3m_by_exchange = Null;
+rs_exchange_status = "";
+rs_exchange_recommend = "";
+rs_recommend_status = "";
+
+// ---------- Explore output ----------
+Filter = 1;
+
+AddTextColumn(symbol, "symbol", 1.0);
+AddTextColumn(timeframe, "timeframe", 1.0);
+AddColumn(event_time, "event_time", 1.0);
+AddTextColumn(market_id, "market_id", 1.0);
+
+AddColumn(open_price, "open_price", 1.2);
+AddColumn(high_price, "high_price", 1.2);
+AddColumn(low_price, "low_price", 1.2);
+AddColumn(close_price, "close_price", 1.2);
+AddColumn(volume, "volume", 1.0);
+AddColumn(value_traded, "value_traded", 1.0);
+
+AddColumn(pct_t_1, "pct_t_1", 1.6);
+AddColumn(pct_t_3, "pct_t_3", 1.6);
+AddColumn(pct_1w, "pct_1w", 1.6);
+AddColumn(pct_1m, "pct_1m", 1.6);
+AddColumn(pct_3m, "pct_3m", 1.6);
+AddColumn(pct_6m, "pct_6m", 1.6);
+AddColumn(pct_1y, "pct_1y", 1.6);
+
+AddColumn(ma10, "ma10", 1.2);
+AddColumn(ma20, "ma20", 1.2);
+AddColumn(ma50, "ma50", 1.2);
+AddColumn(ma100, "ma100", 1.2);
+AddColumn(ma200, "ma200", 1.2);
+AddColumn(vol_ma10, "vol_ma10", 1.2);
+AddColumn(vol_ma20, "vol_ma20", 1.2);
+
+AddColumn(gia_sv_ma10, "gia_sv_ma10", 1.6);
+AddColumn(gia_sv_ma20, "gia_sv_ma20", 1.6);
+AddColumn(gia_sv_ma50, "gia_sv_ma50", 1.6);
+AddColumn(gia_sv_ma100, "gia_sv_ma100", 1.6);
+AddColumn(gia_sv_ma200, "gia_sv_ma200", 1.6);
+AddColumn(vol_sv_vol_ma10, "vol_sv_vol_ma10", 1.6);
+AddColumn(vol_sv_vol_ma20, "vol_sv_vol_ma20", 1.6);
+
+AddColumn(macd, "macd", 1.6);
+AddColumn(macd_signal, "macd_signal", 1.6);
+AddColumn(macd_histogram, "macd_histogram", 1.6);
+AddTextColumn(macd_cat, "macd_cat", 1.0);
+AddTextColumn(macd_tren_0, "macd_tren_0", 1.0);
+AddTextColumn(macd_hist_tang, "macd_hist_tang", 1.0);
+AddColumn(macd_manh, "macd_manh", 1.0);
+AddColumn(macd_diem_dong_luong, "macd_diem_dong_luong", 1.0);
+AddColumn(rsi, "rsi", 1.4);
+AddTextColumn(rsi_status, "rsi_status", 1.0);
+
+AddColumn(h1m, "h1m", 1.2); AddColumn(h3m, "h3m", 1.2); AddColumn(h6m, "h6m", 1.2); AddColumn(h1y, "h1y", 1.2);
+AddColumn(l1m, "l1m", 1.2); AddColumn(l3m, "l3m", 1.2); AddColumn(l6m, "l6m", 1.2); AddColumn(l1y, "l1y", 1.2);
+AddColumn(pct_to_h1m, "pct_to_h1m", 1.2);
+AddColumn(pct_to_h3m, "pct_to_h3m", 1.2);
+AddColumn(pct_to_h6m, "pct_to_h6m", 1.2);
+AddColumn(pct_to_h1y, "pct_to_h1y", 1.2);
+AddTextColumn(trang_thai_h1m, "trang_thai_h1m", 1.0);
+AddTextColumn(trang_thai_h3m, "trang_thai_h3m", 1.0);
+AddTextColumn(trang_thai_h6m, "trang_thai_h6m", 1.0);
+AddTextColumn(trang_thai_h1y, "trang_thai_h1y", 1.0);
+AddColumn(compression_1m, "compression_1m", 1.2);
+AddTextColumn(position_1m, "position_1m", 1.0);
+AddTextColumn(position_3m, "position_3m", 1.0);
+AddTextColumn(position_6m, "position_6m", 1.0);
+AddTextColumn(position_1y, "position_1y", 1.0);
+AddColumn(breakout_potential_score, "breakout_potential_score", 1.0);
+
+AddTextColumn(one_candle, "one_candle", 1.0);
+AddTextColumn(two_candle_pattern, "two_candle_pattern", 1.0);
+AddTextColumn(three_candle_pattern, "three_candle_pattern", 1.0);
+AddTextColumn(xay_nen, "xay_nen", 1.0);
+AddColumn(xay_nen_count_30, "xay_nen_count_30", 1.0);
+AddTextColumn(nen_type, "nen_type", 1.0);
+AddTextColumn(pha_nen, "pha_nen", 1.0);
+AddTextColumn(tang_gia_kem_vol, "tang_gia_kem_vol", 1.0);
+AddTextColumn(hanh_vi_gia, "hanh_vi_gia", 1.0);
+AddTextColumn(hanh_vi_gia_1w, "hanh_vi_gia_1w", 1.0);
+AddTextColumn(smart_money, "smart_money", 1.0);
+
+AddColumn(rs_1m_by_exchange, "rs_1m_by_exchange", 1.2);
+AddColumn(rs_1w_by_exchange, "rs_1w_by_exchange", 1.2);
+AddColumn(rs_3m_by_exchange, "rs_3m_by_exchange", 1.2);
+AddTextColumn(rs_exchange_status, "rs_exchange_status", 1.0);
+AddTextColumn(rs_exchange_recommend, "rs_exchange_recommend", 1.0);
+AddTextColumn(rs_recommend_status, "rs_recommend_status", 1.0);
