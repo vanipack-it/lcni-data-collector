@@ -135,7 +135,7 @@ class LCNI_WatchlistShortcode {
             'settingsOption' => $settings,
             'nonce' => wp_create_nonce('wp_rest'),
             'isLoggedIn' => is_user_logged_in(),
-            'loginUrl' => esc_url_raw(wp_login_url(get_permalink() ?: home_url('/'))),
+            'loginUrl' => esc_url_raw($this->build_login_url()),
             'stockDetailPageSlug' => $stock_page_slug,
             'filterPageUrl' => esc_url_raw(home_url('/' . $filter_page_slug . '/')),
             'filterCriteriaColumns' => array_values(array_filter(array_map('sanitize_key', (array) get_option('lcni_filter_criteria_columns', [])))),
@@ -143,7 +143,36 @@ class LCNI_WatchlistShortcode {
             'defaultColumnsDesktop' => $this->service->get_default_columns('desktop'),
             'defaultColumnsMobile' => $this->service->get_default_columns('mobile'),
             'buttonConfig' => LCNI_Button_Style_Config::get_config(),
+            'guestMode' => sanitize_key((string) ($settings['guest_mode'] ?? 'link')),
         ]);
+    }
+
+
+
+    private function build_login_url() {
+        $settings = $this->get_settings();
+        $guest_mode = sanitize_key((string) ($settings['guest_mode'] ?? 'link'));
+        $redirect_target = get_permalink() ?: home_url('/');
+
+        if ($guest_mode === 'page') {
+            $login_page_id = absint($settings['guest_login_page_id'] ?? 0);
+            if ($login_page_id > 0) {
+                $login_permalink = get_permalink($login_page_id);
+                if (is_string($login_permalink) && $login_permalink !== '') {
+                    return add_query_arg('lcni_redirect_to', $redirect_target, $login_permalink);
+                }
+            }
+
+            $register_page_id = absint($settings['guest_register_page_id'] ?? 0);
+            if ($register_page_id > 0) {
+                $register_permalink = get_permalink($register_page_id);
+                if (is_string($register_permalink) && $register_permalink !== '') {
+                    return add_query_arg('lcni_redirect_to', $redirect_target, $register_permalink);
+                }
+            }
+        }
+
+        return wp_login_url(get_permalink() ?: home_url('/'));
     }
 
     private function get_settings() {
@@ -200,6 +229,9 @@ class LCNI_WatchlistShortcode {
                 'font_size' => 14,
                 'height' => 34,
             ],
+            'guest_mode' => 'link',
+            'guest_login_page_id' => 0,
+            'guest_register_page_id' => 0,
         ];
 
         return wp_parse_args($saved, $defaults);

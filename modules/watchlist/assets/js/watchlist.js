@@ -672,6 +672,10 @@
 
   async function bootHost(host) {
     if (!cfg.isLoggedIn) {
+      if (String(cfg.guestMode || 'link') === 'page' && cfg.loginUrl) {
+        window.location.href = cfg.loginUrl;
+        return;
+      }
       host.innerHTML = '<a href="' + (cfg.loginUrl || '#') + '">Đăng nhập để xem watchlist</a>';
       return;
     }

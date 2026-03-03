@@ -384,6 +384,9 @@ class LCNI_Settings {
                         'default_columns_desktop' => $existing_watchlist['default_columns_desktop'] ?? [],
                         'default_columns_mobile' => $existing_watchlist['default_columns_mobile'] ?? [],
                         'stock_detail_page_id' => $existing_watchlist['stock_detail_page_id'] ?? 0,
+                        'guest_mode' => $existing_watchlist['guest_mode'] ?? 'link',
+                        'guest_login_page_id' => $existing_watchlist['guest_login_page_id'] ?? 0,
+                        'guest_register_page_id' => $existing_watchlist['guest_register_page_id'] ?? 0,
                         'column_label_keys' => array_map('sanitize_key', wp_list_pluck($existing_label_pairs, 'data_key')),
                         'column_label_values' => array_map('sanitize_text_field', wp_list_pluck($existing_label_pairs, 'label')),
                         'styles' => $existing_watchlist['styles'] ?? [],
@@ -404,6 +407,9 @@ class LCNI_Settings {
                         $input['styles'] = $styles;
                     } elseif ($watchlist_section === 'stock_detail_page') {
                         $input['stock_detail_page_id'] = isset($_POST['lcni_frontend_stock_detail_page']) ? wp_unslash($_POST['lcni_frontend_stock_detail_page']) : 0;
+                        $input['guest_mode'] = isset($_POST['lcni_watchlist_guest_mode']) ? wp_unslash($_POST['lcni_watchlist_guest_mode']) : 'link';
+                        $input['guest_login_page_id'] = isset($_POST['lcni_watchlist_guest_login_page']) ? wp_unslash($_POST['lcni_watchlist_guest_login_page']) : 0;
+                        $input['guest_register_page_id'] = isset($_POST['lcni_watchlist_guest_register_page']) ? wp_unslash($_POST['lcni_watchlist_guest_register_page']) : 0;
                     } elseif ($watchlist_section === 'default_columns') {
                         $input['default_columns_desktop'] = isset($_POST['lcni_frontend_watchlist_default_columns_desktop']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_default_columns_desktop']) : [];
                         $input['default_columns_mobile'] = isset($_POST['lcni_frontend_watchlist_default_columns_mobile']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_default_columns_mobile']) : [];
@@ -3791,6 +3797,9 @@ private function sanitize_module_title($value, $fallback) {
             'column_labels' => $column_labels,
             'stock_detail_page_id' => $stock_detail_page_id,
             'stock_detail_page_slug' => $stock_detail_page_slug,
+            'guest_mode' => in_array(sanitize_key((string) ($input['guest_mode'] ?? 'link')), ['link', 'page'], true) ? sanitize_key((string) ($input['guest_mode'] ?? 'link')) : 'link',
+            'guest_login_page_id' => absint($input['guest_login_page_id'] ?? 0),
+            'guest_register_page_id' => absint($input['guest_register_page_id'] ?? 0),
             'styles' => [
                 'font' => sanitize_text_field($styles['font'] ?? 'inherit'),
                 'text_color' => sanitize_hex_color($styles['text_color'] ?? '#111827') ?: '#111827',
@@ -3908,6 +3917,31 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
                                 <option value="<?php echo esc_attr((string) $page->ID); ?>" <?php selected((int) ($settings['stock_detail_page_id'] ?? 0), (int) $page->ID); ?>><?php echo esc_html($page->post_title . ' (#' . $page->ID . ')'); ?></option>
                             <?php endforeach; ?>
                         </select>
+                    </p>
+                    <p><strong>Guest behavior:</strong></p>
+                    <p>
+                        <label><input type="radio" name="lcni_watchlist_guest_mode" value="link" <?php checked((string) ($settings['guest_mode'] ?? 'link'), 'link'); ?>> Hiển thị link đăng nhập (mặc định)</label><br>
+                        <label><input type="radio" name="lcni_watchlist_guest_mode" value="page" <?php checked((string) ($settings['guest_mode'] ?? 'link'), 'page'); ?>> Tự động mở trang Login/Register</label>
+                    </p>
+                    <p>
+                        <label>Trang Login
+                            <select name="lcni_watchlist_guest_login_page">
+                                <option value="0">-- Không chọn --</option>
+                                <?php foreach ($pages as $page) : ?>
+                                    <option value="<?php echo esc_attr((string) $page->ID); ?>" <?php selected((int) ($settings['guest_login_page_id'] ?? 0), (int) $page->ID); ?>><?php echo esc_html($page->post_title . ' (#' . $page->ID . ')'); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </label>
+                    </p>
+                    <p>
+                        <label>Trang Register (fallback)
+                            <select name="lcni_watchlist_guest_register_page">
+                                <option value="0">-- Không chọn --</option>
+                                <?php foreach ($pages as $page) : ?>
+                                    <option value="<?php echo esc_attr((string) $page->ID); ?>" <?php selected((int) ($settings['guest_register_page_id'] ?? 0), (int) $page->ID); ?>><?php echo esc_html($page->post_title . ' (#' . $page->ID . ')'); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </label>
                     </p>
                     <?php submit_button('Save'); ?>
                 </form>
