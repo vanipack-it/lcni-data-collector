@@ -42,8 +42,13 @@ class LCNI_Member_Auth_Shortcodes {
         $button_label = $this->setting_text($settings, 'label_button', 'Submit');
         $button_icon = !empty($settings['button_icon_class']) ? '<i class="' . esc_attr($settings['button_icon_class']) . '"></i> ' : '';
 
-        echo '<p style="margin:0;display:flex;flex-direction:column;gap:6px;"><label style="text-align:left;">' . esc_html($username_label) . '</label><input style="' . esc_attr($this->input_style($settings)) . '" type="text" name="log" required></p>';
-        echo '<p style="margin:0;display:flex;flex-direction:column;gap:6px;"><label style="text-align:left;">' . esc_html($password_label) . '</label><input style="' . esc_attr($this->input_style($settings)) . '" type="password" name="pwd" required></p>';
+        $redirect_to = $this->resolve_redirect_target();
+        if ($redirect_to !== '') {
+            echo '<input type="hidden" name="lcni_redirect_to" value="' . esc_url($redirect_to) . '">';
+        }
+
+        echo '<p style="' . esc_attr($this->field_group_style()) . '"><label style="' . esc_attr($this->label_style($settings)) . '">' . esc_html($username_label) . '</label><input style="' . esc_attr($this->input_style($settings)) . '" type="text" name="log" required></p>';
+        echo '<p style="' . esc_attr($this->field_group_style()) . '"><label style="' . esc_attr($this->label_style($settings)) . '">' . esc_html($password_label) . '</label><input style="' . esc_attr($this->input_style($settings)) . '" type="password" name="pwd" required></p>';
         if (!empty($settings['remember_me'])) {
             echo '<p style="margin:0;align-self:flex-start;"><label><input type="checkbox" name="rememberme" value="1"> ' . esc_html__('Remember Me') . '</label></p>';
         }
@@ -91,9 +96,14 @@ class LCNI_Member_Auth_Shortcodes {
         $button_label = $this->setting_text($settings, 'label_button', 'Submit');
         $button_icon = !empty($settings['button_icon_class']) ? '<i class="' . esc_attr($settings['button_icon_class']) . '"></i> ' : '';
 
-        echo '<p style="margin:0;display:flex;flex-direction:column;gap:6px;"><label style="text-align:left;">' . esc_html($username_label) . '</label><input style="' . esc_attr($this->input_style($settings)) . '" type="text" name="username" required></p>';
-        echo '<p style="margin:0;display:flex;flex-direction:column;gap:6px;"><label style="text-align:left;">' . esc_html($email_label) . '</label><input style="' . esc_attr($this->input_style($settings)) . '" type="email" name="email" required></p>';
-        echo '<p style="margin:0;display:flex;flex-direction:column;gap:6px;"><label style="text-align:left;">' . esc_html($password_label) . '</label><input style="' . esc_attr($this->input_style($settings)) . '" type="password" name="password" required></p>';
+        $redirect_to = $this->resolve_redirect_target();
+        if ($redirect_to !== '') {
+            echo '<input type="hidden" name="lcni_redirect_to" value="' . esc_url($redirect_to) . '">';
+        }
+
+        echo '<p style="' . esc_attr($this->field_group_style()) . '"><label style="' . esc_attr($this->label_style($settings)) . '">' . esc_html($username_label) . '</label><input style="' . esc_attr($this->input_style($settings)) . '" type="text" name="username" required></p>';
+        echo '<p style="' . esc_attr($this->field_group_style()) . '"><label style="' . esc_attr($this->label_style($settings)) . '">' . esc_html($email_label) . '</label><input style="' . esc_attr($this->input_style($settings)) . '" type="email" name="email" required></p>';
+        echo '<p style="' . esc_attr($this->field_group_style()) . '"><label style="' . esc_attr($this->label_style($settings)) . '">' . esc_html($password_label) . '</label><input style="' . esc_attr($this->input_style($settings)) . '" type="password" name="password" required></p>';
         echo '<div style="display:flex;width:100%;">';
         echo '<button type="submit" style="' . esc_attr($this->button_style($settings, true)) . '">' . wp_kses_post($button_icon) . esc_html($button_label) . '</button>';
         echo '</div>';
@@ -127,7 +137,8 @@ class LCNI_Member_Auth_Shortcodes {
         }
 
         $settings = get_option('lcni_member_login_settings', []);
-        $redirect = !empty($settings['redirect_url']) ? $settings['redirect_url'] : $referer;
+        $redirect_from_request = isset($_POST['lcni_redirect_to']) ? wp_validate_redirect((string) wp_unslash($_POST['lcni_redirect_to']), '') : '';
+        $redirect = $redirect_from_request !== '' ? $redirect_from_request : (!empty($settings['redirect_url']) ? $settings['redirect_url'] : $referer);
         wp_safe_redirect($redirect ?: home_url('/'));
         exit;
     }
@@ -175,7 +186,8 @@ class LCNI_Member_Auth_Shortcodes {
             wp_set_auth_cookie($user_id, true);
         }
 
-        $redirect = !empty($settings['redirect_url']) ? $settings['redirect_url'] : wp_get_referer();
+        $redirect_from_request = isset($_POST['lcni_redirect_to']) ? wp_validate_redirect((string) wp_unslash($_POST['lcni_redirect_to']), '') : '';
+        $redirect = $redirect_from_request !== '' ? $redirect_from_request : (!empty($settings['redirect_url']) ? $settings['redirect_url'] : wp_get_referer());
         wp_safe_redirect($redirect ?: home_url('/'));
         exit;
     }
@@ -218,7 +230,7 @@ class LCNI_Member_Auth_Shortcodes {
     private function quote_style() {
         $settings = get_option('lcni_member_quote_settings', []);
         $blur = absint($settings['background_blur'] ?? 0);
-        $blur_style = $blur > 0 ? 'backdrop-filter:blur(' . $blur . 'px);' : '';
+        $blur_style = $blur > 0 ? '-webkit-backdrop-filter:blur(' . $blur . 'px);backdrop-filter:blur(' . $blur . 'px);' : '';
         $effect = $settings['effect'] ?? 'normal';
         $font_style = $effect === 'italic' ? 'font-style:italic;' : '';
         $font_weight = $effect === 'bold' ? 'font-weight:700;' : '';
@@ -226,7 +238,7 @@ class LCNI_Member_Auth_Shortcodes {
         $text_shadow = $effect === 'shadow' ? 'text-shadow:1px 1px 2px rgba(15,23,42,0.35);' : '';
 
         return sprintf(
-            'width:%dpx;min-height:%dpx;margin:0 auto 16px auto;padding:12px;border-radius:%dpx;border:1px solid %s;background:%s;color:%s;font-size:%dpx;font-family:%s;text-align:%s;%s%s%s%s%s',
+            'width:%dpx;min-height:%dpx;margin:0 auto 16px auto;padding:12px;border-radius:%dpx;border:1px solid %s;background:%s;color:%s;font-size:%dpx;font-family:%s;text-align:%s;display:flex;align-items:center;justify-content:center;white-space:normal;overflow-wrap:anywhere;word-break:break-word;%s%s%s%s%s',
             max(200, absint($settings['width'] ?? 500)),
             max(60, absint($settings['height'] ?? 120)),
             absint($settings['border_radius'] ?? 12),
@@ -246,13 +258,21 @@ class LCNI_Member_Auth_Shortcodes {
 
     private function input_style($settings) {
         return sprintf(
-            'height:%dpx;width:%dpx;max-width:100%%;background:%s;border:1px solid %s;color:%s;border-radius:6px;padding:0 10px;box-sizing:border-box;display:block;text-align:left;',
+            'height:%dpx;width:%dpx;max-width:100%%;background:%s;border:1px solid %s;color:%s;border-radius:6px;padding:0 10px;box-sizing:border-box;display:block;text-align:left;margin:0 auto;',
             max(32, absint($settings['input_height'] ?? 40)),
             max(120, absint($settings['input_width'] ?? 320)),
             esc_attr($settings['input_bg'] ?? '#ffffff'),
             esc_attr($settings['input_border_color'] ?? '#d1d5db'),
             esc_attr($settings['input_text_color'] ?? '#111827')
         );
+    }
+
+    private function field_group_style() {
+        return 'margin:0;display:flex;flex-direction:column;gap:6px;align-items:center;';
+    }
+
+    private function label_style($settings) {
+        return sprintf('text-align:left;width:%dpx;max-width:100%%;', max(120, absint($settings['input_width'] ?? 320)));
     }
 
     private function button_style($settings, $full_width = false) {
@@ -292,5 +312,11 @@ class LCNI_Member_Auth_Shortcodes {
             esc_attr($settings['border_color'] ?? '#d1d5db'),
             absint($settings['border_radius'] ?? 8)
         );
+    }
+
+    private function resolve_redirect_target() {
+        $redirect_to = isset($_GET['lcni_redirect_to']) ? wp_validate_redirect((string) wp_unslash($_GET['lcni_redirect_to']), '') : '';
+
+        return is_string($redirect_to) ? $redirect_to : '';
     }
 }
