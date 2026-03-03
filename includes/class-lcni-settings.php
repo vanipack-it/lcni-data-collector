@@ -6,6 +6,8 @@ if (!defined('ABSPATH')) {
 
 class LCNI_Settings {
 
+    const CSV_IMPORT_LOCK_OPTION = 'lcni_csv_import_lock_until';
+
     public function __construct() {
         add_action('admin_menu', [$this, 'menu']);
         add_action('admin_init', [$this, 'register_settings']);
@@ -806,6 +808,7 @@ class LCNI_Settings {
                 'updated_at' => current_time('mysql'),
             ], HOUR_IN_SECONDS);
             delete_transient($payload_key);
+            $this->release_csv_import_lock();
             return;
         }
 
@@ -821,6 +824,7 @@ class LCNI_Settings {
 
         if (($status['state'] ?? '') === 'cancelled') {
             delete_transient($payload_key);
+            $this->release_csv_import_lock();
             if (!empty($payload['file_path']) && is_string($payload['file_path']) && file_exists($payload['file_path'])) {
                 @unlink($payload['file_path']);
             }
@@ -831,6 +835,7 @@ class LCNI_Settings {
         $status['message'] = 'Đang import CSV ở chế độ nền...';
         $status['updated_at'] = current_time('mysql');
         set_transient($status_key, $status, HOUR_IN_SECONDS);
+        $this->touch_csv_import_lock();
 
         set_transient($payload_key, [
             'job_id' => $job_id,
@@ -950,6 +955,7 @@ class LCNI_Settings {
 
                 if (is_array($latest_status) && ($latest_status['state'] ?? '') === 'cancelled') {
                     delete_transient($payload_key);
+                    $this->release_csv_import_lock();
                     if (!empty($payload['file_path']) && is_string($payload['file_path']) && file_exists($payload['file_path'])) {
                         @unlink($payload['file_path']);
                     }
@@ -970,6 +976,8 @@ class LCNI_Settings {
                     array_map('intval', array_keys($accumulated_event_times)),
                     array_values(array_keys($accumulated_timeframes))
                 );
+                $this->release_csv_import_lock();
+                LCNI_DB::optimize_seed_dataset();
             }
 
             $status['message'] = sprintf('Đã import CSV vào %s: updated %d / total %d.', $status['table'], (int) $status['updated'], (int) $status['processed']);
@@ -981,9 +989,19 @@ class LCNI_Settings {
         set_transient($status_key, $status, HOUR_IN_SECONDS);
         delete_transient($payload_key);
 
+        $this->release_csv_import_lock();
+
         if (!empty($payload['file_path']) && is_string($payload['file_path']) && file_exists($payload['file_path'])) {
             @unlink($payload['file_path']);
         }
+    }
+
+    private function touch_csv_import_lock() {
+        update_option(self::CSV_IMPORT_LOCK_OPTION, time() + 300, false);
+    }
+
+    private function release_csv_import_lock() {
+        delete_option(self::CSV_IMPORT_LOCK_OPTION);
     }
 
     public function ajax_csv_import_status_snapshot() {

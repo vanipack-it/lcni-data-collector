@@ -5964,6 +5964,28 @@ class LCNI_DB {
         $table = $wpdb->prefix . 'lcni_ohlc';
         $retention_limit = max(10, (int) get_option('lcni_seed_retention_candles', 260));
         $eod_min_volume = max(0, (int) get_option('lcni_seed_eod_min_volume', 10000));
+        $import_lock_until = (int) get_option('lcni_csv_import_lock_until', 0);
+
+        if ($import_lock_until > time()) {
+            self::log_change(
+                'seed_data_optimized',
+                'Skipped seed optimization while CSV import is running.',
+                [
+                    'status' => 'skipped_import_running',
+                    'lock_until' => $import_lock_until,
+                    'retention_limit' => $retention_limit,
+                    'eod_min_volume' => $eod_min_volume,
+                ]
+            );
+
+            return [
+                'status' => 'skipped_import_running',
+                'retention_limit' => $retention_limit,
+                'eod_min_volume' => $eod_min_volume,
+                'filtered_rows' => 0,
+                'pruned_rows' => 0,
+            ];
+        }
 
         self::ensure_ohlc_indexes();
 
