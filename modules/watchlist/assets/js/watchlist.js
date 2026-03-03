@@ -482,20 +482,26 @@
         const host = quickAddBtn.closest('[data-lcni-watchlist]');
         const input = host ? host.querySelector('[data-watchlist-symbol-input]') : null;
         const symbol = String((input && input.value) || '').trim().toUpperCase();
+        const quickAddIcon = quickAddBtn.querySelector('i');
+        const defaultIconClass = String(getButtonConfig('btn_watchlist_add_symbol').icon_class || 'fa-solid fa-heart');
         if (input) input.value = symbol;
         if (!symbol) { showToast('Vui lòng nhập mã cổ phiếu'); return; }
         if (!activeWatchlistId) { showToast('Vui lòng chọn watchlist'); return; }
 
         quickAddBtn.disabled = true;
+        if (quickAddIcon) quickAddIcon.className = 'fa-solid fa-spinner fa-spin';
         try {
           const payload = await toggleSymbol(symbol, 'add');
           const watchlistName = String((payload && (payload.watchlist_name || payload.name)) || resolveActiveWatchlistName() || '');
           showToast('Đã thêm mã ' + symbol + ' thành công vào watchlist: ' + watchlistName + '.');
           if (input) input.value = '';
-          if (host) {
-            await refreshTable(host);
-          }
+          if (quickAddIcon) quickAddIcon.className = 'fa-solid fa-check-circle';
+          document.querySelectorAll('[data-lcni-watchlist]').forEach((node) => refreshTable(node).catch(() => {}));
+          window.setTimeout(() => {
+            if (quickAddIcon) quickAddIcon.className = defaultIconClass;
+          }, 1200);
         } catch (error) {
+          if (quickAddIcon) quickAddIcon.className = 'fa-solid fa-exclamation-circle';
           if (error && error.code === 'duplicate_symbol') {
           const details = error && error.data ? error.data : {};
           const inName = details.watchlist_name || resolveActiveWatchlistName();
@@ -505,6 +511,9 @@
         }
         } finally {
           quickAddBtn.disabled = false;
+          window.setTimeout(() => {
+            if (quickAddIcon) quickAddIcon.className = defaultIconClass;
+          }, 1200);
         }
         return;
       }
