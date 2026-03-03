@@ -262,7 +262,10 @@ class LCNI_Settings {
             }
         } elseif ($action === 'run_seed_batch') {
             $summary = LCNI_SeedScheduler::run_batch();
-            $this->set_notice('success', 'Đã chạy batch tiếp theo: ' . wp_json_encode($summary));
+            $optimization = LCNI_DB::optimize_seed_dataset();
+            LCNI_DB::process_seed_rebuild_pipeline();
+            LCNI_DB::refresh_ohlc_latest_snapshot();
+            $this->set_notice('success', 'Đã chạy batch tiếp theo: ' . wp_json_encode(['seed' => $summary, 'optimization' => $optimization]));
         } elseif ($action === 'pause_seed') {
             LCNI_SeedScheduler::pause();
             $this->set_notice('success', 'Đã tạm dừng seed queue.');
@@ -293,9 +296,9 @@ class LCNI_Settings {
             }
         } elseif ($action === 'save_update_data_settings') {
             $enabled = !empty($_POST['lcni_update_enabled']);
-            $interval = isset($_POST['lcni_update_interval_minutes']) ? $this->sanitize_update_interval(wp_unslash($_POST['lcni_update_interval_minutes'])) : 5;
-            $saved = LCNI_Update_Manager::save_settings($enabled, $interval);
-            update_option('lcni_update_interval_minutes', (int) $saved['interval_minutes']);
+            $run_after_time = isset($_POST['lcni_update_run_after_time']) ? sanitize_text_field(wp_unslash($_POST['lcni_update_run_after_time'])) : '09:00';
+            $saved = LCNI_Update_Manager::save_settings($enabled, $run_after_time);
+            update_option('lcni_update_interval_minutes', (int) ($saved['interval_minutes'] ?? 1));
             $this->set_notice('success', 'Đã lưu cài đặt Update Data.');
         } elseif ($action === 'run_manual_update_data') {
             $status = LCNI_Update_Manager::trigger_manual_update();
@@ -1761,8 +1764,8 @@ class LCNI_Settings {
                                 <td><label><input type="checkbox" name="lcni_update_enabled" value="1" <?php checked(!empty($update_settings['enabled'])); ?>> Kích hoạt</label></td>
                             </tr>
                             <tr>
-                                <th>Chu kỳ (phút)</th>
-                                <td><input type="number" min="1" name="lcni_update_interval_minutes" value="<?php echo esc_attr((string) ($update_settings['interval_minutes'] ?? 5)); ?>"></td>
+                                <th>Thời gian bắt đầu chạy (HH:MM)</th>
+                                <td><input type="time" name="lcni_update_run_after_time" value="<?php echo esc_attr((string) ($update_settings['run_after_time'] ?? '09:00')); ?>"></td>
                             </tr>
                         </table>
                         <?php submit_button('Lưu & Thực thi tự động', 'primary', 'submit', false); ?>

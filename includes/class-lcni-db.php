@@ -5958,6 +5958,79 @@ class LCNI_DB {
         return false;
     }
 
+    public static function optimize_seed_dataset() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $retention_limit = max(10, (int) get_option('lcni_seed_retention_candles', 260));
+        $eod_min_volume = max(0, (int) get_option('lcni_seed_eod_min_volume', 10000));
+
+        self::ensure_ohlc_indexes();
+
+        $filtered_rows = 0;
+        if ($eod_min_volume > 0) {
+            $filter_sql = $wpdb->prepare(
+                "DELETE o
+                FROM {$table} o
+                INNER JOIN (
+                    SELECT symbol, MAX(event_time) AS max_event_time
+                    FROM {$table}
+                    WHERE timeframe = '1D'
+                    GROUP BY symbol
+                ) latest ON latest.symbol = o.symbol
+                INNER JOIN {$table} latest_row
+                    ON latest_row.symbol = latest.symbol
+                    AND latest_row.timeframe = '1D'
+                    AND latest_row.event_time = latest.max_event_time
+                WHERE o.timeframe = '1D'
+                    AND latest_row.volume < %d",
+                $eod_min_volume
+            );
+
+            $wpdb->query($filter_sql);
+            $filtered_rows = max(0, (int) $wpdb->rows_affected);
+        }
+
+        $prune_sql = $wpdb->prepare(
+            "DELETE stale
+            FROM {$table} stale
+            INNER JOIN (
+                SELECT id
+                FROM (
+                    SELECT id,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY symbol, timeframe
+                            ORDER BY COALESCE(trading_index, 0) DESC, event_time DESC, id DESC
+                        ) AS rn
+                    FROM {$table}
+                ) ranked
+                WHERE rn > %d
+            ) prune_ids ON prune_ids.id = stale.id",
+            $retention_limit
+        );
+
+        $wpdb->query($prune_sql);
+        $pruned_rows = max(0, (int) $wpdb->rows_affected);
+
+        self::log_change(
+            'seed_data_optimized',
+            sprintf(
+                'Applied seed optimization: volume threshold=%d, retention=%d, filtered_rows=%d, pruned_rows=%d.',
+                $eod_min_volume,
+                $retention_limit,
+                $filtered_rows,
+                $pruned_rows
+            )
+        );
+
+        return [
+            'retention_limit' => $retention_limit,
+            'eod_min_volume' => $eod_min_volume,
+            'filtered_rows' => $filtered_rows,
+            'pruned_rows' => $pruned_rows,
+        ];
+    }
+
     public static function log_change($action, $message, $context = null) {
         global $wpdb;
 

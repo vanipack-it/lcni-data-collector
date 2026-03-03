@@ -2,7 +2,7 @@
 /*
 Plugin Name: LCNI Data Collector
 Description: LCNI Market Data Engine: lấy nến, lưu DB, cron auto update
-Version: 5.3.9k
+Version: 5.4.0
 */
 
 if (!defined('ABSPATH')) {
@@ -201,6 +201,7 @@ function lcni_run_cron_incremental_sync() {
 
 function lcni_run_seed_batch() {
     LCNI_SeedScheduler::run_batch();
+    LCNI_DB::optimize_seed_dataset();
     LCNI_DB::process_seed_rebuild_pipeline();
     LCNI_DB::refresh_ohlc_latest_snapshot();
 }

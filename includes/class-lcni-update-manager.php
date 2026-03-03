@@ -20,14 +20,16 @@ class LCNI_Update_Manager {
 
         return [
             'enabled' => !empty($settings['enabled']),
-            'interval_minutes' => max(1, (int) ($settings['interval_minutes'] ?? 5)),
+            'interval_minutes' => 1,
+            'run_after_time' => self::normalize_run_after_time($settings['run_after_time'] ?? '09:00'),
         ];
     }
 
-    public static function save_settings($enabled, $interval_minutes) {
+    public static function save_settings($enabled, $run_after_time = '09:00') {
         $settings = [
             'enabled' => (bool) $enabled,
-            'interval_minutes' => max(1, (int) $interval_minutes),
+            'interval_minutes' => 1,
+            'run_after_time' => self::normalize_run_after_time($run_after_time),
         ];
 
         update_option(self::OPTION_SETTINGS, $settings);
@@ -60,6 +62,10 @@ class LCNI_Update_Manager {
     public static function handle_cron() {
         $settings = self::get_settings();
         if (empty($settings['enabled'])) {
+            return;
+        }
+
+        if (!self::is_after_configured_run_time($settings['run_after_time'])) {
             return;
         }
 
@@ -155,12 +161,40 @@ class LCNI_Update_Manager {
         $settings = self::get_settings();
         $now = new DateTimeImmutable('now', lcni_get_market_timezone());
 
+        $run_after_ts = self::build_run_after_timestamp($now, (string) ($settings['run_after_time'] ?? '09:00'));
+        if ($now->getTimestamp() < $run_after_ts) {
+            return $run_after_ts;
+        }
+
         if (!lcni_is_trading_time($now)) {
             return lcni_get_next_trading_time($now)->getTimestamp();
         }
 
-        $candidate = $now->modify('+' . max(1, (int) $settings['interval_minutes']) . ' minutes');
+        $candidate = $now->modify('+1 minutes');
 
         return lcni_get_next_trading_time($candidate)->getTimestamp();
+    }
+
+    private static function normalize_run_after_time($value) {
+        $time = trim((string) $value);
+        if (preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $time)) {
+            return $time;
+        }
+
+        return '09:00';
+    }
+
+    private static function build_run_after_timestamp(DateTimeImmutable $now, $run_after_time) {
+        $parts = explode(':', self::normalize_run_after_time($run_after_time));
+        $hour = (int) ($parts[0] ?? 9);
+        $minute = (int) ($parts[1] ?? 0);
+
+        return (int) $now->setTime($hour, $minute, 0)->getTimestamp();
+    }
+
+    private static function is_after_configured_run_time($run_after_time) {
+        $now = new DateTimeImmutable('now', lcni_get_market_timezone());
+
+        return $now->getTimestamp() >= self::build_run_after_timestamp($now, $run_after_time);
     }
 }
