@@ -288,10 +288,12 @@ class LCNI_Recommend_Admin_Page {
         echo 'window.lcniRecommendColumnsMap=' . wp_json_encode($columns_map) . ';';
         echo 'window.lcniRecommendDistinctValuesNonce=' . wp_create_nonce('lcni_recommend_distinct_values') . ';';
         echo 'window.lcniRecommendColumnsNonce=' . wp_create_nonce('lcni_recommend_table_columns') . ';';
+        echo 'window.lcniRecommendAjaxUrl=' . wp_json_encode(admin_url('admin-ajax.php')) . ';';
         echo '(function(){
             const columnsMap=window.lcniRecommendColumnsMap||{};
             const distinctValuesNonce=window.lcniRecommendDistinctValuesNonce||"";
             const columnsNonce=window.lcniRecommendColumnsNonce||"";
+            const ajaxEndpoint=(typeof window.ajaxurl==="string" && window.ajaxurl) ? window.ajaxurl : (window.lcniRecommendAjaxUrl || "");
             const source=document.getElementById("lcni-recommend-source-table");
             const columnsHost=document.getElementById("lcni-recommend-columns");
             const dropzone=document.getElementById("lcni-recommend-dropzone");
@@ -316,7 +318,7 @@ class LCNI_Recommend_Admin_Page {
                     field:field
                 });
 
-                return fetch(ajaxurl, {
+                return fetch(ajaxEndpoint, {
                     method:"POST",
                     headers:{ "Content-Type":"application/x-www-form-urlencoded;charset=UTF-8" },
                     body:payload.toString()
@@ -339,7 +341,7 @@ class LCNI_Recommend_Admin_Page {
                     table:table
                 });
 
-                return fetch(ajaxurl, {
+                return fetch(ajaxEndpoint, {
                     method:"POST",
                     headers:{ "Content-Type":"application/x-www-form-urlencoded;charset=UTF-8" },
                     body:payload.toString()
@@ -347,16 +349,29 @@ class LCNI_Recommend_Admin_Page {
                 .then((res)=>res.json())
                 .then((res)=>{
                     if (!res || !res.success || !Array.isArray(res.data)) {
-                        return [];
+                        return { columns:[], error:(res && res.data && res.data.message) ? String(res.data.message) : "" };
                     }
-                    return res.data;
+                    return { columns:res.data, error:"" };
                 })
-                .catch(()=>[]);
+                .catch(()=>({ columns:[], error:"Không thể tải danh sách cột từ máy chủ." }));
             }
 
-            function renderColumns(cols){
+            function normalizeColumns(cols){
+                if(Array.isArray(cols)){
+                    return cols;
+                }
+
+                if(!cols || typeof cols!=="object"){
+                    return [];
+                }
+
+                return Object.keys(cols).map((key)=>cols[key]).filter((item)=>item && typeof item==="object");
+            }
+
+            function renderColumns(cols, errorMessage){
+                const normalizedCols=normalizeColumns(cols);
                 columnsHost.innerHTML="";
-                cols.forEach((col)=>{
+                normalizedCols.forEach((col)=>{
                     const item=document.createElement("span");
                     item.className="lcni-recommend-pill";
                     item.draggable=true;
@@ -366,23 +381,23 @@ class LCNI_Recommend_Admin_Page {
                     columnsHost.appendChild(item);
                 });
 
-                if(!cols.length){
-                    columnsHost.innerHTML="<em>Không tìm thấy cột khả dụng cho bảng đã chọn.</em>";
+                if(!normalizedCols.length){
+                    const defaultText="Không tìm thấy cột khả dụng cho bảng đã chọn.";
+                    columnsHost.innerHTML="<em>" + (errorMessage || defaultText) + "</em>";
                 }
             }
 
             function loadColumns(){
                 const table=source.value;
-                const cachedCols=columnsMap[table]||[];
+                const cachedCols=normalizeColumns(columnsMap[table]||[]);
                 if (cachedCols.length) {
                     renderColumns(cachedCols);
-                    return;
                 }
 
                 columnsHost.innerHTML="<em>Đang tải cột...</em>";
-                fetchTableColumns(table).then((cols)=>{
-                    columnsMap[table]=cols;
-                    renderColumns(cols);
+                fetchTableColumns(table).then((result)=>{
+                    columnsMap[table]=normalizeColumns(result.columns);
+                    renderColumns(result.columns, result.error);
                 });
             }
 
