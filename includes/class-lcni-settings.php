@@ -2485,6 +2485,14 @@ private function sanitize_module_title($value, $fallback) {
     }
 
     private function collect_global_cell_color_rule_input_from_post() {
+        $json_payload = isset($_POST['lcni_global_rules_json']) ? wp_unslash($_POST['lcni_global_rules_json']) : '';
+        if (is_string($json_payload) && $json_payload !== '') {
+            $decoded = json_decode($json_payload, true);
+            if (is_array($decoded)) {
+                return $decoded;
+            }
+        }
+
         $fields = isset($_POST['lcni_global_rule_field']) ? (array) wp_unslash($_POST['lcni_global_rule_field']) : [];
         $operators = isset($_POST['lcni_global_rule_operator']) ? (array) wp_unslash($_POST['lcni_global_rule_operator']) : [];
         $values = isset($_POST['lcni_global_rule_value']) ? (array) wp_unslash($_POST['lcni_global_rule_value']) : [];
@@ -2559,6 +2567,14 @@ private function sanitize_module_title($value, $fallback) {
 
 
     private function collect_global_cell_to_cell_rule_input_from_post() {
+        $json_payload = isset($_POST['lcni_cell_to_cell_rules_json']) ? wp_unslash($_POST['lcni_cell_to_cell_rules_json']) : '';
+        if (is_string($json_payload) && $json_payload !== '') {
+            $decoded = json_decode($json_payload, true);
+            if (is_array($decoded)) {
+                return $decoded;
+            }
+        }
+
         $source_fields = isset($_POST['lcni_cell_to_cell_source_field']) ? (array) wp_unslash($_POST['lcni_cell_to_cell_source_field']) : [];
         $operators = isset($_POST['lcni_cell_to_cell_operator']) ? (array) wp_unslash($_POST['lcni_cell_to_cell_operator']) : [];
         $values = isset($_POST['lcni_cell_to_cell_value']) ? (array) wp_unslash($_POST['lcni_cell_to_cell_value']) : [];
@@ -3529,6 +3545,8 @@ private function sanitize_module_title($value, $fallback) {
                 <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
                 <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
                 <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                <input type="hidden" name="lcni_global_rules_json" id="lcni-global-rules-json" value="">
+                <input type="hidden" name="lcni_cell_to_cell_rules_json" id="lcni-cell-to-cell-rules-json" value="">
 
                 <h3>Button</h3>
                 <p>Toàn bộ nút dùng chung màu nền, màu chữ và hover. Nút trong bảng dùng chung chiều cao/cỡ chữ riêng.</p>
@@ -3653,6 +3671,9 @@ private function sanitize_module_title($value, $fallback) {
                     const addBtn = document.getElementById('lcni-add-global-cell-rule');
                     const rows = document.getElementById('lcni-global-rule-rows');
                     const template = document.getElementById('lcni-global-cell-rule-template');
+                    const form = rows ? rows.closest('form') : null;
+                    const globalRulesJsonInput = document.getElementById('lcni-global-rules-json');
+                    const cellToCellRulesJsonInput = document.getElementById('lcni-cell-to-cell-rules-json');
                     if (addBtn && rows && template) {
                         addBtn.addEventListener('click', function(){ rows.insertAdjacentHTML('beforeend', template.innerHTML); });
                     }
@@ -3661,6 +3682,42 @@ private function sanitize_module_title($value, $fallback) {
                     const cellToCellTemplate = document.getElementById('lcni-cell-to-cell-rule-template');
                     if (addCellToCellBtn && cellToCellRows && cellToCellTemplate) {
                         addCellToCellBtn.addEventListener('click', function(){ cellToCellRows.insertAdjacentHTML('beforeend', cellToCellTemplate.innerHTML); });
+                    }
+
+                    if (form && globalRulesJsonInput && cellToCellRulesJsonInput) {
+                        form.addEventListener('submit', function(){
+                            const globalRows = rows ? Array.from(rows.querySelectorAll('tr')) : [];
+                            const cellToCellRuleRows = cellToCellRows ? Array.from(cellToCellRows.querySelectorAll('tr')) : [];
+
+                            const globalRules = globalRows.map(function(row){
+                                return {
+                                    field: (row.querySelector('select[name="lcni_global_rule_field[]"]') || {}).value || '',
+                                    operator: (row.querySelector('select[name="lcni_global_rule_operator[]"]') || {}).value || '',
+                                    value: (row.querySelector('input[name="lcni_global_rule_value[]"]') || {}).value || '',
+                                    bg_color: (row.querySelector('input[name="lcni_global_rule_bg_color[]"]') || {}).value || '',
+                                    text_color: (row.querySelector('input[name="lcni_global_rule_text_color[]"]') || {}).value || '',
+                                    icon_class: (row.querySelector('input[name="lcni_global_rule_icon_class[]"]') || {}).value || '',
+                                    icon_position: (row.querySelector('select[name="lcni_global_rule_icon_position[]"]') || {}).value || 'left'
+                                };
+                            });
+
+                            const cellToCellRules = cellToCellRuleRows.map(function(row){
+                                return {
+                                    source_field: (row.querySelector('select[name="lcni_cell_to_cell_source_field[]"]') || {}).value || '',
+                                    operator: (row.querySelector('select[name="lcni_cell_to_cell_operator[]"]') || {}).value || '',
+                                    value: (row.querySelector('input[name="lcni_cell_to_cell_value[]"]') || {}).value || '',
+                                    target_field: (row.querySelector('select[name="lcni_cell_to_cell_target_field[]"]') || {}).value || '',
+                                    text_color: (row.querySelector('input[name="lcni_cell_to_cell_text_color[]"]') || {}).value || '',
+                                    icon_class: (row.querySelector('input[name="lcni_cell_to_cell_icon_class[]"]') || {}).value || '',
+                                    icon_position: (row.querySelector('select[name="lcni_cell_to_cell_icon_position[]"]') || {}).value || 'right',
+                                    icon_size: (row.querySelector('input[name="lcni_cell_to_cell_icon_size[]"]') || {}).value || 12,
+                                    icon_color: (row.querySelector('input[name="lcni_cell_to_cell_icon_color[]"]') || {}).value || ''
+                                };
+                            });
+
+                            globalRulesJsonInput.value = JSON.stringify(globalRules);
+                            cellToCellRulesJsonInput.value = JSON.stringify(cellToCellRules);
+                        });
                     }
                 })();
             </script>
