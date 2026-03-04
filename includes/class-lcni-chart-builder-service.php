@@ -126,7 +126,7 @@ class LCNI_Chart_Builder_Service {
         $filter_fields = array_values(array_unique($filter_fields));
 
         $chart_type = (string) ($chart['chart_type'] ?? 'multi_line');
-        if ($chart_type === 'heatmap_matrix') {
+        if ($chart_type === 'heatmap_matrix' || $chart_type === 'heatmap_matrix_2') {
             $x_axis = sanitize_key((string) ($config['xAxis'] ?? 'timeframe'));
             $y_axis = sanitize_key((string) ($config['yAxis'] ?? 'icb2'));
             $value_field = '';

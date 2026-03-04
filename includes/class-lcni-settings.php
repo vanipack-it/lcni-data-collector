@@ -3130,6 +3130,8 @@ private function sanitize_module_title($value, $fallback) {
             'area_stack' => ['label' => 'Area Stack', 'axis_slots' => 1, 'series_slots' => 4],
             'share_dataset' => ['label' => 'Share Dataset', 'axis_slots' => 1, 'series_slots' => 2],
             'heatmap_matrix' => ['label' => 'Heatmap Matrix', 'axis_slots' => 2, 'series_slots' => 1],
+            'heatmap_matrix_2' => ['label' => 'HeatMap 2', 'axis_slots' => 2, 'series_slots' => 1],
+            'treemap_1' => ['label' => 'TreeMap 1', 'axis_slots' => 2, 'series_slots' => 1],
             'market_breadth' => ['label' => 'Market Breadth', 'axis_slots' => 1, 'series_slots' => 4],
             'rsi_zone' => ['label' => 'RSI Zone', 'axis_slots' => 1, 'series_slots' => 2],
             'smart_money_flow' => ['label' => 'Smart Money Flow', 'axis_slots' => 1, 'series_slots' => 3],
@@ -3192,6 +3194,12 @@ private function sanitize_module_title($value, $fallback) {
                         <div class="lcni-chart-column">
                             <h4>Axis & Series mapping (dynamic theo template)</h4>
                             <div id="lcni-axis-series-container"></div>
+                            <div id="lcni-heatmap-color-controls" style="display:none; border:1px solid #dcdcde; border-radius:4px; padding:8px; margin-bottom:10px;">
+                                <strong>Màu HeatMap (admin)</strong>
+                                <p><label>Màu thấp <input type="color" id="lcni-heatmap-color-low" name="lcni_chart_builder[heatmap_color_low]" value="#d73027"></label></p>
+                                <p><label>Màu trung bình <input type="color" id="lcni-heatmap-color-mid" name="lcni_chart_builder[heatmap_color_mid]" value="#fee08b"></label></p>
+                                <p><label>Màu cao <input type="color" id="lcni-heatmap-color-high" name="lcni_chart_builder[heatmap_color_high]" value="#1a9850"></label></p>
+                            </div>
                             <h4>Filter mapping</h4>
                             <div class="lcni-filter-map-grid">
                                 <div>
@@ -3298,6 +3306,10 @@ private function sanitize_module_title($value, $fallback) {
                     const previewNode = tabRoot.querySelector('#lcni-chart-builder-preview');
                     const templatePickerBtn = tabRoot.querySelector('#lcni-chart-template-picker-btn');
                     const templatePicker = tabRoot.querySelector('#lcni-chart-template-picker');
+                    const heatmapColorControls = tabRoot.querySelector('#lcni-heatmap-color-controls');
+                    const heatmapColorLow = tabRoot.querySelector('#lcni-heatmap-color-low');
+                    const heatmapColorMid = tabRoot.querySelector('#lcni-heatmap-color-mid');
+                    const heatmapColorHigh = tabRoot.querySelector('#lcni-heatmap-color-high');
                     let previewChart = null;
 
                     const mkDropZone = (target, text, clearCb, options = {}) => {
@@ -3412,6 +3424,10 @@ private function sanitize_module_title($value, $fallback) {
                         const key = templateInput ? templateInput.value : 'multi_line';
                         const areaTemplates = ['area_stack'];
                         const dashedTemplates = ['share_dataset', 'market_breadth', 'smart_money_flow'];
+                        const isHeatmapTemplate = key === 'heatmap_matrix' || key === 'heatmap_matrix_2';
+                        if (heatmapColorControls) {
+                            heatmapColorControls.style.display = isHeatmapTemplate ? 'block' : 'none';
+                        }
                         tabRoot.querySelectorAll('.lcni-chart-drop-zone-properties').forEach((panel, index) => {
                             const stackControl = panel.querySelector('[data-prop="series-stack"]');
                             const areaControl = panel.querySelector('[data-prop="series-area"]');
@@ -3501,9 +3517,13 @@ private function sanitize_module_title($value, $fallback) {
                         if (!previewChart) previewChart = window.echarts.init(previewNode);
                         const p = getPreviewRows(); if (!p.x || !p.seriesFields.length) { previewChart.clear(); return; }
                         const templateKey = (templateInput || {}).value || 'multi_line';
-                        const heatmapColors = ['#d73027', '#fee08b', '#1a9850'];
+                        const heatmapColors = [
+                            (heatmapColorLow && heatmapColorLow.value) || '#d73027',
+                            (heatmapColorMid && heatmapColorMid.value) || '#fee08b',
+                            (heatmapColorHigh && heatmapColorHigh.value) || '#1a9850',
+                        ];
 
-                        if (templateKey === 'heatmap_matrix') {
+                        if (templateKey === 'heatmap_matrix' || templateKey === 'heatmap_matrix_2') {
                             const xData = Array.from(new Set(p.rows.map((r) => String(r[p.x] || '')))).filter(Boolean);
                             const yField = p.y || '';
                             const yData = yField
@@ -3551,7 +3571,45 @@ private function sanitize_module_title($value, $fallback) {
                             return;
                         }
 
-                        previewChart.setOption({ tooltip:{trigger:'axis'}, legend:{top:'bottom', data:p.seriesFields}, xAxis:{type:'category', data:p.rows.map((r)=>r[p.x])}, yAxis:{type:'value'}, series:p.seriesFields.map((f,index)=>{ const typeInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-type')[index]; const colorInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-color')[index]; const lineStyleInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-line-style')[index]; const stackInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-stack')[index]; const areaInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-area')[index]; const labelInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-label-show')[index]; const type = (typeInput && typeInput.value) || 'line'; const color = (colorInput && colorInput.value) || '#5470c6'; return {name:f,type,smooth:type!=='bar',stack:stackInput&&stackInput.value==='1'?'Total':undefined,areaStyle:areaInput&&areaInput.value==='1'?{}:undefined,label:labelInput&&labelInput.value==='1'?{show:true,position:'top'}:undefined,lineStyle:{type:(lineStyleInput&&lineStyleInput.value)||'solid',color:color},itemStyle:{color:color},data:p.rows.map((r)=>Number(r[f]||0))};}) }, true);
+                        if (templateKey === 'treemap_1') {
+                            const parentField = p.x;
+                            const childField = p.y;
+                            const valueField = p.seriesFields[0] || '';
+                            const grouped = {};
+
+                            p.rows.forEach((row) => {
+                                const parent = String(row[parentField] || 'N/A');
+                                const child = childField ? String(row[childField] || 'N/A') : '';
+                                const value = Number(row[valueField] || 0);
+                                if (!grouped[parent]) {
+                                    grouped[parent] = {};
+                                }
+                                const childKey = child || parent;
+                                grouped[parent][childKey] = (grouped[parent][childKey] || 0) + value;
+                            });
+
+                            const treeData = Object.keys(grouped).map((parent) => ({
+                                name: parent,
+                                children: Object.keys(grouped[parent]).map((child) => ({ name: child, value: grouped[parent][child] })),
+                            }));
+
+                            previewChart.setOption({
+                                tooltip: { formatter: (info) => info.name + ': ' + Number(info.value || 0) },
+                                series: [{
+                                    type: 'treemap',
+                                    leafDepth: 1,
+                                    roam: false,
+                                    breadcrumb: { show: true },
+                                    label: { show: true, formatter: '{b}' },
+                                    upperLabel: { show: true, height: 24 },
+                                    data: treeData,
+                                }],
+                            }, true);
+                            previewChart.resize();
+                            return;
+                        }
+
+                        previewChart.setOption({ tooltip:{trigger:'axis'}, legend:{top:'bottom', data:p.seriesFields}, xAxis:{type:'category', data:p.rows.map((r)=>r[p.x])}, yAxis:{type:'value'}, dataZoom:[{type:'slider',xAxisIndex:0,bottom:32,height:16},{type:'inside',xAxisIndex:0}], series:p.seriesFields.map((f,index)=>{ const typeInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-type')[index]; const colorInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-color')[index]; const lineStyleInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-line-style')[index]; const stackInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-stack')[index]; const areaInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-area')[index]; const labelInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-label-show')[index]; const type = (typeInput && typeInput.value) || 'line'; const color = (colorInput && colorInput.value) || '#5470c6'; return {name:f,type,smooth:type!=='bar',stack:stackInput&&stackInput.value==='1'?'Total':undefined,areaStyle:areaInput&&areaInput.value==='1'?{}:undefined,label:labelInput&&labelInput.value==='1'?{show:true,position:'top'}:undefined,lineStyle:{type:(lineStyleInput&&lineStyleInput.value)||'solid',color:color},itemStyle:{color:color},data:p.rows.map((r)=>Number(r[f]||0))};}) }, true);
                         previewChart.resize();
                     };
 
@@ -3618,6 +3676,9 @@ private function sanitize_module_title($value, $fallback) {
                         const xZone = axisSeriesContainer.querySelector('[data-target="xAxis"] [data-text]'); if (xZone && xInput && xInput.value) xZone.textContent = 'Axis X: ' + xInput.value;
                         const yInput = tabRoot.querySelector('#lcni-chart-builder-yaxis'); if (yInput) yInput.value = config.yAxis || '';
                         const yZone = axisSeriesContainer.querySelector('[data-target="yAxis"] [data-text]'); if (yZone && yInput && yInput.value) yZone.textContent = 'Axis Y: ' + yInput.value;
+                        if (heatmapColorLow) heatmapColorLow.value = ((config.heatmap || {}).low) || '#d73027';
+                        if (heatmapColorMid) heatmapColorMid.value = ((config.heatmap || {}).mid) || '#fee08b';
+                        if (heatmapColorHigh) heatmapColorHigh.value = ((config.heatmap || {}).high) || '#1a9850';
                         const savedSeries = Array.isArray(config.series) ? config.series : [];
                         savedSeries.forEach((it, idx) => {
                             const f = tabRoot.querySelectorAll('.lcni-chart-builder-series-field')[idx];
@@ -3647,6 +3708,11 @@ private function sanitize_module_title($value, $fallback) {
                     applyTemplateProperties();
                     addFilterSlot('');
                     reloadFields();
+                    [heatmapColorLow, heatmapColorMid, heatmapColorHigh].forEach((input) => {
+                        if (!input) return;
+                        input.addEventListener('input', () => renderPreview());
+                        input.addEventListener('change', () => renderPreview());
+                    });
                     renderPreview();
                     window.addEventListener('resize', () => { if (previewChart) previewChart.resize(); });
                 })();
