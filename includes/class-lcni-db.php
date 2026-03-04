@@ -3607,6 +3607,8 @@ class LCNI_DB {
         $seen_rows = 0;
         $has_more = false;
 
+        $buffered_rows = [];
+
         while (($line = fgetcsv($handle)) !== false) {
             if (!is_array($line) || empty($line)) {
                 continue;
@@ -3843,54 +3845,81 @@ class LCNI_DB {
                 $formats['value_traded'] = '%f';
             }
 
-            $columns_sql = [];
-            $placeholders_sql = [];
-            $update_assignments = [];
-            $values = [];
+            $buffered_rows[] = [
+                'record' => $record,
+                'formats' => $formats,
+            ];
+        }
 
-            foreach ($record as $column_name => $column_value) {
-                $columns_sql[] = "`{$column_name}`";
-                $placeholders_sql[] = $formats[$column_name] ?? '%s';
-                $values[] = $column_value;
-                if (!in_array($column_name, ['symbol', 'timeframe', 'event_time'], true)) {
-                    $update_assignments[] = "`{$column_name}` = VALUES(`{$column_name}`)";
+        if (!empty($buffered_rows)) {
+            usort($buffered_rows, static function ($left, $right) {
+                $left_event_time = (int) (($left['record']['event_time'] ?? 0));
+                $right_event_time = (int) (($right['record']['event_time'] ?? 0));
+
+                if ($left_event_time === $right_event_time) {
+                    return strcmp((string) ($left['record']['symbol'] ?? ''), (string) ($right['record']['symbol'] ?? ''));
                 }
-            }
 
-            if (empty($update_assignments)) {
-                $update_assignments[] = '`event_time` = VALUES(`event_time`)';
-            }
+                return $right_event_time <=> $left_event_time;
+            });
 
-            $sql = "INSERT INTO {$table} (" . implode(', ', $columns_sql) . ") VALUES (" . implode(', ', $placeholders_sql) . ")"
-                . " ON DUPLICATE KEY UPDATE " . implode(', ', $update_assignments);
+            foreach ($buffered_rows as $index => $buffered_row) {
+                $record = (array) ($buffered_row['record'] ?? []);
+                $formats = (array) ($buffered_row['formats'] ?? []);
 
-            $prepared_sql = $wpdb->prepare($sql, $values);
-            $result = $wpdb->query($prepared_sql);
-
-            if ($result === 1) {
-                $updated++;
-            } elseif ($result === 2 || $result === 0) {
-                $updated++;
-                $upsert_updated++;
-            }
-
-            if ($result !== false) {
-                $series_key = $record['symbol'] . '|' . $record['timeframe'];
-                $touched_series[$series_key] = [
-                    'symbol' => $record['symbol'],
-                    'timeframe' => $record['timeframe'],
-                ];
-                $touched_event_times[(int) $record['event_time']] = true;
-                $touched_timeframes[$record['timeframe']] = true;
-            } else {
-                $failed_inserts++;
-                if ($last_error_message === '' && !empty($wpdb->last_error)) {
-                    $last_error_message = sanitize_text_field((string) $wpdb->last_error);
+                if (empty($record)) {
+                    continue;
                 }
-            }
 
-            if ($progress_callback !== null && (($processed % 50) === 0)) {
-                call_user_func($progress_callback, $processed, $updated);
+                $columns_sql = [];
+                $placeholders_sql = [];
+                $update_assignments = [];
+                $values = [];
+
+                foreach ($record as $column_name => $column_value) {
+                    $columns_sql[] = "`{$column_name}`";
+                    $placeholders_sql[] = $formats[$column_name] ?? '%s';
+                    $values[] = $column_value;
+                    if (!in_array($column_name, ['symbol', 'timeframe', 'event_time'], true)) {
+                        $update_assignments[] = "`{$column_name}` = VALUES(`{$column_name}`)";
+                    }
+                }
+
+                if (empty($update_assignments)) {
+                    $update_assignments[] = '`event_time` = VALUES(`event_time`)';
+                }
+
+                $sql = "INSERT INTO {$table} (" . implode(', ', $columns_sql) . ") VALUES (" . implode(', ', $placeholders_sql) . ")"
+                    . " ON DUPLICATE KEY UPDATE " . implode(', ', $update_assignments);
+
+                $prepared_sql = $wpdb->prepare($sql, $values);
+                $result = $wpdb->query($prepared_sql);
+
+                if ($result === 1) {
+                    $updated++;
+                } elseif ($result === 2 || $result === 0) {
+                    $updated++;
+                    $upsert_updated++;
+                }
+
+                if ($result !== false) {
+                    $series_key = $record['symbol'] . '|' . $record['timeframe'];
+                    $touched_series[$series_key] = [
+                        'symbol' => $record['symbol'],
+                        'timeframe' => $record['timeframe'],
+                    ];
+                    $touched_event_times[(int) $record['event_time']] = true;
+                    $touched_timeframes[$record['timeframe']] = true;
+                } else {
+                    $failed_inserts++;
+                    if ($last_error_message === '' && !empty($wpdb->last_error)) {
+                        $last_error_message = sanitize_text_field((string) $wpdb->last_error);
+                    }
+                }
+
+                if ($progress_callback !== null && ((($index + 1) % 50) === 0)) {
+                    call_user_func($progress_callback, $processed, $updated);
+                }
             }
         }
 
