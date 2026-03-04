@@ -1,3 +1,10 @@
+## 2026-03-04 09:40 (v5.4.1c)
+- Nâng version plugin lên `5.4.1c`.
+- Nâng cấp màn hình `LCNi Recommend -> Rules` theo bố cục 3 cột (Rule / Entry Conditions JSON / Table Source), hỗ trợ kéo-thả cột từ các bảng nguồn vào khu vực điều kiện.
+- Bổ sung builder điều kiện: cột kiểu số nhập min/max, cột text dùng checkbox + value, tự động đồng bộ về `Entry Conditions JSON` để lưu rule.
+- Bổ sung field `Description recommend` cho Rule và mở rộng schema `wp_lcni_recommend_rule` với cột `description` (tự động `ALTER TABLE` nếu thiếu).
+- Cập nhật cấu hình `OHLC Latest Snapshot` bỏ input `Chu kỳ Event (phút)` khỏi UI; khi lưu sẽ giữ nguyên interval hiện hữu và chỉ cập nhật trạng thái kích hoạt + khung giờ sync.
+
 ## 2026-03-03 10:30 (v5.4.1)
 - Nâng version plugin lên `5.4.1`.
 - `[lcni_watchlist]` fix luồng thêm mã bằng input: chuẩn hoá symbol trước submit, thêm hiệu ứng icon AJAX (spinner → check), refresh lại toàn bộ bảng watchlist sau khi thêm thành công để mã mới hiển thị ngay.

@@ -31,6 +31,7 @@ class RuleRepository {
         $payload = [
             'name' => sanitize_text_field((string) ($data['name'] ?? '')),
             'timeframe' => strtoupper(sanitize_text_field((string) ($data['timeframe'] ?? '1D'))),
+            'description' => sanitize_textarea_field((string) ($data['description'] ?? '')),
             'entry_conditions' => wp_json_encode($this->normalize_conditions($data['entry_conditions'] ?? [])),
             'initial_sl_pct' => (float) ($data['initial_sl_pct'] ?? 8),
             'risk_reward' => (float) ($data['risk_reward'] ?? 3),

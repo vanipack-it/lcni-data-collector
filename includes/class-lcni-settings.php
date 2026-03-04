@@ -347,7 +347,8 @@ class LCNI_Settings {
             }
         } elseif ($action === 'save_ohlc_latest_settings') {
             $enabled = !empty($_POST['lcni_ohlc_latest_enabled']);
-            $interval = isset($_POST['lcni_ohlc_latest_interval_minutes']) ? $this->sanitize_update_interval(wp_unslash($_POST['lcni_ohlc_latest_interval_minutes'])) : 5;
+            $existing_settings = LCNI_OHLC_Latest_Manager::get_settings();
+            $interval = isset($existing_settings['interval_minutes']) ? (int) $existing_settings['interval_minutes'] : 5;
             $refresh_times_raw = isset($_POST['lcni_ohlc_latest_refresh_times']) ? sanitize_text_field(wp_unslash($_POST['lcni_ohlc_latest_refresh_times'])) : '09:00';
             $refresh_times = $this->sanitize_refresh_times($refresh_times_raw);
             LCNI_OHLC_Latest_Manager::save_settings($enabled, $interval, $refresh_times);
@@ -1956,10 +1957,6 @@ class LCNI_Settings {
                             <tr>
                                 <th>Bật event tự động</th>
                                 <td><label><input type="checkbox" name="lcni_ohlc_latest_enabled" value="1" <?php checked(!empty($ohlc_latest_settings['enabled'])); ?>> Kích hoạt</label></td>
-                            </tr>
-                            <tr>
-                                <th>Chu kỳ Event (phút)</th>
-                                <td><input type="number" min="1" name="lcni_ohlc_latest_interval_minutes" value="<?php echo esc_attr((string) ($ohlc_latest_settings['interval_minutes'] ?? 5)); ?>"></td>
                             </tr>
                             <tr>
                                 <th>Khung giờ sync Snapshot (GMT+7, HH:MM)</th>

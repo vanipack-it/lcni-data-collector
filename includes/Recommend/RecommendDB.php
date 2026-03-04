@@ -20,6 +20,7 @@ class LCNI_Recommend_DB {
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             name VARCHAR(191) NOT NULL,
             timeframe VARCHAR(20) NOT NULL DEFAULT '1D',
+            description TEXT NULL,
             entry_conditions LONGTEXT NOT NULL,
             initial_sl_pct DECIMAL(10,4) NOT NULL DEFAULT 8.0000,
             risk_reward DECIMAL(10,4) NOT NULL DEFAULT 3.0000,
@@ -88,6 +89,12 @@ class LCNI_Recommend_DB {
                 self::create_tables();
                 return;
             }
+        }
+
+        $rule_table = $wpdb->prefix . 'lcni_recommend_rule';
+        $description_exists = $wpdb->get_var("SHOW COLUMNS FROM {$rule_table} LIKE 'description'");
+        if (!$description_exists) {
+            $wpdb->query("ALTER TABLE {$rule_table} ADD COLUMN description TEXT NULL AFTER timeframe");
         }
     }
 }
