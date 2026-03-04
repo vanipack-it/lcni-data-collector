@@ -892,6 +892,9 @@
 
     try {
       await load(host);
+      state.panelHidden = true;
+      const panel = host.querySelector('[data-filter-panel]');
+      if (panel) panel.classList.add('is-collapsed');
     } catch (error) {
       showToast((error && error.message) || 'Không thể áp dụng bộ lọc. Vui lòng thử lại.');
     } finally {
