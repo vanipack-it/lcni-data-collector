@@ -31,6 +31,8 @@ class LCNI_Recommend_Rules_List_Table extends WP_List_Table {
 
     public function prepare_items() {
         $this->items = $this->items_data;
+        $columns = $this->get_columns();
+        $this->_column_headers = [$columns, [], []];
     }
 
     protected function column_default($item, $column_name) {
@@ -61,6 +63,8 @@ class LCNI_Recommend_Signals_List_Table extends WP_List_Table {
 
     public function prepare_items() {
         $this->items = $this->items_data;
+        $columns = $this->get_columns();
+        $this->_column_headers = [$columns, [], []];
     }
 
     protected function column_default($item, $column_name) {
@@ -92,6 +96,8 @@ class LCNI_Recommend_Performance_List_Table extends WP_List_Table {
 
     public function prepare_items() {
         $this->items = $this->items_data;
+        $columns = $this->get_columns();
+        $this->_column_headers = [$columns, [], []];
     }
 
     protected function column_default($item, $column_name) {
@@ -112,6 +118,7 @@ class LCNI_Recommend_Admin_Page {
         add_action('admin_menu', [$this, 'register_menu']);
         add_action('admin_init', [$this, 'handle_actions']);
         add_action('wp_ajax_lcni_recommend_distinct_values', [$this, 'ajax_distinct_values']);
+        add_action('wp_ajax_lcni_recommend_table_columns', [$this, 'ajax_table_columns']);
     }
 
     public function register_menu() {
@@ -280,9 +287,11 @@ class LCNI_Recommend_Admin_Page {
         echo '<script>';
         echo 'window.lcniRecommendColumnsMap=' . wp_json_encode($columns_map) . ';';
         echo 'window.lcniRecommendDistinctValuesNonce=' . wp_create_nonce('lcni_recommend_distinct_values') . ';';
+        echo 'window.lcniRecommendColumnsNonce=' . wp_create_nonce('lcni_recommend_table_columns') . ';';
         echo '(function(){
             const columnsMap=window.lcniRecommendColumnsMap||{};
             const distinctValuesNonce=window.lcniRecommendDistinctValuesNonce||"";
+            const columnsNonce=window.lcniRecommendColumnsNonce||"";
             const source=document.getElementById("lcni-recommend-source-table");
             const columnsHost=document.getElementById("lcni-recommend-columns");
             const dropzone=document.getElementById("lcni-recommend-dropzone");
@@ -323,9 +332,29 @@ class LCNI_Recommend_Admin_Page {
                 .catch(()=>[]);
             }
 
-            function renderColumns(){
-                const table=source.value;
-                const cols=columnsMap[table]||[];
+            function fetchTableColumns(table){
+                const payload=new URLSearchParams({
+                    action:"lcni_recommend_table_columns",
+                    nonce:columnsNonce,
+                    table:table
+                });
+
+                return fetch(ajaxurl, {
+                    method:"POST",
+                    headers:{ "Content-Type":"application/x-www-form-urlencoded;charset=UTF-8" },
+                    body:payload.toString()
+                })
+                .then((res)=>res.json())
+                .then((res)=>{
+                    if (!res || !res.success || !Array.isArray(res.data)) {
+                        return [];
+                    }
+                    return res.data;
+                })
+                .catch(()=>[]);
+            }
+
+            function renderColumns(cols){
                 columnsHost.innerHTML="";
                 cols.forEach((col)=>{
                     const item=document.createElement("span");
@@ -335,6 +364,25 @@ class LCNI_Recommend_Admin_Page {
                     item.dataset.payload=JSON.stringify(col);
                     item.addEventListener("dragstart",(e)=>{ e.dataTransfer.setData("text/plain", item.dataset.payload || ""); });
                     columnsHost.appendChild(item);
+                });
+
+                if(!cols.length){
+                    columnsHost.innerHTML="<em>Không tìm thấy cột khả dụng cho bảng đã chọn.</em>";
+                }
+            }
+
+            function loadColumns(){
+                const table=source.value;
+                const cachedCols=columnsMap[table]||[];
+                if (cachedCols.length) {
+                    renderColumns(cachedCols);
+                    return;
+                }
+
+                columnsHost.innerHTML="<em>Đang tải cột...</em>";
+                fetchTableColumns(table).then((cols)=>{
+                    columnsMap[table]=cols;
+                    renderColumns(cols);
                 });
             }
 
@@ -470,8 +518,8 @@ class LCNI_Recommend_Admin_Page {
                 } catch(err){}
             });
 
-            source.addEventListener("change",renderColumns);
-            renderColumns();
+            source.addEventListener("change",loadColumns);
+            loadColumns();
             renderSelected();
         })();';
         echo '</script>';
@@ -527,6 +575,26 @@ class LCNI_Recommend_Admin_Page {
         }));
 
         wp_send_json_success($values);
+    }
+
+    public function ajax_table_columns() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Permission denied'], 403);
+        }
+
+        check_ajax_referer('lcni_recommend_table_columns', 'nonce');
+
+        $table = sanitize_text_field(wp_unslash((string) ($_POST['table'] ?? '')));
+        if ($table === '') {
+            wp_send_json_error(['message' => 'Invalid table'], 400);
+        }
+
+        $table_sources = array_keys($this->get_builder_table_sources());
+        if (!in_array($table, $table_sources, true)) {
+            wp_send_json_error(['message' => 'Unknown table'], 400);
+        }
+
+        wp_send_json_success($this->get_table_columns_for_builder($table));
     }
 
     private function resolve_table_name($suffix) {
