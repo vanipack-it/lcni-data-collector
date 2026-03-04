@@ -168,12 +168,33 @@ class LCNI_Recommend_Admin_Page {
     private function get_builder_table_sources() {
         global $wpdb;
 
-        return [
-            $wpdb->prefix . 'lcni_ohlc' => 'wp_lcni_ohlc',
-            $wpdb->prefix . 'lcni_symbol_tongquan' => 'wp_lcni_symbol_tongquan',
-            $wpdb->prefix . 'lcni_icb2' => 'wp_lcni_icb2',
-            $wpdb->prefix . 'lcni_marketid' => 'wp_lcni_marketid',
+        $table_candidates = [
+            [$wpdb->prefix . 'lcni_ohlc'],
+            [$wpdb->prefix . 'lcni_symbol_tongquan', $wpdb->prefix . 'lcni_symbol_tong_quan'],
+            [$wpdb->prefix . 'lcni_icb2'],
+            [$wpdb->prefix . 'lcni_marketid'],
         ];
+
+        $sources = [];
+
+        foreach ($table_candidates as $candidates) {
+            $resolved = '';
+            foreach ($candidates as $table_name) {
+                $table_exists = (string) $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table_name));
+                if ($table_exists !== '') {
+                    $resolved = $table_exists;
+                    break;
+                }
+            }
+
+            if ($resolved === '') {
+                $resolved = $candidates[0];
+            }
+
+            $sources[$resolved] = $resolved;
+        }
+
+        return $sources;
     }
 
     private function get_table_columns_for_builder($table_name) {
