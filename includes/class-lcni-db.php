@@ -6023,6 +6023,8 @@ class LCNI_DB {
         global $wpdb;
 
         $table = $wpdb->prefix . 'lcni_ohlc';
+        $retention_enabled = (int) get_option('lcni_seed_retention_enabled', 1) === 1;
+        $volume_filter_enabled = (int) get_option('lcni_seed_eod_volume_filter_enabled', 1) === 1;
         $retention_limit = max(10, (int) get_option('lcni_seed_retention_candles', 260));
         $eod_min_volume = max(0, (int) get_option('lcni_seed_eod_min_volume', 10000));
         $import_lock_until = (int) get_option('lcni_csv_import_lock_until', 0);
@@ -6036,6 +6038,8 @@ class LCNI_DB {
                     'lock_until' => $import_lock_until,
                     'retention_limit' => $retention_limit,
                     'eod_min_volume' => $eod_min_volume,
+                    'retention_enabled' => $retention_enabled,
+                    'volume_filter_enabled' => $volume_filter_enabled,
                 ]
             );
 
@@ -6043,6 +6047,8 @@ class LCNI_DB {
                 'status' => 'skipped_import_running',
                 'retention_limit' => $retention_limit,
                 'eod_min_volume' => $eod_min_volume,
+                'retention_enabled' => $retention_enabled,
+                'volume_filter_enabled' => $volume_filter_enabled,
                 'filtered_rows' => 0,
                 'pruned_rows' => 0,
             ];
@@ -6051,7 +6057,7 @@ class LCNI_DB {
         self::ensure_ohlc_indexes();
 
         $filtered_rows = 0;
-        if ($eod_min_volume > 0) {
+        if ($volume_filter_enabled && $eod_min_volume > 0) {
             $filter_sql = $wpdb->prepare(
                 "DELETE o
                 FROM {$table} o
@@ -6067,7 +6073,7 @@ class LCNI_DB {
                     AND latest_row.event_time = latest.max_event_time
                 WHERE o.timeframe = '1D'
                     AND o.event_time < latest.max_event_time
-                    AND latest_row.volume < %d",
+                    AND o.volume < %d",
                 $eod_min_volume
             );
 
@@ -6075,32 +6081,37 @@ class LCNI_DB {
             $filtered_rows = max(0, (int) $wpdb->rows_affected);
         }
 
-        $prune_sql = $wpdb->prepare(
-            "DELETE stale
-            FROM {$table} stale
-            INNER JOIN (
-                SELECT id
-                FROM (
-                    SELECT id,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY symbol, timeframe
-                            ORDER BY event_time DESC, id DESC
-                        ) AS rn
-                    FROM {$table}
-                ) ranked
-                WHERE rn > %d
-            ) prune_ids ON prune_ids.id = stale.id",
-            $retention_limit
-        );
+        $pruned_rows = 0;
+        if ($retention_enabled) {
+            $prune_sql = $wpdb->prepare(
+                "DELETE stale
+                FROM {$table} stale
+                INNER JOIN (
+                    SELECT id
+                    FROM (
+                        SELECT id,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY symbol, timeframe
+                                ORDER BY event_time DESC, id DESC
+                            ) AS rn
+                        FROM {$table}
+                    ) ranked
+                    WHERE rn > %d
+                ) prune_ids ON prune_ids.id = stale.id",
+                $retention_limit
+            );
 
-        $wpdb->query($prune_sql);
-        $pruned_rows = max(0, (int) $wpdb->rows_affected);
+            $wpdb->query($prune_sql);
+            $pruned_rows = max(0, (int) $wpdb->rows_affected);
+        }
 
         self::log_change(
             'seed_data_optimized',
             sprintf(
-                'Applied seed optimization: volume threshold=%d, retention=%d, filtered_rows=%d, pruned_rows=%d.',
+                'Applied seed optimization: volume_filter_enabled=%d, volume_threshold=%d, retention_enabled=%d, retention=%d, filtered_rows=%d, pruned_rows=%d.',
+                $volume_filter_enabled ? 1 : 0,
                 $eod_min_volume,
+                $retention_enabled ? 1 : 0,
                 $retention_limit,
                 $filtered_rows,
                 $pruned_rows
@@ -6110,6 +6121,8 @@ class LCNI_DB {
         return [
             'retention_limit' => $retention_limit,
             'eod_min_volume' => $eod_min_volume,
+            'retention_enabled' => $retention_enabled,
+            'volume_filter_enabled' => $volume_filter_enabled,
             'filtered_rows' => $filtered_rows,
             'pruned_rows' => $pruned_rows,
         ];
