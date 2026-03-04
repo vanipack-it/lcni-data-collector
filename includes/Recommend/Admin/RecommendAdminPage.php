@@ -206,19 +206,38 @@ class LCNI_Recommend_Admin_Page {
         $columns = [];
         $rows = $wpdb->get_results("SHOW COLUMNS FROM `{$table_name}`", ARRAY_A);
 
+        if (!is_array($rows) || empty($rows)) {
+            $rows = $wpdb->get_results("DESCRIBE `{$table_name}`", ARRAY_A);
+        }
+
         foreach ((array) $rows as $row) {
-            $field = sanitize_key((string) ($row['Field'] ?? ''));
+            $field_value = '';
+            if (isset($row['Field'])) {
+                $field_value = (string) $row['Field'];
+            } elseif (isset($row['field'])) {
+                $field_value = (string) $row['field'];
+            }
+
+            $field = sanitize_key($field_value);
             if ($field === '') {
                 continue;
             }
 
-            $raw_type = strtolower((string) ($row['Type'] ?? ''));
+            $raw_type_value = '';
+            if (isset($row['Type'])) {
+                $raw_type_value = (string) $row['Type'];
+            } elseif (isset($row['type'])) {
+                $raw_type_value = (string) $row['type'];
+            }
+
+            $raw_type = strtolower($raw_type_value);
             $is_numeric = (bool) preg_match('/int|decimal|numeric|float|double|real|bit|serial/', $raw_type);
 
             $columns[] = [
                 'field' => $field,
                 'raw_type' => $raw_type,
                 'is_numeric' => $is_numeric,
+                'table' => $table_name,
             ];
         }
 
