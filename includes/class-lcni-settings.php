@@ -127,6 +127,28 @@ class LCNI_Settings {
         return max(1, (int) $value);
     }
 
+    public function sanitize_refresh_times($value) {
+        $raw_values = is_array($value) ? $value : preg_split('/[\s,;|]+/', (string) $value);
+        $normalized = [];
+
+        foreach ((array) $raw_values as $item) {
+            $time = trim((string) $item);
+            if (!preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $time)) {
+                continue;
+            }
+            $normalized[$time] = $time;
+        }
+
+        if (empty($normalized)) {
+            $normalized['09:00'] = '09:00';
+        }
+
+        $times = array_values($normalized);
+        sort($times, SORT_STRING);
+
+        return $times;
+    }
+
     public function handle_admin_actions() {
         if (!is_admin() || !current_user_can('manage_options') || !isset($_POST['lcni_admin_action'])) {
             return;
@@ -311,8 +333,9 @@ class LCNI_Settings {
             }
         } elseif ($action === 'save_update_data_settings') {
             $enabled = !empty($_POST['lcni_update_enabled']);
-            $run_after_time = isset($_POST['lcni_update_run_after_time']) ? sanitize_text_field(wp_unslash($_POST['lcni_update_run_after_time'])) : '09:00';
-            $saved = LCNI_Update_Manager::save_settings($enabled, $run_after_time);
+            $refresh_times_raw = isset($_POST['lcni_update_refresh_times']) ? sanitize_text_field(wp_unslash($_POST['lcni_update_refresh_times'])) : '09:00';
+            $refresh_times = $this->sanitize_refresh_times($refresh_times_raw);
+            $saved = LCNI_Update_Manager::save_settings($enabled, $refresh_times);
             update_option('lcni_update_interval_minutes', (int) ($saved['interval_minutes'] ?? 1));
             $this->set_notice('success', 'Đã lưu cài đặt Update Data.');
         } elseif ($action === 'run_manual_update_data') {
@@ -325,7 +348,9 @@ class LCNI_Settings {
         } elseif ($action === 'save_ohlc_latest_settings') {
             $enabled = !empty($_POST['lcni_ohlc_latest_enabled']);
             $interval = isset($_POST['lcni_ohlc_latest_interval_minutes']) ? $this->sanitize_update_interval(wp_unslash($_POST['lcni_ohlc_latest_interval_minutes'])) : 5;
-            LCNI_OHLC_Latest_Manager::save_settings($enabled, $interval);
+            $refresh_times_raw = isset($_POST['lcni_ohlc_latest_refresh_times']) ? sanitize_text_field(wp_unslash($_POST['lcni_ohlc_latest_refresh_times'])) : '09:00';
+            $refresh_times = $this->sanitize_refresh_times($refresh_times_raw);
+            LCNI_OHLC_Latest_Manager::save_settings($enabled, $interval, $refresh_times);
             $this->set_notice('success', 'Đã lưu cài đặt OHLC Latest Snapshot.');
         } elseif ($action === 'run_manual_ohlc_latest_sync') {
             $status = LCNI_OHLC_Latest_Manager::trigger_manual_sync();
@@ -1287,9 +1312,6 @@ class LCNI_Settings {
         $runtime_symbol = $this->get_latest_symbol_price_snapshot('lcni_ohlc', 'CEO');
 
         $message = (string) ($status['message'] ?? '-');
-        if (!empty($status['waiting_for_trading_session'])) {
-            $message = 'Waiting for trading session';
-        }
 
         return [
             'running_label' => !empty($status['running']) ? 'Đang chạy' : 'Đã dừng',
@@ -1873,8 +1895,11 @@ class LCNI_Settings {
                                 <td><label><input type="checkbox" name="lcni_update_enabled" value="1" <?php checked(!empty($update_settings['enabled'])); ?>> Kích hoạt</label></td>
                             </tr>
                             <tr>
-                                <th>Thời gian bắt đầu chạy (HH:MM)</th>
-                                <td><input type="time" name="lcni_update_run_after_time" value="<?php echo esc_attr((string) ($update_settings['run_after_time'] ?? '09:00')); ?>"></td>
+                                <th>Khung giờ chạy tự động (GMT+7, HH:MM)</th>
+                                <td>
+                                    <input type="text" name="lcni_update_refresh_times" value="<?php echo esc_attr(implode(', ', (array) ($update_settings['refresh_times'] ?? ['09:00']))); ?>" class="regular-text" placeholder="09:00, 10:30, 14:45">
+                                    <p class="description" style="margin:6px 0 0;">Hỗ trợ nhiều mốc giờ tương tự Power BI. Ngăn cách bằng dấu phẩy.</p>
+                                </td>
                             </tr>
                         </table>
                         <?php submit_button('Lưu & Thực thi tự động', 'primary', 'submit', false); ?>
@@ -1935,6 +1960,13 @@ class LCNI_Settings {
                             <tr>
                                 <th>Chu kỳ Event (phút)</th>
                                 <td><input type="number" min="1" name="lcni_ohlc_latest_interval_minutes" value="<?php echo esc_attr((string) ($ohlc_latest_settings['interval_minutes'] ?? 5)); ?>"></td>
+                            </tr>
+                            <tr>
+                                <th>Khung giờ sync Snapshot (GMT+7, HH:MM)</th>
+                                <td>
+                                    <input type="text" name="lcni_ohlc_latest_refresh_times" value="<?php echo esc_attr(implode(', ', (array) ($ohlc_latest_settings['refresh_times'] ?? ['09:00']))); ?>" class="regular-text" placeholder="09:00, 10:30, 14:45">
+                                    <p class="description" style="margin:6px 0 0;">WP-Cron sẽ kích hoạt sync theo các mốc giờ này (GMT+7).</p>
+                                </td>
                             </tr>
                         </table>
                         <?php submit_button('Lưu cài đặt Snapshot', 'primary', 'submit', false); ?>

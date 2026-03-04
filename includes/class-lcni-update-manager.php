@@ -17,19 +17,26 @@ class LCNI_Update_Manager {
 
     public static function get_settings() {
         $settings = get_option(self::OPTION_SETTINGS, []);
+        $refresh_times = self::normalize_refresh_times($settings['refresh_times'] ?? []);
+        if (empty($refresh_times)) {
+            $refresh_times = self::normalize_refresh_times($settings['run_after_time'] ?? '09:00');
+        }
 
         return [
             'enabled' => !empty($settings['enabled']),
             'interval_minutes' => 1,
-            'run_after_time' => self::normalize_run_after_time($settings['run_after_time'] ?? '09:00'),
+            'run_after_time' => (string) ($refresh_times[0] ?? '09:00'),
+            'refresh_times' => $refresh_times,
         ];
     }
 
-    public static function save_settings($enabled, $run_after_time = '09:00') {
+    public static function save_settings($enabled, $refresh_times = ['09:00']) {
+        $normalized_times = self::normalize_refresh_times($refresh_times);
         $settings = [
             'enabled' => (bool) $enabled,
             'interval_minutes' => 1,
-            'run_after_time' => self::normalize_run_after_time($run_after_time),
+            'run_after_time' => (string) ($normalized_times[0] ?? '09:00'),
+            'refresh_times' => $normalized_times,
         ];
 
         update_option(self::OPTION_SETTINGS, $settings);
@@ -65,20 +72,20 @@ class LCNI_Update_Manager {
             return;
         }
 
-        if (!self::is_after_configured_run_time($settings['run_after_time'])) {
+        $current_slot = self::get_current_slot_key($settings['refresh_times']);
+        if ($current_slot === '') {
             return;
         }
 
         $status = self::get_status();
-        $next_run_ts = isset($status['next_run_ts']) ? (int) $status['next_run_ts'] : 0;
-        if ($next_run_ts > current_time('timestamp')) {
+        if (($status['last_auto_run_slot'] ?? '') === $current_slot) {
             return;
         }
 
-        self::run_update('auto');
+        self::run_update('auto', $current_slot);
     }
 
-    public static function run_update($mode = 'auto') {
+    public static function run_update($mode = 'auto', $scheduled_slot = '') {
         $started_at = current_time('mysql');
         $status = [
             'running' => true,
@@ -96,6 +103,7 @@ class LCNI_Update_Manager {
             'message' => '',
             'error' => '',
             'next_run_ts' => 0,
+            'last_auto_run_slot' => '',
         ];
         self::save_status($status);
 
@@ -107,6 +115,9 @@ class LCNI_Update_Manager {
             $status['error'] = $result->get_error_message();
             $status['message'] = 'Runtime update failed.';
             $status['next_run_ts'] = self::calculate_next_run_ts();
+            if ($mode === 'auto' && $scheduled_slot !== '') {
+                $status['last_auto_run_slot'] = $scheduled_slot;
+            }
             self::save_status($status);
 
             return $status;
@@ -126,6 +137,9 @@ class LCNI_Update_Manager {
         $status['message'] = (string) ($result['message'] ?? 'Runtime update completed.');
         $status['error'] = !empty($result['error']) ? (string) $result['error'] : '';
         $status['next_run_ts'] = self::calculate_next_run_ts();
+        if ($mode === 'auto' && $scheduled_slot !== '') {
+            $status['last_auto_run_slot'] = $scheduled_slot;
+        }
 
         self::save_status($status);
 
@@ -160,19 +174,18 @@ class LCNI_Update_Manager {
     private static function calculate_next_run_ts() {
         $settings = self::get_settings();
         $now = new DateTimeImmutable('now', lcni_get_market_timezone());
+        $refresh_times = self::normalize_refresh_times($settings['refresh_times'] ?? []);
 
-        $run_after_ts = self::build_run_after_timestamp($now, (string) ($settings['run_after_time'] ?? '09:00'));
-        if ($now->getTimestamp() < $run_after_ts) {
-            return $run_after_ts;
+        foreach ($refresh_times as $time) {
+            $candidate = self::build_run_after_timestamp($now, $time);
+            if ($candidate > $now->getTimestamp()) {
+                return $candidate;
+            }
         }
 
-        if (!lcni_is_trading_time($now)) {
-            return lcni_get_next_trading_time($now)->getTimestamp();
-        }
+        $tomorrow = $now->modify('+1 day');
 
-        $candidate = $now->modify('+1 minutes');
-
-        return lcni_get_next_trading_time($candidate)->getTimestamp();
+        return self::build_run_after_timestamp($tomorrow, (string) ($refresh_times[0] ?? '09:00'));
     }
 
     private static function normalize_run_after_time($value) {
@@ -196,5 +209,40 @@ class LCNI_Update_Manager {
         $now = new DateTimeImmutable('now', lcni_get_market_timezone());
 
         return $now->getTimestamp() >= self::build_run_after_timestamp($now, $run_after_time);
+    }
+
+    private static function normalize_refresh_times($value) {
+        $raw_values = is_array($value) ? $value : preg_split('/[\s,;|]+/', (string) $value);
+        $normalized = [];
+
+        foreach ((array) $raw_values as $item) {
+            $time = trim((string) $item);
+            if (!preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $time)) {
+                continue;
+            }
+            $normalized[$time] = $time;
+        }
+
+        if (empty($normalized)) {
+            $normalized['09:00'] = '09:00';
+        }
+
+        $times = array_values($normalized);
+        sort($times, SORT_STRING);
+
+        return $times;
+    }
+
+    private static function get_current_slot_key($refresh_times) {
+        $now = new DateTimeImmutable('now', lcni_get_market_timezone());
+        $current_time = $now->format('H:i');
+
+        foreach (self::normalize_refresh_times($refresh_times) as $time) {
+            if ($time === $current_time) {
+                return $now->format('Y-m-d') . ' ' . $time;
+            }
+        }
+
+        return '';
     }
 }

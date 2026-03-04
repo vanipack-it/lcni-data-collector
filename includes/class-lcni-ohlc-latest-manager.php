@@ -50,11 +50,17 @@ class LCNI_OHLC_Latest_Manager {
             return;
         }
 
-        if (!self::is_snapshot_stale($settings['interval_minutes'])) {
+        $current_slot = self::get_current_slot_key($settings['refresh_times']);
+        if ($current_slot === '') {
             return;
         }
 
-        self::run_snapshot_sync('wp_cron');
+        $status = self::get_status();
+        if (($status['last_auto_run_slot'] ?? '') === $current_slot) {
+            return;
+        }
+
+        self::run_snapshot_sync('wp_cron', $current_slot);
     }
 
     public static function watchdog_check() {
@@ -79,10 +85,15 @@ class LCNI_OHLC_Latest_Manager {
 
     public static function get_settings() {
         $settings = get_option(self::OPTION_SETTINGS, []);
+        $refresh_times = self::normalize_refresh_times($settings['refresh_times'] ?? []);
+        if (empty($refresh_times)) {
+            $refresh_times = ['09:00'];
+        }
 
         return [
             'enabled' => !empty($settings['enabled']),
             'interval_minutes' => max(1, (int) ($settings['interval_minutes'] ?? 5)),
+            'refresh_times' => $refresh_times,
         ];
     }
 
@@ -101,13 +112,14 @@ class LCNI_OHLC_Latest_Manager {
     public static function get_engine_status() {
         $settings = self::get_settings();
         $last_snapshot_timestamp = self::get_last_snapshot_timestamp();
-        $next_run = wp_next_scheduled(self::CRON_HOOK);
+        $next_run = self::calculate_next_run_ts((array) ($settings['refresh_times'] ?? []));
+        $cron_probe = wp_next_scheduled(self::CRON_HOOK);
 
         return [
             'enabled' => $settings['enabled'],
             'interval_minutes' => $settings['interval_minutes'],
-            'wp_cron_scheduled' => (bool) $next_run,
-            'next_run' => $next_run ? get_date_from_gmt(gmdate('Y-m-d H:i:s', (int) $next_run), 'Y-m-d H:i:s') : '',
+            'wp_cron_scheduled' => (bool) $cron_probe,
+            'next_run' => $next_run > 0 ? wp_date('Y-m-d H:i:s', $next_run, lcni_get_market_timezone()) : '',
             'next_run_timestamp' => (int) $next_run,
             'last_snapshot_time' => $last_snapshot_timestamp > 0 ? get_date_from_gmt(gmdate('Y-m-d H:i:s', $last_snapshot_timestamp), 'Y-m-d H:i:s') : '',
             'last_snapshot_timestamp' => $last_snapshot_timestamp,
@@ -115,15 +127,17 @@ class LCNI_OHLC_Latest_Manager {
         ];
     }
 
-    public static function save_settings($enabled, $interval_minutes) {
+    public static function save_settings($enabled, $interval_minutes, $refresh_times = ['09:00']) {
         $settings = [
             'enabled' => (bool) $enabled,
             'interval_minutes' => max(1, (int) $interval_minutes),
+            'refresh_times' => self::normalize_refresh_times($refresh_times),
         ];
 
         update_option(self::OPTION_SETTINGS, $settings);
         update_option('lcni_ohlc_latest_enabled', (int) $settings['enabled']);
         update_option('lcni_ohlc_latest_interval_minutes', (int) $settings['interval_minutes']);
+        update_option('lcni_ohlc_latest_refresh_times', implode(',', (array) ($settings['refresh_times'] ?? [])));
 
         LCNI_DB::ensure_ohlc_latest_snapshot_infrastructure($settings['enabled'], $settings['interval_minutes']);
         self::ensure_cron_health();
@@ -152,7 +166,7 @@ class LCNI_OHLC_Latest_Manager {
         LCNI_DB::ensure_ohlc_latest_snapshot_infrastructure($settings['enabled'], $settings['interval_minutes']);
     }
 
-    private static function run_snapshot_sync($source) {
+    private static function run_snapshot_sync($source, $scheduled_slot = '') {
         if (!self::acquire_lock()) {
             return [
                 'running' => false,
@@ -172,6 +186,7 @@ class LCNI_OHLC_Latest_Manager {
             'rows_affected' => 0,
             'message' => 'Running OHLC latest snapshot sync...',
             'error' => '',
+            'last_auto_run_slot' => '',
         ];
 
         update_option(self::OPTION_STATUS, $status);
@@ -184,6 +199,9 @@ class LCNI_OHLC_Latest_Manager {
         $status['rows_affected'] = (int) ($result['rows_affected'] ?? 0);
         $status['error'] = (string) ($result['error'] ?? '');
         $status['message'] = empty($status['error']) ? 'OHLC latest snapshot sync completed.' : 'OHLC latest snapshot sync failed.';
+        if ($scheduled_slot !== '' && sanitize_key($source) === 'wp_cron') {
+            $status['last_auto_run_slot'] = $scheduled_slot;
+        }
         update_option(self::OPTION_STATUS, $status);
 
         LCNI_DB::log_change(
@@ -258,7 +276,7 @@ class LCNI_OHLC_Latest_Manager {
             $market_stats['flat'] = (int) ($movement_row['flat_count'] ?? 0);
         }
 
-        $next_run_timestamp = wp_next_scheduled(self::CRON_HOOK);
+        $next_run_timestamp = self::calculate_next_run_ts((array) (self::get_settings()['refresh_times'] ?? []));
         $duration_seconds = max(0, (int) $ended_at_timestamp - (int) $started_at_timestamp);
 
         $stats = [
@@ -290,6 +308,58 @@ class LCNI_OHLC_Latest_Manager {
     private static function clear_scheduled_hooks() {
         wp_clear_scheduled_hook(self::CRON_HOOK);
         wp_clear_scheduled_hook(self::WATCHDOG_HOOK);
+    }
+
+
+    private static function normalize_refresh_times($value) {
+        $raw_values = is_array($value) ? $value : preg_split('/[\s,;|]+/', (string) $value);
+        $normalized = [];
+
+        foreach ((array) $raw_values as $item) {
+            $time = trim((string) $item);
+            if (!preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $time)) {
+                continue;
+            }
+            $normalized[$time] = $time;
+        }
+
+        if (empty($normalized)) {
+            $normalized['09:00'] = '09:00';
+        }
+
+        $times = array_values($normalized);
+        sort($times, SORT_STRING);
+
+        return $times;
+    }
+
+    private static function get_current_slot_key($refresh_times) {
+        $now = new DateTimeImmutable('now', lcni_get_market_timezone());
+        $current_time = $now->format('H:i');
+
+        foreach (self::normalize_refresh_times($refresh_times) as $time) {
+            if ($time === $current_time) {
+                return $now->format('Y-m-d') . ' ' . $time;
+            }
+        }
+
+        return '';
+    }
+
+    private static function calculate_next_run_ts($refresh_times) {
+        $times = self::normalize_refresh_times($refresh_times);
+        $now = new DateTimeImmutable('now', lcni_get_market_timezone());
+
+        foreach ($times as $time) {
+            [$hour, $minute] = array_map('intval', explode(':', $time));
+            $candidate = $now->setTime($hour, $minute, 0);
+            if ($candidate->getTimestamp() > $now->getTimestamp()) {
+                return $candidate->getTimestamp();
+            }
+        }
+
+        [$hour, $minute] = array_map('intval', explode(':', (string) ($times[0] ?? '09:00')));
+        return $now->modify('+1 day')->setTime($hour, $minute, 0)->getTimestamp();
     }
 
     private static function is_snapshot_stale($stale_interval_minutes) {

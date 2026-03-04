@@ -4260,26 +4260,6 @@ class LCNI_DB {
         $started_at_ts = current_time('timestamp');
         $started_at_mysql = current_time('mysql');
 
-        if (!self::is_trading_session_open()) {
-            self::log_change('intraday_skipped', 'Intraday update skipped because market is out of trading session.');
-
-            return [
-                'processed_symbols' => 0,
-                'success_symbols' => 0,
-                'error_symbols' => 0,
-                'pending_symbols' => 0,
-                'total_symbols' => 0,
-                'changed_symbols' => 0,
-                'indicators_done' => true,
-                'waiting_for_trading_session' => true,
-                'message' => 'Waiting for trading session.',
-                'error' => '',
-                'started_at' => $started_at_mysql,
-                'ended_at' => current_time('mysql'),
-                'execution_seconds' => 0,
-            ];
-        }
-
         global $wpdb;
 
         $timeframe = strtoupper((string) get_option('lcni_timeframe', '1D'));
