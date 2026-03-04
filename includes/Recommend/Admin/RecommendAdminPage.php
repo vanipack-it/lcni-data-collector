@@ -185,15 +185,12 @@ class LCNI_Recommend_Admin_Page {
     }
 
     private function get_builder_table_sources() {
-        global $wpdb;
-
         $suffixes = ['lcni_ohlc', 'lcni_symbol_tong_quan', 'lcni_icb2', 'lcni_marketid'];
         $sources = [];
 
         foreach ($suffixes as $suffix) {
             $resolved = $this->resolve_table_name($suffix);
-            $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $resolved));
-            if ($exists !== $resolved) {
+            if (!$this->table_exists($resolved)) {
                 continue;
             }
 
@@ -590,12 +587,12 @@ class LCNI_Recommend_Admin_Page {
             wp_send_json_error(['message' => 'Invalid params'], 400);
         }
 
-        $table_sources = array_keys($this->get_builder_table_sources());
-        if (!in_array($table, $table_sources, true)) {
+        $resolved_table = $this->resolve_builder_request_table($table);
+        if ($resolved_table === '') {
             wp_send_json_error(['message' => 'Unknown table'], 400);
         }
 
-        $columns = $this->get_table_columns_for_builder($table);
+        $columns = $this->get_table_columns_for_builder($resolved_table);
         $is_allowed_field = false;
         foreach ($columns as $column) {
             if (($column['field'] ?? '') === $field && empty($column['is_numeric'])) {
@@ -613,7 +610,7 @@ class LCNI_Recommend_Admin_Page {
         $query = sprintf(
             'SELECT DISTINCT `%1$s` AS value FROM `%2$s` WHERE `%1$s` IS NOT NULL AND `%1$s` <> "" ORDER BY `%1$s` ASC LIMIT 100',
             esc_sql($field),
-            esc_sql($table)
+            esc_sql($resolved_table)
         );
 
         $rows = $wpdb->get_col($query);
@@ -636,12 +633,55 @@ class LCNI_Recommend_Admin_Page {
             wp_send_json_error(['message' => 'Invalid table'], 400);
         }
 
-        $table_sources = array_keys($this->get_builder_table_sources());
-        if (!in_array($table, $table_sources, true)) {
+        $resolved_table = $this->resolve_builder_request_table($table);
+        if ($resolved_table === '') {
             wp_send_json_error(['message' => 'Unknown table'], 400);
         }
 
-        wp_send_json_success($this->get_table_columns_for_builder($table));
+        wp_send_json_success($this->get_table_columns_for_builder($resolved_table));
+    }
+
+    private function table_exists($table_name) {
+        global $wpdb;
+
+        $table_name = sanitize_text_field((string) $table_name);
+        if ($table_name === '') {
+            return false;
+        }
+
+        $like = $wpdb->esc_like($table_name);
+        $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $like));
+
+        return is_string($exists) && strtolower($exists) === strtolower($table_name);
+    }
+
+    private function resolve_builder_request_table($requested_table) {
+        global $wpdb;
+
+        $requested_table = sanitize_text_field((string) $requested_table);
+        if ($requested_table === '') {
+            return '';
+        }
+
+        $suffixes = ['lcni_ohlc', 'lcni_symbol_tong_quan', 'lcni_icb2', 'lcni_marketid'];
+
+        foreach ($suffixes as $suffix) {
+            $resolved = $this->resolve_table_name($suffix);
+            $accepted_names = [
+                $resolved,
+                $wpdb->prefix . $suffix,
+                'wp_' . $suffix,
+                $suffix,
+            ];
+
+            if (!in_array($requested_table, array_unique($accepted_names), true)) {
+                continue;
+            }
+
+            return $this->table_exists($resolved) ? $resolved : '';
+        }
+
+        return '';
     }
 
     private function resolve_table_name($suffix) {
@@ -654,8 +694,7 @@ class LCNI_Recommend_Admin_Page {
         ];
 
         foreach (array_unique($candidates) as $table_name) {
-            $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table_name));
-            if ($exists === $table_name) {
+            if ($this->table_exists($table_name)) {
                 return $table_name;
             }
         }
