@@ -50,8 +50,18 @@ class LCNI_FilterShortcode {
         LCNI_Button_Style_Config::enqueue_frontend_assets('lcni-filter');
         $stock_page_slug = sanitize_title((string) get_option('lcni_watchlist_stock_page', ''));
         $filter_page_slug = sanitize_title((string) get_option('lcni_filter_link_page', 'sug-filter'));
+        $filter_login_page_id = absint(get_option('lcni_filter_login_page_id', 0));
+        $filter_register_page_id = absint(get_option('lcni_filter_register_page_id', 0));
 
         $stock_detail_url = $stock_page_slug !== '' ? home_url('/' . $stock_page_slug . '/') : '';
+        $login_url = $filter_login_page_id > 0 ? get_permalink($filter_login_page_id) : '';
+        $register_url = $filter_register_page_id > 0 ? get_permalink($filter_register_page_id) : '';
+        if (!is_string($login_url) || $login_url === '') {
+            $login_url = wp_login_url(get_permalink() ?: home_url('/'));
+        }
+        if (!is_string($register_url) || $register_url === '') {
+            $register_url = function_exists('wp_registration_url') ? wp_registration_url() : wp_login_url();
+        }
 
         $storage_key_suffix = substr(md5(wp_json_encode($settings['table_columns'] ?? [])), 0, 8);
 
@@ -61,8 +71,8 @@ class LCNI_FilterShortcode {
             'watchlistRestBase' => esc_url_raw(rest_url('lcni/v1/watchlist')),
             'nonce' => wp_create_nonce('wp_rest'),
             'isLoggedIn' => is_user_logged_in(),
-            'loginUrl' => esc_url_raw(wp_login_url(get_permalink() ?: home_url('/'))),
-            'registerUrl' => esc_url_raw(function_exists('wp_registration_url') ? wp_registration_url() : wp_login_url()),
+            'loginUrl' => esc_url_raw($login_url),
+            'registerUrl' => esc_url_raw($register_url),
             'stockDetailPageSlug' => $stock_page_slug,
             'stockDetailUrl' => esc_url_raw($stock_detail_url),
             'filterPageUrl' => esc_url_raw(home_url('/' . $filter_page_slug . '/')),

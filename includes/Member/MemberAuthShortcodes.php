@@ -291,7 +291,7 @@ class LCNI_Member_Auth_Shortcodes {
 
     private function form_box_style($settings) {
         return sprintf(
-            'width:100%%;max-width:520px;background:%s;border:1px solid %s;border-radius:%dpx;padding:16px;display:flex;flex-direction:column;gap:12px;box-sizing:border-box;',
+            'width:100%%;max-width:520px;background:%s;border:1px solid %s;border-radius:%dpx;padding:16px;display:flex;flex-direction:column;gap:12px;box-sizing:border-box;margin:0 auto;',
             esc_attr($settings['form_box_background'] ?? '#ffffff'),
             esc_attr($settings['form_box_border_color'] ?? '#d1d5db'),
             absint($settings['form_box_border_radius'] ?? 10)
@@ -304,7 +304,7 @@ class LCNI_Member_Auth_Shortcodes {
             : '';
 
         return sprintf(
-            'font-family:%s;color:%s;background:%s;%sborder:1px solid %s;border-radius:%dpx;padding:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;',
+            'font-family:%s;color:%s;background:%s;%sborder:1px solid %s;border-radius:%dpx;padding:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;width:100%%;min-height:100dvh;box-sizing:border-box;margin:0 auto;',
             esc_attr($settings['font'] ?? 'inherit'),
             esc_attr($settings['text_color'] ?? '#1f2937'),
             $background_color,

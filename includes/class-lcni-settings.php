@@ -17,6 +17,7 @@ class LCNI_Settings {
         add_action('wp_ajax_lcni_rule_rebuild_status', [$this, 'ajax_rule_rebuild_status']);
         add_action('wp_ajax_lcni_update_data_status_snapshot', [$this, 'ajax_update_data_status_snapshot']);
         add_action('wp_ajax_lcni_csv_import_status_snapshot', [$this, 'ajax_csv_import_status_snapshot']);
+        add_action('wp_ajax_lcni_report_snapshot', [$this, 'ajax_report_snapshot']);
         add_action('wp_ajax_lcni_chart_builder_fields', [$this, 'ajax_chart_builder_fields']);
         add_action('wp_ajax_lcni_chart_builder_filter_values', [$this, 'ajax_chart_builder_filter_values']);
     }
@@ -543,6 +544,8 @@ class LCNI_Settings {
                         update_option('lcni_filter_default_admin_saved_filter_id', absint(isset($_POST['lcni_filter_default_admin_saved_filter_id']) ? wp_unslash($_POST['lcni_filter_default_admin_saved_filter_id']) : 0));
                     } elseif ($section === 'filter_page') {
                         $filter_page_id = absint(isset($_POST['lcni_filter_link_page_id']) ? wp_unslash($_POST['lcni_filter_link_page_id']) : 0);
+                        $filter_login_page_id = absint(isset($_POST['lcni_filter_login_page_id']) ? wp_unslash($_POST['lcni_filter_login_page_id']) : 0);
+                        $filter_register_page_id = absint(isset($_POST['lcni_filter_register_page_id']) ? wp_unslash($_POST['lcni_filter_register_page_id']) : 0);
                         $filter_page_slug = 'sug-filter';
                         if ($filter_page_id > 0) {
                             $post = get_post($filter_page_id);
@@ -552,8 +555,25 @@ class LCNI_Settings {
                                 $filter_page_id = 0;
                             }
                         }
+
+                        if ($filter_login_page_id > 0) {
+                            $login_post = get_post($filter_login_page_id);
+                            if (!($login_post instanceof WP_Post) || $login_post->post_type !== 'page') {
+                                $filter_login_page_id = 0;
+                            }
+                        }
+
+                        if ($filter_register_page_id > 0) {
+                            $register_post = get_post($filter_register_page_id);
+                            if (!($register_post instanceof WP_Post) || $register_post->post_type !== 'page') {
+                                $filter_register_page_id = 0;
+                            }
+                        }
+
                         update_option('lcni_filter_link_page_id', $filter_page_id);
                         update_option('lcni_filter_link_page', $filter_page_slug !== '' ? $filter_page_slug : 'sug-filter');
+                        update_option('lcni_filter_login_page_id', $filter_login_page_id);
+                        update_option('lcni_filter_register_page_id', $filter_register_page_id);
                     }
                 } elseif ($module === 'button_style') {
                     $button_input = isset($_POST['lcni_button_style_config']) ? (array) wp_unslash($_POST['lcni_button_style_config']) : [];
@@ -1389,6 +1409,25 @@ class LCNI_Settings {
         ]);
     }
 
+    public function ajax_report_snapshot() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Forbidden'], 403);
+        }
+
+        check_ajax_referer('lcni_report_snapshot_nonce', 'nonce');
+
+        global $wpdb;
+
+        $logs = $wpdb->get_results("SELECT action, message, created_at FROM {$wpdb->prefix}lcni_change_logs ORDER BY id DESC LIMIT 50", ARRAY_A);
+        $report_data = $this->get_report_system_data();
+
+        wp_send_json_success([
+            'logs' => is_array($logs) ? $logs : [],
+            'report' => $report_data,
+            'updated_at' => wp_date('Y-m-d H:i:s', null, new DateTimeZone('Asia/Ho_Chi_Minh')),
+        ]);
+    }
+
     private function calculate_percent($completed, $total) {
         $total = max(0, (int) $total);
         $completed = max(0, (int) $completed);
@@ -2015,9 +2054,10 @@ class LCNI_Settings {
                     <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=report&report_tab=report_system')); ?>" class="nav-tab <?php echo $report_sub_tab === 'report_system' ? 'nav-tab-active' : ''; ?>">Report System</a>
                 </h2>
 
+                <p id="lcni-report-updated-at" style="margin:0 0 8px;color:#50575e;">Report auto refresh: --</p>
                 <?php if ($report_sub_tab === 'report_system') : ?>
                     <table class="widefat striped" style="max-width:1100px; margin-bottom: 16px;">
-                        <tbody>
+                        <tbody id="lcni-report-system-summary-body">
                             <tr><th style="width: 45%;">Bao nhiêu tác vụ đang chạy ngầm? Đã chạy được bao nhiêu %?</th><td><?php echo esc_html(sprintf('%d tác vụ | %d%%', (int) ($report_data['running_tasks'] ?? 0), (int) ($report_data['overall_percent'] ?? 0))); ?></td></tr>
                             <tr><th>Tác vụ seed nền</th><td><?php echo esc_html(sprintf('%d/%d hoàn thành | running=%d | pending=%d | %d%%', (int) ($report_data['seed']['done'] ?? 0), (int) ($report_data['seed']['total'] ?? 0), (int) ($report_data['seed']['running'] ?? 0), (int) ($report_data['seed']['pending'] ?? 0), (int) ($report_data['seed']['percent'] ?? 0))); ?></td></tr>
                             <tr><th>Runtime update</th><td><?php echo esc_html(sprintf('%s | %d/%d symbol | %d%%', !empty($report_data['runtime']['running']) ? 'Đang chạy' : 'Đang dừng', (int) ($report_data['runtime']['processed'] ?? 0), (int) ($report_data['runtime']['total'] ?? 0), (int) ($report_data['runtime']['percent'] ?? 0))); ?></td></tr>
@@ -2029,8 +2069,8 @@ class LCNI_Settings {
                     </table>
 
                     <h3>Tác vụ chạy ngầm đã hoàn thành (gần nhất)</h3>
+                    <table class="widefat striped" style="max-width:1100px;"><thead><tr><th>Symbol</th><th>Timeframe</th><th>Bắt đầu</th><th>Kết thúc</th></tr></thead><tbody id="lcni-report-system-completed-body">
                     <?php if (!empty($report_data['completed_background_tasks'])) : ?>
-                        <table class="widefat striped" style="max-width:1100px;"><thead><tr><th>Symbol</th><th>Timeframe</th><th>Bắt đầu</th><th>Kết thúc</th></tr></thead><tbody>
                         <?php foreach ($report_data['completed_background_tasks'] as $task) : ?>
                             <tr>
                                 <td><?php echo esc_html((string) ($task['symbol'] ?? '-')); ?></td>
@@ -2039,17 +2079,96 @@ class LCNI_Settings {
                                 <td><?php echo esc_html((string) ($task['updated_at'] ?? '-')); ?></td>
                             </tr>
                         <?php endforeach; ?>
-                        </tbody></table>
-                    <?php else : ?><p>Chưa có tác vụ nền hoàn thành.</p><?php endif; ?>
+                    <?php else : ?>
+                        <tr><td colspan="4">Chưa có tác vụ nền hoàn thành.</td></tr>
+                    <?php endif; ?>
+                    </tbody></table>
                 <?php else : ?>
+                    <table class="widefat striped" style="max-width:1100px;"><thead><tr><th style="width:180px;">Time</th><th style="width:180px;">Action</th><th>Message</th></tr></thead><tbody id="lcni-report-change-logs-body">
                     <?php if (!empty($logs)) : ?>
-                        <table class="widefat striped" style="max-width:1100px;"><thead><tr><th style="width:180px;">Time</th><th style="width:180px;">Action</th><th>Message</th></tr></thead><tbody>
                         <?php foreach ($logs as $log) : ?>
                             <tr><td><?php echo esc_html($log['created_at']); ?></td><td><?php echo esc_html($log['action']); ?></td><td><?php echo esc_html($log['message']); ?></td></tr>
                         <?php endforeach; ?>
-                        </tbody></table>
-                    <?php else : ?><p>No change logs available yet.</p><?php endif; ?>
+                    <?php else : ?>
+                        <tr><td colspan="3">No change logs available yet.</td></tr>
+                    <?php endif; ?>
+                    </tbody></table>
                 <?php endif; ?>
+
+                <script>
+                    (function() {
+                        const endpoint = '<?php echo esc_js(admin_url('admin-ajax.php')); ?>';
+                        const nonce = '<?php echo esc_js(wp_create_nonce('lcni_report_snapshot_nonce')); ?>';
+                        const reportTab = '<?php echo esc_js($report_sub_tab); ?>';
+                        const updatedAt = document.getElementById('lcni-report-updated-at');
+                        const logsBody = document.getElementById('lcni-report-change-logs-body');
+                        const summaryBody = document.getElementById('lcni-report-system-summary-body');
+                        const completedBody = document.getElementById('lcni-report-system-completed-body');
+                        const esc = (value) => String(value == null ? '' : value).replace(/[&<>"']/g, (ch) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[ch]));
+
+                        const renderLogs = (rows) => {
+                            if (!logsBody) {
+                                return;
+                            }
+                            if (!Array.isArray(rows) || rows.length === 0) {
+                                logsBody.innerHTML = '<tr><td colspan="3">No change logs available yet.</td></tr>';
+                                return;
+                            }
+                            logsBody.innerHTML = rows.map((row) => '<tr><td>' + esc(row.created_at || '-') + '</td><td>' + esc(row.action || '-') + '</td><td>' + esc(row.message || '-') + '</td></tr>').join('');
+                        };
+
+                        const renderReportSystem = (data) => {
+                            if (!summaryBody || !data || typeof data !== 'object') {
+                                return;
+                            }
+                            const seed = data.seed || {};
+                            const runtime = data.runtime || {};
+                            const snapshot = data.snapshot || {};
+                            const latest = data.latest_symbol || {};
+                            const rule = data.rule_rebuild || {};
+
+                            summaryBody.innerHTML = [
+                                '<tr><th style="width:45%;">Bao nhiêu tác vụ đang chạy ngầm? Đã chạy được bao nhiêu %?</th><td>' + esc((Number(data.running_tasks || 0)) + ' tác vụ | ' + (Number(data.overall_percent || 0)) + '%') + '</td></tr>',
+                                '<tr><th>Tác vụ seed nền</th><td>' + esc((Number(seed.done || 0)) + '/' + (Number(seed.total || 0)) + ' hoàn thành | running=' + (Number(seed.running || 0)) + ' | pending=' + (Number(seed.pending || 0)) + ' | ' + (Number(seed.percent || 0)) + '%') + '</td></tr>',
+                                '<tr><th>Runtime update</th><td>' + esc((runtime.running ? 'Đang chạy' : 'Đang dừng') + ' | ' + (Number(runtime.processed || 0)) + '/' + (Number(runtime.total || 0)) + ' symbol | ' + (Number(runtime.percent || 0)) + '%') + '</td></tr>',
+                                '<tr><th>Snapshot đồng bộ</th><td>' + esc((snapshot.running ? 'Đang chạy' : 'Đang dừng') + ' | ' + (Number(snapshot.percent || 0)) + '% | start: ' + (snapshot.started_at || '-') + ' | end: ' + (snapshot.ended_at || '-')) + '</td></tr>',
+                                '<tr><th>Dữ liệu symbol gần nhất cập nhật là symbol nào? ngày nào YYYY-MM-DD HH:MM?</th><td>' + esc((latest.symbol || '-') + ' | ' + (latest.event_time || '-')) + '</td></tr>',
+                                '<tr><th>Đã cập nhật bao nhiêu symbol trong ngày hiện tại?</th><td>' + esc(Number(data.updated_symbols_today || 0)) + '</td></tr>',
+                                '<tr><th>Tác vụ tự động tính toán khi có row mới hoặc dữ liệu mới</th><td>' + esc('Rule rebuild: ' + String(rule.status || 'idle').toUpperCase() + ' | ' + Number(rule.processed || 0) + '/' + Number(rule.total || 0) + ' | ' + Number(rule.percent || 0) + '%') + '</td></tr>'
+                            ].join('');
+
+                            if (completedBody) {
+                                const tasks = Array.isArray(data.completed_background_tasks) ? data.completed_background_tasks : [];
+                                completedBody.innerHTML = tasks.length ? tasks.map((task) => '<tr><td>' + esc(task.symbol || '-') + '</td><td>' + esc(task.timeframe || '-') + '</td><td>' + esc(task.created_at || '-') + '</td><td>' + esc(task.updated_at || '-') + '</td></tr>').join('') : '<tr><td colspan="4">Chưa có tác vụ nền hoàn thành.</td></tr>';
+                            }
+                        };
+
+                        const refresh = () => {
+                            const body = new URLSearchParams();
+                            body.set('action', 'lcni_report_snapshot');
+                            body.set('nonce', nonce);
+
+                            fetch(endpoint, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' }, body: body.toString() })
+                                .then((response) => response.json())
+                                .then((payload) => {
+                                    if (!payload || !payload.success || !payload.data) {
+                                        return;
+                                    }
+                                    if (reportTab === 'change_logs') {
+                                        renderLogs(payload.data.logs || []);
+                                    } else {
+                                        renderReportSystem(payload.data.report || {});
+                                    }
+                                    if (updatedAt) {
+                                        updatedAt.textContent = 'Report auto refresh: ' + (payload.data.updated_at || '-');
+                                    }
+                                });
+                        };
+
+                        refresh();
+                        setInterval(refresh, 5000);
+                    })();
+                </script>
             <?php endif; ?>
         </div>
         <?php

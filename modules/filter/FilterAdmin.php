@@ -115,6 +115,8 @@ class LCNI_FilterAdmin {
         $admin_saved_filters = self::get_saved_filters_by_user(get_current_user_id());
         $default_admin_saved_filter_id = absint(get_option('lcni_filter_default_admin_saved_filter_id', 0));
         $filter_page_id = absint(get_option('lcni_filter_link_page_id', 0));
+        $filter_login_page_id = absint(get_option('lcni_filter_login_page_id', 0));
+        $filter_register_page_id = absint(get_option('lcni_filter_register_page_id', 0));
         $filter_page_slug = sanitize_title((string) get_option('lcni_filter_link_page', 'sug-filter'));
         ?>
         <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
@@ -293,6 +295,26 @@ class LCNI_FilterAdmin {
                         </select>
                     </p>
                     <p class="description">Filter page slug hiện tại: <code><?php echo esc_html($filter_page_slug !== '' ? $filter_page_slug : 'sug-filter'); ?></code></p>
+
+                    <h4>Trang cho nút Đăng nhập / Đăng ký trong popup Filter</h4>
+                    <p>
+                        <label style="display:block;margin-bottom:6px;">Login page</label>
+                        <select name="lcni_filter_login_page_id">
+                            <option value="0">-- Mặc định WordPress login --</option>
+                            <?php foreach ($pages as $page) : ?>
+                                <option value="<?php echo esc_attr((string) absint($page->ID)); ?>" <?php selected(absint($page->ID), $filter_login_page_id); ?>><?php echo esc_html($page->post_title); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </p>
+                    <p>
+                        <label style="display:block;margin-bottom:6px;">Register page</label>
+                        <select name="lcni_filter_register_page_id">
+                            <option value="0">-- Mặc định WordPress register --</option>
+                            <?php foreach ($pages as $page) : ?>
+                                <option value="<?php echo esc_attr((string) absint($page->ID)); ?>" <?php selected(absint($page->ID), $filter_register_page_id); ?>><?php echo esc_html($page->post_title); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </p>
                     <?php submit_button('Save'); ?>
                 </form>
             </div>
