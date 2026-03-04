@@ -127,7 +127,7 @@ class LCNI_Recommend_Admin_Page {
 
         if ($_POST['lcni_recommend_action'] === 'create_rule') {
             $entry_conditions = isset($_POST['entry_conditions']) ? wp_unslash((string) $_POST['entry_conditions']) : '{}';
-            $this->rule_repository->save([
+            $saved_rule_id = $this->rule_repository->save([
                 'name' => wp_unslash((string) ($_POST['name'] ?? '')),
                 'timeframe' => wp_unslash((string) ($_POST['timeframe'] ?? '1D')),
                 'description' => wp_unslash((string) ($_POST['description'] ?? '')),
@@ -139,6 +139,11 @@ class LCNI_Recommend_Admin_Page {
                 'max_hold_days' => (int) ($_POST['max_hold_days'] ?? 20),
                 'is_active' => !empty($_POST['is_active']) ? 1 : 0,
             ]);
+
+            if (is_wp_error($saved_rule_id) || (int) $saved_rule_id <= 0) {
+                wp_safe_redirect(admin_url('admin.php?page=lcni-recommend&tab=rules&created=0'));
+                exit;
+            }
 
             wp_safe_redirect(admin_url('admin.php?page=lcni-recommend&tab=rules&created=1'));
             exit;
@@ -153,6 +158,13 @@ class LCNI_Recommend_Admin_Page {
         echo '<a href="' . esc_url(admin_url('admin.php?page=lcni-recommend&tab=signals')) . '" class="nav-tab ' . ($tab === 'signals' ? 'nav-tab-active' : '') . '">Signals</a>';
         echo '<a href="' . esc_url(admin_url('admin.php?page=lcni-recommend&tab=performance')) . '" class="nav-tab ' . ($tab === 'performance' ? 'nav-tab-active' : '') . '">Performance</a>';
         echo '</h2>';
+
+        $created = isset($_GET['created']) ? sanitize_text_field((string) $_GET['created']) : '';
+        if ($created === '1') {
+            echo '<div class="notice notice-success is-dismissible"><p>Đã lưu rule thành công.</p></div>';
+        } elseif ($created === '0') {
+            echo '<div class="notice notice-error"><p>Lưu rule thất bại. Vui lòng kiểm tra dữ liệu và thử lại.</p></div>';
+        }
 
         if ($tab === 'rules') {
             $this->render_rules_tab();

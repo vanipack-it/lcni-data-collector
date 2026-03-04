@@ -80,6 +80,25 @@ class RuleRepository {
                 continue;
             }
 
+            if (is_array($value)) {
+                $values = array_values(array_filter(array_map(static function ($item) {
+                    return sanitize_text_field((string) $item);
+                }, $value), static function ($item) {
+                    return $item !== '';
+                }));
+
+                if (empty($values)) {
+                    continue;
+                }
+
+                $placeholders = implode(', ', array_fill(0, count($values), '%s'));
+                $where[] = "o.`{$field}` IN ({$placeholders})";
+                foreach ($values as $item) {
+                    $params[] = $item;
+                }
+                continue;
+            }
+
             if (substr($field, -4) === '_min') {
                 $column = sanitize_key(substr($field, 0, -4));
                 if ($column === '') {
@@ -142,6 +161,20 @@ class RuleRepository {
             if ($key === '') {
                 continue;
             }
+
+            if (is_array($value)) {
+                $values = array_values(array_filter(array_map(static function ($item) {
+                    return sanitize_text_field((string) $item);
+                }, $value), static function ($item) {
+                    return $item !== '';
+                }));
+
+                if (!empty($values)) {
+                    $normalized[$key] = $values;
+                }
+                continue;
+            }
+
             $normalized[$key] = is_numeric($value) ? (float) $value : sanitize_text_field((string) $value);
         }
 

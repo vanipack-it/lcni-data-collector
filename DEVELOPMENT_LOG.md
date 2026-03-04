@@ -1,3 +1,9 @@
+## 2026-03-04 10:35 (v5.4.2)
+- Nâng version plugin lên `5.4.2`.
+- `LCNi Recommend -> Rule`: sửa lỗi lưu rule nhưng danh sách không hiển thị trạng thái rõ ràng bằng cách kiểm tra kết quả lưu và hiển thị thông báo thành công/thất bại sau khi submit.
+- `LCNi Recommend -> Entry Conditions JSON`: khi kéo-thả cột text sẽ tải danh sách distinct value và hiển thị checkbox ở đầu từng value để chọn điều kiện (ví dụ `tang_gia_kem_vol` → `Tăng giá kèm Vol`).
+- Giữ nguyên các chức năng khác; bổ sung xử lý điều kiện mảng text trong `RuleRepository` để lưu/đọc đúng và query bằng mệnh đề `IN (...)`.
+
 ## 2026-03-04 09:40 (v5.4.1c)
 - Nâng version plugin lên `5.4.1c`.
 - Nâng cấp màn hình `LCNi Recommend -> Rules` theo bố cục 3 cột (Rule / Entry Conditions JSON / Table Source), hỗ trợ kéo-thả cột từ các bảng nguồn vào khu vực điều kiện.
