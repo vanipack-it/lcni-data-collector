@@ -111,6 +111,7 @@ class LCNI_Recommend_Admin_Page {
 
         add_action('admin_menu', [$this, 'register_menu']);
         add_action('admin_init', [$this, 'handle_actions']);
+        add_action('wp_ajax_lcni_recommend_distinct_values', [$this, 'ajax_distinct_values']);
     }
 
     public function register_menu() {
@@ -263,13 +264,49 @@ class LCNI_Recommend_Admin_Page {
 
         echo '<script>';
         echo 'window.lcniRecommendColumnsMap=' . wp_json_encode($columns_map) . ';';
+        echo 'window.lcniRecommendDistinctValuesNonce=' . wp_create_nonce('lcni_recommend_distinct_values') . ';';
         echo '(function(){
             const columnsMap=window.lcniRecommendColumnsMap||{};
+            const distinctValuesNonce=window.lcniRecommendDistinctValuesNonce||"";
             const source=document.getElementById("lcni-recommend-source-table");
             const columnsHost=document.getElementById("lcni-recommend-columns");
             const dropzone=document.getElementById("lcni-recommend-dropzone");
             const jsonField=document.getElementById("lcni_recommend_entry_conditions");
             const selected=[];
+            const valueCache={};
+
+            function cacheKey(table, field){
+                return table + "::" + field;
+            }
+
+            function fetchDistinctValues(table, field){
+                const key=cacheKey(table, field);
+                if (valueCache[key]) {
+                    return Promise.resolve(valueCache[key]);
+                }
+
+                const payload=new URLSearchParams({
+                    action:"lcni_recommend_distinct_values",
+                    nonce:distinctValuesNonce,
+                    table:table,
+                    field:field
+                });
+
+                return fetch(ajaxurl, {
+                    method:"POST",
+                    headers:{ "Content-Type":"application/x-www-form-urlencoded;charset=UTF-8" },
+                    body:payload.toString()
+                })
+                .then((res)=>res.json())
+                .then((res)=>{
+                    if (!res || !res.success || !Array.isArray(res.data)) {
+                        return [];
+                    }
+                    valueCache[key]=res.data;
+                    return res.data;
+                })
+                .catch(()=>[]);
+            }
 
             function renderColumns(){
                 const table=source.value;
@@ -292,8 +329,11 @@ class LCNI_Recommend_Admin_Page {
                     if(cond.is_numeric){
                         if(cond.min!=="") payload[cond.field+"_min"]=Number(cond.min);
                         if(cond.max!=="") payload[cond.field+"_max"]=Number(cond.max);
-                    } else if (cond.enabled && cond.value!=="") {
-                        payload[cond.field]=cond.value;
+                    } else {
+                        const values=(cond.selectedValues||[]).filter((value)=>value!=="");
+                        if(values.length){
+                            payload[cond.field]=values;
+                        }
                     }
                 });
                 jsonField.value=JSON.stringify(payload, null, 2);
@@ -333,26 +373,52 @@ class LCNI_Recommend_Admin_Page {
                         row.appendChild(min);
                         row.appendChild(max);
                     } else {
-                        const enabled=document.createElement("input");
-                        enabled.type="checkbox";
-                        enabled.checked=!!cond.enabled;
-                        enabled.addEventListener("change",()=>{ cond.enabled=enabled.checked; syncJson(); });
+                        const valueWrap=document.createElement("div");
+                        valueWrap.style.marginTop="6px";
 
-                        const label=document.createElement("label");
-                        label.style.marginLeft="6px";
-                        label.textContent="Check box if value = text";
+                        const loading=document.createElement("em");
+                        loading.textContent="Đang tải danh sách value...";
+                        valueWrap.appendChild(loading);
+                        row.appendChild(valueWrap);
 
-                        const value=document.createElement("input");
-                        value.type="text";
-                        value.placeholder="Value";
-                        value.value=cond.value;
-                        value.style.display="block";
-                        value.style.marginTop="6px";
-                        value.addEventListener("input",()=>{ cond.value=value.value; syncJson(); });
+                        fetchDistinctValues(cond.table, cond.field).then((values)=>{
+                            valueWrap.innerHTML="";
 
-                        row.appendChild(enabled);
-                        row.appendChild(label);
-                        row.appendChild(value);
+                            if(!values.length){
+                                const empty=document.createElement("em");
+                                empty.textContent="Không có value text để chọn.";
+                                valueWrap.appendChild(empty);
+                                return;
+                            }
+
+                            values.forEach((itemValue)=>{
+                                const option=document.createElement("label");
+                                option.style.display="block";
+
+                                const checkbox=document.createElement("input");
+                                checkbox.type="checkbox";
+                                checkbox.value=itemValue;
+                                checkbox.checked=(cond.selectedValues||[]).includes(itemValue);
+                                checkbox.addEventListener("change",()=>{
+                                    const picked=new Set(cond.selectedValues||[]);
+                                    if(checkbox.checked){
+                                        picked.add(itemValue);
+                                    } else {
+                                        picked.delete(itemValue);
+                                    }
+                                    cond.selectedValues=Array.from(picked);
+                                    syncJson();
+                                });
+
+                                const text=document.createElement("span");
+                                text.style.marginLeft="6px";
+                                text.textContent=itemValue;
+
+                                option.appendChild(checkbox);
+                                option.appendChild(text);
+                                valueWrap.appendChild(option);
+                            });
+                        });
                     }
 
                     const remove=document.createElement("button");
@@ -377,7 +443,14 @@ class LCNI_Recommend_Admin_Page {
                 try {
                     const col=JSON.parse(raw);
                     if(selected.some((item)=>item.field===col.field)){ return; }
-                    selected.push({ field:col.field, is_numeric:!!col.is_numeric, min:"", max:"", enabled:true, value:"" });
+                    selected.push({
+                        field:col.field,
+                        table:source.value,
+                        is_numeric:!!col.is_numeric,
+                        min:"",
+                        max:"",
+                        selectedValues:[]
+                    });
                     renderSelected();
                 } catch(err){}
             });
@@ -391,6 +464,54 @@ class LCNI_Recommend_Admin_Page {
         $table = new LCNI_Recommend_Rules_List_Table($this->rule_repository->all(200));
         $table->prepare_items();
         $table->display();
+    }
+
+    public function ajax_distinct_values() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Permission denied'], 403);
+        }
+
+        check_ajax_referer('lcni_recommend_distinct_values', 'nonce');
+
+        $table = sanitize_text_field(wp_unslash((string) ($_POST['table'] ?? '')));
+        $field = sanitize_key((string) ($_POST['field'] ?? ''));
+
+        if ($table === '' || $field === '') {
+            wp_send_json_error(['message' => 'Invalid params'], 400);
+        }
+
+        $table_sources = array_values($this->get_builder_table_sources());
+        if (!in_array($table, $table_sources, true)) {
+            wp_send_json_error(['message' => 'Unknown table'], 400);
+        }
+
+        $columns = $this->get_table_columns_for_builder($table);
+        $is_allowed_field = false;
+        foreach ($columns as $column) {
+            if (($column['field'] ?? '') === $field && empty($column['is_numeric'])) {
+                $is_allowed_field = true;
+                break;
+            }
+        }
+
+        if (!$is_allowed_field) {
+            wp_send_json_error(['message' => 'Unknown text field'], 400);
+        }
+
+        global $wpdb;
+
+        $query = sprintf(
+            'SELECT DISTINCT `%1$s` AS value FROM `%2$s` WHERE `%1$s` IS NOT NULL AND `%1$s` <> "" ORDER BY `%1$s` ASC LIMIT 100',
+            esc_sql($field),
+            esc_sql($table)
+        );
+
+        $rows = $wpdb->get_col($query);
+        $values = array_values(array_filter(array_map('strval', (array) $rows), static function ($value) {
+            return $value !== '';
+        }));
+
+        wp_send_json_success($values);
     }
 
     private function render_signals_tab() {
