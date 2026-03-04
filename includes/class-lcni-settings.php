@@ -970,7 +970,7 @@ class LCNI_Settings {
             $status['state'] = 'done';
             $status['table'] = (string) ($import_summary['table'] ?? ($status['table'] ?? 'N/A'));
             $skipped_invalid = max(0, (int) ($import_summary['skipped_invalid'] ?? 0));
-            $skipped_existing = max(0, (int) ($import_summary['skipped_existing'] ?? 0));
+            $upsert_updated = max(0, (int) ($import_summary['upsert_updated'] ?? 0));
             $failed_inserts = max(0, (int) ($import_summary['failed_inserts'] ?? 0));
             $last_error = sanitize_text_field((string) ($import_summary['last_error'] ?? ''));
 
@@ -985,12 +985,12 @@ class LCNI_Settings {
             }
 
             $status['message'] = sprintf(
-                'Đã import CSV vào %s: updated %d / total %d. skipped_invalid %d, skipped_existing %d, failed_inserts %d%s',
+                'Đã import CSV vào %s: updated %d / total %d. skipped_invalid %d, upsert_updated %d, failed_inserts %d%s',
                 $status['table'],
                 (int) $status['updated'],
                 (int) $status['processed'],
                 $skipped_invalid,
-                $skipped_existing,
+                $upsert_updated,
                 $failed_inserts,
                 ($last_error !== '' ? ' | last_error: ' . $last_error : '')
             );
@@ -1537,7 +1537,7 @@ class LCNI_Settings {
                     </select>
                     <input type="file" id="lcni_import_csv" name="lcni_import_csv" accept=".csv" required>
                     <?php submit_button('Nhận diện cột CSV', 'secondary', 'submit', false); ?>
-                    <p class="description" style="flex:1 1 100%;margin:0;">Workflow: nhận diện cột → chọn bảng → map cột CSV với cột DB → chạy import. Bảng thường dùng upsert theo Primary Key; riêng LCNI OHLC sẽ append hàng mới, tự gán <code>id</code>, chuẩn hóa <code>event_time</code> theo Unix timestamp và tự tính lại các cột chỉ báo liên quan.</p>
+                    <p class="description" style="flex:1 1 100%;margin:0;">Workflow: nhận diện cột → chọn bảng → map cột CSV với cột DB → chạy import. Bảng thường dùng upsert theo Primary Key; riêng LCNI OHLC sẽ tự gán <code>id</code>, chuẩn hóa <code>event_time</code> theo Unix timestamp, upsert theo bộ <code>symbol + timeframe + event_time</code> và tự tính lại các cột chỉ báo liên quan.</p>
                 </form>
 
                 <?php if (!empty($csv_import_draft) && is_array($csv_import_draft) && !empty($csv_import_draft['headers']) && !empty($csv_import_draft['table_key']) && isset($csv_import_targets[$csv_import_draft['table_key']])) : ?>
@@ -1548,7 +1548,7 @@ class LCNI_Settings {
                         <input type="hidden" name="lcni_admin_action" value="run_csv_import">
                         <p style="margin-top:0;"><strong>Map cột cho bảng:</strong> <?php echo esc_html($target_meta['label']); ?> (Primary Key: <code><?php echo esc_html((string) $target_meta['primary_key']); ?></code>)</p>
                         <?php if (($csv_import_draft['table_key'] ?? '') === 'lcni_ohlc') : ?>
-                            <p class="description" style="margin-top:-6px;">Yêu cầu map đủ 6 cột bắt buộc: <code>symbol</code>, <code>open_price</code>, <code>high_price</code>, <code>low_price</code>, <code>close_price</code>, <code>event_time</code>. Hệ thống tự tăng <code>id</code>, chèn theo chế độ append, và tự tính các cột liên quan sau import.</p>
+                            <p class="description" style="margin-top:-6px;">Yêu cầu map đủ 6 cột bắt buộc: <code>symbol</code>, <code>open_price</code>, <code>high_price</code>, <code>low_price</code>, <code>close_price</code>, <code>event_time</code>. Hệ thống tự tăng <code>id</code>, upsert theo bộ <code>symbol + timeframe + event_time</code>, và tự tính các cột liên quan sau import.</p>
                             <p style="margin:8px 0 12px;">
                                 <label for="lcni_import_timeframe"><strong>Timeframe:</strong></label>
                                 <select id="lcni_import_timeframe" name="lcni_import_timeframe">

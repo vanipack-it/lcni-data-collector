@@ -3755,7 +3755,7 @@ class LCNI_DB {
         $updated = 0;
         $total = 0;
         $skipped_invalid = 0;
-        $skipped_existing = 0;
+        $upsert_updated = 0;
         $failed_inserts = 0;
         $last_error_message = '';
         $touched_series = [];
@@ -3834,19 +3834,6 @@ class LCNI_DB {
                 continue;
             }
 
-            $exists = $wpdb->get_var(
-                $wpdb->prepare(
-                    "SELECT id FROM {$table} WHERE symbol = %s AND timeframe = %s AND event_time = %d LIMIT 1",
-                    $record['symbol'],
-                    $record['timeframe'],
-                    $record['event_time']
-                )
-            );
-            if ($exists !== null) {
-                $skipped_existing++;
-                continue;
-            }
-
             if (!isset($record['volume']) || $record['volume'] === null) {
                 $record['volume'] = 0;
                 $formats['volume'] = '%d';
@@ -3856,9 +3843,38 @@ class LCNI_DB {
                 $formats['value_traded'] = '%f';
             }
 
-            $result = $wpdb->insert($table, $record, array_values($formats));
-            if ($result !== false) {
+            $columns_sql = [];
+            $placeholders_sql = [];
+            $update_assignments = [];
+            $values = [];
+
+            foreach ($record as $column_name => $column_value) {
+                $columns_sql[] = "`{$column_name}`";
+                $placeholders_sql[] = $formats[$column_name] ?? '%s';
+                $values[] = $column_value;
+                if (!in_array($column_name, ['symbol', 'timeframe', 'event_time'], true)) {
+                    $update_assignments[] = "`{$column_name}` = VALUES(`{$column_name}`)";
+                }
+            }
+
+            if (empty($update_assignments)) {
+                $update_assignments[] = '`event_time` = VALUES(`event_time`)';
+            }
+
+            $sql = "INSERT INTO {$table} (" . implode(', ', $columns_sql) . ") VALUES (" . implode(', ', $placeholders_sql) . ")"
+                . " ON DUPLICATE KEY UPDATE " . implode(', ', $update_assignments);
+
+            $prepared_sql = $wpdb->prepare($sql, $values);
+            $result = $wpdb->query($prepared_sql);
+
+            if ($result === 1) {
                 $updated++;
+            } elseif ($result === 2 || $result === 0) {
+                $updated++;
+                $upsert_updated++;
+            }
+
+            if ($result !== false) {
                 $series_key = $record['symbol'] . '|' . $record['timeframe'];
                 $touched_series[$series_key] = [
                     'symbol' => $record['symbol'],
@@ -3888,7 +3904,7 @@ class LCNI_DB {
         $touched_event_times_values = array_map('intval', array_keys($touched_event_times));
         $touched_timeframes_values = array_values(array_keys($touched_timeframes));
 
-        self::log_change('import_csv_generic', sprintf('Imported %d/%d rows into %s (append mode).', $updated, $total, $table_key), [
+        self::log_change('import_csv_generic', sprintf('Imported %d/%d rows into %s (upsert mode).', $updated, $total, $table_key), [
             'table' => $table_key,
             'mapping' => $mapping,
             'timeframe' => $timeframe,
@@ -3901,7 +3917,8 @@ class LCNI_DB {
             'has_more' => $has_more,
             'table' => $table_key,
             'skipped_invalid' => $skipped_invalid,
-            'skipped_existing' => $skipped_existing,
+            'skipped_existing' => 0,
+            'upsert_updated' => $upsert_updated,
             'failed_inserts' => $failed_inserts,
             'last_error' => $last_error_message,
             'touched_series' => $touched_series_values,
