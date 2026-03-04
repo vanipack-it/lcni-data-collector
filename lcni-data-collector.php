@@ -2,7 +2,7 @@
 /*
 Plugin Name: LCNI Data Collector
 Description: LCNI Market Data Engine: lấy nến, lưu DB, cron auto update
-Version: 5.4.1b
+Version: 5.4.1c
 */
 
 if (!defined('ABSPATH')) {
