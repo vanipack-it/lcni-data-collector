@@ -170,7 +170,7 @@ class LCNI_Recommend_Admin_Page {
 
         return [
             $wpdb->prefix . 'lcni_ohlc' => 'wp_lcni_ohlc',
-            $wpdb->prefix . 'lcni_symbol_tong_quan' => 'wp_lcni_symbol_tong_quan',
+            $wpdb->prefix . 'lcni_symbol_tongquan' => 'wp_lcni_symbol_tongquan',
             $wpdb->prefix . 'lcni_icb2' => 'wp_lcni_icb2',
             $wpdb->prefix . 'lcni_marketid' => 'wp_lcni_marketid',
         ];
