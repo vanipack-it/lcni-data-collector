@@ -2,7 +2,7 @@
 /*
 Plugin Name: LCNI Data Collector
 Description: LCNI Market Data Engine: lấy nến, lưu DB, cron auto update
-Version: 5.4.1a
+Version: 5.4.1b
 */
 
 if (!defined('ABSPATH')) {
@@ -67,6 +67,16 @@ require_once LCNI_PATH . 'includes/Member/MemberSettingsPage.php';
 require_once LCNI_PATH . 'includes/Member/MemberAuthShortcodes.php';
 require_once LCNI_PATH . 'includes/Member/PermissionMiddleware.php';
 require_once LCNI_PATH . 'includes/Member/MemberModule.php';
+require_once LCNI_PATH . 'includes/Recommend/RecommendDB.php';
+require_once LCNI_PATH . 'includes/Recommend/RuleRepository.php';
+require_once LCNI_PATH . 'includes/Recommend/SignalRepository.php';
+require_once LCNI_PATH . 'includes/Recommend/PositionEngine.php';
+require_once LCNI_PATH . 'includes/Recommend/ExitEngine.php';
+require_once LCNI_PATH . 'includes/Recommend/PerformanceCalculator.php';
+require_once LCNI_PATH . 'includes/Recommend/DailyCronService.php';
+require_once LCNI_PATH . 'includes/Recommend/ShortcodeManager.php';
+require_once LCNI_PATH . 'includes/Recommend/Admin/RecommendAdminPage.php';
+require_once LCNI_PATH . 'includes/Recommend/RecommendModule.php';
 
 function lcni_register_custom_cron_schedules($schedules) {
     if (!isset($schedules['lcni_every_minute'])) {
@@ -84,6 +94,7 @@ function lcni_activate_plugin() {
     LCNI_DB::create_tables();
     LCNI_DB::run_pending_migrations();
     LCNI_Member_Module::activate();
+    LCNI_Recommend_Module::activate();
     lcni_ensure_cron_scheduled();
     (new LCNI_Stock_Detail_Router())->register_rewrite_rule();
     flush_rewrite_rules();
@@ -97,6 +108,7 @@ function lcni_ensure_plugin_tables() {
     }
 
     LCNI_DB::ensure_tables_exist();
+    LCNI_Recommend_Module::ensure_infrastructure();
 
     set_transient('lcni_schema_check_recent', time(), 15 * MINUTE_IN_SECONDS);
 }
@@ -115,6 +127,8 @@ function lcni_ensure_cron_scheduled() {
         $tomorrow_start = new DateTimeImmutable('tomorrow 08:00:00', $timezone);
         wp_schedule_event($tomorrow_start->getTimestamp(), 'daily', LCNI_SECDEF_DAILY_CRON_HOOK);
     }
+
+    LCNI_Recommend_Module::ensure_cron();
 }
 
 
@@ -185,6 +199,8 @@ function lcni_deactivate_plugin() {
         wp_unschedule_event($runtime_update_timestamp, LCNI_Update_Manager::CRON_HOOK);
     }
 
+    LCNI_Recommend_Module::deactivate();
+
     flush_rewrite_rules();
 }
 
@@ -239,6 +255,7 @@ new LCNI_Filter_Module();
 new LCNI_Chart_Builder_Shortcode();
 new LCNI_Update_Data_Page();
 new LCNI_Member_Module();
+new LCNI_Recommend_Module();
 LCNI_Update_Manager::init();
 LCNI_OHLC_Latest_Manager::init();
 new LCNI_Rest_API();
