@@ -6072,8 +6072,7 @@ class LCNI_DB {
                     AND latest_row.timeframe = '1D'
                     AND latest_row.event_time = latest.max_event_time
                 WHERE o.timeframe = '1D'
-                    AND o.event_time < latest.max_event_time
-                    AND o.volume < %d",
+                    AND latest_row.volume < %d",
                 $eod_min_volume
             );
 
