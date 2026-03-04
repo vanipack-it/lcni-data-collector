@@ -325,6 +325,7 @@ class LCNI_Recommend_Admin_Page {
 
                 return fetch(ajaxEndpoint, {
                     method:"POST",
+                    credentials:"same-origin",
                     headers:{ "Content-Type":"application/x-www-form-urlencoded;charset=UTF-8" },
                     body:payload.toString()
                 })
@@ -348,6 +349,7 @@ class LCNI_Recommend_Admin_Page {
 
                 return fetch(ajaxEndpoint, {
                     method:"POST",
+                    credentials:"same-origin",
                     headers:{ "Content-Type":"application/x-www-form-urlencoded;charset=UTF-8" },
                     body:payload.toString()
                 })
@@ -374,14 +376,24 @@ class LCNI_Recommend_Admin_Page {
             }
 
             function renderColumns(cols, errorMessage){
+                const activeTable=source.value;
                 const normalizedCols=normalizeColumns(cols);
                 columnsHost.innerHTML="";
                 normalizedCols.forEach((col)=>{
+                    const payload={
+                        field:String(col.field||""),
+                        is_numeric:!!col.is_numeric,
+                        table:String(col.table||activeTable||"")
+                    };
+                    if(!payload.field){
+                        return;
+                    }
+
                     const item=document.createElement("span");
                     item.className="lcni-recommend-pill";
                     item.draggable=true;
-                    item.textContent=col.field + (col.is_numeric ? " (number)" : " (text)");
-                    item.dataset.payload=JSON.stringify(col);
+                    item.textContent=payload.field + (payload.is_numeric ? " (number)" : " (text)");
+                    item.dataset.payload=JSON.stringify(payload);
                     item.addEventListener("dragstart",(e)=>{ e.dataTransfer.setData("text/plain", item.dataset.payload || ""); });
                     columnsHost.appendChild(item);
                 });
@@ -537,10 +549,13 @@ class LCNI_Recommend_Admin_Page {
                 if(!raw){ return; }
                 try {
                     const col=JSON.parse(raw);
-                    if(selected.some((item)=>item.field===col.field)){ return; }
+                    const droppedField=String(col.field||"");
+                    const droppedTable=String(col.table||source.value||"");
+                    if(!droppedField || !droppedTable){ return; }
+                    if(selected.some((item)=>item.field===droppedField && item.table===droppedTable)){ return; }
                     selected.push({
-                        field:col.field,
-                        table:source.value,
+                        field:droppedField,
+                        table:droppedTable,
                         is_numeric:!!col.is_numeric,
                         min:"",
                         max:"",
