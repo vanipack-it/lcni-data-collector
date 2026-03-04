@@ -1035,6 +1035,29 @@ class LCNI_Settings {
                 'message' => 'Chưa có tiến trình import CSV.',
                 'updated_at' => current_time('mysql'),
             ];
+        } else {
+            $state = (string) ($status['state'] ?? '');
+            if (in_array($state, ['running', 'queued'], true)) {
+                $lock_until = (int) get_option(self::CSV_IMPORT_LOCK_OPTION, 0);
+                $payload = get_transient($this->get_csv_import_payload_key());
+                $processed = max(0, (int) ($status['processed'] ?? 0));
+                $total = max(0, (int) ($status['total'] ?? 0));
+
+                if ($lock_until <= time() && !is_array($payload)) {
+                    if ($total > 0 && $processed >= $total) {
+                        $status['state'] = 'done';
+                        if (empty($status['message']) || $status['message'] === 'Đang import CSV ở chế độ nền...') {
+                            $status['message'] = 'Import CSV đã hoàn tất.';
+                        }
+                    } else {
+                        $status['state'] = 'error';
+                        $status['message'] = 'Tiến trình import CSV nền đã dừng đột ngột. Vui lòng import lại hoặc Resume nếu còn payload.';
+                    }
+
+                    $status['updated_at'] = current_time('mysql');
+                    set_transient($this->get_csv_import_status_key(), $status, HOUR_IN_SECONDS);
+                }
+            }
         }
 
         wp_send_json_success($status);
