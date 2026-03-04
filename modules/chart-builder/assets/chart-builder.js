@@ -89,9 +89,11 @@
     const isAreaStack = chartType === 'area_stack';
     const isShareDataset = chartType === 'share_dataset';
     const isHeatmapMatrix = chartType === 'heatmap_matrix';
+    const isHeatmapMatrix2 = chartType === 'heatmap_matrix_2';
+    const isTreemap1 = chartType === 'treemap_1';
     const preparedRows = normalizeRowsByTemplate(rows, chartType, cfg);
 
-    if (isHeatmapMatrix) {
+    if (isHeatmapMatrix || isHeatmapMatrix2) {
       const xData = Array.isArray(rows.x) ? rows.x : [];
       const yData = Array.isArray(rows.y) ? rows.y : [];
       const matrixData = Array.isArray(rows.data) ? rows.data : [];
@@ -148,8 +150,47 @@
       };
     }
 
+    if (isTreemap1) {
+      const parentField = cfg.xAxis || '';
+      const childField = cfg.yAxis || '';
+      const valueField = (seriesCfg[0] && seriesCfg[0].field) || '';
+      const grouped = {};
+
+      preparedRows.forEach((row) => {
+        const parent = String(row[parentField] || 'N/A');
+        const child = childField ? String(row[childField] || 'N/A') : parent;
+        const value = Number(row[valueField] || 0);
+        if (!grouped[parent]) grouped[parent] = {};
+        grouped[parent][child] = (grouped[parent][child] || 0) + value;
+      });
+
+      const treeData = Object.keys(grouped).map((parent) => ({
+        name: parent,
+        children: Object.keys(grouped[parent]).map((child) => ({
+          name: child,
+          value: grouped[parent][child],
+        })),
+      }));
+
+      return {
+        title: { text: payload.name || '' },
+        tooltip: {
+          formatter: (info) => `${info.name}: ${formatValue(info.value, valueField)}`,
+        },
+        series: [{
+          type: 'treemap',
+          roam: false,
+          leafDepth: 1,
+          breadcrumb: { show: true },
+          label: { show: true, formatter: '{b}' },
+          upperLabel: { show: true, height: 24 },
+          data: treeData,
+        }],
+      };
+    }
+
+
     const series = seriesCfg.map((item, index) => {
-      const hasColor = typeof item.color === 'string' && item.color.trim() !== '';
       const field = item.field || '';
       const displayName = labels[field] || field || item.name || ('Series ' + (index + 1));
       const baseSeries = {
@@ -175,14 +216,6 @@
 
       if (item.line_style === 'dashed') {
         baseSeries.lineStyle = Object.assign({}, baseSeries.lineStyle || {}, { type: 'dashed' });
-      }
-
-      if (hasColor) {
-        baseSeries.color = item.color;
-        if (isAreaStack || isShareDataset) {
-          baseSeries.lineStyle = Object.assign({}, baseSeries.lineStyle || {}, { color: item.color });
-          baseSeries.itemStyle = { color: item.color };
-        }
       }
 
       if (index === seriesCfg.length - 1 && isAreaStack && !baseSeries.label) {
@@ -221,6 +254,7 @@
         ],
       } : undefined,
       xAxis: { type: 'category', boundaryGap: !isAreaStack, data: axisData },
+      dataZoom: axisData.length > 20 ? [{ type: 'slider', xAxisIndex: 0, bottom: 28, height: 14 }, { type: 'inside', xAxisIndex: 0 }] : undefined,
       yAxis: {
         type: 'value',
         axisLabel: {
