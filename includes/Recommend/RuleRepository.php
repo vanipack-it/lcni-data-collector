@@ -7,10 +7,12 @@ if (!defined('ABSPATH')) {
 class RuleRepository {
     private $wpdb;
     private $table;
+    private $ohlc_table;
 
     public function __construct(wpdb $wpdb) {
         $this->wpdb = $wpdb;
-        $this->table = $wpdb->prefix . 'lcni_recommend_rule';
+        $this->table = $this->resolve_table_name('lcni_recommend_rule');
+        $this->ohlc_table = $this->resolve_table_name('lcni_ohlc');
     }
 
     public function get_active_rules() {
@@ -68,7 +70,7 @@ class RuleRepository {
 
     public function find_candidate_symbols($rule) {
         $conditions = $this->decode_conditions($rule);
-        $ohlc_table = $this->wpdb->prefix . 'lcni_ohlc';
+        $ohlc_table = $this->ohlc_table;
         $timeframe = sanitize_text_field((string) ($rule['timeframe'] ?? '1D'));
 
         $where = ['o.timeframe = %s'];
@@ -179,5 +181,22 @@ class RuleRepository {
         }
 
         return $normalized;
+    }
+
+    private function resolve_table_name($suffix) {
+        $suffix = sanitize_key((string) $suffix);
+        $candidates = [
+            $this->wpdb->prefix . $suffix,
+            'wp_' . $suffix,
+        ];
+
+        foreach (array_unique($candidates) as $table) {
+            $exists = $this->wpdb->get_var($this->wpdb->prepare('SHOW TABLES LIKE %s', $table));
+            if ($exists === $table) {
+                return $table;
+            }
+        }
+
+        return $this->wpdb->prefix . $suffix;
     }
 }

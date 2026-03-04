@@ -180,12 +180,15 @@ class LCNI_Recommend_Admin_Page {
     private function get_builder_table_sources() {
         global $wpdb;
 
-        return [
-            $wpdb->prefix . 'lcni_ohlc' => 'wp_lcni_ohlc',
-            $wpdb->prefix . 'lcni_symbol_tongquan' => 'wp_lcni_symbol_tongquan',
-            $wpdb->prefix . 'lcni_icb2' => 'wp_lcni_icb2',
-            $wpdb->prefix . 'lcni_marketid' => 'wp_lcni_marketid',
-        ];
+        $suffixes = ['lcni_ohlc', 'lcni_symbol_tongquan', 'lcni_icb2', 'lcni_marketid'];
+        $sources = [];
+
+        foreach ($suffixes as $suffix) {
+            $resolved = $this->resolve_table_name($suffix);
+            $sources[$resolved] = $resolved;
+        }
+
+        return $sources;
     }
 
     private function get_table_columns_for_builder($table_name) {
@@ -218,7 +221,7 @@ class LCNI_Recommend_Admin_Page {
         $columns_map = [];
 
         foreach ($table_sources as $real_table => $display_table) {
-            $columns_map[$display_table] = $this->get_table_columns_for_builder($real_table);
+            $columns_map[$real_table] = $this->get_table_columns_for_builder($real_table);
         }
 
         echo '<style>
@@ -261,8 +264,8 @@ class LCNI_Recommend_Admin_Page {
         echo '<div class="lcni-recommend-panel">';
         echo '<h3>Table source (1)</h3>';
         echo '<p><select id="lcni-recommend-source-table" class="regular-text">';
-        foreach ($table_sources as $display_table) {
-            echo '<option value="' . esc_attr($display_table) . '">' . esc_html($display_table) . '</option>';
+        foreach ($table_sources as $real_table => $display_table) {
+            echo '<option value="' . esc_attr($real_table) . '">' . esc_html($display_table) . '</option>';
         }
         echo '</select></p>';
         echo '<h3>Column of table (2)</h3>';
@@ -492,7 +495,7 @@ class LCNI_Recommend_Admin_Page {
             wp_send_json_error(['message' => 'Invalid params'], 400);
         }
 
-        $table_sources = array_values($this->get_builder_table_sources());
+        $table_sources = array_keys($this->get_builder_table_sources());
         if (!in_array($table, $table_sources, true)) {
             wp_send_json_error(['message' => 'Unknown table'], 400);
         }
@@ -524,6 +527,25 @@ class LCNI_Recommend_Admin_Page {
         }));
 
         wp_send_json_success($values);
+    }
+
+    private function resolve_table_name($suffix) {
+        global $wpdb;
+
+        $suffix = sanitize_key((string) $suffix);
+        $candidates = [
+            $wpdb->prefix . $suffix,
+            'wp_' . $suffix,
+        ];
+
+        foreach (array_unique($candidates) as $table_name) {
+            $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table_name));
+            if ($exists === $table_name) {
+                return $table_name;
+            }
+        }
+
+        return $wpdb->prefix . $suffix;
     }
 
     private function render_signals_tab() {
