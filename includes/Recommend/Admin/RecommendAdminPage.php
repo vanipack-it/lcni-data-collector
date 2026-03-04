@@ -187,11 +187,16 @@ class LCNI_Recommend_Admin_Page {
     private function get_builder_table_sources() {
         global $wpdb;
 
-        $suffixes = ['lcni_ohlc', 'lcni_symbol_tongquan', 'lcni_icb2', 'lcni_marketid'];
+        $suffixes = ['lcni_ohlc', 'lcni_symbol_tong_quan', 'lcni_icb2', 'lcni_marketid'];
         $sources = [];
 
         foreach ($suffixes as $suffix) {
             $resolved = $this->resolve_table_name($suffix);
+            $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $resolved));
+            if ($exists !== $resolved) {
+                continue;
+            }
+
             $sources[$resolved] = $resolved;
         }
 
@@ -392,12 +397,24 @@ class LCNI_Recommend_Admin_Page {
                 const cachedCols=normalizeColumns(columnsMap[table]||[]);
                 if (cachedCols.length) {
                     renderColumns(cachedCols);
+                } else {
+                    columnsHost.innerHTML="<em>Đang tải cột...</em>";
                 }
 
-                columnsHost.innerHTML="<em>Đang tải cột...</em>";
                 fetchTableColumns(table).then((result)=>{
-                    columnsMap[table]=normalizeColumns(result.columns);
-                    renderColumns(result.columns, result.error);
+                    const latestCols=normalizeColumns(result.columns);
+                    if (latestCols.length) {
+                        columnsMap[table]=latestCols;
+                        renderColumns(latestCols, result.error);
+                        return;
+                    }
+
+                    if (cachedCols.length) {
+                        renderColumns(cachedCols, result.error || "Không thể đồng bộ cột mới nhất, đang dùng danh sách cột đã tải trước đó.");
+                        return;
+                    }
+
+                    renderColumns([], result.error);
                 });
             }
 
