@@ -6037,7 +6037,7 @@ class LCNI_DB {
                     AND latest_row.timeframe = '1D'
                     AND latest_row.event_time = latest.max_event_time
                 WHERE o.timeframe = '1D'
-                    AND o.event_time = latest.max_event_time
+                    AND o.event_time < latest.max_event_time
                     AND latest_row.volume < %d",
                 $eod_min_volume
             );
@@ -6055,7 +6055,7 @@ class LCNI_DB {
                     SELECT id,
                         ROW_NUMBER() OVER (
                             PARTITION BY symbol, timeframe
-                            ORDER BY COALESCE(trading_index, 0) DESC, event_time DESC, id DESC
+                            ORDER BY event_time DESC, id DESC
                         ) AS rn
                     FROM {$table}
                 ) ranked
