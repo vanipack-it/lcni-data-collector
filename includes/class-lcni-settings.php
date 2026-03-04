@@ -969,6 +969,10 @@ class LCNI_Settings {
 
             $status['state'] = 'done';
             $status['table'] = (string) ($import_summary['table'] ?? ($status['table'] ?? 'N/A'));
+            $skipped_invalid = max(0, (int) ($import_summary['skipped_invalid'] ?? 0));
+            $skipped_existing = max(0, (int) ($import_summary['skipped_existing'] ?? 0));
+            $failed_inserts = max(0, (int) ($import_summary['failed_inserts'] ?? 0));
+            $last_error = sanitize_text_field((string) ($import_summary['last_error'] ?? ''));
 
             if (($payload['table_key'] ?? '') === 'lcni_ohlc' && !empty($accumulated_series)) {
                 LCNI_DB::finalize_ohlc_import_post_process(
@@ -980,7 +984,16 @@ class LCNI_Settings {
                 LCNI_DB::optimize_seed_dataset();
             }
 
-            $status['message'] = sprintf('Đã import CSV vào %s: updated %d / total %d.', $status['table'], (int) $status['updated'], (int) $status['processed']);
+            $status['message'] = sprintf(
+                'Đã import CSV vào %s: updated %d / total %d. skipped_invalid %d, skipped_existing %d, failed_inserts %d%s',
+                $status['table'],
+                (int) $status['updated'],
+                (int) $status['processed'],
+                $skipped_invalid,
+                $skipped_existing,
+                $failed_inserts,
+                ($last_error !== '' ? ' | last_error: ' . $last_error : '')
+            );
         }
 
         unset($status['processed_base'], $status['updated_base']);

@@ -3754,6 +3754,10 @@ class LCNI_DB {
         $table = $wpdb->prefix . $table_key;
         $updated = 0;
         $total = 0;
+        $skipped_invalid = 0;
+        $skipped_existing = 0;
+        $failed_inserts = 0;
+        $last_error_message = '';
         $touched_series = [];
         $touched_event_times = [];
         $touched_timeframes = [];
@@ -3826,6 +3830,7 @@ class LCNI_DB {
                 }
             }
             if (!$is_valid) {
+                $skipped_invalid++;
                 continue;
             }
 
@@ -3838,6 +3843,7 @@ class LCNI_DB {
                 )
             );
             if ($exists !== null) {
+                $skipped_existing++;
                 continue;
             }
 
@@ -3860,6 +3866,11 @@ class LCNI_DB {
                 ];
                 $touched_event_times[(int) $record['event_time']] = true;
                 $touched_timeframes[$record['timeframe']] = true;
+            } else {
+                $failed_inserts++;
+                if ($last_error_message === '' && !empty($wpdb->last_error)) {
+                    $last_error_message = sanitize_text_field((string) $wpdb->last_error);
+                }
             }
 
             if ($progress_callback !== null && (($processed % 50) === 0)) {
@@ -3889,6 +3900,10 @@ class LCNI_DB {
             'processed' => $processed,
             'has_more' => $has_more,
             'table' => $table_key,
+            'skipped_invalid' => $skipped_invalid,
+            'skipped_existing' => $skipped_existing,
+            'failed_inserts' => $failed_inserts,
+            'last_error' => $last_error_message,
             'touched_series' => $touched_series_values,
             'touched_event_times' => $touched_event_times_values,
             'touched_timeframes' => $touched_timeframes_values,
