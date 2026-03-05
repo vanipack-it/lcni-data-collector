@@ -28,18 +28,7 @@ class RuleRepository {
     }
 
     public function save($data) {
-        $payload = [
-            'name' => sanitize_text_field((string) ($data['name'] ?? '')),
-            'timeframe' => strtoupper(sanitize_text_field((string) ($data['timeframe'] ?? '1D'))),
-            'description' => sanitize_textarea_field((string) ($data['description'] ?? '')),
-            'entry_conditions' => wp_json_encode($this->normalize_conditions($data['entry_conditions'] ?? [])),
-            'initial_sl_pct' => (float) ($data['initial_sl_pct'] ?? 8),
-            'risk_reward' => (float) ($data['risk_reward'] ?? 3),
-            'add_at_r' => (float) ($data['add_at_r'] ?? 2),
-            'exit_at_r' => (float) ($data['exit_at_r'] ?? 4),
-            'max_hold_days' => max(1, (int) ($data['max_hold_days'] ?? 20)),
-            'is_active' => !empty($data['is_active']) ? 1 : 0,
-        ];
+        $payload = $this->build_payload($data);
 
         if ($payload['name'] === '') {
             return new WP_Error('invalid_rule_name', 'Rule name is required.');
@@ -48,6 +37,31 @@ class RuleRepository {
         $this->wpdb->insert($this->table, $payload);
 
         return (int) $this->wpdb->insert_id;
+    }
+
+    public function update($id, $data) {
+        $rule_id = (int) $id;
+        if ($rule_id <= 0) {
+            return new WP_Error('invalid_rule_id', 'Rule ID is invalid.');
+        }
+
+        $payload = $this->build_payload($data);
+
+        if ($payload['name'] === '') {
+            return new WP_Error('invalid_rule_name', 'Rule name is required.');
+        }
+
+        $updated = $this->wpdb->update(
+            $this->table,
+            $payload,
+            ['id' => $rule_id]
+        );
+
+        if ($updated === false) {
+            return false;
+        }
+
+        return true;
     }
 
     public function update_active($id, $is_active) {
@@ -179,5 +193,20 @@ class RuleRepository {
         }
 
         return $normalized;
+    }
+
+    private function build_payload($data) {
+        return [
+            'name' => sanitize_text_field((string) ($data['name'] ?? '')),
+            'timeframe' => strtoupper(sanitize_text_field((string) ($data['timeframe'] ?? '1D'))),
+            'description' => sanitize_textarea_field((string) ($data['description'] ?? '')),
+            'entry_conditions' => wp_json_encode($this->normalize_conditions($data['entry_conditions'] ?? [])),
+            'initial_sl_pct' => (float) ($data['initial_sl_pct'] ?? 8),
+            'risk_reward' => (float) ($data['risk_reward'] ?? 3),
+            'add_at_r' => (float) ($data['add_at_r'] ?? 2),
+            'exit_at_r' => (float) ($data['exit_at_r'] ?? 4),
+            'max_hold_days' => max(1, (int) ($data['max_hold_days'] ?? 20)),
+            'is_active' => !empty($data['is_active']) ? 1 : 0,
+        ];
     }
 }

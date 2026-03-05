@@ -141,20 +141,54 @@ class LCNI_Recommend_Admin_Page {
             ]);
 
             if (is_wp_error($saved_rule_id) || (int) $saved_rule_id <= 0) {
-                wp_safe_redirect(admin_url('admin.php?page=lcni-recommend&tab=rules&created=0'));
+                wp_safe_redirect(admin_url('admin.php?page=lcni-recommend&tab=create-rule&created=0'));
                 exit;
             }
 
-            wp_safe_redirect(admin_url('admin.php?page=lcni-recommend&tab=rules&created=1'));
+            wp_safe_redirect(admin_url('admin.php?page=lcni-recommend&tab=create-rule&created=1'));
+            exit;
+        }
+
+        if ($_POST['lcni_recommend_action'] === 'update_rule') {
+            $rule_id = (int) ($_POST['rule_id'] ?? 0);
+            if ($rule_id <= 0) {
+                wp_safe_redirect(admin_url('admin.php?page=lcni-recommend&tab=rule-list&updated=0'));
+                exit;
+            }
+
+            $updated = $this->rule_repository->update($rule_id, [
+                'name' => wp_unslash((string) ($_POST['name'] ?? '')),
+                'timeframe' => wp_unslash((string) ($_POST['timeframe'] ?? '1D')),
+                'description' => wp_unslash((string) ($_POST['description'] ?? '')),
+                'entry_conditions' => isset($_POST['entry_conditions']) ? wp_unslash((string) $_POST['entry_conditions']) : '{}',
+                'initial_sl_pct' => (float) ($_POST['initial_sl_pct'] ?? 8),
+                'risk_reward' => (float) ($_POST['risk_reward'] ?? 3),
+                'add_at_r' => (float) ($_POST['add_at_r'] ?? 2),
+                'exit_at_r' => (float) ($_POST['exit_at_r'] ?? 4),
+                'max_hold_days' => (int) ($_POST['max_hold_days'] ?? 20),
+                'is_active' => !empty($_POST['is_active']) ? 1 : 0,
+            ]);
+
+            if (is_wp_error($updated) || $updated === false) {
+                wp_safe_redirect(admin_url('admin.php?page=lcni-recommend&tab=create-rule&edit=' . $rule_id . '&updated=0'));
+                exit;
+            }
+
+            wp_safe_redirect(admin_url('admin.php?page=lcni-recommend&tab=rule-list&updated=1'));
             exit;
         }
     }
 
     public function render_page() {
-        $tab = isset($_GET['tab']) ? sanitize_key((string) $_GET['tab']) : 'rules';
+        $tab = isset($_GET['tab']) ? sanitize_key((string) $_GET['tab']) : 'create-rule';
+        if ($tab === 'rules') {
+            $tab = 'create-rule';
+        }
+
         echo '<div class="wrap"><h1>LCNi Recommend</h1>';
         echo '<h2 class="nav-tab-wrapper">';
-        echo '<a href="' . esc_url(admin_url('admin.php?page=lcni-recommend&tab=rules')) . '" class="nav-tab ' . ($tab === 'rules' ? 'nav-tab-active' : '') . '">Rules</a>';
+        echo '<a href="' . esc_url(admin_url('admin.php?page=lcni-recommend&tab=create-rule')) . '" class="nav-tab ' . ($tab === 'create-rule' ? 'nav-tab-active' : '') . '">Tạo Rule</a>';
+        echo '<a href="' . esc_url(admin_url('admin.php?page=lcni-recommend&tab=rule-list')) . '" class="nav-tab ' . ($tab === 'rule-list' ? 'nav-tab-active' : '') . '">Danh sách Rule</a>';
         echo '<a href="' . esc_url(admin_url('admin.php?page=lcni-recommend&tab=signals')) . '" class="nav-tab ' . ($tab === 'signals' ? 'nav-tab-active' : '') . '">Signals</a>';
         echo '<a href="' . esc_url(admin_url('admin.php?page=lcni-recommend&tab=performance')) . '" class="nav-tab ' . ($tab === 'performance' ? 'nav-tab-active' : '') . '">Performance</a>';
         echo '</h2>';
@@ -166,8 +200,17 @@ class LCNI_Recommend_Admin_Page {
             echo '<div class="notice notice-error"><p>Lưu rule thất bại. Vui lòng kiểm tra dữ liệu và thử lại.</p></div>';
         }
 
-        if ($tab === 'rules') {
+        $updated = isset($_GET['updated']) ? sanitize_text_field((string) $_GET['updated']) : '';
+        if ($updated === '1') {
+            echo '<div class="notice notice-success is-dismissible"><p>Đã cập nhật rule thành công.</p></div>';
+        } elseif ($updated === '0') {
+            echo '<div class="notice notice-error"><p>Cập nhật rule thất bại. Vui lòng kiểm tra dữ liệu và thử lại.</p></div>';
+        }
+
+        if ($tab === 'create-rule') {
             $this->render_rules_tab();
+        } elseif ($tab === 'rule-list') {
+            $this->render_rules_list_tab();
         } elseif ($tab === 'signals') {
             $this->render_signals_tab();
         } else {
@@ -214,6 +257,17 @@ class LCNI_Recommend_Admin_Page {
     }
 
     private function render_rules_tab() {
+        $editing_rule = null;
+        $edit_id = (int) ($_GET['edit'] ?? 0);
+        if ($edit_id > 0) {
+            $found_rule = $this->rule_repository->find($edit_id);
+            if (is_array($found_rule)) {
+                $editing_rule = $found_rule;
+            }
+        }
+
+        $is_edit_mode = is_array($editing_rule);
+
         $table_sources = $this->get_builder_table_sources();
         $columns_map = [];
 
@@ -235,27 +289,30 @@ class LCNI_Recommend_Admin_Page {
 
         echo '<form method="post" style="margin:16px 0;">';
         wp_nonce_field('lcni_recommend_admin_action');
-        echo '<input type="hidden" name="lcni_recommend_action" value="create_rule" />';
+        echo '<input type="hidden" name="lcni_recommend_action" value="' . ($is_edit_mode ? 'update_rule' : 'create_rule') . '" />';
+        if ($is_edit_mode) {
+            echo '<input type="hidden" name="rule_id" value="' . esc_attr((string) ($editing_rule['id'] ?? '0')) . '" />';
+        }
 
         echo '<div class="lcni-recommend-builder-grid">';
 
         echo '<div class="lcni-recommend-panel">';
         echo '<h3>Rule</h3>';
-        echo '<p><label>Name<br><input type="text" name="name" required class="regular-text" /></label></p>';
-        echo '<p><label>Timeframe<br><input type="text" name="timeframe" value="1D" class="small-text" /></label></p>';
-        echo '<p><label>Description recommend<br><textarea name="description" rows="3" class="large-text"></textarea></label></p>';
-        echo '<div class="lcni-recommend-row"><label>Initial SL % <input type="number" step="0.01" name="initial_sl_pct" value="8" /></label></div>';
-        echo '<div class="lcni-recommend-row"><label>Risk Reward <input type="number" step="0.01" name="risk_reward" value="3" /></label></div>';
-        echo '<div class="lcni-recommend-row"><label>Add at R <input type="number" step="0.01" name="add_at_r" value="2" /></label></div>';
-        echo '<div class="lcni-recommend-row"><label>Exit at R <input type="number" step="0.01" name="exit_at_r" value="4" /></label></div>';
-        echo '<div class="lcni-recommend-row"><label>Max Hold Days <input type="number" name="max_hold_days" value="20" /></label></div>';
-        echo '<p><label><input type="checkbox" name="is_active" value="1" checked /> Active</label></p>';
+        echo '<p><label>Name<br><input type="text" name="name" required class="regular-text" value="' . esc_attr((string) ($editing_rule['name'] ?? '')) . '" /></label></p>';
+        echo '<p><label>Timeframe<br><input type="text" name="timeframe" value="' . esc_attr((string) ($editing_rule['timeframe'] ?? '1D')) . '" class="small-text" /></label></p>';
+        echo '<p><label>Description recommend<br><textarea name="description" rows="3" class="large-text">' . esc_textarea((string) ($editing_rule['description'] ?? '')) . '</textarea></label></p>';
+        echo '<div class="lcni-recommend-row"><label>Initial SL % <input type="number" step="0.01" name="initial_sl_pct" value="' . esc_attr((string) ($editing_rule['initial_sl_pct'] ?? '8')) . '" /></label></div>';
+        echo '<div class="lcni-recommend-row"><label>Risk Reward <input type="number" step="0.01" name="risk_reward" value="' . esc_attr((string) ($editing_rule['risk_reward'] ?? '3')) . '" /></label></div>';
+        echo '<div class="lcni-recommend-row"><label>Add at R <input type="number" step="0.01" name="add_at_r" value="' . esc_attr((string) ($editing_rule['add_at_r'] ?? '2')) . '" /></label></div>';
+        echo '<div class="lcni-recommend-row"><label>Exit at R <input type="number" step="0.01" name="exit_at_r" value="' . esc_attr((string) ($editing_rule['exit_at_r'] ?? '4')) . '" /></label></div>';
+        echo '<div class="lcni-recommend-row"><label>Max Hold Days <input type="number" name="max_hold_days" value="' . esc_attr((string) ($editing_rule['max_hold_days'] ?? '20')) . '" /></label></div>';
+        echo '<p><label><input type="checkbox" name="is_active" value="1" ' . (!array_key_exists('is_active', (array) $editing_rule) || !empty($editing_rule['is_active']) ? 'checked' : '') . ' /> Active</label></p>';
         echo '</div>';
 
         echo '<div class="lcni-recommend-panel">';
         echo '<h3>Entry Conditions JSON</h3>';
         echo '<div id="lcni-recommend-dropzone" class="lcni-recommend-drop"><em>Kéo thả cột từ bên phải vào đây.</em></div>';
-        echo '<p><textarea id="lcni_recommend_entry_conditions" name="entry_conditions" rows="8" class="large-text code">{"is_break_h1m":1,"rs_rank_min":80,"smart_money":1}</textarea></p>';
+        echo '<p><textarea id="lcni_recommend_entry_conditions" name="entry_conditions" rows="8" class="large-text code">' . esc_textarea((string) ($editing_rule['entry_conditions'] ?? '{}')) . '</textarea></p>';
         echo '</div>';
 
         echo '<div class="lcni-recommend-panel">';
@@ -271,7 +328,10 @@ class LCNI_Recommend_Admin_Page {
 
         echo '</div>';
 
-        submit_button('Save Rule');
+        submit_button($is_edit_mode ? 'Update Rule' : 'Save Rule');
+        if ($is_edit_mode) {
+            echo ' <a class="button" href="' . esc_url(admin_url('admin.php?page=lcni-recommend&tab=create-rule')) . '">Tạo rule mới</a>';
+        }
         echo '</form>';
 
         echo '<script>';
@@ -473,6 +533,9 @@ class LCNI_Recommend_Admin_Page {
         })();';
         echo '</script>';
 
+    }
+
+    private function render_rules_list_tab() {
         $rules = $this->rule_repository->all(200);
         $this->render_rules_list(is_array($rules) ? $rules : []);
     }
@@ -502,6 +565,7 @@ class LCNI_Recommend_Admin_Page {
         echo '<th>Active</th>';
         echo '<th>Created At</th>';
         echo '<th>Updated At</th>';
+        echo '<th>Action</th>';
         echo '</tr></thead>';
         echo '<tbody>';
 
@@ -520,6 +584,7 @@ class LCNI_Recommend_Admin_Page {
             echo '<td>' . (!empty($rule['is_active']) ? '1' : '0') . '</td>';
             echo '<td>' . esc_html((string) ($rule['created_at'] ?? '')) . '</td>';
             echo '<td>' . esc_html((string) ($rule['updated_at'] ?? '')) . '</td>';
+            echo '<td><a class="button button-small" href="' . esc_url(admin_url('admin.php?page=lcni-recommend&tab=create-rule&edit=' . (int) ($rule['id'] ?? 0))) . '">Chỉnh sửa</a></td>';
             echo '</tr>';
         }
 
