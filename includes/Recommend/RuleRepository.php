@@ -109,6 +109,24 @@ class RuleRepository {
     public function decode_conditions($rule) {
         $decoded = json_decode((string) ($rule['entry_conditions'] ?? '{}'), true);
 
+        if (is_array($decoded) && !isset($decoded['rules']) && array_is_list($decoded)) {
+            $normalized_rules = [];
+            foreach ($decoded as $item) {
+                if (!is_array($item) || !isset($item['rules']) || !is_array($item['rules'])) {
+                    continue;
+                }
+                foreach ($item['rules'] as $rule_item) {
+                    if (is_array($rule_item)) {
+                        $normalized_rules[] = $rule_item;
+                    }
+                }
+            }
+
+            if (!empty($normalized_rules)) {
+                return ['rules' => $normalized_rules];
+            }
+        }
+
         return is_array($decoded) ? $decoded : [];
     }
 
@@ -318,6 +336,24 @@ class RuleRepository {
         }
 
         $normalized = [];
+
+        if (!isset($raw['rules']) && array_is_list($raw)) {
+            $flattened_rules = [];
+            foreach ($raw as $item) {
+                if (!is_array($item) || !isset($item['rules']) || !is_array($item['rules'])) {
+                    continue;
+                }
+                foreach ($item['rules'] as $rule_item) {
+                    if (is_array($rule_item)) {
+                        $flattened_rules[] = $rule_item;
+                    }
+                }
+            }
+
+            if (!empty($flattened_rules)) {
+                $raw = ['rules' => $flattened_rules];
+            }
+        }
 
         if (isset($raw['rules']) && is_array($raw['rules'])) {
             $normalized_rules = [];
