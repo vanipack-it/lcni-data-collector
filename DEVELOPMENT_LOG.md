@@ -1,3 +1,10 @@
+## 2026-03-05 11:20 (v5.4.4)
+- Nâng version plugin lên `5.4.4`.
+- `LCNi Recommend -> Tạo Rule`: bỏ chức năng kéo-thả khi tạo điều kiện Entry.
+- Gộp `Entry Conditions JSON` và `Table source (1)` thành một cột `Điều kiện kích hoạt`, hỗ trợ nhiều rule theo dạng bảng 3 cột (Field / Điều kiện / Giá trị so sánh), mặc định có sẵn 1 dòng và nút thêm rule.
+- Nguồn Field lấy từ tất cả cột thuộc các bảng `lcni_ohlc`, `lcni_symbols`, `lcni_icb2`, `lcni_sym_icb_market`, `lcni_symbol_tongquan`.
+- Cập nhật `RuleRepository` để parse/lưu/query điều kiện mới theo `rules[]` với các toán tử `=`, `>`, `<`, `contains`, `not_contains`, kết hợp điều kiện bằng `AND`.
+
 ## 2026-03-04 10:35 (v5.4.2)
 - Nâng version plugin lên `5.4.2`.
 - `LCNi Recommend -> Rule`: sửa lỗi lưu rule nhưng danh sách không hiển thị trạng thái rõ ràng bằng cách kiểm tra kết quả lưu và hiển thị thông báo thành công/thất bại sau khi submit.

@@ -83,12 +83,92 @@ class RuleRepository {
     public function find_candidate_symbols($rule) {
         $conditions = $this->decode_conditions($rule);
         $ohlc_table = $this->wpdb->prefix . 'lcni_ohlc';
+        $symbol_table = $this->wpdb->prefix . 'lcni_symbols';
+        $icb2_table = $this->wpdb->prefix . 'lcni_icb2';
+        $mapping_table = $this->wpdb->prefix . 'lcni_sym_icb_market';
+        $tongquan_table = $this->wpdb->prefix . 'lcni_symbol_tongquan';
         $timeframe = sanitize_text_field((string) ($rule['timeframe'] ?? '1D'));
 
         $where = ['o.timeframe = %s'];
         $params = [$timeframe];
 
+        if (isset($conditions['rules']) && is_array($conditions['rules'])) {
+            foreach ($conditions['rules'] as $rule_item) {
+                if (!is_array($rule_item)) {
+                    continue;
+                }
+
+                $raw_field = sanitize_text_field((string) ($rule_item['field'] ?? ''));
+                $operator = sanitize_key((string) ($rule_item['operator'] ?? '='));
+                $raw_value = sanitize_text_field((string) ($rule_item['value'] ?? ''));
+
+                if ($raw_field === '' || $raw_value === '') {
+                    continue;
+                }
+
+                $parts = explode('.', $raw_field, 2);
+                if (count($parts) !== 2) {
+                    continue;
+                }
+
+                $table_key = sanitize_key((string) $parts[0]);
+                $column_key = sanitize_key((string) $parts[1]);
+
+                if ($table_key === '' || $column_key === '') {
+                    continue;
+                }
+
+                $alias_map = [
+                    'lcni_ohlc' => 'o',
+                    'lcni_symbols' => 's',
+                    'lcni_icb2' => 'i',
+                    'lcni_sym_icb_market' => 'm',
+                    'lcni_symbol_tongquan' => 't',
+                ];
+
+                if (!isset($alias_map[$table_key])) {
+                    continue;
+                }
+
+                $column_ref = $alias_map[$table_key] . '.`' . $column_key . '`';
+
+                if ($operator === '>' || $operator === '<') {
+                    if (!is_numeric($raw_value)) {
+                        continue;
+                    }
+
+                    $where[] = $column_ref . ' ' . $operator . ' %f';
+                    $params[] = (float) $raw_value;
+                    continue;
+                }
+
+                if ($operator === 'contains') {
+                    $where[] = $column_ref . ' LIKE %s';
+                    $params[] = '%' . $this->wpdb->esc_like($raw_value) . '%';
+                    continue;
+                }
+
+                if ($operator === 'not_contains') {
+                    $where[] = $column_ref . ' NOT LIKE %s';
+                    $params[] = '%' . $this->wpdb->esc_like($raw_value) . '%';
+                    continue;
+                }
+
+                if (is_numeric($raw_value)) {
+                    $where[] = $column_ref . ' = %f';
+                    $params[] = (float) $raw_value;
+                } else {
+                    $where[] = $column_ref . ' = %s';
+                    $params[] = $raw_value;
+                }
+            }
+        }
+
         foreach ($conditions as $field => $value) {
+            if ($field === 'rules') {
+                continue;
+            }
+
             $field = sanitize_key((string) $field);
             if ($field === '') {
                 continue;
@@ -144,6 +224,10 @@ class RuleRepository {
 
         $sql = "SELECT o.symbol, o.event_time, o.close_price
             FROM {$ohlc_table} o
+            LEFT JOIN {$symbol_table} s ON s.symbol = o.symbol
+            LEFT JOIN {$mapping_table} m ON m.symbol = o.symbol
+            LEFT JOIN {$icb2_table} i ON i.id_icb2 = m.id_icb2
+            LEFT JOIN {$tongquan_table} t ON t.symbol = o.symbol
             INNER JOIN (
                 SELECT symbol, timeframe, MAX(event_time) AS max_event_time
                 FROM {$ohlc_table}
@@ -170,6 +254,36 @@ class RuleRepository {
         }
 
         $normalized = [];
+
+        if (isset($raw['rules']) && is_array($raw['rules'])) {
+            $normalized_rules = [];
+            foreach ($raw['rules'] as $rule) {
+                if (!is_array($rule)) {
+                    continue;
+                }
+
+                $field = sanitize_text_field((string) ($rule['field'] ?? ''));
+                $operator = sanitize_key((string) ($rule['operator'] ?? '='));
+                $value = sanitize_text_field((string) ($rule['value'] ?? ''));
+
+                if ($field === '' || $value === '') {
+                    continue;
+                }
+
+                if (!in_array($operator, ['=', '>', '<', 'contains', 'not_contains'], true)) {
+                    $operator = '=';
+                }
+
+                $normalized_rules[] = [
+                    'field' => $field,
+                    'operator' => $operator,
+                    'value' => $value,
+                ];
+            }
+
+            return ['rules' => $normalized_rules];
+        }
+
         foreach ($raw as $field => $value) {
             $key = sanitize_key((string) $field);
             if ($key === '') {
