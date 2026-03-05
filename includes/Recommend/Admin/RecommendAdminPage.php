@@ -314,8 +314,14 @@ class LCNI_Recommend_Admin_Page {
                 const conditions=[];
 
                 if(!jsonField || !conditionsHost || !addButton){
-                    return;
+                    return false;
                 }
+
+                if(addButton.dataset.builderReady === "1"){
+                    return true;
+                }
+
+                addButton.dataset.builderReady = "1";
 
                 function makeSelect(options, selected){
                     const select=document.createElement("select");
@@ -430,14 +436,29 @@ class LCNI_Recommend_Admin_Page {
                     conditions.push({ table:firstTable, field:"", operator:"=", value:"" });
                 }
                 render();
+
+                return true;
+            }
+
+            function bootRecommendConditionBuilder(attempt){
+                const initialized = initRecommendConditionBuilder();
+                if(initialized || attempt >= 10){
+                    return;
+                }
+
+                window.setTimeout(function(){
+                    bootRecommendConditionBuilder(attempt + 1);
+                }, 100);
             }
 
             if(document.readyState === "loading"){
-                document.addEventListener("DOMContentLoaded", initRecommendConditionBuilder);
+                document.addEventListener("DOMContentLoaded", function(){
+                    bootRecommendConditionBuilder(0);
+                });
                 return;
             }
 
-            initRecommendConditionBuilder();
+            bootRecommendConditionBuilder(0);
         })();';
         echo '</script>';
 
