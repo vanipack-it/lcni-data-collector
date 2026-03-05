@@ -55,6 +55,8 @@ class LCNI_Recommend_Signals_List_Table extends WP_List_Table {
             'id' => 'ID',
             'symbol' => 'Symbol',
             'rule_name' => 'Rule',
+            'entry_date' => 'Entry Date',
+            'holding_days' => 'Số ngày nắm giữ',
             'entry_price' => 'Entry',
             'current_price' => 'Current',
             'r_multiple' => 'R',
@@ -219,7 +221,10 @@ class LCNI_Recommend_Admin_Page {
                 exit;
             }
 
-            $scan_count = $this->daily_cron_service->scan_rule_now($rule);
+            $scan_from_date = sanitize_text_field((string) ($_POST['scan_from_date'] ?? ''));
+            $scan_to_date = sanitize_text_field((string) ($_POST['scan_to_date'] ?? ''));
+
+            $scan_count = $this->daily_cron_service->scan_rule_now($rule, $scan_from_date, $scan_to_date);
             wp_safe_redirect(admin_url('admin.php?page=lcni-recommend&tab=rule-list&scanned=1&scan_count=' . (int) $scan_count));
             exit;
         }
@@ -237,7 +242,7 @@ class LCNI_Recommend_Admin_Page {
         echo '<a href="' . esc_url(admin_url('admin.php?page=lcni-recommend&tab=rule-list')) . '" class="nav-tab ' . ($tab === 'rule-list' ? 'nav-tab-active' : '') . '">Danh sách Rule</a>';
         echo '<a href="' . esc_url(admin_url('admin.php?page=lcni-recommend&tab=signals')) . '" class="nav-tab ' . ($tab === 'signals' ? 'nav-tab-active' : '') . '">Signals</a>';
         echo '<a href="' . esc_url(admin_url('admin.php?page=lcni-recommend&tab=performance')) . '" class="nav-tab ' . ($tab === 'performance' ? 'nav-tab-active' : '') . '">Performance</a>';
-        echo '<a href="' . esc_url(admin_url('admin.php?page=lcni-recommend&tab=logs')) . '" class="' . ($tab === 'logs' ? 'nav-tab-active' : '') . '">Lịch sử thay đổi</a>';
+        echo '<a href="' . esc_url(admin_url('admin.php?page=lcni-recommend&tab=logs')) . '" class="nav-tab ' . ($tab === 'logs' ? 'nav-tab-active' : '') . '">Logs</a>';
         echo '</h2>';
 
         $created = isset($_GET['created']) ? sanitize_text_field((string) $_GET['created']) : '';
@@ -381,7 +386,8 @@ class LCNI_Recommend_Admin_Page {
 
         echo '<div class="lcni-recommend-panel">';
         echo '<h3>Điều kiện kích hoạt</h3>';
-        echo '<p class="lcni-recommend-rules-help">Tạo nhiều rule với 3 cột: <strong>Field</strong>, <strong>Điều kiện</strong>, <strong>Giá trị so sánh</strong>. Các rule sẽ kết hợp với nhau để tạo Entry Conditions (AND).</p>';
+        echo '<p class="lcni-recommend-rules-help">Tạo nhiều rule với 3 cột: <strong>Field</strong>, <strong>Điều kiện</strong>, <strong>Giá trị so sánh</strong>. Có thể chọn chế độ kết hợp <strong>AND</strong> hoặc <strong>OR</strong> cho toàn bộ rule.</p>';
+        echo '<p><label>Kết hợp rule: <select id="lcni_recommend_match_type"><option value="AND">AND</option><option value="OR">OR</option></select></label></p>';
         echo '<table class="lcni-recommend-rules" id="lcni-recommend-rules-table">';
         echo '<thead><tr><th>Cột 1: Field</th><th>Cột 2: Điều kiện</th><th>Cột 3: Giá trị so sánh</th><th></th></tr></thead>';
         echo '<tbody id="lcni-recommend-rules-body"></tbody>';
@@ -419,9 +425,14 @@ class LCNI_Recommend_Admin_Page {
                 });
             });
 
+            const matchTypeSelect=document.getElementById("lcni_recommend_match_type");
+
             function syncJson(){
                 const validRows=rows.filter((row)=>row.field!=="" && row.value!=="");
-                jsonField.value=JSON.stringify({ rules:validRows }, null, 2);
+                jsonField.value=JSON.stringify({
+                    match:String(matchTypeSelect.value || "AND").toUpperCase() === "OR" ? "OR" : "AND",
+                    rules:validRows
+                }, null, 2);
             }
 
             function buildSelect(options, selectedValue){
@@ -447,8 +458,25 @@ class LCNI_Recommend_Admin_Page {
                     const tr=document.createElement("tr");
 
                     const fieldCell=document.createElement("td");
+                    const fieldSearch=document.createElement("input");
+                    fieldSearch.type="search";
+                    fieldSearch.placeholder="Tìm field...";
+                    fieldSearch.style.marginBottom="6px";
+
                     const fieldSelect=buildSelect(fieldOptions, rule.field);
+                    fieldSearch.addEventListener("input",()=>{
+                        const keyword=String(fieldSearch.value || "").toLowerCase().trim();
+                        Array.from(fieldSelect.options).forEach((opt, optIndex)=>{
+                            if (optIndex===0) {
+                                opt.hidden=false;
+                                return;
+                            }
+                            const text=String(opt.textContent || "").toLowerCase();
+                            opt.hidden=keyword!=="" && !text.includes(keyword);
+                        });
+                    });
                     fieldSelect.addEventListener("change",()=>{ rule.field=fieldSelect.value; syncJson(); });
+                    fieldCell.appendChild(fieldSearch);
                     fieldCell.appendChild(fieldSelect);
 
                     const operatorCell=document.createElement("td");
@@ -497,9 +525,12 @@ class LCNI_Recommend_Admin_Page {
             }
 
             addRuleButton.addEventListener("click",()=>addRule());
+            matchTypeSelect.addEventListener("change",syncJson);
 
             try {
                 const parsed=JSON.parse(jsonField.value || "{}");
+                const matchType=String(parsed && parsed.match ? parsed.match : "AND").toUpperCase();
+                matchTypeSelect.value=matchType === "OR" ? "OR" : "AND";
                 if (parsed && Array.isArray(parsed.rules) && parsed.rules.length) {
                     parsed.rules.forEach((rule)=>{
                         addRule({
@@ -582,7 +613,9 @@ class LCNI_Recommend_Admin_Page {
                 wp_nonce_field('lcni_recommend_admin_action');
                 echo '<input type="hidden" name="lcni_recommend_action" value="scan_rule_now" />';
                 echo '<input type="hidden" name="rule_id" value="' . esc_attr((string) ((int) ($rule['id'] ?? 0))) . '" />';
-                echo '<button type="submit" class="button button-small">Quét ngay</button>';
+                echo '<label style="font-size:11px;">Từ ngày <input type="date" name="scan_from_date" value="' . esc_attr((string) ($rule['apply_from_date'] ?? '')) . '" /></label>';
+                echo '<label style="font-size:11px;">Đến ngày <input type="date" name="scan_to_date" value="" /></label>';
+                echo '<button type="submit" class="button button-small">Quét ngay</button>'; 
                 echo '</form>';
             } else {
                 echo '<span style="color:#777;">Inactive</span>';
@@ -675,7 +708,22 @@ class LCNI_Recommend_Admin_Page {
     private function render_signals_tab() {
         $this->daily_cron_service->refresh_open_positions_now();
 
-        $table = new LCNI_Recommend_Signals_List_Table($this->signal_repository->list_signals(['limit' => 200]));
+        $signals = $this->signal_repository->list_signals(['limit' => 200]);
+        $now_timestamp = current_time('timestamp');
+
+        $signals = array_map(static function ($signal) use ($now_timestamp) {
+            $entry_time = (int) ($signal['entry_time'] ?? 0);
+            $signal['entry_date'] = $entry_time > 0 ? wp_date('Y-m-d', $entry_time, wp_timezone()) : '';
+            $holding_days = isset($signal['holding_days']) ? (int) $signal['holding_days'] : 0;
+            if ($holding_days <= 0 && $entry_time > 0) {
+                $holding_days = max(0, (int) floor(($now_timestamp - $entry_time) / DAY_IN_SECONDS));
+            }
+            $signal['holding_days'] = $holding_days;
+
+            return $signal;
+        }, is_array($signals) ? $signals : []);
+
+        $table = new LCNI_Recommend_Signals_List_Table($signals);
         $table->prepare_items();
         $table->display();
     }
