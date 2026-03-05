@@ -1,3 +1,9 @@
+## 2026-03-05 00:00 (v5.4.2a)
+- Bỏ cơ chế kéo-thả ở LCNi Recommend -> Rules.
+- Gộp "Entry Conditions JSON" và "Table source (1)" thành 1 khối "Entry Conditions" theo dạng rule builder.
+- Mỗi rule gồm `table`, `field`, `operator`, `value`; nhiều rule ghép theo logic `AND` để tạo điều kiện entry.
+- Cập nhật RuleRepository để xử lý format điều kiện mới nhưng vẫn giữ tương thích format JSON cũ.
+
 ## 2026-03-04 10:35 (v5.4.2)
 - Nâng version plugin lên `5.4.2`.
 - `LCNi Recommend -> Rule`: sửa lỗi lưu rule nhưng danh sách không hiển thị trạng thái rõ ràng bằng cách kiểm tra kết quả lưu và hiển thị thông báo thành công/thất bại sau khi submit.
