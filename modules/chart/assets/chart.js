@@ -30,7 +30,7 @@
     return Number.isFinite(number) ? String(number) : '-';
   }
 
-  function buildTooltipFormatter() {
+  function buildTooltipFormatter(sourceRows) {
     return (params) => {
       const rows = [];
       const items = Array.isArray(params) ? params : [];
@@ -47,6 +47,16 @@
         if (series.indexOf('RSI') === 0) type = 'rsi';
         if (series === 'MACD' || series === 'Signal' || series === 'Histogram') type = 'macd';
         if (series.indexOf('RS ') === 0) type = 'rs';
+
+        if (item.seriesType === 'candlestick' && Array.isArray(sourceRows) && sourceRows[item.dataIndex]) {
+          const candle = sourceRows[item.dataIndex];
+          const open = formatByType(candle.open, 'price');
+          const close = formatByType(candle.close, 'price');
+          const low = formatByType(candle.low, 'price');
+          const high = formatByType(candle.high, 'price');
+          rows.push(`${marker}${series}: O ${open} | C ${close} | L ${low} | H ${high}`);
+          return;
+        }
 
         if (Array.isArray(value) && value.length >= 4) {
           const open = formatByType(value[0], 'price');
@@ -236,7 +246,19 @@
     });
 
     const series = [
-      { name: symbol, type: 'candlestick', xAxisIndex: panelIndexes.price, yAxisIndex: panelIndexes.price, data: candles },
+      {
+        name: symbol,
+        type: 'candlestick',
+        xAxisIndex: panelIndexes.price,
+        yAxisIndex: panelIndexes.price,
+        data: candles,
+        itemStyle: {
+          color: '#16a34a',
+          borderColor: '#16a34a',
+          color0: '#dc2626',
+          borderColor0: '#dc2626'
+        }
+      },
       { name: 'Volume', type: 'bar', xAxisIndex: panelIndexes.volume, yAxisIndex: panelIndexes.volume, data: volumes, itemStyle: { color: '#94a3b8' }, barMaxWidth: 10 }
     ];
 
@@ -261,7 +283,7 @@
     return {
       animation: false,
       legend: { top: 0 },
-      tooltip: { trigger: 'axis', axisPointer: { type: 'cross' }, formatter: buildTooltipFormatter() },
+      tooltip: { trigger: 'axis', axisPointer: { type: 'cross' }, formatter: buildTooltipFormatter(source) },
       axisPointer: { link: [{ xAxisIndex: xIndices }] },
       grid,
       xAxis,
