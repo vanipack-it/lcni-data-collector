@@ -90,8 +90,144 @@
     const isShareDataset = chartType === 'share_dataset';
     const isHeatmapMatrix = chartType === 'heatmap_matrix';
     const isHeatmapMatrix2 = chartType === 'heatmap_matrix_2';
+    const isMiniLineSparkline = chartType === 'mini_line_sparkline';
     const isTreemap1 = chartType === 'treemap_1';
     const preparedRows = normalizeRowsByTemplate(rows, chartType, cfg);
+
+    if (isMiniLineSparkline) {
+      const xDimensionField = cfg.xAxis || '';
+      const yDimensionField = cfg.yAxis || '';
+      const valueField = (seriesCfg[0] && seriesCfg[0].field) || '';
+      const timeField = cfg.timeAxis || 'event_time';
+      const xDimensionData = [];
+      const yDimensionData = [];
+      const xSet = new Set();
+      const ySet = new Set();
+      const cells = {};
+
+      preparedRows.forEach((row, rowIndex) => {
+        const xValue = String(row[xDimensionField] || '').trim();
+        const yValue = String(row[yDimensionField] || '').trim();
+        const numericValue = Number(row[valueField]);
+        if (!xValue || !yValue || !Number.isFinite(numericValue)) {
+          return;
+        }
+
+        if (!xSet.has(xValue)) {
+          xSet.add(xValue);
+          xDimensionData.push(xValue);
+        }
+        if (!ySet.has(yValue)) {
+          ySet.add(yValue);
+          yDimensionData.push(yValue);
+        }
+
+        const id = `${xValue}|${yValue}`;
+        if (!cells[id]) {
+          cells[id] = [];
+        }
+
+        const timeValue = row[timeField] || row.event_time || row.date || rowIndex;
+        cells[id].push([String(timeValue), numericValue]);
+      });
+
+      const matrix = {
+        x: {
+          data: xDimensionData,
+          levelSize: 42,
+          label: { fontSize: 13, color: '#555' },
+        },
+        y: {
+          data: yDimensionData.map((item) => ({ value: item })),
+          levelSize: 62,
+          label: { fontSize: 12, color: '#777' },
+        },
+        corner: {
+          data: [{ coord: [-1, -1], value: 'Nhóm / Mã' }],
+          label: { fontSize: 12, color: '#777' },
+        },
+        top: 24,
+        bottom: 80,
+        width: '92%',
+        left: 'center',
+      };
+
+      const option = {
+        title: { text: payload.name || '' },
+        matrix,
+        tooltip: { trigger: 'axis' },
+        dataZoom: [
+          { type: 'slider', xAxisIndex: 'all', left: '10%', right: '10%', bottom: 26, height: 24, throttle: 120 },
+          { type: 'inside', xAxisIndex: 'all', throttle: 120 },
+        ],
+        grid: [],
+        xAxis: [],
+        yAxis: [],
+        series: [],
+        animationDurationUpdate: 300,
+      };
+
+      yDimensionData.forEach((yValue, yidx) => {
+        xDimensionData.forEach((xValue, xidx) => {
+          const id = `${xidx}|${yidx}`;
+          const cellKey = `${xValue}|${yValue}`;
+          const cellSeries = cells[cellKey] || [];
+          if (!cellSeries.length) {
+            return;
+          }
+
+          option.grid.push({
+            id,
+            coordinateSystem: 'matrix',
+            coord: [xValue, yValue],
+            top: 8,
+            bottom: 8,
+            left: 'center',
+            width: '92%',
+            containLabel: true,
+          });
+
+          option.xAxis.push({
+            type: 'category',
+            id,
+            gridId: id,
+            axisTick: { show: false },
+            axisLabel: { show: false },
+            axisLine: { show: false },
+            splitLine: { show: false },
+            data: cellSeries.map((item) => item[0]),
+          });
+
+          option.yAxis.push({
+            id,
+            gridId: id,
+            scale: true,
+            axisLabel: { show: false },
+            axisLine: { show: false },
+            axisTick: { show: false },
+            splitLine: { show: false },
+          });
+
+          option.series.push({
+            name: `${yValue} - ${xValue}`,
+            xAxisId: id,
+            yAxisId: id,
+            type: 'line',
+            smooth: true,
+            symbol: 'none',
+            lineStyle: {
+              lineWidth: 1.2,
+              type: (seriesCfg[0] && seriesCfg[0].line_style) || 'solid',
+              color: (seriesCfg[0] && seriesCfg[0].color) || '#5470c6',
+            },
+            itemStyle: { color: (seriesCfg[0] && seriesCfg[0].color) || '#5470c6' },
+            data: cellSeries.map((item) => item[1]),
+          });
+        });
+      });
+
+      return option;
+    }
 
     if (isHeatmapMatrix || isHeatmapMatrix2) {
       const xData = Array.isArray(rows.x) ? rows.x : [];

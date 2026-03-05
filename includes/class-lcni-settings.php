@@ -3161,6 +3161,7 @@ private function sanitize_module_title($value, $fallback) {
             'rsi_zone' => ['label' => 'RSI Zone', 'axis_slots' => 1, 'series_slots' => 2],
             'smart_money_flow' => ['label' => 'Smart Money Flow', 'axis_slots' => 1, 'series_slots' => 3],
             'candlestick' => ['label' => 'Candlestick', 'axis_slots' => 1, 'series_slots' => 4],
+            'mini_line_sparkline' => ['label' => 'Mini Line Charts (Sparkline)', 'axis_slots' => 2, 'series_slots' => 1],
         ];
         ?>
         <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
@@ -3547,6 +3548,100 @@ private function sanitize_module_title($value, $fallback) {
                             (heatmapColorMid && heatmapColorMid.value) || '#fee08b',
                             (heatmapColorHigh && heatmapColorHigh.value) || '#1a9850',
                         ];
+
+                        if (templateKey === 'mini_line_sparkline') {
+                            const xDimensionField = p.x;
+                            const yDimensionField = p.y;
+                            const valueField = p.seriesFields[0] || '';
+                            const xDimensionData = Array.from(new Set(p.rows.map((row) => String(row[xDimensionField] || '')).filter(Boolean)));
+                            const yDimensionData = yDimensionField
+                                ? Array.from(new Set(p.rows.map((row) => String(row[yDimensionField] || '')).filter(Boolean)))
+                                : ['Nhóm 1'];
+                            const matrix = {
+                                x: {
+                                    data: xDimensionData,
+                                    levelSize: 42,
+                                    label: { fontSize: 13, color: '#555' },
+                                },
+                                y: {
+                                    data: yDimensionData.map((item) => ({ value: item })),
+                                    levelSize: 60,
+                                    label: { fontSize: 12, color: '#777' },
+                                },
+                                corner: {
+                                    data: [{ coord: [-1, -1], value: 'Nhóm / Mã' }],
+                                    label: { fontSize: 12, color: '#777' },
+                                },
+                                top: 24,
+                                bottom: 80,
+                                width: '92%',
+                                left: 'center',
+                            };
+
+                            const option = {
+                                tooltip: { trigger: 'axis' },
+                                matrix,
+                                dataZoom: [
+                                    { type: 'slider', xAxisIndex: 'all', left: '10%', right: '10%', bottom: 26, height: 24 },
+                                    { type: 'inside', xAxisIndex: 'all' },
+                                ],
+                                grid: [],
+                                xAxis: [],
+                                yAxis: [],
+                                series: [],
+                            };
+
+                            yDimensionData.forEach((yValue, yidx) => {
+                                xDimensionData.forEach((xValue, xidx) => {
+                                    const id = xidx + '|' + yidx;
+                                    const cellRows = p.rows.filter((row) => String(row[xDimensionField] || '') === xValue && String((row[yDimensionField] || yValue)) === yValue);
+                                    if (!cellRows.length) return;
+                                    option.grid.push({
+                                        id,
+                                        coordinateSystem: 'matrix',
+                                        coord: [xValue, yValue],
+                                        top: 8,
+                                        bottom: 8,
+                                        left: 'center',
+                                        width: '92%',
+                                        containLabel: true,
+                                    });
+                                    option.xAxis.push({
+                                        type: 'category',
+                                        id,
+                                        gridId: id,
+                                        data: cellRows.map((_, idx) => String(idx + 1)),
+                                        axisTick: { show: false },
+                                        axisLabel: { show: false },
+                                        axisLine: { show: false },
+                                        splitLine: { show: false },
+                                    });
+                                    option.yAxis.push({
+                                        id,
+                                        gridId: id,
+                                        scale: true,
+                                        axisLabel: { show: false },
+                                        axisLine: { show: false },
+                                        axisTick: { show: false },
+                                        splitLine: { show: false },
+                                    });
+                                    option.series.push({
+                                        xAxisId: id,
+                                        yAxisId: id,
+                                        type: 'line',
+                                        smooth: true,
+                                        symbol: 'none',
+                                        lineStyle: { lineWidth: 1.2, color: '#5470c6' },
+                                        itemStyle: { color: '#5470c6' },
+                                        data: cellRows.map((row) => Number(row[valueField] || 0)),
+                                    });
+                                });
+                            });
+
+                            previewChart.setOption(option, true);
+                            previewChart.resize();
+                            return;
+                        }
 
                         if (templateKey === 'heatmap_matrix' || templateKey === 'heatmap_matrix_2') {
                             const xData = Array.from(new Set(p.rows.map((r) => String(r[p.x] || '')))).filter(Boolean);
