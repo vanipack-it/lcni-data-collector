@@ -30,6 +30,10 @@ class LCNI_Recommend_Rules_List_Table extends WP_List_Table {
     }
 
     public function prepare_items() {
+        $columns = $this->get_columns();
+        $hidden = [];
+        $sortable = [];
+        $this->_column_headers = [$columns, $hidden, $sortable];
         $this->items = $this->items_data;
     }
 
@@ -60,6 +64,10 @@ class LCNI_Recommend_Signals_List_Table extends WP_List_Table {
     }
 
     public function prepare_items() {
+        $columns = $this->get_columns();
+        $hidden = [];
+        $sortable = [];
+        $this->_column_headers = [$columns, $hidden, $sortable];
         $this->items = $this->items_data;
     }
 
@@ -91,6 +99,10 @@ class LCNI_Recommend_Performance_List_Table extends WP_List_Table {
     }
 
     public function prepare_items() {
+        $columns = $this->get_columns();
+        $hidden = [];
+        $sortable = [];
+        $this->_column_headers = [$columns, $hidden, $sortable];
         $this->items = $this->items_data;
     }
 
