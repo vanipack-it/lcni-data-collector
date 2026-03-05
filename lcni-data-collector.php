@@ -2,7 +2,7 @@
 /*
 Plugin Name: LCNI Data Collector
 Description: LCNI Market Data Engine: lấy nến, lưu DB, cron auto update
-Version: 5.4.7
+Version: 5.4.8
 */
 
 if (!defined('ABSPATH')) {
@@ -36,6 +36,9 @@ require_once LCNI_PATH . 'includes/Repositories/StockRepository.php';
 require_once LCNI_PATH . 'includes/Services/IndicatorService.php';
 require_once LCNI_PATH . 'includes/Services/StockQueryService.php';
 require_once LCNI_PATH . 'includes/API/StockController.php';
+require_once LCNI_PATH . 'includes/Repositories/IndustryRepository.php';
+require_once LCNI_PATH . 'includes/Services/IndustryAnalysisService.php';
+require_once LCNI_PATH . 'includes/API/IndustryController.php';
 require_once LCNI_PATH . 'includes/class-lcni-rest-api.php';
 require_once LCNI_PATH . 'includes/class-lcni-stock-repository.php';
 require_once LCNI_PATH . 'includes/lcni-stock-functions.php';
@@ -77,6 +80,7 @@ require_once LCNI_PATH . 'includes/Recommend/DailyCronService.php';
 require_once LCNI_PATH . 'includes/Recommend/ShortcodeManager.php';
 require_once LCNI_PATH . 'includes/Recommend/Admin/RecommendAdminPage.php';
 require_once LCNI_PATH . 'includes/Recommend/RecommendModule.php';
+require_once LCNI_PATH . 'includes/class-lcni-industry-shortcodes.php';
 
 function lcni_register_custom_cron_schedules($schedules) {
     if (!isset($schedules['lcni_every_minute'])) {
@@ -256,6 +260,7 @@ new LCNI_Chart_Builder_Shortcode();
 new LCNI_Update_Data_Page();
 new LCNI_Member_Module();
 new LCNI_Recommend_Module();
+new LCNI_Industry_Shortcodes();
 LCNI_Update_Manager::init();
 LCNI_OHLC_Latest_Manager::init();
 new LCNI_Rest_API();
