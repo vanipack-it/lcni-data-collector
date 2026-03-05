@@ -8,11 +8,13 @@ class SignalRepository {
     private $wpdb;
     private $table;
     private $symbols_table;
+    private $has_timeframe_column;
 
     public function __construct(wpdb $wpdb) {
         $this->wpdb = $wpdb;
         $this->table = $wpdb->prefix . 'lcni_recommend_signal';
         $this->symbols_table = $wpdb->prefix . 'lcni_symbols';
+        $this->has_timeframe_column = null;
     }
 
     public function get_open_signals() {
@@ -27,6 +29,18 @@ class SignalRepository {
     }
 
     public function find_by_rule_symbol_entry($rule_id, $symbol, $entry_time, $timeframe) {
+        if (!$this->supports_timeframe_column()) {
+            return $this->wpdb->get_row(
+                $this->wpdb->prepare(
+                    "SELECT id FROM {$this->table} WHERE rule_id = %d AND symbol = %s AND entry_time = %d LIMIT 1",
+                    (int) $rule_id,
+                    strtoupper((string) $symbol),
+                    (int) $entry_time
+                ),
+                ARRAY_A
+            );
+        }
+
         return $this->wpdb->get_row(
             $this->wpdb->prepare(
                 "SELECT id FROM {$this->table} WHERE rule_id = %d AND symbol = %s AND entry_time = %d AND timeframe = %s LIMIT 1",
@@ -54,10 +68,9 @@ class SignalRepository {
         $initial_sl = (float) $entry_price * (1 - ((float) $rule['initial_sl_pct'] / 100));
         $risk = max(0.0001, (float) $entry_price - $initial_sl);
 
-        $this->wpdb->insert($this->table, [
+        $data = [
             'rule_id' => (int) $rule['id'],
             'symbol' => $symbol,
-            'timeframe' => $timeframe,
             'entry_time' => (int) $entry_time,
             'entry_price' => (float) $entry_price,
             'initial_sl' => (float) $initial_sl,
@@ -67,7 +80,13 @@ class SignalRepository {
             'position_state' => 'EARLY',
             'status' => 'open',
             'holding_days' => 0,
-        ]);
+        ];
+
+        if ($this->supports_timeframe_column()) {
+            $data['timeframe'] = $timeframe;
+        }
+
+        $this->wpdb->insert($this->table, $data);
 
         return (int) $this->wpdb->insert_id;
     }
@@ -165,6 +184,15 @@ class SignalRepository {
             $this->wpdb->prepare("SELECT symbol FROM {$this->symbols_table} WHERE symbol = %s LIMIT 1", $symbol)
         );
 
-        return $exists === $symbol;
+        return strtoupper((string) $exists) === $symbol;
+    }
+
+    private function supports_timeframe_column() {
+        if ($this->has_timeframe_column === null) {
+            $column = $this->wpdb->get_var("SHOW COLUMNS FROM {$this->table} LIKE 'timeframe'");
+            $this->has_timeframe_column = !empty($column);
+        }
+
+        return $this->has_timeframe_column;
     }
 }
