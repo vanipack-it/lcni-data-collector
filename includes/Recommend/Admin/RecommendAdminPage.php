@@ -224,10 +224,11 @@ class LCNI_Recommend_Admin_Page {
         global $wpdb;
 
         return [
-            $wpdb->prefix . 'lcni_ohlc' => 'wp_lcni_ohlc',
-            $wpdb->prefix . 'lcni_symbol_tongquan' => 'wp_lcni_symbol_tongquan',
-            $wpdb->prefix . 'lcni_icb2' => 'wp_lcni_icb2',
-            $wpdb->prefix . 'lcni_marketid' => 'wp_lcni_marketid',
+            $wpdb->prefix . 'lcni_ohlc' => $wpdb->prefix . 'lcni_ohlc',
+            $wpdb->prefix . 'lcni_symbols' => $wpdb->prefix . 'lcni_symbols',
+            $wpdb->prefix . 'lcni_icb2' => $wpdb->prefix . 'lcni_icb2',
+            $wpdb->prefix . 'lcni_sym_icb_market' => $wpdb->prefix . 'lcni_sym_icb_market',
+            $wpdb->prefix . 'lcni_symbol_tongquan' => $wpdb->prefix . 'lcni_symbol_tongquan',
         ];
     }
 
@@ -276,15 +277,16 @@ class LCNI_Recommend_Admin_Page {
         }
 
         echo '<style>
-            .lcni-recommend-builder-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px}
+            .lcni-recommend-builder-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
             .lcni-recommend-panel{background:#fff;border:1px solid #dcdcde;padding:12px;min-height:380px}
             .lcni-recommend-panel h3{margin-top:0}
             .lcni-recommend-row{display:flex;gap:10px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
-            .lcni-recommend-drop{border:1px dashed #8c8f94;background:#f6f7f7;min-height:120px;padding:8px}
-            .lcni-recommend-columns{max-height:220px;overflow:auto;border:1px solid #dcdcde;padding:6px;background:#fff}
-            .lcni-recommend-pill{display:inline-block;padding:4px 8px;border:1px solid #c3c4c7;border-radius:12px;background:#f0f0f1;cursor:grab;margin:0 6px 6px 0}
-            .lcni-recommend-condition-item{border:1px solid #dcdcde;padding:8px;background:#fff;margin-bottom:8px}
-            .lcni-recommend-condition-item strong{display:block;margin-bottom:6px}
+            .lcni-recommend-rules{width:100%;border-collapse:collapse}
+            .lcni-recommend-rules th,.lcni-recommend-rules td{border:1px solid #dcdcde;padding:8px;vertical-align:top}
+            .lcni-recommend-rules th{background:#f6f7f7;text-align:left}
+            .lcni-recommend-rules select,.lcni-recommend-rules input{width:100%}
+            .lcni-recommend-rules td:last-child{width:56px;text-align:center}
+            .lcni-recommend-rules-help{margin:8px 0 12px;color:#50575e}
         </style>';
 
         echo '<form method="post" style="margin:16px 0;">';
@@ -310,20 +312,14 @@ class LCNI_Recommend_Admin_Page {
         echo '</div>';
 
         echo '<div class="lcni-recommend-panel">';
-        echo '<h3>Entry Conditions JSON</h3>';
-        echo '<div id="lcni-recommend-dropzone" class="lcni-recommend-drop"><em>Kéo thả cột từ bên phải vào đây.</em></div>';
-        echo '<p><textarea id="lcni_recommend_entry_conditions" name="entry_conditions" rows="8" class="large-text code">' . esc_textarea((string) ($editing_rule['entry_conditions'] ?? '{}')) . '</textarea></p>';
-        echo '</div>';
-
-        echo '<div class="lcni-recommend-panel">';
-        echo '<h3>Table source (1)</h3>';
-        echo '<p><select id="lcni-recommend-source-table" class="regular-text">';
-        foreach ($table_sources as $display_table) {
-            echo '<option value="' . esc_attr($display_table) . '">' . esc_html($display_table) . '</option>';
-        }
-        echo '</select></p>';
-        echo '<h3>Column of table (2)</h3>';
-        echo '<div id="lcni-recommend-columns" class="lcni-recommend-columns"></div>';
+        echo '<h3>Điều kiện kích hoạt</h3>';
+        echo '<p class="lcni-recommend-rules-help">Tạo nhiều rule với 3 cột: <strong>Field</strong>, <strong>Điều kiện</strong>, <strong>Giá trị so sánh</strong>. Các rule sẽ kết hợp với nhau để tạo Entry Conditions (AND).</p>';
+        echo '<table class="lcni-recommend-rules" id="lcni-recommend-rules-table">';
+        echo '<thead><tr><th>Cột 1: Field</th><th>Cột 2: Điều kiện</th><th>Cột 3: Giá trị so sánh</th><th></th></tr></thead>';
+        echo '<tbody id="lcni-recommend-rules-body"></tbody>';
+        echo '</table>';
+        echo '<p><button type="button" class="button" id="lcni-recommend-add-rule">+ Thêm rule</button></p>';
+        echo '<textarea id="lcni_recommend_entry_conditions" name="entry_conditions" rows="8" class="large-text code" style="display:none;">' . esc_textarea((string) ($editing_rule['entry_conditions'] ?? '{}')) . '</textarea>';
         echo '</div>';
 
         echo '</div>';
@@ -336,200 +332,120 @@ class LCNI_Recommend_Admin_Page {
 
         echo '<script>';
         echo 'window.lcniRecommendColumnsMap=' . wp_json_encode($columns_map) . ';';
-        echo 'window.lcniRecommendDistinctValuesNonce=' . wp_create_nonce('lcni_recommend_distinct_values') . ';';
         echo '(function(){
             const columnsMap=window.lcniRecommendColumnsMap||{};
-            const distinctValuesNonce=window.lcniRecommendDistinctValuesNonce||"";
-            const source=document.getElementById("lcni-recommend-source-table");
-            const columnsHost=document.getElementById("lcni-recommend-columns");
-            const dropzone=document.getElementById("lcni-recommend-dropzone");
             const jsonField=document.getElementById("lcni_recommend_entry_conditions");
-            const selected=[];
-            const valueCache={};
+            const tableBody=document.getElementById("lcni-recommend-rules-body");
+            const addRuleButton=document.getElementById("lcni-recommend-add-rule");
 
-            function cacheKey(table, field){
-                return table + "::" + field;
-            }
+            const operators=["=",">","<","contains","not_contains"];
+            const rows=[];
+            const fieldOptions=[];
 
-            function fetchDistinctValues(table, field){
-                const key=cacheKey(table, field);
-                if (valueCache[key]) {
-                    return Promise.resolve(valueCache[key]);
-                }
-
-                const payload=new URLSearchParams({
-                    action:"lcni_recommend_distinct_values",
-                    nonce:distinctValuesNonce,
-                    table:table,
-                    field:field
+            Object.keys(columnsMap).forEach((tableName)=>{
+                (columnsMap[tableName]||[]).forEach((column)=>{
+                    fieldOptions.push({
+                        value:tableName+"."+column.field,
+                        label:tableName+"."+column.field
+                    });
                 });
-
-                return fetch(ajaxurl, {
-                    method:"POST",
-                    headers:{ "Content-Type":"application/x-www-form-urlencoded;charset=UTF-8" },
-                    body:payload.toString()
-                })
-                .then((res)=>res.json())
-                .then((res)=>{
-                    if (!res || !res.success || !Array.isArray(res.data)) {
-                        return [];
-                    }
-                    valueCache[key]=res.data;
-                    return res.data;
-                })
-                .catch(()=>[]);
-            }
-
-            function renderColumns(){
-                const table=source.value;
-                const cols=columnsMap[table]||[];
-                columnsHost.innerHTML="";
-                cols.forEach((col)=>{
-                    const item=document.createElement("span");
-                    item.className="lcni-recommend-pill";
-                    item.draggable=true;
-                    item.textContent=col.field + (col.is_numeric ? " (number)" : " (text)");
-                    item.dataset.payload=JSON.stringify(col);
-                    item.addEventListener("dragstart",(e)=>{ e.dataTransfer.setData("text/plain", item.dataset.payload || ""); });
-                    columnsHost.appendChild(item);
-                });
-            }
+            });
 
             function syncJson(){
-                const payload={};
-                selected.forEach((cond)=>{
-                    if(cond.is_numeric){
-                        if(cond.min!=="") payload[cond.field+"_min"]=Number(cond.min);
-                        if(cond.max!=="") payload[cond.field+"_max"]=Number(cond.max);
-                    } else {
-                        const values=(cond.selectedValues||[]).filter((value)=>value!=="");
-                        if(values.length){
-                            payload[cond.field]=values;
-                        }
-                    }
-                });
-                jsonField.value=JSON.stringify(payload, null, 2);
+                const validRows=rows.filter((row)=>row.field!=="" && row.value!=="");
+                jsonField.value=JSON.stringify({ rules:validRows }, null, 2);
             }
 
-            function renderSelected(){
-                dropzone.innerHTML="";
-                if(!selected.length){
-                    dropzone.innerHTML="<em>Kéo thả cột từ bên phải vào đây.</em>";
-                    syncJson();
-                    return;
-                }
+            function buildSelect(options, selectedValue){
+                const select=document.createElement("select");
+                const empty=document.createElement("option");
+                empty.value="";
+                empty.textContent="-- Chọn --";
+                select.appendChild(empty);
+                options.forEach((item)=>{
+                    const option=document.createElement("option");
+                    option.value=item.value;
+                    option.textContent=item.label;
+                    option.selected=item.value===selectedValue;
+                    select.appendChild(option);
+                });
+                return select;
+            }
 
-                selected.forEach((cond,idx)=>{
-                    const row=document.createElement("div");
-                    row.className="lcni-recommend-condition-item";
-                    const title=document.createElement("strong");
-                    title.textContent=cond.field;
-                    row.appendChild(title);
+            function renderRows(){
+                tableBody.innerHTML="";
 
-                    if(cond.is_numeric){
-                        const min=document.createElement("input");
-                        min.type="number";
-                        min.step="any";
-                        min.placeholder="Min";
-                        min.value=cond.min;
-                        min.addEventListener("input",()=>{ cond.min=min.value; syncJson(); });
+                rows.forEach((rule, index)=>{
+                    const tr=document.createElement("tr");
 
-                        const max=document.createElement("input");
-                        max.type="number";
-                        max.step="any";
-                        max.placeholder="Max";
-                        max.value=cond.max;
-                        max.style.marginLeft="8px";
-                        max.addEventListener("input",()=>{ cond.max=max.value; syncJson(); });
+                    const fieldCell=document.createElement("td");
+                    const fieldSelect=buildSelect(fieldOptions, rule.field);
+                    fieldSelect.addEventListener("change",()=>{ rule.field=fieldSelect.value; syncJson(); });
+                    fieldCell.appendChild(fieldSelect);
 
-                        row.appendChild(min);
-                        row.appendChild(max);
-                    } else {
-                        const valueWrap=document.createElement("div");
-                        valueWrap.style.marginTop="6px";
+                    const operatorCell=document.createElement("td");
+                    const operatorSelect=buildSelect(operators.map((op)=>({ value:op, label:op })), rule.operator || "=");
+                    operatorSelect.addEventListener("change",()=>{ rule.operator=operatorSelect.value || "="; syncJson(); });
+                    operatorCell.appendChild(operatorSelect);
 
-                        const loading=document.createElement("em");
-                        loading.textContent="Đang tải danh sách value...";
-                        valueWrap.appendChild(loading);
-                        row.appendChild(valueWrap);
+                    const valueCell=document.createElement("td");
+                    const valueInput=document.createElement("input");
+                    valueInput.type="text";
+                    valueInput.value=rule.value || "";
+                    valueInput.placeholder="Nhập giá trị so sánh";
+                    valueInput.addEventListener("input",()=>{ rule.value=valueInput.value.trim(); syncJson(); });
+                    valueCell.appendChild(valueInput);
 
-                        fetchDistinctValues(cond.table, cond.field).then((values)=>{
-                            valueWrap.innerHTML="";
+                    const actionCell=document.createElement("td");
+                    const removeButton=document.createElement("button");
+                    removeButton.type="button";
+                    removeButton.className="button-link-delete";
+                    removeButton.textContent="Xóa";
+                    removeButton.disabled=rows.length===1;
+                    removeButton.addEventListener("click",()=>{
+                        if(rows.length===1){ return; }
+                        rows.splice(index,1);
+                        renderRows();
+                    });
+                    actionCell.appendChild(removeButton);
 
-                            if(!values.length){
-                                const empty=document.createElement("em");
-                                empty.textContent="Không có value text để chọn.";
-                                valueWrap.appendChild(empty);
-                                return;
-                            }
-
-                            values.forEach((itemValue)=>{
-                                const option=document.createElement("label");
-                                option.style.display="block";
-
-                                const checkbox=document.createElement("input");
-                                checkbox.type="checkbox";
-                                checkbox.value=itemValue;
-                                checkbox.checked=(cond.selectedValues||[]).includes(itemValue);
-                                checkbox.addEventListener("change",()=>{
-                                    const picked=new Set(cond.selectedValues||[]);
-                                    if(checkbox.checked){
-                                        picked.add(itemValue);
-                                    } else {
-                                        picked.delete(itemValue);
-                                    }
-                                    cond.selectedValues=Array.from(picked);
-                                    syncJson();
-                                });
-
-                                const text=document.createElement("span");
-                                text.style.marginLeft="6px";
-                                text.textContent=itemValue;
-
-                                option.appendChild(checkbox);
-                                option.appendChild(text);
-                                valueWrap.appendChild(option);
-                            });
-                        });
-                    }
-
-                    const remove=document.createElement("button");
-                    remove.type="button";
-                    remove.className="button-link-delete";
-                    remove.style.marginLeft="8px";
-                    remove.textContent="Xóa";
-                    remove.addEventListener("click",()=>{ selected.splice(idx,1); renderSelected(); });
-                    row.appendChild(remove);
-
-                    dropzone.appendChild(row);
+                    tr.appendChild(fieldCell);
+                    tr.appendChild(operatorCell);
+                    tr.appendChild(valueCell);
+                    tr.appendChild(actionCell);
+                    tableBody.appendChild(tr);
                 });
 
                 syncJson();
             }
 
-            dropzone.addEventListener("dragover",(e)=>e.preventDefault());
-            dropzone.addEventListener("drop",(e)=>{
-                e.preventDefault();
-                const raw=e.dataTransfer.getData("text/plain");
-                if(!raw){ return; }
-                try {
-                    const col=JSON.parse(raw);
-                    if(selected.some((item)=>item.field===col.field)){ return; }
-                    selected.push({
-                        field:col.field,
-                        table:source.value,
-                        is_numeric:!!col.is_numeric,
-                        min:"",
-                        max:"",
-                        selectedValues:[]
-                    });
-                    renderSelected();
-                } catch(err){}
-            });
+            function addRule(initialRule){
+                rows.push({
+                    field:(initialRule && initialRule.field) || "",
+                    operator:(initialRule && initialRule.operator) || "=",
+                    value:(initialRule && initialRule.value) || ""
+                });
+                renderRows();
+            }
 
-            source.addEventListener("change",renderColumns);
-            renderColumns();
-            renderSelected();
+            addRuleButton.addEventListener("click",()=>addRule());
+
+            try {
+                const parsed=JSON.parse(jsonField.value || "{}");
+                if (parsed && Array.isArray(parsed.rules) && parsed.rules.length) {
+                    parsed.rules.forEach((rule)=>{
+                        addRule({
+                            field:String(rule.field || ""),
+                            operator:String(rule.operator || "="),
+                            value:String(rule.value || "")
+                        });
+                    });
+                } else {
+                    addRule();
+                }
+            } catch(err){
+                addRule();
+            }
         })();';
         echo '</script>';
 
