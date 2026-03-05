@@ -27,7 +27,7 @@ class LCNI_Recommend_Module {
 
         new ShortcodeManager($signal_repository, $performance_calculator, $position_engine);
         if (is_admin()) {
-            new LCNI_Recommend_Admin_Page($rule_repository, $signal_repository, $performance_calculator);
+            new LCNI_Recommend_Admin_Page($rule_repository, $signal_repository, $performance_calculator, $this->daily_cron_service);
         }
 
         add_action(DailyCronService::CRON_HOOK, [$this, 'run_daily_cron']);
@@ -46,8 +46,8 @@ class LCNI_Recommend_Module {
     public static function ensure_cron() {
         if (!wp_next_scheduled(DailyCronService::CRON_HOOK)) {
             $timezone = wp_timezone();
-            $next_run = new DateTimeImmutable('tomorrow 18:00:00', $timezone);
-            wp_schedule_event($next_run->getTimestamp(), 'daily', DailyCronService::CRON_HOOK);
+            $next_run = new DateTimeImmutable('now', $timezone);
+            wp_schedule_event($next_run->getTimestamp() + MINUTE_IN_SECONDS, 'lcni_every_minute', DailyCronService::CRON_HOOK);
         }
     }
 

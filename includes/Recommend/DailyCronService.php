@@ -24,6 +24,95 @@ class DailyCronService {
     }
 
     public function run_daily() {
+        $this->refresh_open_positions();
+
+        $active_rules = $this->rule_repository->get_active_rules();
+        $now = current_datetime();
+        $current_date = $now->format('Y-m-d');
+        $current_time = $now->format('H:i');
+
+        foreach ($active_rules as $rule) {
+            $scan_time = sanitize_text_field((string) ($rule['scan_time'] ?? '18:00'));
+            $last_scan_at = (int) ($rule['last_scan_at'] ?? 0);
+            $last_scan_date = $last_scan_at > 0 ? wp_date('Y-m-d', $last_scan_at, wp_timezone()) : '';
+
+            if ($current_time < $scan_time || $last_scan_date === $current_date) {
+                continue;
+            }
+
+            $window = $this->resolve_scan_window($rule, $current_date);
+            $candidates = $this->rule_repository->find_candidate_symbols_by_window($rule, $window['start'], $window['end']);
+
+            foreach ($candidates as $candidate) {
+                $this->signal_repository->create_signal($rule, $candidate['symbol'], (int) $candidate['event_time'], (float) $candidate['close_price']);
+            }
+
+            $this->rule_repository->update_last_scan_at((int) $rule['id'], current_time('timestamp'));
+            $this->rule_repository->log_rule_change((int) $rule['id'], 'cron_scanned', 'Cron quét rule theo lịch hằng ngày.', [
+                'scan_time' => $scan_time,
+                'scanned_at' => current_time('mysql'),
+                'candidate_count' => count($candidates),
+            ]);
+        }
+
+        $this->performance_calculator->refresh_all();
+    }
+
+    public function backfill_rule_history($rule) {
+        $apply_from_date = sanitize_text_field((string) ($rule['apply_from_date'] ?? ''));
+        if ($apply_from_date === '') {
+            return 0;
+        }
+
+        $tz = wp_timezone();
+        $start = new DateTimeImmutable($apply_from_date . ' 00:00:00', $tz);
+        $end = current_datetime()->setTimezone($tz);
+
+        if ($start > $end) {
+            return 0;
+        }
+
+        $candidates = $this->rule_repository->find_candidate_symbols_by_window($rule, $start->getTimestamp(), $end->getTimestamp());
+        $created = 0;
+
+        foreach ($candidates as $candidate) {
+            $signal_id = $this->signal_repository->create_signal($rule, $candidate['symbol'], (int) $candidate['event_time'], (float) $candidate['close_price']);
+            if ($signal_id > 0) {
+                $created++;
+            }
+        }
+
+        $this->rule_repository->log_rule_change((int) $rule['id'], 'history_scanned', 'Quét dữ liệu lịch sử theo ngày áp dụng.', [
+            'apply_from_date' => $apply_from_date,
+            'candidate_count' => count($candidates),
+            'created_signals' => $created,
+        ]);
+
+        $this->performance_calculator->refresh_all();
+
+        return $created;
+    }
+
+    private function resolve_scan_window($rule, $current_date) {
+        $tz = wp_timezone();
+        $day_start = new DateTimeImmutable($current_date . ' 00:00:00', $tz);
+        $day_end = new DateTimeImmutable($current_date . ' 23:59:59', $tz);
+
+        $apply_from_date = sanitize_text_field((string) ($rule['apply_from_date'] ?? ''));
+        if ($apply_from_date !== '') {
+            $apply_start = new DateTimeImmutable($apply_from_date . ' 00:00:00', $tz);
+            if ($apply_start > $day_start) {
+                $day_start = $apply_start;
+            }
+        }
+
+        return [
+            'start' => $day_start->getTimestamp(),
+            'end' => $day_end->getTimestamp(),
+        ];
+    }
+
+    private function refresh_open_positions() {
         $open_signals = $this->signal_repository->get_open_signals();
 
         foreach ($open_signals as $signal) {
@@ -48,16 +137,6 @@ class DailyCronService {
                 $this->signal_repository->close_signal((int) $signal['id'], $current_price, (int) $price_snapshot['event_time'], $r_multiple, $holding_days);
             }
         }
-
-        $active_rules = $this->rule_repository->get_active_rules();
-        foreach ($active_rules as $rule) {
-            $candidates = $this->rule_repository->find_candidate_symbols($rule);
-            foreach ($candidates as $candidate) {
-                $this->signal_repository->create_signal($rule, $candidate['symbol'], (int) $candidate['event_time'], (float) $candidate['close_price']);
-            }
-        }
-
-        $this->performance_calculator->refresh_all();
     }
 
     private function get_latest_price($symbol, $timeframe) {

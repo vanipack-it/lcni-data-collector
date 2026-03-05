@@ -7,10 +7,12 @@ if (!defined('ABSPATH')) {
 class RuleRepository {
     private $wpdb;
     private $table;
+    private $log_table;
 
     public function __construct(wpdb $wpdb) {
         $this->wpdb = $wpdb;
         $this->table = $wpdb->prefix . 'lcni_recommend_rule';
+        $this->log_table = $wpdb->prefix . 'lcni_recommend_rule_log';
     }
 
     public function get_active_rules() {
@@ -27,6 +29,18 @@ class RuleRepository {
         return $this->wpdb->get_results($this->wpdb->prepare("SELECT * FROM {$this->table} ORDER BY id DESC LIMIT %d", $limit), ARRAY_A);
     }
 
+    public function list_logs($limit = 200) {
+        $limit = max(1, min(500, (int) $limit));
+
+        $sql = "SELECT l.*, r.name AS rule_name
+            FROM {$this->log_table} l
+            LEFT JOIN {$this->table} r ON r.id = l.rule_id
+            ORDER BY l.id DESC
+            LIMIT %d";
+
+        return $this->wpdb->get_results($this->wpdb->prepare($sql, $limit), ARRAY_A);
+    }
+
     public function save($data) {
         $payload = $this->build_payload($data);
 
@@ -35,8 +49,13 @@ class RuleRepository {
         }
 
         $this->wpdb->insert($this->table, $payload);
+        $rule_id = (int) $this->wpdb->insert_id;
 
-        return (int) $this->wpdb->insert_id;
+        if ($rule_id > 0) {
+            $this->log_rule_change($rule_id, 'created', 'Tạo rule mới.', ['after' => $payload]);
+        }
+
+        return $rule_id;
     }
 
     public function update($id, $data) {
@@ -45,6 +64,7 @@ class RuleRepository {
             return new WP_Error('invalid_rule_id', 'Rule ID is invalid.');
         }
 
+        $before = $this->find($rule_id);
         $payload = $this->build_payload($data);
 
         if ($payload['name'] === '') {
@@ -61,7 +81,19 @@ class RuleRepository {
             return false;
         }
 
+        $this->log_rule_change($rule_id, 'updated', 'Cập nhật rule.', ['before' => $before, 'after' => $payload]);
+
         return true;
+    }
+
+    public function update_last_scan_at($id, $timestamp) {
+        return $this->wpdb->update(
+            $this->table,
+            ['last_scan_at' => (int) $timestamp],
+            ['id' => (int) $id],
+            ['%d'],
+            ['%d']
+        );
     }
 
     public function update_active($id, $is_active) {
@@ -81,6 +113,10 @@ class RuleRepository {
     }
 
     public function find_candidate_symbols($rule) {
+        return $this->find_candidate_symbols_by_window($rule, null, null);
+    }
+
+    public function find_candidate_symbols_by_window($rule, $start_event_time = null, $end_event_time = null) {
         $conditions = $this->decode_conditions($rule);
         $ohlc_table = $this->wpdb->prefix . 'lcni_ohlc';
         $symbol_table = $this->wpdb->prefix . 'lcni_symbols';
@@ -91,6 +127,16 @@ class RuleRepository {
 
         $where = ['o.timeframe = %s'];
         $params = [$timeframe];
+
+        if ($start_event_time !== null) {
+            $where[] = 'o.event_time >= %d';
+            $params[] = max(0, (int) $start_event_time);
+        }
+
+        if ($end_event_time !== null) {
+            $where[] = 'o.event_time <= %d';
+            $params[] = max(0, (int) $end_event_time);
+        }
 
         if (isset($conditions['rules']) && is_array($conditions['rules'])) {
             foreach ($conditions['rules'] as $rule_item) {
@@ -222,7 +268,7 @@ class RuleRepository {
             }
         }
 
-        $sql = "SELECT o.symbol, o.event_time, o.close_price
+        $sql = "SELECT o.symbol, MAX(o.event_time) AS event_time, MAX(CASE WHEN o.event_time = latest.max_event_time THEN o.close_price END) AS close_price
             FROM {$ohlc_table} o
             LEFT JOIN {$symbol_table} s ON s.symbol = o.symbol
             LEFT JOIN {$mapping_table} m ON m.symbol = o.symbol
@@ -231,14 +277,32 @@ class RuleRepository {
             INNER JOIN (
                 SELECT symbol, timeframe, MAX(event_time) AS max_event_time
                 FROM {$ohlc_table}
-                WHERE timeframe = %s
-                GROUP BY symbol, timeframe
+                WHERE timeframe = %s";
+
+        if ($start_event_time !== null) {
+            $sql .= ' AND event_time >= %d';
+        }
+
+        if ($end_event_time !== null) {
+            $sql .= ' AND event_time <= %d';
+        }
+
+        $sql .= " GROUP BY symbol, timeframe
             ) latest ON latest.symbol = o.symbol AND latest.timeframe = o.timeframe AND latest.max_event_time = o.event_time
             WHERE " . implode(' AND ', $where) . "
+            GROUP BY o.symbol
             ORDER BY o.symbol ASC
             LIMIT 300";
 
-        array_unshift($params, $timeframe);
+        $params_for_subquery = [$timeframe];
+        if ($start_event_time !== null) {
+            $params_for_subquery[] = max(0, (int) $start_event_time);
+        }
+        if ($end_event_time !== null) {
+            $params_for_subquery[] = max(0, (int) $end_event_time);
+        }
+
+        $params = array_merge($params_for_subquery, $params);
 
         return $this->wpdb->get_results($this->wpdb->prepare($sql, $params), ARRAY_A);
     }
@@ -309,6 +373,29 @@ class RuleRepository {
         return $normalized;
     }
 
+    private function sanitize_apply_from_date($value) {
+        $value = sanitize_text_field((string) $value);
+        if ($value === '') {
+            return null;
+        }
+
+        $dt = DateTimeImmutable::createFromFormat('Y-m-d', $value);
+        if ($dt === false) {
+            return null;
+        }
+
+        return $dt->format('Y-m-d');
+    }
+
+    private function sanitize_scan_time($value) {
+        $value = sanitize_text_field((string) $value);
+        if (preg_match('/^(2[0-3]|[01][0-9]):([0-5][0-9])$/', $value)) {
+            return $value;
+        }
+
+        return '18:00';
+    }
+
     private function build_payload($data) {
         return [
             'name' => sanitize_text_field((string) ($data['name'] ?? '')),
@@ -320,7 +407,21 @@ class RuleRepository {
             'add_at_r' => (float) ($data['add_at_r'] ?? 2),
             'exit_at_r' => (float) ($data['exit_at_r'] ?? 4),
             'max_hold_days' => max(1, (int) ($data['max_hold_days'] ?? 20)),
+            'apply_from_date' => $this->sanitize_apply_from_date($data['apply_from_date'] ?? null),
+            'scan_time' => $this->sanitize_scan_time($data['scan_time'] ?? '18:00'),
             'is_active' => !empty($data['is_active']) ? 1 : 0,
         ];
+    }
+
+    public function log_rule_change($rule_id, $action, $message, $payload = []) {
+        $this->wpdb->insert($this->log_table, [
+            'rule_id' => (int) $rule_id,
+            'action' => sanitize_key((string) $action),
+            'changed_by' => get_current_user_id() ?: null,
+            'message' => sanitize_text_field((string) $message),
+            'payload' => wp_json_encode($payload),
+        ]);
+
+        return (int) $this->wpdb->insert_id;
     }
 }
