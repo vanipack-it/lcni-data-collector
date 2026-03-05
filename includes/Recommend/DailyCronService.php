@@ -58,8 +58,7 @@ class DailyCronService {
             return 0;
         }
 
-        $current_date = current_datetime()->format('Y-m-d');
-        $candidates = $this->scan_rule_candidates($rule, $current_date);
+        $candidates = $this->scan_rule_candidates_latest($rule);
 
         $this->rule_repository->update_last_scan_at((int) $rule['id'], current_time('timestamp'));
         $this->rule_repository->log_rule_change((int) $rule['id'], 'manual_scanned', 'Quét thủ công rule từ danh sách.', [
@@ -129,6 +128,16 @@ class DailyCronService {
     private function scan_rule_candidates($rule, $current_date) {
         $window = $this->resolve_scan_window($rule, $current_date);
         $candidates = $this->rule_repository->find_candidate_symbols_by_window($rule, $window['start'], $window['end']);
+
+        foreach ($candidates as $candidate) {
+            $this->signal_repository->create_signal($rule, $candidate['symbol'], (int) $candidate['event_time'], (float) $candidate['close_price']);
+        }
+
+        return $candidates;
+    }
+
+    private function scan_rule_candidates_latest($rule) {
+        $candidates = $this->rule_repository->find_candidate_symbols($rule);
 
         foreach ($candidates as $candidate) {
             $this->signal_repository->create_signal($rule, $candidate['symbol'], (int) $candidate['event_time'], (float) $candidate['close_price']);
