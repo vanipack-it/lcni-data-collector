@@ -40,12 +40,7 @@ class DailyCronService {
                 continue;
             }
 
-            $window = $this->resolve_scan_window($rule, $current_date);
-            $candidates = $this->rule_repository->find_candidate_symbols_by_window($rule, $window['start'], $window['end']);
-
-            foreach ($candidates as $candidate) {
-                $this->signal_repository->create_signal($rule, $candidate['symbol'], (int) $candidate['event_time'], (float) $candidate['close_price']);
-            }
+            $candidates = $this->scan_rule_candidates($rule, $current_date);
 
             $this->rule_repository->update_last_scan_at((int) $rule['id'], current_time('timestamp'));
             $this->rule_repository->log_rule_change((int) $rule['id'], 'cron_scanned', 'Cron quét rule theo lịch hằng ngày.', [
@@ -56,6 +51,25 @@ class DailyCronService {
         }
 
         $this->performance_calculator->refresh_all();
+    }
+
+    public function scan_rule_now($rule) {
+        if (!is_array($rule) || (int) ($rule['id'] ?? 0) <= 0) {
+            return 0;
+        }
+
+        $current_date = current_datetime()->format('Y-m-d');
+        $candidates = $this->scan_rule_candidates($rule, $current_date);
+
+        $this->rule_repository->update_last_scan_at((int) $rule['id'], current_time('timestamp'));
+        $this->rule_repository->log_rule_change((int) $rule['id'], 'manual_scanned', 'Quét thủ công rule từ danh sách.', [
+            'scanned_at' => current_time('mysql'),
+            'candidate_count' => count($candidates),
+        ]);
+
+        $this->performance_calculator->refresh_all();
+
+        return count($candidates);
     }
 
     public function backfill_rule_history($rule) {
@@ -110,6 +124,17 @@ class DailyCronService {
             'start' => $day_start->getTimestamp(),
             'end' => $day_end->getTimestamp(),
         ];
+    }
+
+    private function scan_rule_candidates($rule, $current_date) {
+        $window = $this->resolve_scan_window($rule, $current_date);
+        $candidates = $this->rule_repository->find_candidate_symbols_by_window($rule, $window['start'], $window['end']);
+
+        foreach ($candidates as $candidate) {
+            $this->signal_repository->create_signal($rule, $candidate['symbol'], (int) $candidate['event_time'], (float) $candidate['close_price']);
+        }
+
+        return $candidates;
     }
 
     private function refresh_open_positions() {

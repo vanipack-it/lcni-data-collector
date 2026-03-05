@@ -193,6 +193,24 @@ class LCNI_Recommend_Admin_Page {
             wp_safe_redirect(admin_url('admin.php?page=lcni-recommend&tab=rule-list&updated=1'));
             exit;
         }
+
+        if ($_POST['lcni_recommend_action'] === 'scan_rule_now') {
+            $rule_id = (int) ($_POST['rule_id'] ?? 0);
+            if ($rule_id <= 0) {
+                wp_safe_redirect(admin_url('admin.php?page=lcni-recommend&tab=rule-list&scanned=0'));
+                exit;
+            }
+
+            $rule = $this->rule_repository->find($rule_id);
+            if (!$rule || empty($rule['is_active'])) {
+                wp_safe_redirect(admin_url('admin.php?page=lcni-recommend&tab=rule-list&scanned=0'));
+                exit;
+            }
+
+            $scan_count = $this->daily_cron_service->scan_rule_now($rule);
+            wp_safe_redirect(admin_url('admin.php?page=lcni-recommend&tab=rule-list&scanned=1&scan_count=' . (int) $scan_count));
+            exit;
+        }
     }
 
     public function render_page() {
@@ -222,6 +240,14 @@ class LCNI_Recommend_Admin_Page {
             echo '<div class="notice notice-success is-dismissible"><p>Đã cập nhật rule thành công.</p></div>';
         } elseif ($updated === '0') {
             echo '<div class="notice notice-error"><p>Cập nhật rule thất bại. Vui lòng kiểm tra dữ liệu và thử lại.</p></div>';
+        }
+
+        $scanned = isset($_GET['scanned']) ? sanitize_text_field((string) $_GET['scanned']) : '';
+        if ($scanned === '1') {
+            $scan_count = (int) ($_GET['scan_count'] ?? 0);
+            echo '<div class="notice notice-success is-dismissible"><p>Đã quét thủ công rule. Số mã thỏa điều kiện: <strong>' . esc_html((string) $scan_count) . '</strong>.</p></div>';
+        } elseif ($scanned === '0') {
+            echo '<div class="notice notice-error"><p>Quét thủ công thất bại. Vui lòng thử lại.</p></div>';
         }
 
         if ($tab === 'create-rule') {
@@ -328,7 +354,16 @@ class LCNI_Recommend_Admin_Page {
         echo '<div class="lcni-recommend-row"><label>Exit at R <input type="number" step="0.01" name="exit_at_r" value="' . esc_attr((string) ($editing_rule['exit_at_r'] ?? '4')) . '" /></label></div>';
         echo '<div class="lcni-recommend-row"><label>Max Hold Days <input type="number" name="max_hold_days" value="' . esc_attr((string) ($editing_rule['max_hold_days'] ?? '20')) . '" /></label></div>';
         echo '<div class="lcni-recommend-row"><label>Ngày áp dụng <input type="date" name="apply_from_date" value="' . esc_attr((string) ($editing_rule['apply_from_date'] ?? '')) . '" /></label></div>';
-        echo '<div class="lcni-recommend-row"><label>Lịch quét hàng ngày <input type="time" name="scan_time" value="' . esc_attr((string) ($editing_rule['scan_time'] ?? '18:00')) . '" /></label></div>';
+        $scan_time_options = ['06:00', '09:00', '12:00', '15:00', '18:00'];
+        $selected_scan_time = (string) ($editing_rule['scan_time'] ?? '18:00');
+        if (!in_array($selected_scan_time, $scan_time_options, true)) {
+            $selected_scan_time = '18:00';
+        }
+        echo '<div class="lcni-recommend-row"><label>Lịch quét hàng ngày <select name="scan_time">';
+        foreach ($scan_time_options as $scan_time_option) {
+            echo '<option value="' . esc_attr($scan_time_option) . '" ' . selected($selected_scan_time, $scan_time_option, false) . '>' . esc_html($scan_time_option) . '</option>';
+        }
+        echo '</select></label></div>';
         echo '<p><label><input type="checkbox" name="is_active" value="1" ' . (!array_key_exists('is_active', (array) $editing_rule) || !empty($editing_rule['is_active']) ? 'checked' : '') . ' /> Active</label></p>';
         echo '</div>';
 
@@ -506,6 +541,7 @@ class LCNI_Recommend_Admin_Page {
         echo '<th>Created At</th>';
         echo '<th>Updated At</th>';
         echo '<th>Action</th>';
+        echo '<th>Quét thủ công</th>';
         echo '</tr></thead>';
         echo '<tbody>';
 
@@ -528,6 +564,18 @@ class LCNI_Recommend_Admin_Page {
             echo '<td>' . esc_html((string) ($rule['created_at'] ?? '')) . '</td>';
             echo '<td>' . esc_html((string) ($rule['updated_at'] ?? '')) . '</td>';
             echo '<td><a class="button button-small" href="' . esc_url(admin_url('admin.php?page=lcni-recommend&tab=create-rule&edit=' . (int) ($rule['id'] ?? 0))) . '">Chỉnh sửa</a></td>';
+            echo '<td>';
+            if (!empty($rule['is_active'])) {
+                echo '<form method="post" style="margin:0;">';
+                wp_nonce_field('lcni_recommend_admin_action');
+                echo '<input type="hidden" name="lcni_recommend_action" value="scan_rule_now" />';
+                echo '<input type="hidden" name="rule_id" value="' . esc_attr((string) ((int) ($rule['id'] ?? 0))) . '" />';
+                echo '<button type="submit" class="button button-small">Quét ngay</button>';
+                echo '</form>';
+            } else {
+                echo '<span style="color:#777;">Inactive</span>';
+            }
+            echo '</td>';
             echo '</tr>';
         }
 
