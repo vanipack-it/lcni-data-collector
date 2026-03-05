@@ -6370,12 +6370,7 @@ class LCNI_DB {
         }
     }
 
-    private static function backfill_industry_analysis_tables($force_rebuild = false) {
-        $migration_flag = 'lcni_industry_analysis_backfilled_v1';
-        if (!$force_rebuild && get_option($migration_flag) === 'yes') {
-            return;
-        }
-
+    public static function rebuild_industry_analysis_snapshot($timeframes = ['1D'], $force_rebuild = true) {
         global $wpdb;
 
         $return_table = $wpdb->prefix . 'lcni_industry_return';
@@ -6387,17 +6382,68 @@ class LCNI_DB {
         $metrics_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $metrics_table));
 
         if ($return_exists !== $return_table || $index_exists !== $index_table || $metrics_exists !== $metrics_table) {
+            return 0;
+        }
+
+        if ($force_rebuild) {
+            $wpdb->query("TRUNCATE TABLE {$return_table}");
+            $wpdb->query("TRUNCATE TABLE {$index_table}");
+            $wpdb->query("TRUNCATE TABLE {$metrics_table}");
+        }
+
+        self::sync_symbol_market_icb_mapping();
+
+        return (int) self::rebuild_industry_analysis_incremental([], (array) $timeframes, true);
+    }
+
+    public static function get_industry_analysis_table_stats() {
+        global $wpdb;
+
+        $tables = [
+            'industry_return' => $wpdb->prefix . 'lcni_industry_return',
+            'industry_index' => $wpdb->prefix . 'lcni_industry_index',
+            'industry_metrics' => $wpdb->prefix . 'lcni_industry_metrics',
+        ];
+
+        $stats = [];
+
+        foreach ($tables as $key => $table) {
+            $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)) === $table;
+            if (!$exists) {
+                $stats[$key] = [
+                    'table' => $table,
+                    'exists' => false,
+                    'rows' => 0,
+                    'latest_event_time' => 0,
+                ];
+                continue;
+            }
+
+            $stats[$key] = [
+                'table' => $table,
+                'exists' => true,
+                'rows' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table}"),
+                'latest_event_time' => (int) $wpdb->get_var("SELECT MAX(event_time) FROM {$table}"),
+            ];
+        }
+
+        return $stats;
+    }
+
+    private static function backfill_industry_analysis_tables($force_rebuild = false) {
+        $migration_flag = 'lcni_industry_analysis_backfilled_v1';
+        if (!$force_rebuild && get_option($migration_flag) === 'yes') {
             return;
         }
 
-        $wpdb->query("TRUNCATE TABLE {$return_table}");
-        $wpdb->query("TRUNCATE TABLE {$index_table}");
-        $wpdb->query("TRUNCATE TABLE {$metrics_table}");
+        $rows_rebuilt = self::rebuild_industry_analysis_snapshot(['1D'], true);
+        if ($rows_rebuilt > 0) {
+            update_option($migration_flag, 'yes');
+            self::log_change('backfill_industry_analysis_tables', 'Rebuilt industry return/index/metrics materialized tables from OHLC source.');
+            return;
+        }
 
-        self::rebuild_industry_analysis_incremental([], ['1D'], true);
-
-        update_option($migration_flag, 'yes');
-        self::log_change('backfill_industry_analysis_tables', 'Rebuilt industry return/index/metrics materialized tables from OHLC source.');
+        self::log_change('backfill_industry_analysis_tables', 'Skipped migration flag update because no industry rows were rebuilt yet.');
     }
 
     private static function rebuild_industry_analysis_incremental($event_times = [], $timeframes = ['1D'], $full_rebuild = false) {
