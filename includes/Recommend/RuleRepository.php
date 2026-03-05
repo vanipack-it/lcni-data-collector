@@ -389,7 +389,8 @@ class RuleRepository {
 
     private function sanitize_scan_time($value) {
         $value = sanitize_text_field((string) $value);
-        if (preg_match('/^(2[0-3]|[01][0-9]):([0-5][0-9])$/', $value)) {
+        $allowed_scan_times = ['06:00', '09:00', '12:00', '15:00', '18:00'];
+        if (in_array($value, $allowed_scan_times, true)) {
             return $value;
         }
 
