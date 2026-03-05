@@ -4521,6 +4521,12 @@ class LCNI_DB {
                 self::process_seed_rebuild_pipeline();
             }
 
+            self::repair_incomplete_latest_metrics_for_series(
+                array_values($touched_series),
+                array_keys($touched_event_times),
+                array_keys($touched_timeframes)
+            );
+
             if ($refresh_latest_snapshot) {
                 self::perform_refresh_ohlc_latest_snapshot(array_column($touched_series, 'symbol'));
             }
@@ -4598,6 +4604,117 @@ class LCNI_DB {
         }
 
         return count($missing_series);
+    }
+
+    /**
+     * Auto-repair latest OHLC metrics for recently touched symbol/timeframe series.
+     *
+     * This integrity guard ensures that when a new event_time is seeded, the latest row
+     * does not remain with partially-calculated columns because of temporary queue pressure.
+     *
+     * @param array<int, array{symbol:string,timeframe:string}> $series_list
+     * @param array<int, int|string> $event_times
+     * @param array<int, string> $timeframes
+     * @return array{checked:int,repaired:int}
+     */
+    public static function repair_incomplete_latest_metrics_for_series($series_list = [], $event_times = [], $timeframes = []) {
+        global $wpdb;
+
+        $series = self::normalize_series_rows($series_list);
+        if (empty($series)) {
+            return ['checked' => 0, 'repaired' => 0];
+        }
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+
+        $series_filters = [];
+        $params = [];
+        foreach ($series as $item) {
+            $series_filters[] = '(symbol = %s AND timeframe = %s)';
+            $params[] = $item['symbol'];
+            $params[] = $item['timeframe'];
+        }
+
+        if (empty($series_filters)) {
+            return ['checked' => 0, 'repaired' => 0];
+        }
+
+        $sql = "SELECT latest.symbol, latest.timeframe, latest.event_time
+            FROM (
+                SELECT symbol, timeframe, MAX(event_time) AS max_event_time
+                FROM {$table}
+                WHERE " . implode(' OR ', $series_filters) . "
+                GROUP BY symbol, timeframe
+            ) grouped
+            INNER JOIN {$table} latest
+                ON latest.symbol = grouped.symbol
+                AND latest.timeframe = grouped.timeframe
+                AND latest.event_time = grouped.max_event_time
+            WHERE latest.ma20 IS NULL
+                OR latest.ma50 IS NULL
+                OR latest.macd IS NULL
+                OR latest.rsi IS NULL
+                OR latest.xay_nen IS NULL
+                OR latest.nen_type IS NULL
+                OR latest.pha_nen IS NULL
+                OR latest.tang_gia_kem_vol IS NULL
+                OR latest.smart_money IS NULL
+                OR latest.rsi_status IS NULL
+                OR latest.hanh_vi_gia IS NULL
+                OR latest.one_candle IS NULL
+                OR latest.rs_exchange_status IS NULL
+                OR latest.rs_exchange_recommend IS NULL";
+
+        $candidates = $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
+        if (empty($candidates)) {
+            return ['checked' => count($series), 'repaired' => 0];
+        }
+
+        $repair_event_times = [];
+        $repair_timeframes = [];
+        $repaired = 0;
+
+        foreach ($candidates as $candidate) {
+            $symbol = strtoupper((string) ($candidate['symbol'] ?? ''));
+            $timeframe = strtoupper((string) ($candidate['timeframe'] ?? ''));
+            $event_time = (int) ($candidate['event_time'] ?? 0);
+
+            if ($symbol === '' || $timeframe === '' || $event_time <= 0) {
+                continue;
+            }
+
+            self::rebuild_ohlc_series_metrics($symbol, $timeframe);
+            $repair_event_times[$event_time] = true;
+            $repair_timeframes[$timeframe] = true;
+            $repaired++;
+        }
+
+        foreach ((array) $event_times as $event_time) {
+            $event_time = (int) $event_time;
+            if ($event_time > 0) {
+                $repair_event_times[$event_time] = true;
+            }
+        }
+
+        foreach ((array) $timeframes as $timeframe) {
+            $timeframe = strtoupper(trim((string) $timeframe));
+            if ($timeframe !== '') {
+                $repair_timeframes[$timeframe] = true;
+            }
+        }
+
+        if (!empty($repair_event_times) && !empty($repair_timeframes)) {
+            self::rebuild_rs_1m_by_exchange(array_keys($repair_event_times), array_keys($repair_timeframes));
+            self::rebuild_rs_1w_by_exchange(array_keys($repair_event_times), array_keys($repair_timeframes));
+            self::rebuild_rs_3m_by_exchange(array_keys($repair_event_times), array_keys($repair_timeframes));
+            self::rebuild_rs_exchange_signals(array_keys($repair_event_times), array_keys($repair_timeframes));
+            self::rebuild_market_statistics_incremental(array_keys($repair_event_times), array_keys($repair_timeframes));
+        }
+
+        return [
+            'checked' => count($series),
+            'repaired' => $repaired,
+        ];
     }
 
 
