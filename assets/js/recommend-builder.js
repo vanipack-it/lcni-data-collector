@@ -1,4 +1,4 @@
-document.addEventListener("DOMContentLoaded", function () {
+function lcniInitRecommendBuilder() {
     const config = window.LCNI_RECOMMEND || {};
     const columnsMap = config.columnsMap || {};
     const addButton = document.getElementById("lcni-recommend-add-condition");
@@ -31,18 +31,21 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function normalizeCondition(raw) {
+        const source = raw && typeof raw === "object" ? raw : {};
+
         return {
-            table: String(raw?.table || ""),
-            field: String(raw?.field || ""),
-            operator: String(raw?.operator || "="),
-            value: String(raw?.value || "")
+            table: String(source.table || ""),
+            field: String(source.field || ""),
+            operator: String(source.operator || "="),
+            value: String(source.value || "")
         };
     }
 
     function hydrateInitialConditions() {
         try {
             const parsed = JSON.parse(String(jsonField.value || "{}"));
-            const source = Array.isArray(parsed?.conditions) ? parsed.conditions : [];
+            const parsedConditions = parsed && Array.isArray(parsed.conditions) ? parsed.conditions : [];
+            const source = parsedConditions;
             source.forEach(function (item) {
                 conditions.push(normalizeCondition(item));
             });
@@ -180,4 +183,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
     hydrateInitialConditions();
     render();
-});
+}
+
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", lcniInitRecommendBuilder);
+} else {
+    lcniInitRecommendBuilder();
+}
