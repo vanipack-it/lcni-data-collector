@@ -24,6 +24,7 @@ class DailyCronService {
     }
 
     public function run_daily() {
+        $this->signal_repository->prune_invalid_signals();
         $this->refresh_open_positions();
 
         $active_rules = $this->rule_repository->get_active_rules();
@@ -58,6 +59,7 @@ class DailyCronService {
             return 0;
         }
 
+        $this->signal_repository->prune_invalid_signals();
         $candidates = $this->scan_rule_candidates_latest($rule);
 
         $this->rule_repository->update_last_scan_at((int) $rule['id'], current_time('timestamp'));
@@ -85,6 +87,7 @@ class DailyCronService {
             return 0;
         }
 
+        $this->signal_repository->prune_invalid_signals();
         $candidates = $this->rule_repository->find_candidate_symbols_by_window($rule, $start->getTimestamp(), $end->getTimestamp());
         $created = 0;
 
