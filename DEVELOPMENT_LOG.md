@@ -1,3 +1,10 @@
+## 2026-03-05 13:10 (v5.4.7)
+- Nâng version plugin lên `5.4.7`.
+- `LCNi Recommend -> Tạo Rule -> Điều kiện kích hoạt`: chuyển cơ chế kết hợp điều kiện từ một lựa chọn global (`AND`/`OR` cho toàn bộ rule) sang lựa chọn theo từng dòng, cho phép trộn `AND` và `OR` linh hoạt giữa các row.
+- `LCNi Recommend -> Tạo Rule -> Điều kiện kích hoạt`: thêm cột `Kết hợp với dòng dưới` để cấu hình `AND/OR` cho mỗi row.
+- Thay UI chọn `Field` bằng dạng tìm kiếm trực tiếp trong dropdown (`datalist`), gõ ký tự để lọc nhanh danh sách field.
+- Cập nhật `RuleRepository` để parse/lưu/query đúng format điều kiện mới (`join_with_next`) và tương thích ngược với dữ liệu cũ đang dùng `match` global.
+
 ## 2026-03-05 12:05 (v5.4.5)
 - Nâng version plugin lên `5.4.5`.
 - Chart Builder: thêm template mới `Mini Line Charts (Sparkline)` cho phép hiển thị nhiều mini line chart trên ma trận (theo mapping X/Y + series).
