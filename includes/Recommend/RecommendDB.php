@@ -27,6 +27,9 @@ class LCNI_Recommend_DB {
             add_at_r DECIMAL(10,4) NOT NULL DEFAULT 2.0000,
             exit_at_r DECIMAL(10,4) NOT NULL DEFAULT 4.0000,
             max_hold_days INT UNSIGNED NOT NULL DEFAULT 20,
+            apply_from_date DATE NULL,
+            scan_time VARCHAR(5) NOT NULL DEFAULT '18:00',
+            last_scan_at BIGINT UNSIGNED DEFAULT NULL,
             is_active TINYINT(1) NOT NULL DEFAULT 1,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -58,6 +61,21 @@ class LCNI_Recommend_DB {
             KEY status (status)
         ) {$charset_collate};");
 
+        $log_table = $wpdb->prefix . 'lcni_recommend_rule_log';
+
+
+        dbDelta("CREATE TABLE {$log_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            rule_id BIGINT UNSIGNED NOT NULL,
+            action VARCHAR(30) NOT NULL,
+            changed_by BIGINT UNSIGNED DEFAULT NULL,
+            message TEXT NULL,
+            payload LONGTEXT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY rule_action (rule_id, action)
+        ) {$charset_collate};");
+
         dbDelta("CREATE TABLE {$performance_table} (
             rule_id BIGINT UNSIGNED NOT NULL,
             total_trades INT UNSIGNED NOT NULL DEFAULT 0,
@@ -81,6 +99,7 @@ class LCNI_Recommend_DB {
             $wpdb->prefix . 'lcni_recommend_rule',
             $wpdb->prefix . 'lcni_recommend_signal',
             $wpdb->prefix . 'lcni_recommend_performance',
+            $wpdb->prefix . 'lcni_recommend_rule_log',
         ];
 
         foreach ($tables as $table) {
@@ -95,6 +114,22 @@ class LCNI_Recommend_DB {
         $description_exists = $wpdb->get_var("SHOW COLUMNS FROM {$rule_table} LIKE 'description'");
         if (!$description_exists) {
             $wpdb->query("ALTER TABLE {$rule_table} ADD COLUMN description TEXT NULL AFTER timeframe");
+        }
+
+
+        $apply_date_exists = $wpdb->get_var("SHOW COLUMNS FROM {$rule_table} LIKE 'apply_from_date'");
+        if (!$apply_date_exists) {
+            $wpdb->query("ALTER TABLE {$rule_table} ADD COLUMN apply_from_date DATE NULL AFTER max_hold_days");
+        }
+
+        $scan_time_exists = $wpdb->get_var("SHOW COLUMNS FROM {$rule_table} LIKE 'scan_time'");
+        if (!$scan_time_exists) {
+            $wpdb->query("ALTER TABLE {$rule_table} ADD COLUMN scan_time VARCHAR(5) NOT NULL DEFAULT '18:00' AFTER apply_from_date");
+        }
+
+        $last_scan_exists = $wpdb->get_var("SHOW COLUMNS FROM {$rule_table} LIKE 'last_scan_at'");
+        if (!$last_scan_exists) {
+            $wpdb->query("ALTER TABLE {$rule_table} ADD COLUMN last_scan_at BIGINT UNSIGNED DEFAULT NULL AFTER scan_time");
         }
     }
 }

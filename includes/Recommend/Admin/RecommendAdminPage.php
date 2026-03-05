@@ -103,11 +103,13 @@ class LCNI_Recommend_Admin_Page {
     private $rule_repository;
     private $signal_repository;
     private $performance_calculator;
+    private $daily_cron_service;
 
-    public function __construct(RuleRepository $rule_repository, SignalRepository $signal_repository, PerformanceCalculator $performance_calculator) {
+    public function __construct(RuleRepository $rule_repository, SignalRepository $signal_repository, PerformanceCalculator $performance_calculator, DailyCronService $daily_cron_service) {
         $this->rule_repository = $rule_repository;
         $this->signal_repository = $signal_repository;
         $this->performance_calculator = $performance_calculator;
+        $this->daily_cron_service = $daily_cron_service;
 
         add_action('admin_menu', [$this, 'register_menu']);
         add_action('admin_init', [$this, 'handle_actions']);
@@ -137,12 +139,19 @@ class LCNI_Recommend_Admin_Page {
                 'add_at_r' => (float) ($_POST['add_at_r'] ?? 2),
                 'exit_at_r' => (float) ($_POST['exit_at_r'] ?? 4),
                 'max_hold_days' => (int) ($_POST['max_hold_days'] ?? 20),
+                'apply_from_date' => wp_unslash((string) ($_POST['apply_from_date'] ?? '')),
+                'scan_time' => wp_unslash((string) ($_POST['scan_time'] ?? '18:00')),
                 'is_active' => !empty($_POST['is_active']) ? 1 : 0,
             ]);
 
             if (is_wp_error($saved_rule_id) || (int) $saved_rule_id <= 0) {
                 wp_safe_redirect(admin_url('admin.php?page=lcni-recommend&tab=create-rule&created=0'));
                 exit;
+            }
+
+            $created_rule = $this->rule_repository->find((int) $saved_rule_id);
+            if ($created_rule) {
+                $this->daily_cron_service->backfill_rule_history($created_rule);
             }
 
             wp_safe_redirect(admin_url('admin.php?page=lcni-recommend&tab=create-rule&created=1'));
@@ -166,12 +175,19 @@ class LCNI_Recommend_Admin_Page {
                 'add_at_r' => (float) ($_POST['add_at_r'] ?? 2),
                 'exit_at_r' => (float) ($_POST['exit_at_r'] ?? 4),
                 'max_hold_days' => (int) ($_POST['max_hold_days'] ?? 20),
+                'apply_from_date' => wp_unslash((string) ($_POST['apply_from_date'] ?? '')),
+                'scan_time' => wp_unslash((string) ($_POST['scan_time'] ?? '18:00')),
                 'is_active' => !empty($_POST['is_active']) ? 1 : 0,
             ]);
 
             if (is_wp_error($updated) || $updated === false) {
                 wp_safe_redirect(admin_url('admin.php?page=lcni-recommend&tab=create-rule&edit=' . $rule_id . '&updated=0'));
                 exit;
+            }
+
+            $updated_rule = $this->rule_repository->find($rule_id);
+            if ($updated_rule) {
+                $this->daily_cron_service->backfill_rule_history($updated_rule);
             }
 
             wp_safe_redirect(admin_url('admin.php?page=lcni-recommend&tab=rule-list&updated=1'));
@@ -191,6 +207,7 @@ class LCNI_Recommend_Admin_Page {
         echo '<a href="' . esc_url(admin_url('admin.php?page=lcni-recommend&tab=rule-list')) . '" class="nav-tab ' . ($tab === 'rule-list' ? 'nav-tab-active' : '') . '">Danh sách Rule</a>';
         echo '<a href="' . esc_url(admin_url('admin.php?page=lcni-recommend&tab=signals')) . '" class="nav-tab ' . ($tab === 'signals' ? 'nav-tab-active' : '') . '">Signals</a>';
         echo '<a href="' . esc_url(admin_url('admin.php?page=lcni-recommend&tab=performance')) . '" class="nav-tab ' . ($tab === 'performance' ? 'nav-tab-active' : '') . '">Performance</a>';
+        echo '<a href="' . esc_url(admin_url('admin.php?page=lcni-recommend&tab=logs')) . '" class="' . ($tab === 'logs' ? 'nav-tab-active' : '') . '">Lịch sử thay đổi</a>';
         echo '</h2>';
 
         $created = isset($_GET['created']) ? sanitize_text_field((string) $_GET['created']) : '';
@@ -213,8 +230,10 @@ class LCNI_Recommend_Admin_Page {
             $this->render_rules_list_tab();
         } elseif ($tab === 'signals') {
             $this->render_signals_tab();
-        } else {
+        } elseif ($tab === 'performance') {
             $this->render_performance_tab();
+        } else {
+            $this->render_logs_tab();
         }
 
         echo '</div>';
@@ -308,6 +327,8 @@ class LCNI_Recommend_Admin_Page {
         echo '<div class="lcni-recommend-row"><label>Add at R <input type="number" step="0.01" name="add_at_r" value="' . esc_attr((string) ($editing_rule['add_at_r'] ?? '2')) . '" /></label></div>';
         echo '<div class="lcni-recommend-row"><label>Exit at R <input type="number" step="0.01" name="exit_at_r" value="' . esc_attr((string) ($editing_rule['exit_at_r'] ?? '4')) . '" /></label></div>';
         echo '<div class="lcni-recommend-row"><label>Max Hold Days <input type="number" name="max_hold_days" value="' . esc_attr((string) ($editing_rule['max_hold_days'] ?? '20')) . '" /></label></div>';
+        echo '<div class="lcni-recommend-row"><label>Ngày áp dụng <input type="date" name="apply_from_date" value="' . esc_attr((string) ($editing_rule['apply_from_date'] ?? '')) . '" /></label></div>';
+        echo '<div class="lcni-recommend-row"><label>Lịch quét hàng ngày <input type="time" name="scan_time" value="' . esc_attr((string) ($editing_rule['scan_time'] ?? '18:00')) . '" /></label></div>';
         echo '<p><label><input type="checkbox" name="is_active" value="1" ' . (!array_key_exists('is_active', (array) $editing_rule) || !empty($editing_rule['is_active']) ? 'checked' : '') . ' /> Active</label></p>';
         echo '</div>';
 
@@ -478,6 +499,9 @@ class LCNI_Recommend_Admin_Page {
         echo '<th>Add at R</th>';
         echo '<th>Exit at R</th>';
         echo '<th>Max Hold</th>';
+        echo '<th>Ngày áp dụng</th>';
+        echo '<th>Giờ quét</th>';
+        echo '<th>Lần quét gần nhất</th>';
         echo '<th>Active</th>';
         echo '<th>Created At</th>';
         echo '<th>Updated At</th>';
@@ -497,10 +521,42 @@ class LCNI_Recommend_Admin_Page {
             echo '<td>' . esc_html((string) ($rule['add_at_r'] ?? '')) . '</td>';
             echo '<td>' . esc_html((string) ($rule['exit_at_r'] ?? '')) . '</td>';
             echo '<td>' . esc_html((string) ($rule['max_hold_days'] ?? '')) . '</td>';
+            echo '<td>' . esc_html((string) ($rule['apply_from_date'] ?? '')) . '</td>';
+            echo '<td>' . esc_html((string) ($rule['scan_time'] ?? '')) . '</td>';
+            echo '<td>' . esc_html(!empty($rule['last_scan_at']) ? wp_date('Y-m-d H:i:s', (int) $rule['last_scan_at'], wp_timezone()) : '') . '</td>';
             echo '<td>' . (!empty($rule['is_active']) ? '1' : '0') . '</td>';
             echo '<td>' . esc_html((string) ($rule['created_at'] ?? '')) . '</td>';
             echo '<td>' . esc_html((string) ($rule['updated_at'] ?? '')) . '</td>';
             echo '<td><a class="button button-small" href="' . esc_url(admin_url('admin.php?page=lcni-recommend&tab=create-rule&edit=' . (int) ($rule['id'] ?? 0))) . '">Chỉnh sửa</a></td>';
+            echo '</tr>';
+        }
+
+        echo '</tbody>';
+        echo '</table>';
+    }
+
+
+    private function render_logs_tab() {
+        $logs = $this->rule_repository->list_logs(300);
+
+        if (empty($logs)) {
+            echo '<p><em>Chưa có lịch sử thay đổi.</em></p>';
+            return;
+        }
+
+        echo '<table class="widefat striped">';
+        echo '<thead><tr><th>ID</th><th>Rule</th><th>Action</th><th>Message</th><th>User</th><th>Payload</th><th>Created At</th></tr></thead>';
+        echo '<tbody>';
+
+        foreach ($logs as $log) {
+            echo '<tr>';
+            echo '<td>' . esc_html((string) ($log['id'] ?? '')) . '</td>';
+            echo '<td>' . esc_html((string) ($log['rule_name'] ?? $log['rule_id'] ?? '')) . '</td>';
+            echo '<td>' . esc_html((string) ($log['action'] ?? '')) . '</td>';
+            echo '<td>' . esc_html((string) ($log['message'] ?? '')) . '</td>';
+            echo '<td>' . esc_html((string) ($log['changed_by'] ?? '')) . '</td>';
+            echo '<td><code>' . esc_html((string) ($log['payload'] ?? '')) . '</code></td>';
+            echo '<td>' . esc_html((string) ($log['created_at'] ?? '')) . '</td>';
             echo '</tr>';
         }
 
