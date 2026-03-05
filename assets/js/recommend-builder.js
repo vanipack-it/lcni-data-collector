@@ -16,7 +16,46 @@ document.addEventListener("DOMContentLoaded", function () {
     addButton.dataset.builderReady = "1";
 
     const operators = ["=", "!=", ">", ">=", "<", "<=", "contains", "not_contains"];
+    const defaultConditionCount = 5;
     const conditions = [];
+
+    function makeEmptyCondition() {
+        const firstTable = Object.keys(columnsMap)[0] || "";
+
+        return {
+            table: firstTable,
+            field: "",
+            operator: "=",
+            value: ""
+        };
+    }
+
+    function normalizeCondition(raw) {
+        return {
+            table: String(raw?.table || ""),
+            field: String(raw?.field || ""),
+            operator: String(raw?.operator || "="),
+            value: String(raw?.value || "")
+        };
+    }
+
+    function hydrateInitialConditions() {
+        try {
+            const parsed = JSON.parse(String(jsonField.value || "{}"));
+            const source = Array.isArray(parsed?.conditions) ? parsed.conditions : [];
+            source.forEach(function (item) {
+                conditions.push(normalizeCondition(item));
+            });
+        } catch (error) {
+            // keep fallback defaults below
+        }
+
+        if (!conditions.length) {
+            for (let index = 0; index < defaultConditionCount; index += 1) {
+                conditions.push(makeEmptyCondition());
+            }
+        }
+    }
 
     function makeSelect(options, selected) {
         const select = document.createElement("select");
@@ -37,14 +76,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function syncJson() {
         const normalized = conditions
-            .map(function (item) {
-                return {
-                    table: String(item.table || ""),
-                    field: String(item.field || ""),
-                    operator: String(item.operator || "="),
-                    value: String(item.value || "")
-                };
-            })
+            .map(normalizeCondition)
             .filter(function (item) {
                 return item.table && item.field && item.value !== "";
             });
@@ -141,16 +173,11 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     addButton.addEventListener("click", function () {
-        const firstTable = Object.keys(columnsMap)[0] || "";
-        conditions.push({
-            table: firstTable,
-            field: "",
-            operator: "=",
-            value: ""
-        });
+        conditions.push(makeEmptyCondition());
 
         render();
     });
 
+    hydrateInitialConditions();
     render();
 });
