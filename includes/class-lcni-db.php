@@ -121,6 +121,9 @@ class LCNI_DB {
                 $wpdb->prefix . 'lcni_thong_ke_thi_truong',
                 $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2',
                 $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2_toan_thi_truong',
+                $wpdb->prefix . 'lcni_industry_return',
+                $wpdb->prefix . 'lcni_industry_index',
+                $wpdb->prefix . 'lcni_industry_metrics',
                 $wpdb->prefix . 'lcni_charts',
             ];
 
@@ -139,6 +142,7 @@ class LCNI_DB {
             self::ensure_ohlc_indexes();
             self::ensure_ohlc_latest_snapshot_infrastructure();
             self::ensure_market_statistics_schema();
+            self::ensure_industry_analysis_schema();
             self::ensure_chart_builder_schema();
             self::normalize_ohlc_numeric_columns();
             self::sync_symbol_market_icb_mapping();
@@ -189,6 +193,7 @@ class LCNI_DB {
         self::backfill_ohlc_breakout_metrics();
         self::sync_frontend_settings_with_new_ohlc_columns();
         self::backfill_market_statistics_tables();
+        self::backfill_industry_analysis_tables();
         self::ensure_ohlc_symbol_type_column();
         self::ensure_ohlc_indexes();
         self::ensure_ohlc_latest_snapshot_infrastructure();
@@ -216,6 +221,9 @@ class LCNI_DB {
         $market_statistics_table = $wpdb->prefix . 'lcni_thong_ke_thi_truong';
         $icb2_statistics_table = $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2';
         $icb2_market_statistics_table = $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2_toan_thi_truong';
+        $industry_return_table = $wpdb->prefix . 'lcni_industry_return';
+        $industry_index_table = $wpdb->prefix . 'lcni_industry_index';
+        $industry_metrics_table = $wpdb->prefix . 'lcni_industry_metrics';
         $charts_table = $wpdb->prefix . 'lcni_charts';
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
@@ -591,6 +599,67 @@ class LCNI_DB {
             KEY idx_icb2_thi_truong_index (icb2_thi_truong_index)
         ) {$charset_collate};";
 
+
+        $sql_industry_return = "CREATE TABLE {$industry_return_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            event_time BIGINT UNSIGNED NOT NULL,
+            timeframe VARCHAR(10) NOT NULL,
+            id_icb2 INT UNSIGNED NOT NULL,
+            industry_return DECIMAL(16,8) NOT NULL DEFAULT 0,
+            industry_value DECIMAL(24,2) NOT NULL DEFAULT 0,
+            stocks_up INT UNSIGNED NOT NULL DEFAULT 0,
+            total_stocks INT UNSIGNED NOT NULL DEFAULT 0,
+            breadth DECIMAL(12,8) NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            UNIQUE KEY uniq_event_icb2_timeframe (event_time, id_icb2, timeframe),
+            KEY idx_timeframe_event (timeframe, event_time),
+            KEY idx_icb2_event (id_icb2, event_time)
+        ) {$charset_collate};";
+
+        $sql_industry_index = "CREATE TABLE {$industry_index_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            event_time BIGINT UNSIGNED NOT NULL,
+            timeframe VARCHAR(10) NOT NULL,
+            id_icb2 INT UNSIGNED NOT NULL,
+            industry_index DECIMAL(24,8) NOT NULL DEFAULT 1000,
+            industry_return DECIMAL(16,8) NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            UNIQUE KEY uniq_event_icb2_timeframe (event_time, id_icb2, timeframe),
+            KEY idx_timeframe_event (timeframe, event_time),
+            KEY idx_icb2_event (id_icb2, event_time)
+        ) {$charset_collate};";
+
+        $sql_industry_metrics = "CREATE TABLE {$industry_metrics_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            event_time BIGINT UNSIGNED NOT NULL,
+            timeframe VARCHAR(10) NOT NULL,
+            id_icb2 INT UNSIGNED NOT NULL,
+            industry_return DECIMAL(16,8) NOT NULL DEFAULT 0,
+            industry_value DECIMAL(24,2) NOT NULL DEFAULT 0,
+            stocks_up INT UNSIGNED NOT NULL DEFAULT 0,
+            total_stocks INT UNSIGNED NOT NULL DEFAULT 0,
+            return_5d DECIMAL(16,8) NOT NULL DEFAULT 0,
+            return_10d DECIMAL(16,8) NOT NULL DEFAULT 0,
+            return_20d DECIMAL(16,8) NOT NULL DEFAULT 0,
+            momentum DECIMAL(16,8) NOT NULL DEFAULT 0,
+            relative_strength DECIMAL(16,8) NOT NULL DEFAULT 0,
+            money_flow_share DECIMAL(16,8) NOT NULL DEFAULT 0,
+            breadth DECIMAL(16,8) NOT NULL DEFAULT 0,
+            industry_score_raw DECIMAL(16,8) NOT NULL DEFAULT 0,
+            industry_rating_vi VARCHAR(60) NOT NULL DEFAULT 'Ngành trung tính',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            UNIQUE KEY uniq_event_icb2_timeframe (event_time, id_icb2, timeframe),
+            KEY idx_timeframe_event (timeframe, event_time),
+            KEY idx_score (industry_score_raw),
+            KEY idx_rating (industry_rating_vi)
+        ) {$charset_collate};";
+
         $sql_charts = "CREATE TABLE {$charts_table} (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             name VARCHAR(191) NOT NULL,
@@ -622,6 +691,9 @@ class LCNI_DB {
         dbDelta($sql_market_statistics);
         dbDelta($sql_icb2_statistics);
         dbDelta($sql_icb2_market_statistics);
+        dbDelta($sql_industry_return);
+        dbDelta($sql_industry_index);
+        dbDelta($sql_industry_metrics);
         dbDelta($sql_charts);
 
         self::seed_market_reference_data($market_table);
@@ -635,6 +707,7 @@ class LCNI_DB {
         self::ensure_ohlc_indexes();
         self::ensure_ohlc_latest_snapshot_infrastructure();
         self::ensure_market_statistics_schema();
+        self::ensure_industry_analysis_schema();
         self::ensure_chart_builder_schema();
         self::normalize_ohlc_numeric_columns();
         self::normalize_legacy_ratio_columns();
@@ -1602,6 +1675,7 @@ class LCNI_DB {
 
             if (!empty($market_timeframes)) {
                 self::rebuild_market_statistics_incremental(array_keys($market_event_times), array_keys($market_timeframes));
+                self::rebuild_industry_analysis_incremental(array_keys($market_event_times), array_keys($market_timeframes));
             }
         }
 
@@ -6264,6 +6338,265 @@ class LCNI_DB {
                 return;
             }
         }
+    }
+
+
+    private static function ensure_industry_analysis_schema() {
+        global $wpdb;
+
+        $return_table = $wpdb->prefix . 'lcni_industry_return';
+        $index_table = $wpdb->prefix . 'lcni_industry_index';
+        $metrics_table = $wpdb->prefix . 'lcni_industry_metrics';
+
+        $return_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $return_table));
+        if ($return_exists === $return_table) {
+            self::add_unique_key_if_missing($return_table, 'uniq_event_icb2_timeframe', '(event_time, id_icb2, timeframe)');
+            self::add_index_if_missing($return_table, 'idx_timeframe_event', '(timeframe, event_time)');
+            self::add_index_if_missing($return_table, 'idx_icb2_event', '(id_icb2, event_time)');
+        }
+
+        $index_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $index_table));
+        if ($index_exists === $index_table) {
+            self::add_unique_key_if_missing($index_table, 'uniq_event_icb2_timeframe', '(event_time, id_icb2, timeframe)');
+            self::add_index_if_missing($index_table, 'idx_timeframe_event', '(timeframe, event_time)');
+            self::add_index_if_missing($index_table, 'idx_icb2_event', '(id_icb2, event_time)');
+        }
+
+        $metrics_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $metrics_table));
+        if ($metrics_exists === $metrics_table) {
+            self::add_unique_key_if_missing($metrics_table, 'uniq_event_icb2_timeframe', '(event_time, id_icb2, timeframe)');
+            self::add_index_if_missing($metrics_table, 'idx_timeframe_event', '(timeframe, event_time)');
+            self::add_index_if_missing($metrics_table, 'idx_score', '(industry_score_raw)');
+        }
+    }
+
+    private static function backfill_industry_analysis_tables($force_rebuild = false) {
+        $migration_flag = 'lcni_industry_analysis_backfilled_v1';
+        if (!$force_rebuild && get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        global $wpdb;
+
+        $return_table = $wpdb->prefix . 'lcni_industry_return';
+        $index_table = $wpdb->prefix . 'lcni_industry_index';
+        $metrics_table = $wpdb->prefix . 'lcni_industry_metrics';
+
+        $return_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $return_table));
+        $index_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $index_table));
+        $metrics_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $metrics_table));
+
+        if ($return_exists !== $return_table || $index_exists !== $index_table || $metrics_exists !== $metrics_table) {
+            return;
+        }
+
+        $wpdb->query("TRUNCATE TABLE {$return_table}");
+        $wpdb->query("TRUNCATE TABLE {$index_table}");
+        $wpdb->query("TRUNCATE TABLE {$metrics_table}");
+
+        self::rebuild_industry_analysis_incremental([], ['1D'], true);
+
+        update_option($migration_flag, 'yes');
+        self::log_change('backfill_industry_analysis_tables', 'Rebuilt industry return/index/metrics materialized tables from OHLC source.');
+    }
+
+    private static function rebuild_industry_analysis_incremental($event_times = [], $timeframes = ['1D'], $full_rebuild = false) {
+        global $wpdb;
+
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $mapping_table = $wpdb->prefix . 'lcni_sym_icb_market';
+        $return_table = $wpdb->prefix . 'lcni_industry_return';
+        $index_table = $wpdb->prefix . 'lcni_industry_index';
+        $metrics_table = $wpdb->prefix . 'lcni_industry_metrics';
+
+        $timeframes = array_values(array_unique(array_filter(array_map(static function ($timeframe) {
+            return strtoupper(trim((string) $timeframe));
+        }, (array) $timeframes))));
+        if (empty($timeframes)) {
+            $timeframes = ['1D'];
+        }
+
+        if ($full_rebuild || empty($event_times)) {
+            $event_times = $wpdb->get_col(
+                $wpdb->prepare(
+                    "SELECT DISTINCT event_time FROM {$ohlc_table} WHERE timeframe = %s ORDER BY event_time ASC",
+                    $timeframes[0]
+                )
+            );
+        }
+
+        $event_times = array_values(array_unique(array_filter(array_map('intval', (array) $event_times), static function ($v) {
+            return $v > 0;
+        })));
+
+        if (empty($event_times)) {
+            return 0;
+        }
+
+        $event_placeholders = implode(', ', array_fill(0, count($event_times), '%d'));
+        $timeframe_placeholders = implode(', ', array_fill(0, count($timeframes), '%s'));
+        $where_params = array_merge($event_times, $timeframes);
+
+        $delete_sql = "event_time IN ({$event_placeholders}) AND timeframe IN ({$timeframe_placeholders})";
+        $wpdb->query($wpdb->prepare("DELETE FROM {$return_table} WHERE {$delete_sql}", $where_params));
+        $wpdb->query($wpdb->prepare("DELETE FROM {$index_table} WHERE {$delete_sql}", $where_params));
+        $wpdb->query($wpdb->prepare("DELETE FROM {$metrics_table} WHERE {$delete_sql}", $where_params));
+
+        $insert_return_sql = "INSERT INTO {$return_table}
+            (event_time, timeframe, id_icb2, industry_return, industry_value, stocks_up, total_stocks, breadth)
+            SELECT
+                o.event_time,
+                o.timeframe,
+                COALESCE(m.id_icb2, 0) AS id_icb2,
+                COALESCE(
+                    SUM(
+                        COALESCE(
+                            o.pct_change,
+                            CASE
+                                WHEN COALESCE(prev.close_price, 0) > 0 THEN (o.close_price / prev.close_price) - 1
+                                ELSE 0
+                            END
+                        ) * COALESCE(o.value_traded, 0)
+                    ) / NULLIF(SUM(COALESCE(o.value_traded, 0)), 0),
+                    0
+                ) AS industry_return,
+                COALESCE(SUM(COALESCE(o.value_traded, 0)), 0) AS industry_value,
+                SUM(CASE WHEN COALESCE(prev.close_price, 0) > 0 AND o.close_price > prev.close_price THEN 1 ELSE 0 END) AS stocks_up,
+                COUNT(*) AS total_stocks,
+                COALESCE(SUM(CASE WHEN COALESCE(prev.close_price, 0) > 0 AND o.close_price > prev.close_price THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 0) AS breadth
+            FROM {$ohlc_table} o
+            INNER JOIN {$mapping_table} m ON m.symbol = o.symbol
+            LEFT JOIN {$ohlc_table} prev ON prev.symbol = o.symbol AND prev.timeframe = o.timeframe AND prev.event_time = (
+                SELECT MAX(p2.event_time)
+                FROM {$ohlc_table} p2
+                WHERE p2.symbol = o.symbol AND p2.timeframe = o.timeframe AND p2.event_time < o.event_time
+            )
+            WHERE o.event_time IN ({$event_placeholders}) AND o.timeframe IN ({$timeframe_placeholders})
+            GROUP BY o.event_time, o.timeframe, COALESCE(m.id_icb2, 0)";
+        $wpdb->query($wpdb->prepare($insert_return_sql, $where_params));
+
+        foreach ($timeframes as $tf) {
+            $tf_events = $wpdb->get_col($wpdb->prepare("SELECT DISTINCT event_time FROM {$return_table} WHERE timeframe = %s ORDER BY event_time ASC", $tf));
+            $indices = [];
+            $rows = $wpdb->get_results($wpdb->prepare("SELECT event_time, id_icb2, industry_return FROM {$return_table} WHERE timeframe = %s ORDER BY event_time ASC", $tf), ARRAY_A);
+
+            foreach ((array) $rows as $row) {
+                $id = (int) $row['id_icb2'];
+                $ret = (float) $row['industry_return'];
+                if (!isset($indices[$id])) {
+                    $indices[$id] = 1000.0;
+                }
+                $indices[$id] = $indices[$id] * (1.0 + $ret);
+                $wpdb->query($wpdb->prepare(
+                    "INSERT INTO {$index_table} (event_time, timeframe, id_icb2, industry_index, industry_return)
+                    VALUES (%d, %s, %d, %f, %f)
+                    ON DUPLICATE KEY UPDATE industry_index = VALUES(industry_index), industry_return = VALUES(industry_return)",
+                    (int) $row['event_time'],
+                    $tf,
+                    $id,
+                    $indices[$id],
+                    $ret
+                ));
+            }
+        }
+
+        $insert_metrics_sql = "INSERT INTO {$metrics_table}
+            (event_time, timeframe, id_icb2, industry_return, industry_value, stocks_up, total_stocks, return_5d, return_10d, return_20d, momentum, relative_strength, money_flow_share, breadth, industry_score_raw, industry_rating_vi)
+            SELECT
+                r.event_time,
+                r.timeframe,
+                r.id_icb2,
+                r.industry_return,
+                r.industry_value,
+                r.stocks_up,
+                r.total_stocks,
+                COALESCE((r.industry_value / NULLIF(prev5.industry_value, 0)) - 1, 0) AS return_5d,
+                COALESCE((r.industry_value / NULLIF(prev10.industry_value, 0)) - 1, 0) AS return_10d,
+                COALESCE((r.industry_value / NULLIF(prev20.industry_value, 0)) - 1, 0) AS return_20d,
+                0 AS momentum,
+                0 AS relative_strength,
+                COALESCE(r.industry_value / NULLIF(market.total_market_value, 0), 0) AS money_flow_share,
+                r.breadth,
+                0 AS industry_score_raw,
+                'Ngành trung tính' AS industry_rating_vi
+            FROM {$return_table} r
+            LEFT JOIN {$return_table} prev5 ON prev5.id_icb2 = r.id_icb2 AND prev5.timeframe = r.timeframe AND prev5.event_time = (
+                SELECT e5.event_time FROM {$return_table} e5
+                WHERE e5.id_icb2 = r.id_icb2 AND e5.timeframe = r.timeframe AND e5.event_time < r.event_time
+                ORDER BY e5.event_time DESC LIMIT 1 OFFSET 4
+            )
+            LEFT JOIN {$return_table} prev10 ON prev10.id_icb2 = r.id_icb2 AND prev10.timeframe = r.timeframe AND prev10.event_time = (
+                SELECT e10.event_time FROM {$return_table} e10
+                WHERE e10.id_icb2 = r.id_icb2 AND e10.timeframe = r.timeframe AND e10.event_time < r.event_time
+                ORDER BY e10.event_time DESC LIMIT 1 OFFSET 9
+            )
+            LEFT JOIN {$return_table} prev20 ON prev20.id_icb2 = r.id_icb2 AND prev20.timeframe = r.timeframe AND prev20.event_time = (
+                SELECT e20.event_time FROM {$return_table} e20
+                WHERE e20.id_icb2 = r.id_icb2 AND e20.timeframe = r.timeframe AND e20.event_time < r.event_time
+                ORDER BY e20.event_time DESC LIMIT 1 OFFSET 19
+            )
+            INNER JOIN (
+                SELECT event_time, timeframe, SUM(industry_value) AS total_market_value
+                FROM {$return_table}
+                GROUP BY event_time, timeframe
+            ) market ON market.event_time = r.event_time AND market.timeframe = r.timeframe
+            WHERE r.event_time IN ({$event_placeholders}) AND r.timeframe IN ({$timeframe_placeholders})";
+        $wpdb->query($wpdb->prepare($insert_metrics_sql, $where_params));
+
+        $vnindex_return_20d_sql = "SELECT cur.event_time, cur.timeframe, COALESCE((cur.close_price / NULLIF(prev.close_price, 0)) - 1, 0) AS vnindex_return_20d
+            FROM {$ohlc_table} cur
+            LEFT JOIN {$ohlc_table} prev ON prev.symbol = cur.symbol AND prev.timeframe = cur.timeframe AND prev.event_time = (
+                SELECT p2.event_time FROM {$ohlc_table} p2
+                WHERE p2.symbol = cur.symbol AND p2.timeframe = cur.timeframe AND p2.event_time < cur.event_time
+                ORDER BY p2.event_time DESC LIMIT 1 OFFSET 19
+            )
+            WHERE cur.symbol = 'VNINDEX'";
+
+        $vn_rows = $wpdb->get_results($vnindex_return_20d_sql, ARRAY_A);
+        $vn_map = [];
+        foreach ((array) $vn_rows as $vn_row) {
+            $vn_map[$vn_row['timeframe'] . '|' . $vn_row['event_time']] = (float) $vn_row['vnindex_return_20d'];
+        }
+
+        $metric_rows = $wpdb->get_results($wpdb->prepare("SELECT id, event_time, timeframe, return_5d, return_10d, return_20d, money_flow_share, breadth FROM {$metrics_table} WHERE event_time IN ({$event_placeholders}) AND timeframe IN ({$timeframe_placeholders})", $where_params), ARRAY_A);
+
+        foreach ((array) $metric_rows as $metric_row) {
+            $momentum = 0.5 * (float) $metric_row['return_20d'] + 0.3 * (float) $metric_row['return_10d'] + 0.2 * (float) $metric_row['return_5d'];
+            $rs = ((float) $metric_row['return_20d']) - (float) ($vn_map[$metric_row['timeframe'] . '|' . $metric_row['event_time']] ?? 0);
+            $money_flow = (float) $metric_row['money_flow_share'];
+            $breadth = (float) $metric_row['breadth'];
+            $score = (0.35 * $momentum) + (0.30 * $rs) + (0.20 * $money_flow) + (0.15 * $breadth);
+            $score_normalized = max(0.0, min(1.0, (float) $score));
+
+            $rating = 'Ngành suy yếu';
+            if ($score_normalized >= 0.75) {
+                $rating = 'Ngành dẫn dắt';
+            } elseif ($score_normalized >= 0.60) {
+                $rating = 'Ngành mạnh';
+            } elseif ($score_normalized >= 0.50) {
+                $rating = 'Ngành tích cực';
+            } elseif ($score_normalized >= 0.40) {
+                $rating = 'Ngành trung tính';
+            } elseif ($score_normalized >= 0.30) {
+                $rating = 'Ngành yếu';
+            }
+
+            $wpdb->query($wpdb->prepare(
+                "UPDATE {$metrics_table}
+                SET momentum = %f,
+                    relative_strength = %f,
+                    industry_score_raw = %f,
+                    industry_rating_vi = %s
+                WHERE id = %d",
+                $momentum,
+                $rs,
+                $score_normalized,
+                $rating,
+                (int) $metric_row['id']
+            ));
+        }
+
+        return count($event_times);
     }
 
 }

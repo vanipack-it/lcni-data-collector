@@ -7,6 +7,7 @@ if (!defined('ABSPATH')) {
 class LCNI_Rest_API {
 
     private $stock_controller;
+    private $industry_controller;
 
     public function __construct() {
         $access_control = new LCNI_AccessControl();
@@ -16,6 +17,10 @@ class LCNI_Rest_API {
         $stock_service = new LCNI_StockQueryService($repository, $indicator_service, $access_control, $cache);
 
         $this->stock_controller = new LCNI_StockController($stock_service, $access_control);
+
+        $industry_repository = new LCNI_IndustryRepository();
+        $industry_service = new LCNI_IndustryAnalysisService($industry_repository);
+        $this->industry_controller = new LCNI_IndustryController($industry_service);
 
         add_action('rest_api_init', [$this, 'register_routes']);
     }
@@ -34,6 +39,7 @@ class LCNI_Rest_API {
         ]);
 
         $this->stock_controller->registerRoutes();
+        $this->industry_controller->register_routes();
 
         register_rest_route('lcni/v1', '/user/package', [
             'methods' => 'GET',
