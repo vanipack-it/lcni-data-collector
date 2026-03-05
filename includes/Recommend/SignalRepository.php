@@ -7,10 +7,12 @@ if (!defined('ABSPATH')) {
 class SignalRepository {
     private $wpdb;
     private $table;
+    private $symbols_table;
 
     public function __construct(wpdb $wpdb) {
         $this->wpdb = $wpdb;
         $this->table = $wpdb->prefix . 'lcni_recommend_signal';
+        $this->symbols_table = $wpdb->prefix . 'lcni_symbols';
     }
 
     public function get_open_signals() {
@@ -24,13 +26,28 @@ class SignalRepository {
         );
     }
 
+    public function find_by_rule_symbol_entry($rule_id, $symbol, $entry_time, $timeframe) {
+        return $this->wpdb->get_row(
+            $this->wpdb->prepare(
+                "SELECT id FROM {$this->table} WHERE rule_id = %d AND symbol = %s AND entry_time = %d AND timeframe = %s LIMIT 1",
+                (int) $rule_id,
+                strtoupper((string) $symbol),
+                (int) $entry_time,
+                strtoupper((string) $timeframe)
+            ),
+            ARRAY_A
+        );
+    }
+
     public function create_signal($rule, $symbol, $entry_time, $entry_price) {
         $symbol = strtoupper(trim((string) $symbol));
-        if ($symbol === '' || $entry_price <= 0) {
+        $timeframe = strtoupper(sanitize_text_field((string) ($rule['timeframe'] ?? '1D')));
+
+        if (!$this->is_valid_symbol($symbol) || $entry_price <= 0) {
             return 0;
         }
 
-        if ($this->find_open_by_rule_symbol((int) $rule['id'], $symbol)) {
+        if ($this->find_by_rule_symbol_entry((int) $rule['id'], $symbol, (int) $entry_time, $timeframe)) {
             return 0;
         }
 
@@ -40,6 +57,7 @@ class SignalRepository {
         $this->wpdb->insert($this->table, [
             'rule_id' => (int) $rule['id'],
             'symbol' => $symbol,
+            'timeframe' => $timeframe,
             'entry_time' => (int) $entry_time,
             'entry_price' => (float) $entry_price,
             'initial_sl' => (float) $initial_sl,
@@ -52,6 +70,14 @@ class SignalRepository {
         ]);
 
         return (int) $this->wpdb->insert_id;
+    }
+
+    public function prune_invalid_signals() {
+        $sql = "DELETE s FROM {$this->table} s
+            LEFT JOIN {$this->symbols_table} sym ON sym.symbol = s.symbol
+            WHERE sym.symbol IS NULL OR s.symbol = ''";
+
+        return (int) $this->wpdb->query($sql);
     }
 
     public function update_open_signal_metrics($signal_id, $current_price, $r_multiple, $position_state, $holding_days) {
@@ -128,5 +154,17 @@ class SignalRepository {
             ),
             ARRAY_A
         );
+    }
+
+    private function is_valid_symbol($symbol) {
+        if ($symbol === '' || preg_match('/^[A-Z0-9._-]{1,20}$/', $symbol) !== 1) {
+            return false;
+        }
+
+        $exists = $this->wpdb->get_var(
+            $this->wpdb->prepare("SELECT symbol FROM {$this->symbols_table} WHERE symbol = %s LIMIT 1", $symbol)
+        );
+
+        return $exists === $symbol;
     }
 }

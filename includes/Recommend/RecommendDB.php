@@ -41,6 +41,7 @@ class LCNI_Recommend_DB {
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             rule_id BIGINT UNSIGNED NOT NULL,
             symbol VARCHAR(20) NOT NULL,
+            timeframe VARCHAR(20) NOT NULL DEFAULT '1D',
             entry_time BIGINT UNSIGNED NOT NULL,
             entry_price DECIMAL(20,4) NOT NULL,
             initial_sl DECIMAL(20,4) NOT NULL,
@@ -56,6 +57,7 @@ class LCNI_Recommend_DB {
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
+            UNIQUE KEY uniq_rule_symbol_tf_entry (rule_id, symbol, timeframe, entry_time),
             KEY rule_id (rule_id),
             KEY symbol_status (symbol, status),
             KEY status (status)
@@ -130,6 +132,31 @@ class LCNI_Recommend_DB {
         $last_scan_exists = $wpdb->get_var("SHOW COLUMNS FROM {$rule_table} LIKE 'last_scan_at'");
         if (!$last_scan_exists) {
             $wpdb->query("ALTER TABLE {$rule_table} ADD COLUMN last_scan_at BIGINT UNSIGNED DEFAULT NULL AFTER scan_time");
+        }
+
+        $signal_table = $wpdb->prefix . 'lcni_recommend_signal';
+        $timeframe_exists = $wpdb->get_var("SHOW COLUMNS FROM {$signal_table} LIKE 'timeframe'");
+        if (!$timeframe_exists) {
+            $wpdb->query("ALTER TABLE {$signal_table} ADD COLUMN timeframe VARCHAR(20) NOT NULL DEFAULT '1D' AFTER symbol");
+            $wpdb->query(
+                "UPDATE {$signal_table} s
+                LEFT JOIN {$rule_table} r ON r.id = s.rule_id
+                SET s.timeframe = COALESCE(NULLIF(r.timeframe, ''), '1D')"
+            );
+        }
+
+        $unique_entry_exists = $wpdb->get_var("SHOW INDEX FROM {$signal_table} WHERE Key_name = 'uniq_rule_symbol_tf_entry'");
+        if (!$unique_entry_exists) {
+            $wpdb->query(
+                "DELETE dup FROM {$signal_table} dup
+                INNER JOIN {$signal_table} keep
+                    ON keep.rule_id = dup.rule_id
+                    AND keep.symbol = dup.symbol
+                    AND keep.timeframe = dup.timeframe
+                    AND keep.entry_time = dup.entry_time
+                    AND keep.id < dup.id"
+            );
+            $wpdb->query("ALTER TABLE {$signal_table} ADD UNIQUE KEY uniq_rule_symbol_tf_entry (rule_id, symbol, timeframe, entry_time)");
         }
     }
 }

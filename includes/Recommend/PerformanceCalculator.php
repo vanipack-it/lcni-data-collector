@@ -23,6 +23,13 @@ class PerformanceCalculator {
     }
 
     public function refresh_rule($rule_id) {
+        $all_signals_total = (int) $this->wpdb->get_var(
+            $this->wpdb->prepare(
+                "SELECT COUNT(*) FROM {$this->signal_table} WHERE rule_id = %d",
+                (int) $rule_id
+            )
+        );
+
         $closed = $this->wpdb->get_results(
             $this->wpdb->prepare(
                 "SELECT final_r, holding_days FROM {$this->signal_table} WHERE rule_id = %d AND status = 'closed' AND final_r IS NOT NULL",
@@ -31,7 +38,7 @@ class PerformanceCalculator {
             ARRAY_A
         );
 
-        $total = count($closed);
+        $closed_total = count($closed);
         $win = 0;
         $lose = 0;
         $sum_r = 0.0;
@@ -57,16 +64,16 @@ class PerformanceCalculator {
             }
         }
 
-        $winrate = $total > 0 ? $win / $total : 0;
-        $avg_r = $total > 0 ? $sum_r / $total : 0;
-        $avg_hold = $total > 0 ? $sum_hold / $total : 0;
+        $winrate = $closed_total > 0 ? $win / $closed_total : 0;
+        $avg_r = $closed_total > 0 ? $sum_r / $closed_total : 0;
+        $avg_hold = $closed_total > 0 ? $sum_hold / $closed_total : 0;
         $avg_win_r = $win > 0 ? $sum_win_r / $win : 0;
         $avg_loss_r = $lose > 0 ? $sum_loss_r / $lose : 0;
         $expectancy = ($winrate * $avg_win_r) - ((1 - $winrate) * $avg_loss_r);
 
         $this->wpdb->replace($this->performance_table, [
             'rule_id' => (int) $rule_id,
-            'total_trades' => (int) $total,
+            'total_trades' => (int) $all_signals_total,
             'win_trades' => (int) $win,
             'lose_trades' => (int) $lose,
             'avg_r' => (float) $avg_r,
