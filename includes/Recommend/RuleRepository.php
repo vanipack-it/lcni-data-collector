@@ -123,7 +123,7 @@ class RuleRepository {
             }
 
             if (!empty($normalized_rules)) {
-                return ['rules' => $normalized_rules];
+                return ['match' => 'AND', 'rules' => $normalized_rules];
             }
         }
 
@@ -155,6 +155,14 @@ class RuleRepository {
             $where[] = 'o.event_time <= %d';
             $params[] = max(0, (int) $end_event_time);
         }
+
+        $condition_match = strtoupper(sanitize_text_field((string) ($conditions['match'] ?? 'AND')));
+        if (!in_array($condition_match, ['AND', 'OR'], true)) {
+            $condition_match = 'AND';
+        }
+
+        $rule_where = [];
+        $rule_params = [];
 
         if (isset($conditions['rules']) && is_array($conditions['rules'])) {
             foreach ($conditions['rules'] as $rule_item) {
@@ -201,35 +209,40 @@ class RuleRepository {
                         continue;
                     }
 
-                    $where[] = $column_ref . ' ' . $operator . ' %f';
-                    $params[] = (float) $raw_value;
+                    $rule_where[] = $column_ref . ' ' . $operator . ' %f';
+                    $rule_params[] = (float) $raw_value;
                     continue;
                 }
 
                 if ($operator === 'contains') {
-                    $where[] = $column_ref . ' LIKE %s';
-                    $params[] = '%' . $this->wpdb->esc_like($raw_value) . '%';
+                    $rule_where[] = $column_ref . ' LIKE %s';
+                    $rule_params[] = '%' . $this->wpdb->esc_like($raw_value) . '%';
                     continue;
                 }
 
                 if ($operator === 'not_contains') {
-                    $where[] = $column_ref . ' NOT LIKE %s';
-                    $params[] = '%' . $this->wpdb->esc_like($raw_value) . '%';
+                    $rule_where[] = $column_ref . ' NOT LIKE %s';
+                    $rule_params[] = '%' . $this->wpdb->esc_like($raw_value) . '%';
                     continue;
                 }
 
                 if (is_numeric($raw_value)) {
-                    $where[] = $column_ref . ' = %f';
-                    $params[] = (float) $raw_value;
+                    $rule_where[] = $column_ref . ' = %f';
+                    $rule_params[] = (float) $raw_value;
                 } else {
-                    $where[] = $column_ref . ' = %s';
-                    $params[] = $raw_value;
+                    $rule_where[] = $column_ref . ' = %s';
+                    $rule_params[] = $raw_value;
                 }
             }
         }
 
+        if (!empty($rule_where)) {
+            $where[] = '(' . implode(' ' . $condition_match . ' ', $rule_where) . ')';
+            $params = array_merge($params, $rule_params);
+        }
+
         foreach ($conditions as $field => $value) {
-            if ($field === 'rules') {
+            if ($field === 'rules' || $field === 'match') {
                 continue;
             }
 
@@ -286,6 +299,22 @@ class RuleRepository {
             }
         }
 
+        $is_window_scan = $start_event_time !== null || $end_event_time !== null;
+
+        if ($is_window_scan) {
+            $sql = "SELECT o.symbol, o.event_time, o.close_price
+                FROM {$ohlc_table} o
+                LEFT JOIN {$symbol_table} s ON s.symbol = o.symbol
+                LEFT JOIN {$mapping_table} m ON m.symbol = o.symbol
+                LEFT JOIN {$icb2_table} i ON i.id_icb2 = m.id_icb2
+                LEFT JOIN {$tongquan_table} t ON t.symbol = o.symbol
+                WHERE " . implode(' AND ', $where) . "
+                ORDER BY o.event_time ASC, o.symbol ASC
+                LIMIT 2000";
+
+            return $this->wpdb->get_results($this->wpdb->prepare($sql, $params), ARRAY_A);
+        }
+
         $sql = "SELECT o.symbol, MAX(o.event_time) AS event_time, MAX(CASE WHEN o.event_time = latest.max_event_time THEN o.close_price END) AS close_price
             FROM {$ohlc_table} o
             LEFT JOIN {$symbol_table} s ON s.symbol = o.symbol
@@ -295,32 +324,15 @@ class RuleRepository {
             INNER JOIN (
                 SELECT symbol, timeframe, MAX(event_time) AS max_event_time
                 FROM {$ohlc_table}
-                WHERE timeframe = %s";
-
-        if ($start_event_time !== null) {
-            $sql .= ' AND event_time >= %d';
-        }
-
-        if ($end_event_time !== null) {
-            $sql .= ' AND event_time <= %d';
-        }
-
-        $sql .= " GROUP BY symbol, timeframe
+                WHERE timeframe = %s
+                GROUP BY symbol, timeframe
             ) latest ON latest.symbol = o.symbol AND latest.timeframe = o.timeframe AND latest.max_event_time = o.event_time
             WHERE " . implode(' AND ', $where) . "
             GROUP BY o.symbol
             ORDER BY o.symbol ASC
             LIMIT 300";
 
-        $params_for_subquery = [$timeframe];
-        if ($start_event_time !== null) {
-            $params_for_subquery[] = max(0, (int) $start_event_time);
-        }
-        if ($end_event_time !== null) {
-            $params_for_subquery[] = max(0, (int) $end_event_time);
-        }
-
-        $params = array_merge($params_for_subquery, $params);
+        $params = array_merge([$timeframe], $params);
 
         return $this->wpdb->get_results($this->wpdb->prepare($sql, $params), ARRAY_A);
     }
@@ -381,7 +393,12 @@ class RuleRepository {
                 ];
             }
 
-            return ['rules' => $normalized_rules];
+            $match = strtoupper(sanitize_text_field((string) ($raw['match'] ?? 'AND')));
+            if (!in_array($match, ['AND', 'OR'], true)) {
+                $match = 'AND';
+            }
+
+            return ['match' => $match, 'rules' => $normalized_rules];
         }
 
         foreach ($raw as $field => $value) {

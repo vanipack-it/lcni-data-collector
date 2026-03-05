@@ -119,3 +119,42 @@ Ví dụ:
 ```text
 [lcni_member_register]
 ```
+
+## 7) Recommend module
+
+### `[lcni_signals]`
+Render bảng danh sách tín hiệu từ Recommend Engine.
+
+Thuộc tính hỗ trợ:
+- `rule_id`: lọc theo rule cụ thể.
+- `status`: lọc trạng thái (`open`/`closed`).
+- `symbol`: lọc theo mã.
+- `limit`: giới hạn số dòng (mặc định `20`).
+
+Ví dụ:
+```text
+[lcni_signals status="open" limit="50"]
+```
+
+### `[lcni_performance]`
+Render bảng hiệu suất theo rule.
+
+Thuộc tính hỗ trợ:
+- `rule_id`: chỉ hiển thị hiệu suất của một rule cụ thể (tuỳ chọn).
+
+Ví dụ:
+```text
+[lcni_performance]
+[lcni_performance rule_id="3"]
+```
+
+### `[lcni_signal]`
+Render card tín hiệu open gần nhất của một mã.
+
+Thuộc tính hỗ trợ:
+- `symbol`: mã cổ phiếu cần xem.
+
+Ví dụ:
+```text
+[lcni_signal symbol="HPG"]
+```

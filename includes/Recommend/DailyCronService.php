@@ -54,13 +54,27 @@ class DailyCronService {
         $this->performance_calculator->refresh_all();
     }
 
-    public function scan_rule_now($rule) {
+    public function scan_rule_now($rule, $scan_from_date = '', $scan_to_date = '') {
         if (!is_array($rule) || (int) ($rule['id'] ?? 0) <= 0) {
             return 0;
         }
 
         $this->signal_repository->prune_invalid_signals();
-        $candidates = $this->scan_rule_candidates_latest($rule);
+        $scan_from = $this->parse_scan_date($scan_from_date, '00:00:00');
+        $scan_to = $this->parse_scan_date($scan_to_date, '23:59:59');
+
+        if ($scan_from !== null || $scan_to !== null) {
+            $start = $scan_from !== null ? $scan_from : 0;
+            $end = $scan_to !== null ? $scan_to : current_time('timestamp');
+
+            if ($start > $end) {
+                [$start, $end] = [$end, $start];
+            }
+
+            $candidates = $this->scan_rule_candidates_by_window($rule, $start, $end);
+        } else {
+            $candidates = $this->scan_rule_candidates_latest($rule);
+        }
 
         $this->rule_repository->update_last_scan_at((int) $rule['id'], current_time('timestamp'));
         $this->rule_repository->log_rule_change((int) $rule['id'], 'manual_scanned', 'Quét thủ công rule từ danh sách.', [
@@ -152,6 +166,31 @@ class DailyCronService {
         }
 
         return $candidates;
+    }
+
+    private function scan_rule_candidates_by_window($rule, $start_event_time, $end_event_time) {
+        $candidates = $this->rule_repository->find_candidate_symbols_by_window($rule, $start_event_time, $end_event_time);
+
+        foreach ($candidates as $candidate) {
+            $this->signal_repository->create_signal($rule, $candidate['symbol'], (int) $candidate['event_time'], (float) $candidate['close_price']);
+        }
+
+        return $candidates;
+    }
+
+    private function parse_scan_date($date, $time_suffix) {
+        $date = sanitize_text_field((string) $date);
+        if ($date === '') {
+            return null;
+        }
+
+        $tz = wp_timezone();
+        $dt = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $date . ' ' . $time_suffix, $tz);
+        if (!$dt) {
+            return null;
+        }
+
+        return $dt->getTimestamp();
     }
 
     private function refresh_open_positions() {

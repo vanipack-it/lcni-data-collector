@@ -220,6 +220,19 @@ class LCNI_Stock_Signals_Shortcodes {
             'rs_recommend_status' => 'Gợi ý trạng thái sức mạnh giá',
         ];
 
+        $global_labels = get_option('lcni_column_labels', []);
+        if (is_array($global_labels)) {
+            foreach ($global_labels as $field => $label) {
+                $field_key = sanitize_key((string) $field);
+                $label_text = sanitize_text_field((string) $label);
+                if ($field_key === '' || $label_text === '') {
+                    continue;
+                }
+
+                $labels[$field_key] = $label_text;
+            }
+        }
+
         if (!isset($wpdb) || !($wpdb instanceof wpdb)) {
             return $labels;
         }
