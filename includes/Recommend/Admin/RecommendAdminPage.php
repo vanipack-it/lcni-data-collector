@@ -673,6 +673,8 @@ class LCNI_Recommend_Admin_Page {
     }
 
     private function render_signals_tab() {
+        $this->daily_cron_service->refresh_open_positions_now();
+
         $table = new LCNI_Recommend_Signals_List_Table($this->signal_repository->list_signals(['limit' => 200]));
         $table->prepare_items();
         $table->display();

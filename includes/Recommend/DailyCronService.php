@@ -73,6 +73,11 @@ class DailyCronService {
         return count($candidates);
     }
 
+    public function refresh_open_positions_now() {
+        $this->refresh_open_positions();
+        $this->performance_calculator->refresh_all();
+    }
+
     public function backfill_rule_history($rule) {
         $apply_from_date = sanitize_text_field((string) ($rule['apply_from_date'] ?? ''));
         if ($apply_from_date === '') {
