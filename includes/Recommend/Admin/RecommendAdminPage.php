@@ -473,9 +473,58 @@ class LCNI_Recommend_Admin_Page {
         })();';
         echo '</script>';
 
-        $table = new LCNI_Recommend_Rules_List_Table($this->rule_repository->all(200));
-        $table->prepare_items();
-        $table->display();
+        $rules = $this->rule_repository->all(200);
+        $this->render_rules_list(is_array($rules) ? $rules : []);
+    }
+
+    private function render_rules_list(array $rules) {
+        echo '<hr style="margin:24px 0 16px;" />';
+        echo '<h2>Created Rules</h2>';
+
+        if (empty($rules)) {
+            echo '<p><em>Chưa có rule nào được tạo.</em></p>';
+            return;
+        }
+
+        echo '<p>Tổng số rule: <strong>' . esc_html((string) count($rules)) . '</strong></p>';
+        echo '<table class="widefat striped">';
+        echo '<thead><tr>';
+        echo '<th>ID</th>';
+        echo '<th>Name</th>';
+        echo '<th>Timeframe</th>';
+        echo '<th>Description</th>';
+        echo '<th>Entry Conditions</th>';
+        echo '<th>Initial SL %</th>';
+        echo '<th>Risk Reward</th>';
+        echo '<th>Add at R</th>';
+        echo '<th>Exit at R</th>';
+        echo '<th>Max Hold</th>';
+        echo '<th>Active</th>';
+        echo '<th>Created At</th>';
+        echo '<th>Updated At</th>';
+        echo '</tr></thead>';
+        echo '<tbody>';
+
+        foreach ($rules as $rule) {
+            echo '<tr>';
+            echo '<td>' . esc_html((string) ($rule['id'] ?? '')) . '</td>';
+            echo '<td>' . esc_html((string) ($rule['name'] ?? '')) . '</td>';
+            echo '<td>' . esc_html((string) ($rule['timeframe'] ?? '')) . '</td>';
+            echo '<td>' . esc_html((string) ($rule['description'] ?? '')) . '</td>';
+            echo '<td><code>' . esc_html((string) ($rule['entry_conditions'] ?? '{}')) . '</code></td>';
+            echo '<td>' . esc_html((string) ($rule['initial_sl_pct'] ?? '')) . '</td>';
+            echo '<td>' . esc_html((string) ($rule['risk_reward'] ?? '')) . '</td>';
+            echo '<td>' . esc_html((string) ($rule['add_at_r'] ?? '')) . '</td>';
+            echo '<td>' . esc_html((string) ($rule['exit_at_r'] ?? '')) . '</td>';
+            echo '<td>' . esc_html((string) ($rule['max_hold_days'] ?? '')) . '</td>';
+            echo '<td>' . (!empty($rule['is_active']) ? '1' : '0') . '</td>';
+            echo '<td>' . esc_html((string) ($rule['created_at'] ?? '')) . '</td>';
+            echo '<td>' . esc_html((string) ($rule['updated_at'] ?? '')) . '</td>';
+            echo '</tr>';
+        }
+
+        echo '</tbody>';
+        echo '</table>';
     }
 
     public function ajax_distinct_values() {
