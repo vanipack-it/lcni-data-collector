@@ -117,8 +117,37 @@ class LCNI_Recommend_Admin_Page {
 
         add_action('admin_menu', [$this, 'register_menu']);
         add_action('admin_init', [$this, 'handle_actions']);
+        add_action('admin_enqueue_scripts', [$this, 'enqueue_assets']);
         add_action('wp_ajax_lcni_recommend_distinct_values', [$this, 'ajax_distinct_values']);
         add_action('wp_ajax_lcni_recommend_table_columns', [$this, 'ajax_table_columns']);
+    }
+
+    public function enqueue_assets($hook) {
+        if ($hook !== 'lcni-settings_page_lcni-recommend') {
+            return;
+        }
+
+        $table_sources = $this->get_builder_table_sources();
+        $columns_map = [];
+
+        foreach ($table_sources as $real_table => $display_table) {
+            $columns_map[$real_table] = $this->get_table_columns_for_builder($real_table);
+        }
+
+        wp_enqueue_script(
+            'lcni-recommend-builder',
+            LCNI_URL . 'assets/js/recommend-builder.js',
+            [],
+            '1.0.0',
+            true
+        );
+
+        wp_localize_script('lcni-recommend-builder', 'LCNI_RECOMMEND', [
+            'columnsMap' => $columns_map,
+            'ajaxUrl' => admin_url('admin-ajax.php'),
+            'nonceDistinct' => wp_create_nonce('lcni_recommend_distinct_values'),
+            'nonceColumns' => wp_create_nonce('lcni_recommend_table_columns'),
+        ]);
     }
 
     public function register_menu() {
@@ -245,13 +274,6 @@ class LCNI_Recommend_Admin_Page {
     }
 
     private function render_rules_tab() {
-        $table_sources = $this->get_builder_table_sources();
-        $columns_map = [];
-
-        foreach ($table_sources as $real_table => $display_table) {
-            $columns_map[$real_table] = $this->get_table_columns_for_builder($real_table);
-        }
-
         echo '<style>
             .lcni-recommend-builder-grid{display:grid;grid-template-columns:1fr 2fr;gap:12px;margin-top:12px}
             .lcni-recommend-panel{background:#fff;border:1px solid #dcdcde;padding:12px;min-height:380px}
@@ -298,169 +320,6 @@ class LCNI_Recommend_Admin_Page {
 
         submit_button('Save Rule');
         echo '</form>';
-
-        echo '<script>';
-        echo 'window.lcniRecommendColumnsMap=' . wp_json_encode($columns_map) . ';';
-        echo 'window.lcniRecommendDistinctValuesNonce=' . wp_create_nonce('lcni_recommend_distinct_values') . ';';
-        echo 'window.lcniRecommendColumnsNonce=' . wp_create_nonce('lcni_recommend_table_columns') . ';';
-        echo 'window.lcniRecommendAjaxUrl=' . wp_json_encode(admin_url('admin-ajax.php')) . ';';
-        echo '(function(){
-            function initRecommendConditionBuilder(){
-                const columnsMap=window.lcniRecommendColumnsMap||{};
-                const jsonField=document.getElementById("lcni_recommend_entry_conditions");
-                const conditionsHost=document.getElementById("lcni-recommend-conditions");
-                const addButton=document.getElementById("lcni-recommend-add-condition");
-                const operators=["=","!=",">",">=","<","<=","contains","not_contains"];
-                const conditions=[];
-
-                if(!jsonField || !conditionsHost || !addButton){
-                    return false;
-                }
-
-                if(addButton.dataset.builderReady === "1"){
-                    return true;
-                }
-
-                addButton.dataset.builderReady = "1";
-
-                function makeSelect(options, selected){
-                    const select=document.createElement("select");
-                    select.className="regular-text";
-                    options.forEach((value)=>{
-                        const option=document.createElement("option");
-                        option.value=value;
-                        option.textContent=value;
-                        if(value===selected){ option.selected=true; }
-                        select.appendChild(option);
-                    });
-                    return select;
-                }
-
-                function syncJson(){
-                    const normalized=conditions
-                        .map((item)=>({
-                            table:String(item.table||""),
-                            field:String(item.field||""),
-                            operator:String(item.operator||"="),
-                            value:String(item.value||"")
-                        }))
-                        .filter((item)=>item.table && item.field && item.value!=="");
-
-                    jsonField.value=JSON.stringify({ logic:"AND", conditions:normalized }, null, 2);
-                }
-
-                function render(){
-                    conditionsHost.innerHTML="";
-                    if(!conditions.length){
-                        const empty=document.createElement("em");
-                        empty.textContent="Chưa có điều kiện. Bấm Add condition để tạo điều kiện entry.";
-                        conditionsHost.appendChild(empty);
-                        syncJson();
-                        return;
-                    }
-
-                    const tables=Object.keys(columnsMap);
-
-                    conditions.forEach((condition, index)=>{
-                        const row=document.createElement("div");
-                        row.className="lcni-recommend-condition-item";
-
-                        const tableSelect=makeSelect(tables, condition.table);
-                        tableSelect.addEventListener("change",()=>{
-                            condition.table=tableSelect.value;
-                            condition.field="";
-                            render();
-                        });
-                        row.appendChild(tableSelect);
-
-                        const fieldSelect=document.createElement("select");
-                        fieldSelect.className="regular-text";
-                        fieldSelect.innerHTML="<option value=\"\">Select field</option>";
-                        const columns=columnsMap[condition.table]||[];
-                        columns.forEach((column)=>{
-                            const option=document.createElement("option");
-                            option.value=column.field;
-                            option.textContent=column.field;
-                            if(column.field===condition.field){ option.selected=true; }
-                            fieldSelect.appendChild(option);
-                        });
-                        fieldSelect.addEventListener("change",()=>{
-                            condition.field=fieldSelect.value;
-                            syncJson();
-                        });
-                        row.appendChild(fieldSelect);
-
-                        const operatorSelect=makeSelect(operators, condition.operator);
-                        operatorSelect.className="small-text";
-                        operatorSelect.addEventListener("change",()=>{
-                            condition.operator=operatorSelect.value;
-                            syncJson();
-                        });
-                        row.appendChild(operatorSelect);
-
-                        const valueInput=document.createElement("input");
-                        valueInput.type="text";
-                        valueInput.className="regular-text";
-                        valueInput.placeholder="Compare value";
-                        valueInput.value=condition.value;
-                        valueInput.addEventListener("input",()=>{
-                            condition.value=valueInput.value;
-                            syncJson();
-                        });
-                        row.appendChild(valueInput);
-
-                        const remove=document.createElement("button");
-                        remove.type="button";
-                        remove.className="button-link-delete";
-                        remove.textContent="Xóa";
-                        remove.addEventListener("click",()=>{
-                            conditions.splice(index,1);
-                            render();
-                        });
-                        row.appendChild(remove);
-
-                        conditionsHost.appendChild(row);
-                    });
-
-                    syncJson();
-                }
-
-                addButton.addEventListener("click",()=>{
-                    const firstTable=Object.keys(columnsMap)[0]||"";
-                    conditions.push({ table:firstTable, field:"", operator:"=", value:"" });
-                    render();
-                });
-
-                if(!conditions.length){
-                    const firstTable=Object.keys(columnsMap)[0]||"";
-                    conditions.push({ table:firstTable, field:"", operator:"=", value:"" });
-                }
-                render();
-
-                return true;
-            }
-
-            function bootRecommendConditionBuilder(attempt){
-                const initialized = initRecommendConditionBuilder();
-                if(initialized || attempt >= 10){
-                    return;
-                }
-
-                window.setTimeout(function(){
-                    bootRecommendConditionBuilder(attempt + 1);
-                }, 100);
-            }
-
-            if(document.readyState === "loading"){
-                document.addEventListener("DOMContentLoaded", function(){
-                    bootRecommendConditionBuilder(0);
-                });
-                return;
-            }
-
-            bootRecommendConditionBuilder(0);
-        })();';
-        echo '</script>';
 
         $table = new LCNI_Recommend_Rules_List_Table($this->rule_repository->all(200));
         $table->prepare_items();
