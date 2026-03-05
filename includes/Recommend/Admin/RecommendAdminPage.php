@@ -386,10 +386,9 @@ class LCNI_Recommend_Admin_Page {
 
         echo '<div class="lcni-recommend-panel">';
         echo '<h3>Điều kiện kích hoạt</h3>';
-        echo '<p class="lcni-recommend-rules-help">Tạo nhiều rule với 3 cột: <strong>Field</strong>, <strong>Điều kiện</strong>, <strong>Giá trị so sánh</strong>. Có thể chọn chế độ kết hợp <strong>AND</strong> hoặc <strong>OR</strong> cho toàn bộ rule.</p>';
-        echo '<p><label>Kết hợp rule: <select id="lcni_recommend_match_type"><option value="AND">AND</option><option value="OR">OR</option></select></label></p>';
+        echo '<p class="lcni-recommend-rules-help">Tạo nhiều rule với 3 cột: <strong>Field</strong>, <strong>Điều kiện</strong>, <strong>Giá trị so sánh</strong>. Mỗi dòng rule có thể chọn <strong>AND/OR</strong> riêng để kết hợp với dòng tiếp theo.</p>';
         echo '<table class="lcni-recommend-rules" id="lcni-recommend-rules-table">';
-        echo '<thead><tr><th>Cột 1: Field</th><th>Cột 2: Điều kiện</th><th>Cột 3: Giá trị so sánh</th><th></th></tr></thead>';
+        echo '<thead><tr><th>Cột 1: Field</th><th>Cột 2: Điều kiện</th><th>Cột 3: Giá trị so sánh</th><th>Kết hợp với dòng dưới</th><th></th></tr></thead>';
         echo '<tbody id="lcni-recommend-rules-body"></tbody>';
         echo '</table>';
         echo '<p><button type="button" class="button" id="lcni-recommend-add-rule">+ Thêm rule</button></p>';
@@ -425,14 +424,26 @@ class LCNI_Recommend_Admin_Page {
                 });
             });
 
-            const matchTypeSelect=document.getElementById("lcni_recommend_match_type");
-
             function syncJson(){
                 const validRows=rows.filter((row)=>row.field!=="" && row.value!=="");
-                jsonField.value=JSON.stringify({
-                    match:String(matchTypeSelect.value || "AND").toUpperCase() === "OR" ? "OR" : "AND",
-                    rules:validRows
-                }, null, 2);
+                if (!validRows.length) {
+                    jsonField.value=JSON.stringify({ rules:[] }, null, 2);
+                    return;
+                }
+
+                const normalizedRows=validRows.map((row, index)=>{
+                    const item={
+                        field:row.field,
+                        operator:row.operator,
+                        value:row.value
+                    };
+                    if (index < validRows.length - 1) {
+                        item.join_with_next=row.join_with_next === "OR" ? "OR" : "AND";
+                    }
+                    return item;
+                });
+
+                jsonField.value=JSON.stringify({ rules:normalizedRows }, null, 2);
             }
 
             function buildSelect(options, selectedValue){
@@ -458,26 +469,53 @@ class LCNI_Recommend_Admin_Page {
                     const tr=document.createElement("tr");
 
                     const fieldCell=document.createElement("td");
-                    const fieldSearch=document.createElement("input");
-                    fieldSearch.type="search";
-                    fieldSearch.placeholder="Tìm field...";
-                    fieldSearch.style.marginBottom="6px";
+                    const fieldListId="lcni-recommend-field-options-"+index;
+                    const fieldInput=document.createElement("input");
+                    fieldInput.type="search";
+                    fieldInput.placeholder="Tìm hoặc chọn field...";
+                    fieldInput.setAttribute("list", fieldListId);
+                    fieldInput.value=rule.field || "";
 
-                    const fieldSelect=buildSelect(fieldOptions, rule.field);
-                    fieldSearch.addEventListener("input",()=>{
-                        const keyword=String(fieldSearch.value || "").toLowerCase().trim();
-                        Array.from(fieldSelect.options).forEach((opt, optIndex)=>{
-                            if (optIndex===0) {
-                                opt.hidden=false;
-                                return;
-                            }
-                            const text=String(opt.textContent || "").toLowerCase();
-                            opt.hidden=keyword!=="" && !text.includes(keyword);
-                        });
+                    const fieldDataList=document.createElement("datalist");
+                    fieldDataList.id=fieldListId;
+                    fieldOptions.forEach((item)=>{
+                        const option=document.createElement("option");
+                        option.value=item.value;
+                        option.label=item.label;
+                        fieldDataList.appendChild(option);
                     });
-                    fieldSelect.addEventListener("change",()=>{ rule.field=fieldSelect.value; syncJson(); });
-                    fieldCell.appendChild(fieldSearch);
-                    fieldCell.appendChild(fieldSelect);
+
+                    fieldInput.addEventListener("input",()=>{
+                        const keyword=String(fieldInput.value || "").toLowerCase().trim();
+                        if (keyword === "") {
+                            fieldDataList.innerHTML="";
+                            fieldOptions.forEach((item)=>{
+                                const option=document.createElement("option");
+                                option.value=item.value;
+                                option.label=item.label;
+                                fieldDataList.appendChild(option);
+                            });
+                            rule.field="";
+                            syncJson();
+                            return;
+                        }
+
+                        const filtered=fieldOptions.filter((item)=>String(item.label || "").toLowerCase().includes(keyword));
+                        fieldDataList.innerHTML="";
+                        filtered.forEach((item)=>{
+                            const option=document.createElement("option");
+                            option.value=item.value;
+                            option.label=item.label;
+                            fieldDataList.appendChild(option);
+                        });
+
+                        const selected=fieldOptions.find((item)=>item.value===fieldInput.value);
+                        rule.field=selected ? selected.value : "";
+                        syncJson();
+                    });
+
+                    fieldCell.appendChild(fieldInput);
+                    fieldCell.appendChild(fieldDataList);
 
                     const operatorCell=document.createElement("td");
                     const operatorSelect=buildSelect(operators.map((op)=>({ value:op, label:op })), rule.operator || "=");
@@ -491,6 +529,18 @@ class LCNI_Recommend_Admin_Page {
                     valueInput.placeholder="Nhập giá trị so sánh";
                     valueInput.addEventListener("input",()=>{ rule.value=valueInput.value.trim(); syncJson(); });
                     valueCell.appendChild(valueInput);
+
+                    const joinCell=document.createElement("td");
+                    if (index < rows.length - 1) {
+                        const joinSelect=buildSelect([{ value:"AND", label:"AND" }, { value:"OR", label:"OR" }], rule.join_with_next || "AND");
+                        joinSelect.addEventListener("change",()=>{
+                            rule.join_with_next=joinSelect.value === "OR" ? "OR" : "AND";
+                            syncJson();
+                        });
+                        joinCell.appendChild(joinSelect);
+                    } else {
+                        joinCell.textContent="-";
+                    }
 
                     const actionCell=document.createElement("td");
                     const removeButton=document.createElement("button");
@@ -508,6 +558,7 @@ class LCNI_Recommend_Admin_Page {
                     tr.appendChild(fieldCell);
                     tr.appendChild(operatorCell);
                     tr.appendChild(valueCell);
+                    tr.appendChild(joinCell);
                     tr.appendChild(actionCell);
                     tableBody.appendChild(tr);
                 });
@@ -519,24 +570,24 @@ class LCNI_Recommend_Admin_Page {
                 rows.push({
                     field:(initialRule && initialRule.field) || "",
                     operator:(initialRule && initialRule.operator) || "=",
-                    value:(initialRule && initialRule.value) || ""
+                    value:(initialRule && initialRule.value) || "",
+                    join_with_next:(initialRule && initialRule.join_with_next) === "OR" ? "OR" : "AND"
                 });
                 renderRows();
             }
 
             addRuleButton.addEventListener("click",()=>addRule());
-            matchTypeSelect.addEventListener("change",syncJson);
 
             try {
                 const parsed=JSON.parse(jsonField.value || "{}");
-                const matchType=String(parsed && parsed.match ? parsed.match : "AND").toUpperCase();
-                matchTypeSelect.value=matchType === "OR" ? "OR" : "AND";
                 if (parsed && Array.isArray(parsed.rules) && parsed.rules.length) {
+                    const legacyMatch=String(parsed.match || "AND").toUpperCase() === "OR" ? "OR" : "AND";
                     parsed.rules.forEach((rule)=>{
                         addRule({
                             field:String(rule.field || ""),
                             operator:String(rule.operator || "="),
-                            value:String(rule.value || "")
+                            value:String(rule.value || ""),
+                            join_with_next:String(rule.join_with_next || rule.join || legacyMatch || "AND").toUpperCase() === "OR" ? "OR" : "AND"
                         });
                     });
                 } else {

@@ -163,6 +163,7 @@ class RuleRepository {
 
         $rule_where = [];
         $rule_params = [];
+        $rule_joins = [];
 
         if (isset($conditions['rules']) && is_array($conditions['rules'])) {
             foreach ($conditions['rules'] as $rule_item) {
@@ -203,41 +204,56 @@ class RuleRepository {
                 }
 
                 $column_ref = $alias_map[$table_key] . '.`' . $column_key . '`';
+                $clause = '';
+                $clause_param = null;
 
                 if ($operator === '>' || $operator === '<') {
                     if (!is_numeric($raw_value)) {
                         continue;
                     }
 
-                    $rule_where[] = $column_ref . ' ' . $operator . ' %f';
-                    $rule_params[] = (float) $raw_value;
-                    continue;
-                }
-
-                if ($operator === 'contains') {
-                    $rule_where[] = $column_ref . ' LIKE %s';
-                    $rule_params[] = '%' . $this->wpdb->esc_like($raw_value) . '%';
-                    continue;
-                }
-
-                if ($operator === 'not_contains') {
-                    $rule_where[] = $column_ref . ' NOT LIKE %s';
-                    $rule_params[] = '%' . $this->wpdb->esc_like($raw_value) . '%';
-                    continue;
-                }
-
-                if (is_numeric($raw_value)) {
-                    $rule_where[] = $column_ref . ' = %f';
-                    $rule_params[] = (float) $raw_value;
+                    $clause = $column_ref . ' ' . $operator . ' %f';
+                    $clause_param = (float) $raw_value;
+                } elseif ($operator === 'contains') {
+                    $clause = $column_ref . ' LIKE %s';
+                    $clause_param = '%' . $this->wpdb->esc_like($raw_value) . '%';
+                } elseif ($operator === 'not_contains') {
+                    $clause = $column_ref . ' NOT LIKE %s';
+                    $clause_param = '%' . $this->wpdb->esc_like($raw_value) . '%';
+                } elseif (is_numeric($raw_value)) {
+                    $clause = $column_ref . ' = %f';
+                    $clause_param = (float) $raw_value;
                 } else {
-                    $rule_where[] = $column_ref . ' = %s';
-                    $rule_params[] = $raw_value;
+                    $clause = $column_ref . ' = %s';
+                    $clause_param = $raw_value;
                 }
+
+                if ($clause === '') {
+                    continue;
+                }
+
+                $join_with_next = strtoupper(sanitize_text_field((string) ($rule_item['join_with_next'] ?? $rule_item['join'] ?? $condition_match)));
+                if (!in_array($join_with_next, ['AND', 'OR'], true)) {
+                    $join_with_next = 'AND';
+                }
+
+                $rule_where[] = $clause;
+                $rule_params[] = $clause_param;
+                $rule_joins[] = $join_with_next;
             }
         }
 
         if (!empty($rule_where)) {
-            $where[] = '(' . implode(' ' . $condition_match . ' ', $rule_where) . ')';
+            $combined_rule_sql = $rule_where[0];
+            for ($rule_index = 1; $rule_index < count($rule_where); $rule_index++) {
+                $join_operator = $rule_joins[$rule_index - 1] ?? 'AND';
+                if (!in_array($join_operator, ['AND', 'OR'], true)) {
+                    $join_operator = 'AND';
+                }
+                $combined_rule_sql .= ' ' . $join_operator . ' ' . $rule_where[$rule_index];
+            }
+
+            $where[] = '(' . $combined_rule_sql . ')';
             $params = array_merge($params, $rule_params);
         }
 
@@ -386,11 +402,22 @@ class RuleRepository {
                     $operator = '=';
                 }
 
-                $normalized_rules[] = [
+                $join_with_next = strtoupper(sanitize_text_field((string) ($rule['join_with_next'] ?? $rule['join'] ?? 'AND')));
+                if (!in_array($join_with_next, ['AND', 'OR'], true)) {
+                    $join_with_next = 'AND';
+                }
+
+                $normalized_rule = [
                     'field' => $field,
                     'operator' => $operator,
                     'value' => $value,
                 ];
+
+                if (array_key_exists('join_with_next', $rule) || array_key_exists('join', $rule)) {
+                    $normalized_rule['join_with_next'] = $join_with_next;
+                }
+
+                $normalized_rules[] = $normalized_rule;
             }
 
             $match = strtoupper(sanitize_text_field((string) ($raw['match'] ?? 'AND')));
