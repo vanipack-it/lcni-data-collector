@@ -1,3 +1,9 @@
+## 2026-03-05 12:05 (v5.4.5)
+- Nâng version plugin lên `5.4.5`.
+- Chart Builder: thêm template mới `Mini Line Charts (Sparkline)` cho phép hiển thị nhiều mini line chart trên ma trận (theo mapping X/Y + series).
+- Frontend chart builder: bổ sung nhánh render `mini_line_sparkline` dùng matrix sparkline, hỗ trợ zoom slider + inside để theo dõi đồng thời nhiều mã cổ phiếu/nhóm ngành.
+- Admin preview chart builder: bổ sung preview riêng cho template `mini_line_sparkline` để kiểm tra nhanh trước khi lưu.
+
 ## 2026-03-05 11:20 (v5.4.4)
 - Nâng version plugin lên `5.4.4`.
 - `LCNi Recommend -> Tạo Rule`: bỏ chức năng kéo-thả khi tạo điều kiện Entry.
