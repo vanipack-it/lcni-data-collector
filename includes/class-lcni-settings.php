@@ -2958,7 +2958,35 @@ private function sanitize_module_title($value, $fallback) {
             $labels[$field] = ucwords(str_replace('_', ' ', $field));
         }
 
-        return $labels;
+        return $this->apply_global_column_labels($labels);
+    }
+
+    private function apply_global_column_labels($labels) {
+        $mapped_labels = is_array($labels) ? $labels : [];
+        $configured = get_option('lcni_column_labels', []);
+
+        if (!is_array($configured)) {
+            return $mapped_labels;
+        }
+
+        foreach ($configured as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $data_key = sanitize_key($item['data_key'] ?? '');
+            $label = sanitize_text_field((string) ($item['label'] ?? ''));
+
+            if ($data_key === '' || $label === '') {
+                continue;
+            }
+
+            if (array_key_exists($data_key, $mapped_labels)) {
+                $mapped_labels[$data_key] = $label;
+            }
+        }
+
+        return $mapped_labels;
     }
 
     private function render_frontend_settings_section() {
