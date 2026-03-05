@@ -253,15 +253,18 @@ class LCNI_Recommend_Admin_Page {
         }
 
         echo '<style>
-            .lcni-recommend-builder-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px}
+            .lcni-recommend-builder-grid{display:grid;grid-template-columns:1fr 2fr;gap:12px;margin-top:12px}
             .lcni-recommend-panel{background:#fff;border:1px solid #dcdcde;padding:12px;min-height:380px}
             .lcni-recommend-panel h3{margin-top:0}
             .lcni-recommend-row{display:flex;gap:10px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
-            .lcni-recommend-drop{border:1px dashed #8c8f94;background:#f6f7f7;min-height:120px;padding:8px}
-            .lcni-recommend-columns{max-height:220px;overflow:auto;border:1px solid #dcdcde;padding:6px;background:#fff}
-            .lcni-recommend-pill{display:inline-block;padding:4px 8px;border:1px solid #c3c4c7;border-radius:12px;background:#f0f0f1;cursor:grab;margin:0 6px 6px 0}
-            .lcni-recommend-condition-item{border:1px solid #dcdcde;padding:8px;background:#fff;margin-bottom:8px}
-            .lcni-recommend-condition-item strong{display:block;margin-bottom:6px}
+            .lcni-recommend-conditions-wrap{display:flex;flex-direction:column;gap:8px}
+            .lcni-recommend-condition-item{border:1px solid #dcdcde;padding:8px;background:#fff;display:grid;grid-template-columns:1fr 1fr 120px 1fr auto;gap:8px;align-items:center}
+            .lcni-recommend-condition-item em{grid-column:1/-1}
+            .lcni-recommend-json-hint{margin-top:10px}
+            @media (max-width:1100px){
+                .lcni-recommend-builder-grid{grid-template-columns:1fr}
+                .lcni-recommend-condition-item{grid-template-columns:1fr}
+            }
         </style>';
 
         echo '<form method="post" style="margin:16px 0;">';
@@ -284,20 +287,11 @@ class LCNI_Recommend_Admin_Page {
         echo '</div>';
 
         echo '<div class="lcni-recommend-panel">';
-        echo '<h3>Entry Conditions JSON</h3>';
-        echo '<div id="lcni-recommend-dropzone" class="lcni-recommend-drop"><em>Kéo thả cột từ bên phải vào đây.</em></div>';
-        echo '<p><textarea id="lcni_recommend_entry_conditions" name="entry_conditions" rows="8" class="large-text code">{"is_break_h1m":1,"rs_rank_min":80,"smart_money":1}</textarea></p>';
-        echo '</div>';
-
-        echo '<div class="lcni-recommend-panel">';
-        echo '<h3>Table source (1)</h3>';
-        echo '<p><select id="lcni-recommend-source-table" class="regular-text">';
-        foreach ($table_sources as $real_table => $display_table) {
-            echo '<option value="' . esc_attr($real_table) . '">' . esc_html($display_table) . '</option>';
-        }
-        echo '</select></p>';
-        echo '<h3>Column of table (2)</h3>';
-        echo '<div id="lcni-recommend-columns" class="lcni-recommend-columns"></div>';
+        echo '<h3>Entry Conditions</h3>';
+        echo '<p>Mỗi rule là 1 điều kiện, nhiều rule sẽ kết hợp bằng <strong>AND</strong>.</p>';
+        echo '<div id="lcni-recommend-conditions" class="lcni-recommend-conditions-wrap"></div>';
+        echo '<p><button type="button" class="button" id="lcni-recommend-add-condition">+ Add condition</button></p>';
+        echo '<p class="lcni-recommend-json-hint"><label>Entry Conditions JSON<br><textarea id="lcni_recommend_entry_conditions" name="entry_conditions" rows="10" class="large-text code"></textarea></label></p>';
         echo '</div>';
 
         echo '</div>';
@@ -312,278 +306,125 @@ class LCNI_Recommend_Admin_Page {
         echo 'window.lcniRecommendAjaxUrl=' . wp_json_encode(admin_url('admin-ajax.php')) . ';';
         echo '(function(){
             const columnsMap=window.lcniRecommendColumnsMap||{};
-            const distinctValuesNonce=window.lcniRecommendDistinctValuesNonce||"";
-            const columnsNonce=window.lcniRecommendColumnsNonce||"";
-            const ajaxEndpoint=(typeof window.ajaxurl==="string" && window.ajaxurl) ? window.ajaxurl : (window.lcniRecommendAjaxUrl || "");
-            const source=document.getElementById("lcni-recommend-source-table");
-            const columnsHost=document.getElementById("lcni-recommend-columns");
-            const dropzone=document.getElementById("lcni-recommend-dropzone");
             const jsonField=document.getElementById("lcni_recommend_entry_conditions");
-            const selected=[];
-            const valueCache={};
+            const conditionsHost=document.getElementById("lcni-recommend-conditions");
+            const addButton=document.getElementById("lcni-recommend-add-condition");
+            const operators=["=","!=",">",">=","<","<=","contains","not_contains"];
+            const conditions=[];
 
-            function cacheKey(table, field){
-                return table + "::" + field;
-            }
-
-            function fetchDistinctValues(table, field){
-                const key=cacheKey(table, field);
-                if (valueCache[key]) {
-                    return Promise.resolve(valueCache[key]);
-                }
-
-                const payload=new URLSearchParams({
-                    action:"lcni_recommend_distinct_values",
-                    nonce:distinctValuesNonce,
-                    table:table,
-                    field:field
+            function makeSelect(options, selected){
+                const select=document.createElement("select");
+                select.className="regular-text";
+                options.forEach((value)=>{
+                    const option=document.createElement("option");
+                    option.value=value;
+                    option.textContent=value;
+                    if(value===selected){ option.selected=true; }
+                    select.appendChild(option);
                 });
-
-                return fetch(ajaxEndpoint, {
-                    method:"POST",
-                    credentials:"same-origin",
-                    headers:{ "Content-Type":"application/x-www-form-urlencoded;charset=UTF-8" },
-                    body:payload.toString()
-                })
-                .then((res)=>res.json())
-                .then((res)=>{
-                    if (!res || !res.success || !Array.isArray(res.data)) {
-                        return [];
-                    }
-                    valueCache[key]=res.data;
-                    return res.data;
-                })
-                .catch(()=>[]);
-            }
-
-            function fetchTableColumns(table){
-                const payload=new URLSearchParams({
-                    action:"lcni_recommend_table_columns",
-                    nonce:columnsNonce,
-                    table:table
-                });
-
-                return fetch(ajaxEndpoint, {
-                    method:"POST",
-                    credentials:"same-origin",
-                    headers:{ "Content-Type":"application/x-www-form-urlencoded;charset=UTF-8" },
-                    body:payload.toString()
-                })
-                .then((res)=>res.json())
-                .then((res)=>{
-                    if (!res || !res.success || !Array.isArray(res.data)) {
-                        return { columns:[], error:(res && res.data && res.data.message) ? String(res.data.message) : "" };
-                    }
-                    return { columns:res.data, error:"" };
-                })
-                .catch(()=>({ columns:[], error:"Không thể tải danh sách cột từ máy chủ." }));
-            }
-
-            function normalizeColumns(cols){
-                if(Array.isArray(cols)){
-                    return cols;
-                }
-
-                if(!cols || typeof cols!=="object"){
-                    return [];
-                }
-
-                return Object.keys(cols).map((key)=>cols[key]).filter((item)=>item && typeof item==="object");
-            }
-
-            function renderColumns(cols, errorMessage){
-                const activeTable=source.value;
-                const normalizedCols=normalizeColumns(cols);
-                columnsHost.innerHTML="";
-                normalizedCols.forEach((col)=>{
-                    const payload={
-                        field:String(col.field||""),
-                        is_numeric:!!col.is_numeric,
-                        table:String(col.table||activeTable||"")
-                    };
-                    if(!payload.field){
-                        return;
-                    }
-
-                    const item=document.createElement("span");
-                    item.className="lcni-recommend-pill";
-                    item.draggable=true;
-                    item.textContent=payload.field + (payload.is_numeric ? " (number)" : " (text)");
-                    item.dataset.payload=JSON.stringify(payload);
-                    item.addEventListener("dragstart",(e)=>{ e.dataTransfer.setData("text/plain", item.dataset.payload || ""); });
-                    columnsHost.appendChild(item);
-                });
-
-                if(!normalizedCols.length){
-                    const defaultText="Không tìm thấy cột khả dụng cho bảng đã chọn.";
-                    columnsHost.innerHTML="<em>" + (errorMessage || defaultText) + "</em>";
-                }
-            }
-
-            function loadColumns(){
-                const table=source.value;
-                const cachedCols=normalizeColumns(columnsMap[table]||[]);
-                if (cachedCols.length) {
-                    renderColumns(cachedCols);
-                } else {
-                    columnsHost.innerHTML="<em>Đang tải cột...</em>";
-                }
-
-                fetchTableColumns(table).then((result)=>{
-                    const latestCols=normalizeColumns(result.columns);
-                    if (latestCols.length) {
-                        columnsMap[table]=latestCols;
-                        renderColumns(latestCols, result.error);
-                        return;
-                    }
-
-                    if (cachedCols.length) {
-                        renderColumns(cachedCols, result.error || "Không thể đồng bộ cột mới nhất, đang dùng danh sách cột đã tải trước đó.");
-                        return;
-                    }
-
-                    renderColumns([], result.error);
-                });
+                return select;
             }
 
             function syncJson(){
-                const payload={};
-                selected.forEach((cond)=>{
-                    if(cond.is_numeric){
-                        if(cond.min!=="") payload[cond.field+"_min"]=Number(cond.min);
-                        if(cond.max!=="") payload[cond.field+"_max"]=Number(cond.max);
-                    } else {
-                        const values=(cond.selectedValues||[]).filter((value)=>value!=="");
-                        if(values.length){
-                            payload[cond.field]=values;
-                        }
-                    }
-                });
-                jsonField.value=JSON.stringify(payload, null, 2);
+                const normalized=conditions
+                    .map((item)=>({
+                        table:String(item.table||""),
+                        field:String(item.field||""),
+                        operator:String(item.operator||"="),
+                        value:String(item.value||"")
+                    }))
+                    .filter((item)=>item.table && item.field && item.value!=="");
+
+                jsonField.value=JSON.stringify({ logic:"AND", conditions:normalized }, null, 2);
             }
 
-            function renderSelected(){
-                dropzone.innerHTML="";
-                if(!selected.length){
-                    dropzone.innerHTML="<em>Kéo thả cột từ bên phải vào đây.</em>";
+            function render(){
+                conditionsHost.innerHTML="";
+                if(!conditions.length){
+                    const empty=document.createElement("em");
+                    empty.textContent="Chưa có điều kiện. Bấm Add condition để tạo điều kiện entry.";
+                    conditionsHost.appendChild(empty);
                     syncJson();
                     return;
                 }
 
-                selected.forEach((cond,idx)=>{
+                const tables=Object.keys(columnsMap);
+
+                conditions.forEach((condition, index)=>{
                     const row=document.createElement("div");
                     row.className="lcni-recommend-condition-item";
-                    const title=document.createElement("strong");
-                    title.textContent=cond.field;
-                    row.appendChild(title);
 
-                    if(cond.is_numeric){
-                        const min=document.createElement("input");
-                        min.type="number";
-                        min.step="any";
-                        min.placeholder="Min";
-                        min.value=cond.min;
-                        min.addEventListener("input",()=>{ cond.min=min.value; syncJson(); });
+                    const tableSelect=makeSelect(tables, condition.table);
+                    tableSelect.addEventListener("change",()=>{
+                        condition.table=tableSelect.value;
+                        condition.field="";
+                        render();
+                    });
+                    row.appendChild(tableSelect);
 
-                        const max=document.createElement("input");
-                        max.type="number";
-                        max.step="any";
-                        max.placeholder="Max";
-                        max.value=cond.max;
-                        max.style.marginLeft="8px";
-                        max.addEventListener("input",()=>{ cond.max=max.value; syncJson(); });
+                    const fieldSelect=document.createElement("select");
+                    fieldSelect.className="regular-text";
+                    fieldSelect.innerHTML="<option value=\"\">Select field</option>";
+                    const columns=columnsMap[condition.table]||[];
+                    columns.forEach((column)=>{
+                        const option=document.createElement("option");
+                        option.value=column.field;
+                        option.textContent=column.field;
+                        if(column.field===condition.field){ option.selected=true; }
+                        fieldSelect.appendChild(option);
+                    });
+                    fieldSelect.addEventListener("change",()=>{
+                        condition.field=fieldSelect.value;
+                        syncJson();
+                    });
+                    row.appendChild(fieldSelect);
 
-                        row.appendChild(min);
-                        row.appendChild(max);
-                    } else {
-                        const valueWrap=document.createElement("div");
-                        valueWrap.style.marginTop="6px";
+                    const operatorSelect=makeSelect(operators, condition.operator);
+                    operatorSelect.className="small-text";
+                    operatorSelect.addEventListener("change",()=>{
+                        condition.operator=operatorSelect.value;
+                        syncJson();
+                    });
+                    row.appendChild(operatorSelect);
 
-                        const loading=document.createElement("em");
-                        loading.textContent="Đang tải danh sách value...";
-                        valueWrap.appendChild(loading);
-                        row.appendChild(valueWrap);
-
-                        fetchDistinctValues(cond.table, cond.field).then((values)=>{
-                            valueWrap.innerHTML="";
-
-                            if(!values.length){
-                                const empty=document.createElement("em");
-                                empty.textContent="Không có value text để chọn.";
-                                valueWrap.appendChild(empty);
-                                return;
-                            }
-
-                            values.forEach((itemValue)=>{
-                                const option=document.createElement("label");
-                                option.style.display="block";
-
-                                const checkbox=document.createElement("input");
-                                checkbox.type="checkbox";
-                                checkbox.value=itemValue;
-                                checkbox.checked=(cond.selectedValues||[]).includes(itemValue);
-                                checkbox.addEventListener("change",()=>{
-                                    const picked=new Set(cond.selectedValues||[]);
-                                    if(checkbox.checked){
-                                        picked.add(itemValue);
-                                    } else {
-                                        picked.delete(itemValue);
-                                    }
-                                    cond.selectedValues=Array.from(picked);
-                                    syncJson();
-                                });
-
-                                const text=document.createElement("span");
-                                text.style.marginLeft="6px";
-                                text.textContent=itemValue;
-
-                                option.appendChild(checkbox);
-                                option.appendChild(text);
-                                valueWrap.appendChild(option);
-                            });
-                        });
-                    }
+                    const valueInput=document.createElement("input");
+                    valueInput.type="text";
+                    valueInput.className="regular-text";
+                    valueInput.placeholder="Compare value";
+                    valueInput.value=condition.value;
+                    valueInput.addEventListener("input",()=>{
+                        condition.value=valueInput.value;
+                        syncJson();
+                    });
+                    row.appendChild(valueInput);
 
                     const remove=document.createElement("button");
                     remove.type="button";
                     remove.className="button-link-delete";
-                    remove.style.marginLeft="8px";
                     remove.textContent="Xóa";
-                    remove.addEventListener("click",()=>{ selected.splice(idx,1); renderSelected(); });
+                    remove.addEventListener("click",()=>{
+                        conditions.splice(index,1);
+                        render();
+                    });
                     row.appendChild(remove);
 
-                    dropzone.appendChild(row);
+                    conditionsHost.appendChild(row);
                 });
 
                 syncJson();
             }
 
-            dropzone.addEventListener("dragover",(e)=>e.preventDefault());
-            dropzone.addEventListener("drop",(e)=>{
-                e.preventDefault();
-                const raw=e.dataTransfer.getData("text/plain");
-                if(!raw){ return; }
-                try {
-                    const col=JSON.parse(raw);
-                    const droppedField=String(col.field||"");
-                    const droppedTable=String(col.table||source.value||"");
-                    if(!droppedField || !droppedTable){ return; }
-                    if(selected.some((item)=>item.field===droppedField && item.table===droppedTable)){ return; }
-                    selected.push({
-                        field:droppedField,
-                        table:droppedTable,
-                        is_numeric:!!col.is_numeric,
-                        min:"",
-                        max:"",
-                        selectedValues:[]
-                    });
-                    renderSelected();
-                } catch(err){}
+            addButton.addEventListener("click",()=>{
+                const firstTable=Object.keys(columnsMap)[0]||"";
+                conditions.push({ table:firstTable, field:"", operator:"=", value:"" });
+                render();
             });
 
-            source.addEventListener("change",loadColumns);
-            loadColumns();
-            renderSelected();
+            if(!conditions.length){
+                const firstTable=Object.keys(columnsMap)[0]||"";
+                conditions.push({ table:firstTable, field:"", operator:"=", value:"" });
+            }
+            render();
         })();';
         echo '</script>';
 
