@@ -157,7 +157,7 @@ class RuleRepository {
                     continue;
                 }
 
-                $table_key = sanitize_key((string) $parts[0]);
+                $table_key = $this->normalize_condition_table_key((string) $parts[0]);
                 $column_key = sanitize_key((string) $parts[1]);
 
                 if ($table_key === '' || $column_key === '') {
@@ -371,6 +371,24 @@ class RuleRepository {
         }
 
         return $normalized;
+    }
+
+    private function normalize_condition_table_key($raw_table_key) {
+        $table_key = sanitize_key((string) $raw_table_key);
+        if ($table_key === '') {
+            return '';
+        }
+
+        if (strpos($table_key, 'lcni_') === 0) {
+            return $table_key;
+        }
+
+        $lcni_pos = strpos($table_key, '_lcni_');
+        if ($lcni_pos !== false) {
+            return substr($table_key, $lcni_pos + 1);
+        }
+
+        return $table_key;
     }
 
     private function sanitize_apply_from_date($value) {
