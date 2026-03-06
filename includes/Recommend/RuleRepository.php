@@ -172,7 +172,7 @@ class RuleRepository {
                 }
 
                 $raw_field = sanitize_text_field((string) ($rule_item['field'] ?? ''));
-                $operator = sanitize_key((string) ($rule_item['operator'] ?? '='));
+                $operator = $this->normalize_rule_operator($rule_item['operator'] ?? '=');
                 $raw_value = sanitize_text_field((string) ($rule_item['value'] ?? ''));
 
                 if ($raw_field === '' || $raw_value === '') {
@@ -391,15 +391,11 @@ class RuleRepository {
                 }
 
                 $field = sanitize_text_field((string) ($rule['field'] ?? ''));
-                $operator = sanitize_key((string) ($rule['operator'] ?? '='));
+                $operator = $this->normalize_rule_operator($rule['operator'] ?? '=');
                 $value = sanitize_text_field((string) ($rule['value'] ?? ''));
 
                 if ($field === '' || $value === '') {
                     continue;
-                }
-
-                if (!in_array($operator, ['=', '>', '<', 'contains', 'not_contains'], true)) {
-                    $operator = '=';
                 }
 
                 $join_with_next = strtoupper(sanitize_text_field((string) ($rule['join_with_next'] ?? $rule['join'] ?? 'AND')));
@@ -510,6 +506,30 @@ class RuleRepository {
             'scan_time' => $this->sanitize_scan_time($data['scan_time'] ?? '18:00'),
             'is_active' => !empty($data['is_active']) ? 1 : 0,
         ];
+    }
+
+    private function normalize_rule_operator($raw_operator) {
+        $operator = strtolower(trim(html_entity_decode((string) $raw_operator, ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+
+        $operator_aliases = [
+            'gt' => '>',
+            'lt' => '<',
+            'eq' => '=',
+            'neq' => '!=',
+            'gte' => '>=',
+            'lte' => '<=',
+            '-' => '>',
+        ];
+
+        if (isset($operator_aliases[$operator])) {
+            $operator = $operator_aliases[$operator];
+        }
+
+        if (!in_array($operator, ['=', '>', '<', 'contains', 'not_contains'], true)) {
+            return '=';
+        }
+
+        return $operator;
     }
 
     public function log_rule_change($rule_id, $action, $message, $payload = []) {
