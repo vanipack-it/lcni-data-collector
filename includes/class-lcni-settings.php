@@ -4350,6 +4350,17 @@ private function sanitize_module_title($value, $fallback) {
         $allowed_columns_raw = $normalize_column_keys($input['allowed_columns'] ?? []);
         $allowed_columns = !empty($allowed_columns_raw)
             ? array_values(array_intersect($allowed_keys, $allowed_columns_raw))
+        $allowed_columns_raw = [];
+        if (isset($input['allowed_columns'])) {
+            if (is_array($input['allowed_columns'])) {
+                $allowed_columns_raw = $input['allowed_columns'];
+            } elseif (is_string($input['allowed_columns'])) {
+                $allowed_columns_raw = explode(',', $input['allowed_columns']);
+            }
+        }
+
+        $allowed_columns = !empty($allowed_columns_raw)
+            ? array_values(array_intersect($allowed_keys, array_map('sanitize_key', $allowed_columns_raw)))
             : $default_columns;
 
         if (empty($allowed_columns)) {
@@ -4358,6 +4369,15 @@ private function sanitize_module_title($value, $fallback) {
 
         $column_order_raw = $normalize_column_keys($input['column_order'] ?? []);
         $column_order = array_values(array_filter($column_order_raw, static function ($column) use ($allowed_columns) {
+        $column_order_raw = [];
+        if (isset($input['column_order'])) {
+            if (is_array($input['column_order'])) {
+                $column_order_raw = $input['column_order'];
+            } elseif (is_string($input['column_order'])) {
+                $column_order_raw = explode(',', $input['column_order']);
+            }
+        }
+        $column_order = array_values(array_filter(array_map('sanitize_key', $column_order_raw), static function ($column) use ($allowed_columns) {
             return in_array($column, $allowed_columns, true);
         }));
         foreach ($allowed_columns as $column) {
@@ -4368,6 +4388,7 @@ private function sanitize_module_title($value, $fallback) {
 
         $styles = isset($input['styles']) && is_array($input['styles']) ? $input['styles'] : [];
         $sticky_column = sanitize_key((string) (is_scalar($styles['sticky_column'] ?? null) ? $styles['sticky_column'] : 'signal__symbol'));
+        $sticky_column = sanitize_key((string) ($styles['sticky_column'] ?? 'signal__symbol'));
 
         return [
             'allowed_columns' => $allowed_columns,
