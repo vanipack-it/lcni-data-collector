@@ -4313,21 +4313,38 @@ private function sanitize_module_title($value, $fallback) {
     }
 
     private function sanitize_recommend_signal_settings($input) {
+        $input = is_array($input) ? $input : [];
         $catalog = $this->get_recommend_signal_column_catalog();
         $allowed_keys = array_keys($catalog);
         $default_columns = array_values(array_filter(['signal__symbol', 'rule__name', 'signal__entry_price', 'signal__current_price', 'signal__r_multiple', 'signal__position_state', 'signal__status'], static function ($column) use ($allowed_keys) {
             return in_array($column, $allowed_keys, true);
         }));
 
-        $allowed_columns = isset($input['allowed_columns']) && is_array($input['allowed_columns'])
-            ? array_values(array_intersect($allowed_keys, array_map('sanitize_key', $input['allowed_columns'])))
+        $allowed_columns_raw = [];
+        if (isset($input['allowed_columns'])) {
+            if (is_array($input['allowed_columns'])) {
+                $allowed_columns_raw = $input['allowed_columns'];
+            } elseif (is_string($input['allowed_columns'])) {
+                $allowed_columns_raw = explode(',', $input['allowed_columns']);
+            }
+        }
+
+        $allowed_columns = !empty($allowed_columns_raw)
+            ? array_values(array_intersect($allowed_keys, array_map('sanitize_key', $allowed_columns_raw)))
             : $default_columns;
 
         if (empty($allowed_columns)) {
             $allowed_columns = !empty($default_columns) ? $default_columns : array_slice($allowed_keys, 0, 8);
         }
 
-        $column_order_raw = isset($input['column_order']) && is_array($input['column_order']) ? $input['column_order'] : [];
+        $column_order_raw = [];
+        if (isset($input['column_order'])) {
+            if (is_array($input['column_order'])) {
+                $column_order_raw = $input['column_order'];
+            } elseif (is_string($input['column_order'])) {
+                $column_order_raw = explode(',', $input['column_order']);
+            }
+        }
         $column_order = array_values(array_filter(array_map('sanitize_key', $column_order_raw), static function ($column) use ($allowed_columns) {
             return in_array($column, $allowed_columns, true);
         }));
@@ -4338,6 +4355,7 @@ private function sanitize_module_title($value, $fallback) {
         }
 
         $styles = isset($input['styles']) && is_array($input['styles']) ? $input['styles'] : [];
+        $sticky_column = sanitize_key((string) ($styles['sticky_column'] ?? 'signal__symbol'));
 
         return [
             'allowed_columns' => $allowed_columns,
@@ -4358,7 +4376,7 @@ private function sanitize_module_title($value, $fallback) {
                 'row_divider_width' => max(1, min(6, (int) ($styles['row_divider_width'] ?? 1))),
                 'row_hover_bg' => sanitize_hex_color($styles['row_hover_bg'] ?? '#f3f4f6') ?: '#f3f4f6',
                 'head_height' => max(24, min(120, (int) ($styles['head_height'] ?? 30))),
-                'sticky_column' => in_array(sanitize_key($styles['sticky_column'] ?? 'signal__symbol'), $allowed_columns, true) ? sanitize_key($styles['sticky_column'] ?? 'signal__symbol') : ($allowed_columns[0] ?? 'signal__symbol'),
+                'sticky_column' => in_array($sticky_column, $allowed_columns, true) ? $sticky_column : ($allowed_columns[0] ?? 'signal__symbol'),
                 'sticky_header' => !empty($styles['sticky_header']) ? 1 : 0,
             ],
         ];
@@ -4502,8 +4520,7 @@ private function sanitize_module_title($value, $fallback) {
                         };
 
                         form.querySelectorAll('[data-recommend-signal-columns-checkbox]').forEach((checkbox) => checkbox.addEventListener('change', rebuildSelected));
-                        bindDnD();
-                        syncOrder();
+                        rebuildSelected();
                     }
 
                     activate(url.searchParams.get('recommend_signal_tab') || validTabs[0]);
