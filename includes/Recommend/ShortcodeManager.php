@@ -68,6 +68,9 @@ class ShortcodeManager {
             esc_attr((string) ($styles['border'] ?? '1px solid #e5e7eb')),
             (int) ($styles['border_radius'] ?? 8)
         );
+        if ($sticky_header_enabled) {
+            $wrapper_style .= 'max-height:min(70vh,720px);overscroll-behavior:contain;';
+        }
 
         ob_start();
         echo '<div class="lcni-recommend-signals-table" style="' . $wrapper_style . '">';
