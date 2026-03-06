@@ -2810,7 +2810,7 @@ class LCNI_DB {
     private static function backfill_ohlc_breakout_metrics() {
         global $wpdb;
 
-        $migration_flag = 'lcni_ohlc_breakout_metrics_backfilled_v1';
+        $migration_flag = 'lcni_ohlc_breakout_metrics_backfilled_v2';
         if (get_option($migration_flag) === 'yes') {
             return;
         }
@@ -2907,7 +2907,23 @@ class LCNI_DB {
                         ELSE 'Xa đỉnh'
                     END) = 'Rất gần đỉnh' THEN 1 ELSE 0 END)
                 )
-            WHERE UPPER(symbol_type) = 'STOCK'"
+            WHERE UPPER(symbol_type) = 'STOCK'
+                AND (
+                    pct_to_h1m IS NULL
+                    OR pct_to_h3m IS NULL
+                    OR pct_to_h6m IS NULL
+                    OR pct_to_h1y IS NULL
+                    OR trang_thai_h1m IS NULL
+                    OR trang_thai_h3m IS NULL
+                    OR trang_thai_h6m IS NULL
+                    OR trang_thai_h1y IS NULL
+                    OR compression_1m IS NULL
+                    OR position_1m IS NULL
+                    OR position_3m IS NULL
+                    OR position_6m IS NULL
+                    OR position_1y IS NULL
+                    OR breakout_potential_score IS NULL
+                )"
         );
 
         if ($updated_rows > 0) {
@@ -4648,6 +4664,20 @@ class LCNI_DB {
                     OR latest.hanh_vi_gia IS NULL
                     OR latest.hanh_vi_gia_1w IS NULL
                     OR latest.one_candle IS NULL
+                    OR latest.pct_to_h1m IS NULL
+                    OR latest.pct_to_h3m IS NULL
+                    OR latest.pct_to_h6m IS NULL
+                    OR latest.pct_to_h1y IS NULL
+                    OR latest.trang_thai_h1m IS NULL
+                    OR latest.trang_thai_h3m IS NULL
+                    OR latest.trang_thai_h6m IS NULL
+                    OR latest.trang_thai_h1y IS NULL
+                    OR latest.compression_1m IS NULL
+                    OR latest.position_1m IS NULL
+                    OR latest.position_3m IS NULL
+                    OR latest.position_6m IS NULL
+                    OR latest.position_1y IS NULL
+                    OR latest.breakout_potential_score IS NULL
                     OR latest.rs_exchange_status IS NULL
                     OR latest.rs_exchange_recommend IS NULL
                 LIMIT %d",
@@ -4739,6 +4769,20 @@ class LCNI_DB {
                 OR latest.rsi_status IS NULL
                 OR latest.hanh_vi_gia IS NULL
                 OR latest.one_candle IS NULL
+                OR latest.pct_to_h1m IS NULL
+                OR latest.pct_to_h3m IS NULL
+                OR latest.pct_to_h6m IS NULL
+                OR latest.pct_to_h1y IS NULL
+                OR latest.trang_thai_h1m IS NULL
+                OR latest.trang_thai_h3m IS NULL
+                OR latest.trang_thai_h6m IS NULL
+                OR latest.trang_thai_h1y IS NULL
+                OR latest.compression_1m IS NULL
+                OR latest.position_1m IS NULL
+                OR latest.position_3m IS NULL
+                OR latest.position_6m IS NULL
+                OR latest.position_1y IS NULL
+                OR latest.breakout_potential_score IS NULL
                 OR latest.rs_exchange_status IS NULL
                 OR latest.rs_exchange_recommend IS NULL";
 
