@@ -15,7 +15,7 @@ class ExitEngine {
             return true;
         }
 
-        if ((int) $holding_days > (int) $rule['max_hold_days']) {
+        if ((int) $holding_days >= (int) $rule['max_hold_days']) {
             return true;
         }
 
