@@ -4338,7 +4338,7 @@ private function sanitize_module_title($value, $fallback) {
         return $catalog;
     }
 
-    private function sanitize_recommend_signal_settings($input) {
+    public function sanitize_recommend_signal_settings($input) {
         $input = is_array($input) ? $input : [];
         $catalog = $this->get_recommend_signal_column_catalog();
         $allowed_keys = array_keys($catalog);
