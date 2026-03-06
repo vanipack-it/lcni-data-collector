@@ -5,6 +5,23 @@ if (!defined('ABSPATH')) {
 }
 
 class ShortcodeManager {
+    private const VIETNAMESE_COLUMN_LABELS = [
+        'signal__symbol' => 'Mã CP',
+        'rule__name' => 'Tên chiến lược',
+        'signal__entry_price' => 'Giá mua',
+        'signal__status' => 'Trạng thái',
+        'signal__entry_time' => 'Thời điểm mua',
+        'signal__current_price' => 'Giá hiện tại',
+        'signal__initial_sl' => 'Cắt lỗ ban đầu',
+        'signal__risk_per_share' => 'Rủi ro / cổ phiếu',
+        'signal__r_multiple' => 'Bội số R',
+        'signal__position_state' => 'Tình trạng vị thế',
+        'signal__exit_price' => 'Giá bán',
+        'signal__exit_time' => 'Thời điểm bán',
+        'signal__final_r' => 'R cuối cùng',
+        'signal__holding_days' => 'Số ngày nắm giữ',
+    ];
+
     private $signal_repository;
     private $performance_calculator;
     private $position_engine;
@@ -24,7 +41,7 @@ class ShortcodeManager {
     }
 
     public function render_signals($atts = []) {
-        $atts = shortcode_atts(['rule_id' => 0, 'status' => '', 'limit' => 20, 'symbol' => ''], $atts, 'lcni_signals');
+        $atts = shortcode_atts(['rule_id' => 0, 'status' => '', 'limit' => 200, 'symbol' => ''], $atts, 'lcni_signals');
         $frontend_settings = $this->get_recommend_signal_frontend_settings();
         $columns = (array) ($frontend_settings['column_order'] ?? []);
 
@@ -38,6 +55,7 @@ class ShortcodeManager {
 
         $catalog = $this->signal_repository->get_recommend_column_catalog();
         $styles = (array) ($frontend_settings['styles'] ?? []);
+        $stock_detail_base_url = $this->resolve_stock_detail_base_url();
         $wrapper_style = sprintf('font-family:%s;color:%s;background:%s;border:%s;border-radius:%dpx;overflow:auto;',
             esc_attr((string) ($styles['font'] ?? 'inherit')),
             esc_attr((string) ($styles['text_color'] ?? '#111827')),
@@ -51,7 +69,7 @@ class ShortcodeManager {
         echo '<table style="width:100%;border-collapse:collapse;font-size:' . (int) ($styles['row_font_size'] ?? 14) . 'px;">';
         echo '<thead><tr style="height:' . (int) ($styles['head_height'] ?? 30) . 'px;background:' . esc_attr((string) ($styles['header_background'] ?? '#ffffff')) . ';color:' . esc_attr((string) ($styles['header_text_color'] ?? '#111827')) . ';">';
         foreach ($columns as $column) {
-            $label = isset($catalog[$column]) ? (ucwords(str_replace('_', ' ', (string) $catalog[$column]['column']))) : $column;
+            $label = $this->resolve_column_label($column, $catalog);
             echo '<th style="text-align:left;padding:8px;border-bottom:' . (int) ($styles['row_divider_width'] ?? 1) . 'px solid ' . esc_attr((string) ($styles['row_divider_color'] ?? '#e5e7eb')) . ';font-size:' . (int) ($styles['header_font_size'] ?? 14) . 'px;">' . esc_html($label) . '</th>';
         }
         echo '</tr></thead><tbody>';
@@ -60,11 +78,28 @@ class ShortcodeManager {
             echo '<tr style="background:' . esc_attr((string) ($styles['value_background'] ?? '#ffffff')) . ';color:' . esc_attr((string) ($styles['value_text_color'] ?? '#111827')) . ';">';
             foreach ($columns as $column) {
                 $value = isset($row[$column]) ? $row[$column] : '';
-                if (is_numeric($value)) {
-                    $value = (float) $value;
-                    $value = (abs($value) >= 1000 || floor($value) != $value) ? number_format($value, 2, '.', ',') : (string) ((int) $value);
+                $raw_value = $value;
+                $value = $this->format_signal_value($column, $value);
+                $cell_style = $this->resolve_recommend_signal_cell_style($column, $raw_value, $styles);
+                $cell_style_attr = 'padding:8px;border-bottom:' . (int) ($styles['row_divider_width'] ?? 1) . 'px solid ' . esc_attr((string) ($styles['row_divider_color'] ?? '#e5e7eb')) . ';';
+                if ($cell_style['background'] !== '') {
+                    $cell_style_attr .= 'background:' . esc_attr($cell_style['background']) . ';';
                 }
-                echo '<td style="padding:8px;border-bottom:' . (int) ($styles['row_divider_width'] ?? 1) . 'px solid ' . esc_attr((string) ($styles['row_divider_color'] ?? '#e5e7eb')) . ';">' . esc_html((string) $value) . '</td>';
+                if ($cell_style['color'] !== '') {
+                    $cell_style_attr .= 'color:' . esc_attr($cell_style['color']) . ';';
+                }
+
+                if ($column === 'signal__symbol') {
+                    $symbol = strtoupper(sanitize_text_field((string) $raw_value));
+                    $detail_url = $this->build_stock_detail_url($stock_detail_base_url, $symbol);
+                    if ($detail_url !== '') {
+                        $value = '<a href="' . esc_url($detail_url) . '">' . esc_html((string) $value) . '</a>';
+                        echo '<td style="' . $cell_style_attr . '">' . $value . '</td>';
+                        continue;
+                    }
+                }
+
+                echo '<td style="' . $cell_style_attr . '">' . esc_html((string) $value) . '</td>';
             }
             echo '</tr>';
         }
@@ -104,8 +139,178 @@ class ShortcodeManager {
                 'row_divider_color' => sanitize_hex_color($styles['row_divider_color'] ?? '#e5e7eb') ?: '#e5e7eb',
                 'row_divider_width' => max(1, min(6, (int) ($styles['row_divider_width'] ?? 1))),
                 'head_height' => max(24, min(120, (int) ($styles['head_height'] ?? 30))),
+                'cell_color_rules' => $this->sanitize_cell_color_rules($styles['cell_color_rules'] ?? [], $columns),
             ],
         ];
+    }
+
+    private function resolve_column_label($column, $catalog) {
+        $column = sanitize_key((string) $column);
+        if ($column === '') {
+            return '';
+        }
+
+        $global_labels = get_option('lcni_column_labels', []);
+        if (is_array($global_labels) && isset($global_labels[$column])) {
+            $label = sanitize_text_field((string) $global_labels[$column]);
+            if ($label !== '') {
+                return $label;
+            }
+        }
+
+        if (isset(self::VIETNAMESE_COLUMN_LABELS[$column])) {
+            return self::VIETNAMESE_COLUMN_LABELS[$column];
+        }
+
+        $fallback = isset($catalog[$column]['column']) ? (string) $catalog[$column]['column'] : $column;
+        return ucwords(str_replace('_', ' ', $fallback));
+    }
+
+    private function resolve_stock_detail_base_url() {
+        $stock_page_slug = sanitize_title((string) get_option('lcni_watchlist_stock_page', ''));
+        if ($stock_page_slug === '') {
+            $stock_page_id = absint(get_option('lcni_frontend_stock_detail_page', 0));
+            if ($stock_page_id > 0) {
+                $stock_page_slug = sanitize_title((string) get_post_field('post_name', $stock_page_id));
+            }
+        }
+        if ($stock_page_slug === '') {
+            $stock_page_slug = 'chi-tiet-co-phieu';
+        }
+
+        return home_url('/' . $stock_page_slug . '/');
+    }
+
+    private function build_stock_detail_url($base_url, $symbol) {
+        if ($base_url === '' || $symbol === '' || preg_match('/^[A-Z0-9._-]{1,20}$/', $symbol) !== 1) {
+            return '';
+        }
+
+        return add_query_arg('symbol', $symbol, $base_url);
+    }
+
+    private function format_signal_value($column, $value) {
+        if ($value === null || $value === '') {
+            return '';
+        }
+
+        $field = strpos((string) $column, '__') !== false ? substr((string) $column, strpos((string) $column, '__') + 2) : (string) $column;
+        if (($field === 'entry_time' || $field === 'exit_time') && is_numeric($value)) {
+            $format_settings = LCNI_Data_Format_Settings::get_settings();
+            $event_time_format = (string) ($format_settings['date_formats']['event_time'] ?? 'DD-MM-YYYY');
+            if ($event_time_format === 'number') {
+                return number_format((float) $value, 2, '.', ',');
+            }
+
+            $timestamp = (int) $value;
+            if ($timestamp > 0) {
+                return wp_date('d-m-Y', $timestamp);
+            }
+        }
+
+        if (is_numeric($value)) {
+            $numeric = (float) $value;
+            return (abs($numeric) >= 1000 || floor($numeric) != $numeric) ? number_format($numeric, 2, '.', ',') : (string) ((int) $numeric);
+        }
+
+        return (string) $value;
+    }
+
+    private function sanitize_cell_color_rules($rules, $columns) {
+        if (!is_array($rules)) {
+            return [];
+        }
+
+        $allowed_operators = ['=', '!=', '>', '>=', '<', '<=', 'contains', 'not_contains'];
+        $allowed_columns = array_values(array_map('sanitize_key', is_array($columns) ? $columns : []));
+        $sanitized = [];
+
+        foreach ($rules as $rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+
+            $column = sanitize_key((string) ($rule['column'] ?? ''));
+            $operator = sanitize_text_field((string) ($rule['operator'] ?? ''));
+            $value = trim(sanitize_text_field((string) ($rule['value'] ?? '')));
+            $bg_color = sanitize_hex_color((string) ($rule['bg_color'] ?? ''));
+            $text_color = sanitize_hex_color((string) ($rule['text_color'] ?? ''));
+
+            if ($column === '' || !in_array($column, $allowed_columns, true) || !in_array($operator, $allowed_operators, true) || $value === '') {
+                continue;
+            }
+
+            if (!$bg_color && !$text_color) {
+                continue;
+            }
+
+            $sanitized[] = [
+                'column' => $column,
+                'operator' => $operator,
+                'value' => $value,
+                'bg_color' => $bg_color,
+                'text_color' => $text_color,
+            ];
+        }
+
+        return array_slice($sanitized, 0, 100);
+    }
+
+    private function resolve_recommend_signal_cell_style($column, $value, $styles) {
+        $rules = isset($styles['cell_color_rules']) && is_array($styles['cell_color_rules']) ? $styles['cell_color_rules'] : [];
+
+        foreach ($rules as $rule) {
+            if (!is_array($rule) || (string) ($rule['column'] ?? '') !== (string) $column) {
+                continue;
+            }
+
+            if (!$this->matches_cell_color_rule($value, (string) ($rule['operator'] ?? ''), $rule['value'] ?? null)) {
+                continue;
+            }
+
+            return [
+                'background' => (string) ($rule['bg_color'] ?? ''),
+                'color' => (string) ($rule['text_color'] ?? ''),
+            ];
+        }
+
+        return ['background' => '', 'color' => ''];
+    }
+
+    private function matches_cell_color_rule($actual_value, $operator, $expected_value) {
+        $actual = is_scalar($actual_value) ? trim((string) $actual_value) : '';
+        $expected = is_scalar($expected_value) ? trim((string) $expected_value) : '';
+
+        $actual_number = is_numeric($actual) ? (float) $actual : null;
+        $expected_number = is_numeric($expected) ? (float) $expected : null;
+        $numeric_compare = $actual_number !== null && $expected_number !== null;
+
+        if ($operator === '>') {
+            return $numeric_compare && $actual_number > $expected_number;
+        }
+        if ($operator === '>=') {
+            return $numeric_compare && $actual_number >= $expected_number;
+        }
+        if ($operator === '<') {
+            return $numeric_compare && $actual_number < $expected_number;
+        }
+        if ($operator === '<=') {
+            return $numeric_compare && $actual_number <= $expected_number;
+        }
+        if ($operator === '=') {
+            return $numeric_compare ? $actual_number === $expected_number : strcasecmp($actual, $expected) === 0;
+        }
+        if ($operator === '!=') {
+            return $numeric_compare ? $actual_number !== $expected_number : strcasecmp($actual, $expected) !== 0;
+        }
+        if ($operator === 'contains') {
+            return $expected !== '' && stripos($actual, $expected) !== false;
+        }
+        if ($operator === 'not_contains') {
+            return $expected !== '' && stripos($actual, $expected) === false;
+        }
+
+        return false;
     }
 
     public function render_performance($atts = []) {
