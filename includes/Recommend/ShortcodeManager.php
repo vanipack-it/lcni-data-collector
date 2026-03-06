@@ -56,6 +56,11 @@ class ShortcodeManager {
         $catalog = $this->signal_repository->get_recommend_column_catalog();
         $styles = (array) ($frontend_settings['styles'] ?? []);
         $stock_detail_base_url = $this->resolve_stock_detail_base_url();
+        $value_background = (string) ($styles['value_background'] ?? '#ffffff');
+        $value_text_color = (string) ($styles['value_text_color'] ?? '#111827');
+        $row_hover_background = (string) ($styles['row_hover_bg'] ?? '#f3f4f6');
+        $sticky_column = (string) ($styles['sticky_column'] ?? 'signal__symbol');
+        $sticky_header_enabled = !empty($styles['sticky_header']);
         $wrapper_style = sprintf('font-family:%s;color:%s;background:%s;border:%s;border-radius:%dpx;overflow:auto;',
             esc_attr((string) ($styles['font'] ?? 'inherit')),
             esc_attr((string) ($styles['text_color'] ?? '#111827')),
@@ -66,16 +71,24 @@ class ShortcodeManager {
 
         ob_start();
         echo '<div class="lcni-recommend-signals-table" style="' . $wrapper_style . '">';
-        echo '<table style="width:100%;border-collapse:collapse;font-size:' . (int) ($styles['row_font_size'] ?? 14) . 'px;">';
-        echo '<thead><tr style="height:' . (int) ($styles['head_height'] ?? 30) . 'px;background:' . esc_attr((string) ($styles['header_background'] ?? '#ffffff')) . ';color:' . esc_attr((string) ($styles['header_text_color'] ?? '#111827')) . ';">';
+        echo '<table style="width:100%;border-collapse:separate;border-spacing:0;font-size:' . (int) ($styles['row_font_size'] ?? 14) . 'px;">';
+        $head_row_style = 'height:' . (int) ($styles['head_height'] ?? 30) . 'px;background:' . esc_attr((string) ($styles['header_background'] ?? '#ffffff')) . ';color:' . esc_attr((string) ($styles['header_text_color'] ?? '#111827')) . ';';
+        echo '<thead><tr style="' . $head_row_style . '">';
         foreach ($columns as $column) {
             $label = $this->resolve_column_label($column, $catalog);
-            echo '<th style="text-align:left;padding:8px;border-bottom:' . (int) ($styles['row_divider_width'] ?? 1) . 'px solid ' . esc_attr((string) ($styles['row_divider_color'] ?? '#e5e7eb')) . ';font-size:' . (int) ($styles['header_font_size'] ?? 14) . 'px;">' . esc_html($label) . '</th>';
+            $th_style = 'text-align:left;padding:8px;border-bottom:' . (int) ($styles['row_divider_width'] ?? 1) . 'px solid ' . esc_attr((string) ($styles['row_divider_color'] ?? '#e5e7eb')) . ';font-size:' . (int) ($styles['header_font_size'] ?? 14) . 'px;background:' . esc_attr((string) ($styles['header_background'] ?? '#ffffff')) . ';';
+            if ($sticky_header_enabled) {
+                $th_style .= 'position:sticky;top:0;z-index:20;';
+            }
+            if ($sticky_column === $column) {
+                $th_style .= 'position:sticky;left:0;z-index:' . ($sticky_header_enabled ? '25' : '5') . ';';
+            }
+            echo '<th style="' . $th_style . '">' . esc_html($label) . '</th>';
         }
         echo '</tr></thead><tbody>';
 
         foreach ($rows as $row) {
-            echo '<tr style="background:' . esc_attr((string) ($styles['value_background'] ?? '#ffffff')) . ';color:' . esc_attr((string) ($styles['value_text_color'] ?? '#111827')) . ';">';
+            echo '<tr style="background:' . esc_attr($value_background) . ';color:' . esc_attr($value_text_color) . ';" onmouseover="this.style.background=\'' . esc_attr($row_hover_background) . '\'" onmouseout="this.style.background=\'' . esc_attr($value_background) . '\'">';
             foreach ($columns as $column) {
                 $value = isset($row[$column]) ? $row[$column] : '';
                 $raw_value = $value;
@@ -87,6 +100,10 @@ class ShortcodeManager {
                 }
                 if ($cell_style['color'] !== '') {
                     $cell_style_attr .= 'color:' . esc_attr($cell_style['color']) . ';';
+                }
+                if ($sticky_column === $column) {
+                    $cell_bg = $cell_style['background'] !== '' ? (string) $cell_style['background'] : $value_background;
+                    $cell_style_attr .= 'position:sticky;left:0;z-index:3;background:' . esc_attr($cell_bg) . ';';
                 }
 
                 if ($column === 'signal__symbol') {
