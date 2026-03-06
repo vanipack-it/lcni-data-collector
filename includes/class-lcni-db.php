@@ -1789,7 +1789,7 @@ class LCNI_DB {
                 SUM(CASE WHEN COALESCE(o.gia_sv_ma100, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma100,
                 COALESCE(SUM(o.value_traded), 0) AS tong_value_traded
             FROM {$ohlc_table} o
-            INNER JOIN {$mapping_table} m ON m.symbol = o.symbol
+            LEFT JOIN {$mapping_table} m ON UPPER(TRIM(m.symbol)) = UPPER(TRIM(o.symbol))
             WHERE {$where_sql}
             GROUP BY o.event_time, CAST(COALESCE(NULLIF(TRIM(m.market_id), ''), '0') AS UNSIGNED), o.timeframe";
         $wpdb->query($wpdb->prepare($insert_market_sql, $where_params));
@@ -6511,7 +6511,7 @@ class LCNI_DB {
                 COUNT(*) AS total_stocks,
                 COALESCE(SUM(CASE WHEN COALESCE(prev.close_price, 0) > 0 AND o.close_price > prev.close_price THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 0) AS breadth
             FROM {$ohlc_table} o
-            INNER JOIN {$mapping_table} m ON m.symbol = o.symbol
+            LEFT JOIN {$mapping_table} m ON UPPER(TRIM(m.symbol)) = UPPER(TRIM(o.symbol))
             LEFT JOIN {$ohlc_table} prev ON prev.symbol = o.symbol AND prev.timeframe = o.timeframe AND prev.event_time = (
                 SELECT MAX(p2.event_time)
                 FROM {$ohlc_table} p2
