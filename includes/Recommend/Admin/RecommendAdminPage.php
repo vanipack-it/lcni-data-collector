@@ -424,6 +424,21 @@ class LCNI_Recommend_Admin_Page {
             const rows=[];
             const fieldOptions=[];
 
+            function normalizeOperator(operator){
+                const raw=String(operator || "").trim().toLowerCase();
+                const aliases={
+                    gt:">",
+                    lt:"<",
+                    eq:"=",
+                    neq:"!=",
+                    gte:">=",
+                    lte:"<=",
+                    "-":">"
+                };
+                const mapped=aliases[raw] || raw;
+                return operators.includes(mapped) ? mapped : "=";
+            }
+
             Object.keys(columnsMap).forEach((tableName)=>{
                 (columnsMap[tableName]||[]).forEach((column)=>{
                     fieldOptions.push({
@@ -443,7 +458,7 @@ class LCNI_Recommend_Admin_Page {
                 const normalizedRows=validRows.map((row, index)=>{
                     const item={
                         field:row.field,
-                        operator:row.operator,
+                        operator:normalizeOperator(row.operator),
                         value:row.value
                     };
                     if (index < validRows.length - 1) {
@@ -527,8 +542,8 @@ class LCNI_Recommend_Admin_Page {
                     fieldCell.appendChild(fieldDataList);
 
                     const operatorCell=document.createElement("td");
-                    const operatorSelect=buildSelect(operators.map((op)=>({ value:op, label:op })), rule.operator || "=");
-                    operatorSelect.addEventListener("change",()=>{ rule.operator=operatorSelect.value || "="; syncJson(); });
+                    const operatorSelect=buildSelect(operators.map((op)=>({ value:op, label:op })), normalizeOperator(rule.operator));
+                    operatorSelect.addEventListener("change",()=>{ rule.operator=normalizeOperator(operatorSelect.value); syncJson(); });
                     operatorCell.appendChild(operatorSelect);
 
                     const valueCell=document.createElement("td");
@@ -578,7 +593,7 @@ class LCNI_Recommend_Admin_Page {
             function addRule(initialRule){
                 rows.push({
                     field:(initialRule && initialRule.field) || "",
-                    operator:(initialRule && initialRule.operator) || "=",
+                    operator:normalizeOperator((initialRule && initialRule.operator) || "="),
                     value:(initialRule && initialRule.value) || "",
                     join_with_next:(initialRule && initialRule.join_with_next) === "OR" ? "OR" : "AND"
                 });
