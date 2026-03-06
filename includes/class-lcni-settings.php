@@ -421,9 +421,23 @@ class LCNI_Settings {
 
                     update_option('lcni_chart_analyst_settings', LCNI_Chart_Analyst_Settings::sanitize_config($input));
                 } elseif ($module === 'recommend_signal') {
+                    $recommend_allowed_columns = isset($_POST['lcni_frontend_recommend_signal_allowed_columns'])
+                        ? wp_unslash($_POST['lcni_frontend_recommend_signal_allowed_columns'])
+                        : [];
+                    if (!is_array($recommend_allowed_columns)) {
+                        $recommend_allowed_columns = [$recommend_allowed_columns];
+                    }
+
+                    $recommend_column_order_raw = isset($_POST['lcni_frontend_recommend_signal_column_order'])
+                        ? wp_unslash($_POST['lcni_frontend_recommend_signal_column_order'])
+                        : '';
+                    if (!is_scalar($recommend_column_order_raw)) {
+                        $recommend_column_order_raw = '';
+                    }
+
                     $input = [
-                        'allowed_columns' => isset($_POST['lcni_frontend_recommend_signal_allowed_columns']) ? (array) wp_unslash($_POST['lcni_frontend_recommend_signal_allowed_columns']) : [],
-                        'column_order' => array_filter(array_map('sanitize_key', explode(',', (string) (isset($_POST['lcni_frontend_recommend_signal_column_order']) ? wp_unslash($_POST['lcni_frontend_recommend_signal_column_order']) : '')))),
+                        'allowed_columns' => $recommend_allowed_columns,
+                        'column_order' => explode(',', (string) $recommend_column_order_raw),
                         'styles' => [
                             'font' => isset($_POST['lcni_frontend_recommend_signal_style_font']) ? wp_unslash($_POST['lcni_frontend_recommend_signal_style_font']) : 'inherit',
                             'text_color' => isset($_POST['lcni_frontend_recommend_signal_style_text_color']) ? wp_unslash($_POST['lcni_frontend_recommend_signal_style_text_color']) : '',
