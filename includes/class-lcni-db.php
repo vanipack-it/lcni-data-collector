@@ -6657,9 +6657,17 @@ class LCNI_DB {
             self::sync_symbol_market_icb_mapping();
 
             $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+            $mapping_source_sql = "SELECT UPPER(TRIM(symbol)) AS symbol_key, MAX(id_icb2) AS id_icb2
+                FROM {$wpdb->prefix}lcni_sym_icb_market
+                WHERE TRIM(COALESCE(symbol, '')) <> ''
+                GROUP BY UPPER(TRIM(symbol))";
             $event_times = $wpdb->get_col(
                 $wpdb->prepare(
-                    "SELECT DISTINCT event_time FROM {$ohlc_table} WHERE timeframe = %s ORDER BY event_time ASC",
+                    "SELECT DISTINCT o.event_time
+                    FROM {$ohlc_table} o
+                    INNER JOIN ({$mapping_source_sql}) map ON map.symbol_key = UPPER(TRIM(o.symbol))
+                    WHERE o.timeframe = %s AND o.event_time > 0
+                    ORDER BY o.event_time ASC",
                     $timeframes[0]
                 )
             );
@@ -6811,9 +6819,17 @@ class LCNI_DB {
         }
 
         if ($full_rebuild || empty($event_times)) {
+            $mapping_source_sql = "SELECT UPPER(TRIM(symbol)) AS symbol_key, MAX(id_icb2) AS id_icb2
+                FROM {$mapping_table}
+                WHERE TRIM(COALESCE(symbol, '')) <> ''
+                GROUP BY UPPER(TRIM(symbol))";
             $event_times = $wpdb->get_col(
                 $wpdb->prepare(
-                    "SELECT DISTINCT event_time FROM {$ohlc_table} WHERE timeframe = %s ORDER BY event_time ASC",
+                    "SELECT DISTINCT o.event_time
+                    FROM {$ohlc_table} o
+                    INNER JOIN ({$mapping_source_sql}) map ON map.symbol_key = UPPER(TRIM(o.symbol))
+                    WHERE o.timeframe = %s AND o.event_time > 0
+                    ORDER BY o.event_time ASC",
                     $timeframes[0]
                 )
             );
@@ -6859,14 +6875,19 @@ class LCNI_DB {
                 COUNT(*) AS total_stocks,
                 COALESCE(SUM(CASE WHEN COALESCE(prev.close_price, 0) > 0 AND o.close_price > prev.close_price THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 0) AS breadth
             FROM {$ohlc_table} o
-            LEFT JOIN {$mapping_table} m ON UPPER(TRIM(m.symbol)) = UPPER(TRIM(o.symbol))
+            INNER JOIN (
+                SELECT UPPER(TRIM(symbol)) AS symbol_key, MAX(id_icb2) AS id_icb2
+                FROM {$mapping_table}
+                WHERE TRIM(COALESCE(symbol, '')) <> ''
+                GROUP BY UPPER(TRIM(symbol))
+            ) m ON m.symbol_key = UPPER(TRIM(o.symbol))
             LEFT JOIN {$ohlc_table} prev ON prev.symbol = o.symbol AND prev.timeframe = o.timeframe AND prev.event_time = (
                 SELECT MAX(p2.event_time)
                 FROM {$ohlc_table} p2
                 WHERE p2.symbol = o.symbol AND p2.timeframe = o.timeframe AND p2.event_time < o.event_time
             )
             WHERE o.event_time IN ({$event_placeholders}) AND o.timeframe IN ({$timeframe_placeholders})
-            GROUP BY o.event_time, o.timeframe, COALESCE(m.id_icb2, 0)";
+            GROUP BY o.event_time, o.timeframe, m.id_icb2";
         $wpdb->query($wpdb->prepare($insert_return_sql, $where_params));
 
         foreach ($timeframes as $tf) {
