@@ -18,6 +18,7 @@ class LCNI_Industry_Data_Page {
     public function __construct() {
         add_action('admin_menu', [$this, 'register_menu']);
         add_action('admin_post_' . self::ACTION_HANDLE, [$this, 'handle_actions']);
+        add_action('wp_ajax_lcni_industry_rebuild_chunk', [$this, 'handle_ajax_rebuild_chunk']);
     }
 
     public function register_menu() {
@@ -107,6 +108,52 @@ class LCNI_Industry_Data_Page {
         exit;
     }
 
+    public function handle_ajax_rebuild_chunk() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error([
+                'message' => 'Unauthorized request.',
+            ], 403);
+        }
+
+        check_ajax_referer(self::NONCE_ACTION, 'nonce');
+
+        $is_start = isset($_POST['is_start']) && sanitize_key(wp_unslash($_POST['is_start'])) === '1';
+        $result = LCNI_DB::rebuild_industry_analysis_snapshot_chunked(['1D'], 5, $is_start);
+
+        $status = (string) ($result['status'] ?? 'unknown');
+        if ($status === 'missing_tables') {
+            wp_send_json_error([
+                'status' => $status,
+                'message' => 'Không thể rebuild vì thiếu bảng dữ liệu ngành.',
+            ]);
+        }
+
+        if ($status === 'empty_source') {
+            wp_send_json_error([
+                'status' => $status,
+                'message' => 'Không có dữ liệu nguồn để rebuild dữ liệu ngành.',
+            ]);
+        }
+
+        if ($status !== 'in_progress' && $status !== 'completed') {
+            wp_send_json_error([
+                'status' => $status,
+                'message' => 'Không thể tiếp tục rebuild theo lô. Hãy thử chạy lại từ đầu.',
+            ]);
+        }
+
+        $total = (int) ($result['total'] ?? 0);
+        $remaining = max(0, (int) ($result['remaining'] ?? 0));
+        $processed = max(0, $total - $remaining);
+
+        wp_send_json_success([
+            'status' => $status,
+            'total' => $total,
+            'remaining' => $remaining,
+            'processed' => $processed,
+        ]);
+    }
+
     public function render_page() {
         if (!current_user_can('manage_options')) {
             return;
@@ -189,7 +236,7 @@ class LCNI_Industry_Data_Page {
                 <?php wp_nonce_field(self::NONCE_ACTION); ?>
                 <input type="hidden" name="action" value="<?php echo esc_attr(self::ACTION_HANDLE); ?>">
                 <p>
-                    <button type="submit" class="button button-primary" name="lcni_industry_action" value="rebuild_industry_tables">
+                    <button type="submit" class="button button-primary" name="lcni_industry_action" value="rebuild_industry_tables" id="lcni-industry-start-chunked-rebuild">
                         <?php echo esc_html__('Start Chunked Rebuild Industry Tables', 'lcni-data-collector'); ?>
                     </button>
                     <button type="submit" class="button" name="lcni_industry_action" value="rebuild_industry_tables_continue" style="margin-left: 8px;">
@@ -210,7 +257,117 @@ class LCNI_Industry_Data_Page {
                     ?>
                 </p>
             <?php endif; ?>
+
+            <p id="lcni-industry-rebuild-auto-status" style="display:none;"></p>
         </div>
+        <script>
+            (function () {
+                const startButton = document.getElementById('lcni-industry-start-chunked-rebuild');
+                const statusEl = document.getElementById('lcni-industry-rebuild-auto-status');
+
+                if (!startButton || !statusEl) {
+                    return;
+                }
+
+                const form = startButton.closest('form');
+                const nonceField = form ? form.querySelector('input[name="_wpnonce"]') : null;
+
+                if (!form || !nonceField || !nonceField.value) {
+                    return;
+                }
+
+                const originalStartText = startButton.textContent;
+
+                const setStatus = function (message, isError) {
+                    statusEl.style.display = 'block';
+                    statusEl.style.color = isError ? '#b32d2e' : '#1d2327';
+                    statusEl.textContent = message;
+                };
+
+                const setWorkingState = function (working) {
+                    startButton.disabled = working;
+                    if (working) {
+                        startButton.textContent = 'Running...';
+                    } else {
+                        startButton.textContent = originalStartText;
+                    }
+                };
+
+                const runChunk = async function (isStart) {
+                    const body = new URLSearchParams();
+                    body.append('action', 'lcni_industry_rebuild_chunk');
+                    body.append('nonce', nonceField.value);
+                    body.append('is_start', isStart ? '1' : '0');
+
+                    const response = await fetch(ajaxurl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                        },
+                        body: body.toString(),
+                        credentials: 'same-origin'
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('HTTP ' + response.status);
+                    }
+
+                    const payload = await response.json();
+                    if (!payload || typeof payload !== 'object') {
+                        throw new Error('Invalid response payload.');
+                    }
+
+                    if (!payload.success) {
+                        const message = payload.data && payload.data.message ? payload.data.message : 'Không thể chạy rebuild theo lô.';
+                        throw new Error(message);
+                    }
+
+                    return payload.data || {};
+                };
+
+                startButton.addEventListener('click', async function (event) {
+                    event.preventDefault();
+
+                    setWorkingState(true);
+                    setStatus('Đang chạy tự động theo từng lô, vui lòng chờ...', false);
+
+                    try {
+                        let isStart = true;
+                        let loopGuard = 0;
+
+                        while (loopGuard < 10000) {
+                            const result = await runChunk(isStart);
+                            const processed = Number(result.processed || 0);
+                            const total = Number(result.total || 0);
+                            const remaining = Number(result.remaining || 0);
+                            const status = String(result.status || 'unknown');
+
+                            setStatus('Chunk progress: ' + processed + '/' + total + ' phiên đã xử lý, còn lại ' + remaining + ' phiên.', false);
+
+                            if (status === 'completed' || remaining <= 0) {
+                                setStatus('Đã rebuild hoàn tất dữ liệu ngành theo lô. Số phiên xử lý: ' + total + '/' + total + '.', false);
+                                window.location.reload();
+                                return;
+                            }
+
+                            if (status !== 'in_progress') {
+                                throw new Error('Không thể tiếp tục rebuild theo lô.');
+                            }
+
+                            isStart = false;
+                            loopGuard += 1;
+                        }
+
+                        throw new Error('Đã vượt quá số lô cho phép trong một lần chạy tự động.');
+                    } catch (error) {
+                        const message = error && error.message ? error.message : 'Không thể chạy rebuild theo lô.';
+                        setStatus(message, true);
+                    } finally {
+                        setWorkingState(false);
+                    }
+                });
+            })();
+        </script>
         <?php
     }
 
