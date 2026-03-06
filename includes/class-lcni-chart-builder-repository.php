@@ -6,6 +6,28 @@ if (!defined('ABSPATH')) {
 
 class LCNI_Chart_Builder_Repository {
 
+    private static function get_join_key_candidates() {
+        return ['symbol', 'id_icb2', 'icbid', 'industry_code', 'stock_code'];
+    }
+
+    private static function normalize_field_token($raw_field) {
+        $raw = (string) $raw_field;
+        if (strpos($raw, '.') !== false) {
+            [$source_key, $column] = array_pad(explode('.', $raw, 2), 2, '');
+            $source_key = sanitize_key($source_key);
+            $column = sanitize_key($column);
+            if ($source_key !== '' && $column !== '') {
+                return $source_key . '.' . $column;
+            }
+        }
+
+        return sanitize_key($raw);
+    }
+
+    private static function to_query_key_suffix($field_token) {
+        return str_replace('.', '__', self::normalize_field_token($field_token));
+    }
+
     public static function table_name() {
         global $wpdb;
 
@@ -91,7 +113,124 @@ class LCNI_Chart_Builder_Repository {
         return $allowed[$table_key] ?? '';
     }
 
-    public static function get_table_columns($table_key) {
+    private static function get_joinable_tables($base_table_key) {
+        $base_columns = self::get_table_columns($base_table_key);
+        if (empty($base_columns)) {
+            return [];
+        }
+
+        $joinable = [];
+        foreach (self::get_allowed_tables() as $table_key => $table_name) {
+            if ($table_key === $base_table_key) {
+                continue;
+            }
+
+            $columns = self::get_table_columns($table_key);
+            if (empty($columns)) {
+                continue;
+            }
+
+            $join_key = '';
+            foreach (self::get_join_key_candidates() as $candidate) {
+                if (in_array($candidate, $base_columns, true) && in_array($candidate, $columns, true)) {
+                    $join_key = $candidate;
+                    break;
+                }
+            }
+
+            if ($join_key === '') {
+                continue;
+            }
+
+            $joinable[$table_key] = [
+                'table' => $table_name,
+                'columns' => $columns,
+                'join_key' => $join_key,
+            ];
+        }
+
+        return $joinable;
+    }
+
+    private static function build_field_context($base_table_key) {
+        $base_table = self::get_table_name_by_key($base_table_key);
+        if ($base_table === '') {
+            return [];
+        }
+
+        $base_columns = self::get_table_columns($base_table_key);
+        if (empty($base_columns)) {
+            return [];
+        }
+
+        $context = [
+            'base' => [
+                'key' => $base_table_key,
+                'table' => $base_table,
+                'alias' => 't0',
+                'columns' => $base_columns,
+            ],
+            'fields' => [],
+            'joins' => [],
+        ];
+
+        foreach ($base_columns as $column) {
+            $context['fields'][$column] = 't0.`' . $column . '`';
+        }
+
+        $joinable = self::get_joinable_tables($base_table_key);
+        $join_index = 1;
+        foreach ($joinable as $table_key => $meta) {
+            $alias = 't' . $join_index;
+            $join_index++;
+            $context['joins'][$table_key] = [
+                'alias' => $alias,
+                'table' => $meta['table'],
+                'join_key' => $meta['join_key'],
+            ];
+
+            foreach ($meta['columns'] as $column) {
+                $token = $table_key . '.' . $column;
+                $context['fields'][$token] = $alias . '.`' . $column . '`';
+            }
+        }
+
+        return $context;
+    }
+
+    private static function quote_field_alias($field_token) {
+        $alias = str_replace('.', '__', self::normalize_field_token($field_token));
+
+        return '`' . $alias . '`';
+    }
+
+    private static function build_required_joins($field_context, $field_tokens) {
+        $joins = [];
+        foreach ((array) $field_tokens as $token) {
+            $normalized = self::normalize_field_token($token);
+            if (strpos($normalized, '.') === false) {
+                continue;
+            }
+
+            $source_key = sanitize_key((string) strstr($normalized, '.', true));
+            if ($source_key === '' || !isset($field_context['joins'][$source_key])) {
+                continue;
+            }
+
+            if (isset($joins[$source_key])) {
+                continue;
+            }
+
+            $join_meta = $field_context['joins'][$source_key];
+            $joins[$source_key] = ' LEFT JOIN ' . $join_meta['table'] . ' ' . $join_meta['alias']
+                . ' ON ' . $join_meta['alias'] . '.`' . $join_meta['join_key'] . '` = '
+                . $field_context['base']['alias'] . '.`' . $join_meta['join_key'] . '`';
+        }
+
+        return implode('', $joins);
+    }
+
+    public static function get_table_columns($table_key, $include_joined = false) {
         global $wpdb;
 
         $table = self::get_table_name_by_key($table_key);
@@ -106,25 +245,40 @@ class LCNI_Chart_Builder_Repository {
 
         $columns = $wpdb->get_col("SHOW COLUMNS FROM {$table}");
 
-        return is_array($columns) ? array_values(array_filter(array_map('sanitize_key', $columns))) : [];
+        $columns = is_array($columns) ? array_values(array_filter(array_map('sanitize_key', $columns))) : [];
+        if (!$include_joined) {
+            return $columns;
+        }
+
+        $field_context = self::build_field_context($table_key);
+        if (empty($field_context['fields'])) {
+            return $columns;
+        }
+
+        return array_values(array_unique(array_keys($field_context['fields'])));
     }
 
     public static function get_distinct_field_values($table_key, $field, $limit = 100) {
         global $wpdb;
 
         $table = self::get_table_name_by_key(sanitize_key((string) $table_key));
-        $safe_field = sanitize_key((string) $field);
+        $safe_field = self::normalize_field_token((string) $field);
         if ($table === '' || $safe_field === '') {
             return [];
         }
 
-        $columns = self::get_table_columns($table_key);
-        if (!in_array($safe_field, $columns, true)) {
+        $field_context = self::build_field_context(sanitize_key((string) $table_key));
+        if (empty($field_context) || !isset($field_context['fields'][$safe_field])) {
             return [];
         }
 
         $safe_limit = max(1, min(300, (int) $limit));
-        $sql = "SELECT DISTINCT `{$safe_field}` AS v FROM {$table} WHERE `{$safe_field}` IS NOT NULL AND `{$safe_field}` <> '' ORDER BY `{$safe_field}` ASC LIMIT {$safe_limit}";
+        $field_sql = $field_context['fields'][$safe_field];
+        $join_sql = self::build_required_joins($field_context, [$safe_field]);
+        $sql = 'SELECT DISTINCT ' . $field_sql . ' AS v FROM ' . $table . ' ' . $field_context['base']['alias']
+            . $join_sql
+            . ' WHERE ' . $field_sql . " IS NOT NULL AND " . $field_sql . " <> ''"
+            . ' ORDER BY ' . $field_sql . ' ASC LIMIT ' . $safe_limit;
         $values = $wpdb->get_col($sql);
 
         return array_values(array_filter(array_map(static function ($value) {
@@ -134,29 +288,47 @@ class LCNI_Chart_Builder_Repository {
         }));
     }
 
-    private static function build_where_sql($config, $fields_whitelist) {
+    private static function build_where_sql($config, $field_context) {
         $where = [];
         $params = [];
 
         $filters = isset($config['filters']) && is_array($config['filters']) ? $config['filters'] : [];
+        $filter_defaults = isset($config['filter_values']) && is_array($config['filter_values']) ? $config['filter_values'] : [];
         foreach ($filters as $filter_field) {
-            $field = sanitize_key((string) $filter_field);
-            if ($field === '' || !in_array($field, $fields_whitelist, true)) {
+            $field = self::normalize_field_token($filter_field);
+            if ($field === '' || !isset($field_context['fields'][$field])) {
                 continue;
             }
 
-            $query_key = 'lcni_filter_' . $field;
-            if (!isset($_GET[$query_key])) {
+            $query_key = 'lcni_filter_' . self::to_query_key_suffix($field);
+            $raw_values = [];
+
+            if (isset($_GET[$query_key])) {
+                $incoming = wp_unslash($_GET[$query_key]);
+                if (is_array($incoming)) {
+                    $raw_values = $incoming;
+                } else {
+                    $raw_values = explode(',', (string) $incoming);
+                }
+            } elseif (isset($filter_defaults[$field]) && is_array($filter_defaults[$field])) {
+                $raw_values = $filter_defaults[$field];
+            } elseif (isset($filter_defaults[self::to_query_key_suffix($field)]) && is_array($filter_defaults[self::to_query_key_suffix($field)])) {
+                $raw_values = $filter_defaults[self::to_query_key_suffix($field)];
+            }
+
+            $values = array_values(array_filter(array_map(static function ($value) {
+                return sanitize_text_field((string) $value);
+            }, (array) $raw_values), static function ($value) {
+                return $value !== '';
+            }));
+
+            if (empty($values)) {
                 continue;
             }
 
-            $value = sanitize_text_field((string) wp_unslash($_GET[$query_key]));
-            if ($value === '') {
-                continue;
-            }
-
-            $where[] = "`{$field}` = %s";
-            $params[] = $value;
+            $placeholders = implode(', ', array_fill(0, count($values), '%s'));
+            $where[] = $field_context['fields'][$field] . " IN ({$placeholders})";
+            $params = array_merge($params, $values);
         }
 
         return [
@@ -176,27 +348,27 @@ class LCNI_Chart_Builder_Repository {
             return [];
         }
 
-        $all_columns = self::get_table_columns($source_key);
-        if (empty($all_columns)) {
+        $field_context = self::build_field_context($source_key);
+        if (empty($field_context)) {
             return [];
         }
 
-        $x_axis = sanitize_key((string) ($config['xAxis'] ?? 'event_time'));
-        if ($x_axis === '' || !in_array($x_axis, $all_columns, true)) {
+        $x_axis = self::normalize_field_token((string) ($config['xAxis'] ?? 'event_time'));
+        if ($x_axis === '' || !isset($field_context['fields'][$x_axis])) {
             $x_axis = 'event_time';
         }
 
         $series = is_array($config['series'] ?? null) ? $config['series'] : [];
         $fields = [$x_axis];
 
-        $y_axis = sanitize_key((string) ($config['yAxis'] ?? ''));
-        if ($y_axis !== '' && in_array($y_axis, $all_columns, true)) {
+        $y_axis = self::normalize_field_token((string) ($config['yAxis'] ?? ''));
+        if ($y_axis !== '' && isset($field_context['fields'][$y_axis])) {
             $fields[] = $y_axis;
         }
 
         foreach ($series as $item) {
-            $field = sanitize_key((string) ($item['field'] ?? ''));
-            if ($field !== '' && in_array($field, $all_columns, true)) {
+            $field = self::normalize_field_token((string) ($item['field'] ?? ''));
+            if ($field !== '' && isset($field_context['fields'][$field])) {
                 $fields[] = $field;
             }
         }
@@ -206,12 +378,29 @@ class LCNI_Chart_Builder_Repository {
             return [];
         }
 
-        $safe_fields = array_map(static function ($field) {
-            return "`{$field}`";
-        }, $fields);
+        $safe_fields = [];
+        foreach ($fields as $field) {
+            if (!isset($field_context['fields'][$field])) {
+                continue;
+            }
+            $safe_fields[] = $field_context['fields'][$field] . ' AS ' . self::quote_field_alias($field);
+        }
 
-        $where_data = self::build_where_sql(is_array($config) ? $config : [], $all_columns);
-        $sql = "SELECT " . implode(', ', $safe_fields) . " FROM {$table}" . $where_data['sql'] . " ORDER BY `{$x_axis}` ASC LIMIT 300";
+        if (empty($safe_fields)) {
+            return [];
+        }
+
+        $where_data = self::build_where_sql(is_array($config) ? $config : [], $field_context);
+        $join_sql = self::build_required_joins($field_context, array_merge($fields, (array) ($config['filters'] ?? [])));
+        $fallback_order = isset($field_context['base']['columns'][0])
+            ? ($field_context['base']['alias'] . '.`' . $field_context['base']['columns'][0] . '`')
+            : $field_context['base']['alias'] . '.`id`';
+        $order_field = isset($field_context['fields'][$x_axis]) ? $field_context['fields'][$x_axis] : $fallback_order;
+        $sql = 'SELECT ' . implode(', ', $safe_fields)
+            . ' FROM ' . $table . ' ' . $field_context['base']['alias']
+            . $join_sql
+            . $where_data['sql']
+            . ' ORDER BY ' . $order_field . ' ASC LIMIT 300';
 
         if (!empty($where_data['params'])) {
             $sql = $wpdb->prepare($sql, ...$where_data['params']);
@@ -230,19 +419,24 @@ class LCNI_Chart_Builder_Repository {
             return [];
         }
 
-        $all_columns = self::get_table_columns($source_key);
-        if (empty($all_columns)) {
+        $field_context = self::build_field_context($source_key);
+        if (empty($field_context)) {
             return [];
         }
 
         $result = [];
         foreach ((array) $filter_fields as $raw_field) {
-            $field = sanitize_key((string) $raw_field);
-            if ($field === '' || !in_array($field, $all_columns, true)) {
+            $field = self::normalize_field_token((string) $raw_field);
+            if ($field === '' || !isset($field_context['fields'][$field])) {
                 continue;
             }
 
-            $sql = "SELECT DISTINCT `{$field}` AS v FROM {$table} WHERE `{$field}` IS NOT NULL AND `{$field}` <> '' ORDER BY `{$field}` ASC LIMIT 100";
+            $join_sql = self::build_required_joins($field_context, [$field]);
+            $field_sql = $field_context['fields'][$field];
+            $sql = 'SELECT DISTINCT ' . $field_sql . ' AS v FROM ' . $table . ' ' . $field_context['base']['alias']
+                . $join_sql
+                . ' WHERE ' . $field_sql . " IS NOT NULL AND " . $field_sql . " <> ''"
+                . ' ORDER BY ' . $field_sql . ' ASC LIMIT 100';
             $values = $wpdb->get_col($sql);
             $result[$field] = array_values(array_filter(array_map(static function ($value) {
                 return sanitize_text_field((string) $value);

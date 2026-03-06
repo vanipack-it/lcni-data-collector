@@ -414,16 +414,22 @@
     };
   };
 
-  const filterRows = (rows, activeFilter) => {
+  const normalizeFilterValue = (value) => String(value == null ? '' : value).trim();
+
+  const filterRows = (rows, activeFilters) => {
     if (!Array.isArray(rows)) {
       return rows;
     }
 
-    if (!activeFilter || !activeFilter.field || activeFilter.value === '') {
+    const entries = Object.entries(activeFilters || {}).filter(([, values]) => Array.isArray(values) && values.length);
+    if (!entries.length) {
       return rows;
     }
 
-    return rows.filter((row) => String(row[activeFilter.field] || '') === String(activeFilter.value));
+    return rows.filter((row) => entries.every(([field, values]) => {
+      const current = normalizeFilterValue(row[field]);
+      return values.some((value) => normalizeFilterValue(value) === current);
+    }));
   };
 
   const renderFilterBar = (node, payload, onChange) => {
@@ -452,34 +458,78 @@
       group.style.alignItems = 'center';
       group.style.gap = '6px';
 
-      const allBtn = document.createElement('button');
-      allBtn.type = 'button';
-      allBtn.textContent = 'All';
-      allBtn.dataset.field = field;
-      allBtn.dataset.value = '';
-      allBtn.className = 'button button-primary';
+      const allBtn = document.createElement('label');
+      allBtn.style.display = 'inline-flex';
+      allBtn.style.alignItems = 'center';
+      allBtn.style.gap = '4px';
+      const allInput = document.createElement('input');
+      allInput.type = 'checkbox';
+      allInput.checked = true;
+      allInput.dataset.field = field;
+      allInput.dataset.value = '__all__';
+      const allText = document.createElement('span');
+      allText.textContent = 'All';
+      allBtn.appendChild(allInput);
+      allBtn.appendChild(allText);
       group.appendChild(label);
       group.appendChild(allBtn);
 
       values.forEach((value) => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'button';
-        btn.dataset.field = field;
-        btn.dataset.value = value;
-        btn.textContent = value;
-        group.appendChild(btn);
+        const itemLabel = document.createElement('label');
+        itemLabel.style.display = 'inline-flex';
+        itemLabel.style.alignItems = 'center';
+        itemLabel.style.gap = '4px';
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.dataset.field = field;
+        input.dataset.value = value;
+        const text = document.createElement('span');
+        text.textContent = value;
+        itemLabel.appendChild(input);
+        itemLabel.appendChild(text);
+        group.appendChild(itemLabel);
       });
 
       bar.appendChild(group);
     });
 
-    bar.addEventListener('click', (event) => {
+    bar.addEventListener('change', (event) => {
       const target = event.target;
       if (!target || !target.dataset || !target.dataset.field) return;
-      onChange({ field: target.dataset.field, value: target.dataset.value || '' });
-      bar.querySelectorAll('button').forEach((btn) => btn.classList.remove('button-primary'));
-      target.classList.add('button-primary');
+
+      const field = target.dataset.field;
+      const allInput = bar.querySelector('input[data-field="' + field + '"][data-value="__all__"]');
+      const valueInputs = Array.from(bar.querySelectorAll('input[data-field="' + field + '"]:not([data-value="__all__"])'));
+      if (target.dataset.value === '__all__') {
+        valueInputs.forEach((input) => {
+          input.checked = false;
+        });
+        target.checked = true;
+      } else {
+        if (target.checked && allInput) {
+          allInput.checked = false;
+        }
+        const checkedValues = valueInputs.filter((input) => input.checked);
+        if (!checkedValues.length && allInput) {
+          allInput.checked = true;
+        }
+      }
+
+      const nextFilters = {};
+      fields.forEach((filterField) => {
+        const all = bar.querySelector('input[data-field="' + filterField + '"][data-value="__all__"]');
+        if (all && all.checked) {
+          return;
+        }
+        const checkedValues = Array.from(bar.querySelectorAll('input[data-field="' + filterField + '"]:not([data-value="__all__"])'))
+          .filter((input) => input.checked)
+          .map((input) => input.dataset.value || '');
+        if (checkedValues.length) {
+          nextFilters[filterField] = checkedValues;
+        }
+      });
+
+      onChange(nextFilters);
     });
 
     node.parentNode.insertBefore(bar, node);
@@ -494,10 +544,10 @@
       const payload = parsePayload(node);
       const allRows = payload.data || [];
       const chart = window.echarts.init(node);
-      let activeFilter = { field: '', value: '' };
+      let activeFilters = {};
 
       const rerender = () => {
-        const rows = filterRows(allRows, activeFilter);
+        const rows = filterRows(allRows, activeFilters);
         const option = buildOption(payload, rows);
         chart.setOption(option, true);
 
@@ -529,8 +579,8 @@
       };
 
       rerender();
-      renderFilterBar(node, payload, (nextFilter) => {
-        activeFilter = nextFilter;
+      renderFilterBar(node, payload, (nextFilters) => {
+        activeFilters = nextFilters;
         rerender();
       });
 
