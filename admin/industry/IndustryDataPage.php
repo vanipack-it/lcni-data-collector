@@ -114,6 +114,8 @@ class LCNI_Industry_Data_Page {
 
         $stats = LCNI_DB::get_industry_analysis_table_stats();
         $rebuild_progress = LCNI_DB::get_industry_rebuild_progress();
+        global $wpdb;
+        $table_prefix = (string) $wpdb->prefix;
         $table_stats_by_name = $this->index_stats_by_table_name($stats);
 
         $tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : self::TAB_MATERIALIZED;
@@ -170,13 +172,16 @@ class LCNI_Industry_Data_Page {
                 <?php $this->render_stats_table($stats); ?>
             <?php elseif ($tab === self::TAB_INDEX) : ?>
                 <h2><?php echo esc_html__('Industry Index Table', 'lcni-data-collector'); ?></h2>
-                <?php $this->render_stats_table([$table_stats_by_name['wp_lcni_industry_index'] ?? null]); ?>
+                <?php $this->render_stats_table([$table_stats_by_name[$table_prefix . 'lcni_industry_index'] ?? null]); ?>
+                <?php $this->render_table_data($table_prefix . 'lcni_industry_index'); ?>
             <?php elseif ($tab === self::TAB_RETURN) : ?>
                 <h2><?php echo esc_html__('Industry Return Table', 'lcni-data-collector'); ?></h2>
-                <?php $this->render_stats_table([$table_stats_by_name['wp_lcni_industry_return'] ?? null]); ?>
+                <?php $this->render_stats_table([$table_stats_by_name[$table_prefix . 'lcni_industry_return'] ?? null]); ?>
+                <?php $this->render_table_data($table_prefix . 'lcni_industry_return'); ?>
             <?php else : ?>
                 <h2><?php echo esc_html__('Industry Metrics Table', 'lcni-data-collector'); ?></h2>
-                <?php $this->render_stats_table([$table_stats_by_name['wp_lcni_industry_metrics'] ?? null]); ?>
+                <?php $this->render_stats_table([$table_stats_by_name[$table_prefix . 'lcni_industry_metrics'] ?? null]); ?>
+                <?php $this->render_table_data($table_prefix . 'lcni_industry_metrics'); ?>
             <?php endif; ?>
 
             <h2 style="margin-top: 24px;"><?php echo esc_html__('Manual Controls', 'lcni-data-collector'); ?></h2>
@@ -263,6 +268,55 @@ class LCNI_Industry_Data_Page {
             <?php endif; ?>
             </tbody>
         </table>
+        <?php
+    }
+
+    private function render_table_data($table_name, $limit = 100) {
+        global $wpdb;
+
+        $table = sanitize_text_field((string) $table_name);
+        $safe_limit = max(1, (int) $limit);
+
+        if ($table === '') {
+            return;
+        }
+
+        $columns = $wpdb->get_col("SHOW COLUMNS FROM `{$table}`", 0);
+
+        if (empty($columns)) {
+            echo '<p>' . esc_html__('Không đọc được danh sách cột hoặc bảng không tồn tại.', 'lcni-data-collector') . '</p>';
+            return;
+        }
+
+        $rows = $wpdb->get_results("SELECT * FROM `{$table}` ORDER BY event_time DESC LIMIT {$safe_limit}", ARRAY_A);
+        ?>
+        <h3 style="margin-top: 16px;"><?php echo esc_html(sprintf('Latest %d rows', $safe_limit)); ?></h3>
+        <div style="max-width: 100%; overflow-x: auto;">
+            <table class="widefat striped" style="min-width: 980px;">
+                <thead>
+                <tr>
+                    <?php foreach ($columns as $column) : ?>
+                        <th><code><?php echo esc_html((string) $column); ?></code></th>
+                    <?php endforeach; ?>
+                </tr>
+                </thead>
+                <tbody>
+                <?php if (empty($rows)) : ?>
+                    <tr>
+                        <td colspan="<?php echo esc_attr((string) count($columns)); ?>"><?php echo esc_html__('No data found.', 'lcni-data-collector'); ?></td>
+                    </tr>
+                <?php else : ?>
+                    <?php foreach ($rows as $row) : ?>
+                        <tr>
+                            <?php foreach ($columns as $column) : ?>
+                                <td><?php echo esc_html((string) ($row[$column] ?? '')); ?></td>
+                            <?php endforeach; ?>
+                        </tr>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
         <?php
     }
 }
