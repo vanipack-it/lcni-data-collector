@@ -4320,36 +4320,6 @@ private function sanitize_module_title($value, $fallback) {
             return in_array($column, $allowed_keys, true);
         }));
 
-        $normalize_column_keys = static function ($value) {
-            $items = [];
-            if (is_array($value)) {
-                $items = $value;
-            } elseif (is_string($value)) {
-                $items = explode(',', $value);
-            }
-
-            $normalized = [];
-            foreach ($items as $item) {
-                if (!is_scalar($item)) {
-                    continue;
-                }
-                $key = sanitize_key((string) $item);
-                if ($key !== '') {
-                    $normalized[] = $key;
-                }
-            }
-
-            return $normalized;
-        };
-
-        $sanitize_hex_or_default = static function ($value, $default) {
-            $candidate = is_scalar($value) ? (string) $value : '';
-            return sanitize_hex_color($candidate) ?: $default;
-        };
-
-        $allowed_columns_raw = $normalize_column_keys($input['allowed_columns'] ?? []);
-        $allowed_columns = !empty($allowed_columns_raw)
-            ? array_values(array_intersect($allowed_keys, $allowed_columns_raw))
         $allowed_columns_raw = [];
         if (isset($input['allowed_columns'])) {
             if (is_array($input['allowed_columns'])) {
@@ -4367,8 +4337,6 @@ private function sanitize_module_title($value, $fallback) {
             $allowed_columns = !empty($default_columns) ? $default_columns : array_slice($allowed_keys, 0, 8);
         }
 
-        $column_order_raw = $normalize_column_keys($input['column_order'] ?? []);
-        $column_order = array_values(array_filter($column_order_raw, static function ($column) use ($allowed_columns) {
         $column_order_raw = [];
         if (isset($input['column_order'])) {
             if (is_array($input['column_order'])) {
@@ -4387,27 +4355,26 @@ private function sanitize_module_title($value, $fallback) {
         }
 
         $styles = isset($input['styles']) && is_array($input['styles']) ? $input['styles'] : [];
-        $sticky_column = sanitize_key((string) (is_scalar($styles['sticky_column'] ?? null) ? $styles['sticky_column'] : 'signal__symbol'));
         $sticky_column = sanitize_key((string) ($styles['sticky_column'] ?? 'signal__symbol'));
 
         return [
             'allowed_columns' => $allowed_columns,
             'column_order' => $column_order,
             'styles' => [
-                'font' => sanitize_text_field((string) (is_scalar($styles['font'] ?? null) ? $styles['font'] : 'inherit')),
-                'text_color' => $sanitize_hex_or_default($styles['text_color'] ?? '#111827', '#111827'),
-                'background' => $sanitize_hex_or_default($styles['background'] ?? '#ffffff', '#ffffff'),
-                'border' => sanitize_text_field((string) (is_scalar($styles['border'] ?? null) ? $styles['border'] : '1px solid #e5e7eb')),
+                'font' => sanitize_text_field($styles['font'] ?? 'inherit'),
+                'text_color' => sanitize_hex_color($styles['text_color'] ?? '#111827') ?: '#111827',
+                'background' => sanitize_hex_color($styles['background'] ?? '#ffffff') ?: '#ffffff',
+                'border' => sanitize_text_field($styles['border'] ?? '1px solid #e5e7eb'),
                 'border_radius' => max(0, min(24, (int) ($styles['border_radius'] ?? 8))),
                 'header_font_size' => max(10, min(30, (int) ($styles['header_font_size'] ?? 14))),
                 'row_font_size' => max(10, min(30, (int) ($styles['row_font_size'] ?? 14))),
-                'header_background' => $sanitize_hex_or_default($styles['header_background'] ?? '#ffffff', '#ffffff'),
-                'header_text_color' => $sanitize_hex_or_default($styles['header_text_color'] ?? '#111827', '#111827'),
-                'value_background' => $sanitize_hex_or_default($styles['value_background'] ?? '#ffffff', '#ffffff'),
-                'value_text_color' => $sanitize_hex_or_default($styles['value_text_color'] ?? '#111827', '#111827'),
-                'row_divider_color' => $sanitize_hex_or_default($styles['row_divider_color'] ?? '#e5e7eb', '#e5e7eb'),
+                'header_background' => sanitize_hex_color($styles['header_background'] ?? '#ffffff') ?: '#ffffff',
+                'header_text_color' => sanitize_hex_color($styles['header_text_color'] ?? '#111827') ?: '#111827',
+                'value_background' => sanitize_hex_color($styles['value_background'] ?? '#ffffff') ?: '#ffffff',
+                'value_text_color' => sanitize_hex_color($styles['value_text_color'] ?? '#111827') ?: '#111827',
+                'row_divider_color' => sanitize_hex_color($styles['row_divider_color'] ?? '#e5e7eb') ?: '#e5e7eb',
                 'row_divider_width' => max(1, min(6, (int) ($styles['row_divider_width'] ?? 1))),
-                'row_hover_bg' => $sanitize_hex_or_default($styles['row_hover_bg'] ?? '#f3f4f6', '#f3f4f6'),
+                'row_hover_bg' => sanitize_hex_color($styles['row_hover_bg'] ?? '#f3f4f6') ?: '#f3f4f6',
                 'head_height' => max(24, min(120, (int) ($styles['head_height'] ?? 30))),
                 'sticky_column' => in_array($sticky_column, $allowed_columns, true) ? $sticky_column : ($allowed_columns[0] ?? 'signal__symbol'),
                 'sticky_header' => !empty($styles['sticky_header']) ? 1 : 0,
