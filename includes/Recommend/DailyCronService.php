@@ -211,11 +211,13 @@ class DailyCronService {
             $r_multiple = $this->position_engine->calculate_r_multiple((float) $signal['entry_price'], (float) $signal['initial_sl'], $current_price);
             $position_state = $this->position_engine->resolve_state($r_multiple, (float) $rule['add_at_r'], (float) $rule['exit_at_r']);
             $holding_days = max(0, (int) floor(((int) $price_snapshot['event_time'] - (int) $signal['entry_time']) / DAY_IN_SECONDS));
+            $max_hold_days = max(1, (int) ($rule['max_hold_days'] ?? 1));
+            $capped_holding_days = min($holding_days, $max_hold_days);
 
-            $this->signal_repository->update_open_signal_metrics((int) $signal['id'], $current_price, $r_multiple, $position_state, $holding_days);
+            $this->signal_repository->update_open_signal_metrics((int) $signal['id'], $current_price, $r_multiple, $position_state, $capped_holding_days);
 
             if ($this->exit_engine->should_exit($signal, $rule, $current_price, $r_multiple, $holding_days)) {
-                $this->signal_repository->close_signal((int) $signal['id'], $current_price, (int) $price_snapshot['event_time'], $r_multiple, $holding_days);
+                $this->signal_repository->close_signal((int) $signal['id'], $current_price, (int) $price_snapshot['event_time'], $r_multiple, $capped_holding_days);
             }
         }
     }
