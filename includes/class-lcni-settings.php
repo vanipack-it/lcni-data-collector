@@ -51,6 +51,7 @@ class LCNI_Settings {
         register_setting('lcni_settings_group', 'lcni_update_interval_minutes', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_update_interval'], 'default' => 5]);
         register_setting('lcni_settings_group', 'lcni_ohlc_latest_interval_minutes', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_update_interval'], 'default' => 5]);
         register_setting('lcni_settings_group', 'lcni_frontend_settings_signals', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_frontend_module_settings'], 'default' => []]);
+        register_setting('lcni_settings_group', 'lcni_frontend_settings_recommend_signal', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_recommend_signal_settings'], 'default' => []]);
         register_setting('lcni_settings_group', 'lcni_frontend_settings_overview', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_frontend_module_settings'], 'default' => []]);
         register_setting('lcni_settings_group', 'lcni_frontend_settings_chart', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_frontend_chart_settings'], 'default' => []]);
         register_setting('lcni_settings_group', 'lcni_frontend_stock_detail_page', ['type' => 'integer', 'sanitize_callback' => 'absint', 'default' => 0]);
@@ -362,7 +363,7 @@ class LCNI_Settings {
             }
         } elseif ($action === 'save_frontend_settings') {
             $module = isset($_POST['lcni_frontend_module']) ? sanitize_key(wp_unslash($_POST['lcni_frontend_module'])) : '';
-            $allowed_modules = ['signals', 'overview', 'chart', 'chart_analyst', 'chart_builder', 'watchlist', 'filter', 'column_labels', 'button_style', 'data_format'];
+            $allowed_modules = ['signals', 'recommend_signal', 'overview', 'chart', 'chart_analyst', 'chart_builder', 'watchlist', 'filter', 'column_labels', 'button_style', 'data_format'];
 
             if (!in_array($module, $allowed_modules, true)) {
                 $this->set_notice('error', 'Module frontend không hợp lệ.');
@@ -419,6 +420,33 @@ class LCNI_Settings {
                     ];
 
                     update_option('lcni_chart_analyst_settings', LCNI_Chart_Analyst_Settings::sanitize_config($input));
+                } elseif ($module === 'recommend_signal') {
+                    $input = [
+                        'allowed_columns' => isset($_POST['lcni_frontend_recommend_signal_allowed_columns']) ? (array) wp_unslash($_POST['lcni_frontend_recommend_signal_allowed_columns']) : [],
+                        'column_order' => array_filter(array_map('sanitize_key', explode(',', (string) (isset($_POST['lcni_frontend_recommend_signal_column_order']) ? wp_unslash($_POST['lcni_frontend_recommend_signal_column_order']) : '')))),
+                        'styles' => [
+                            'font' => isset($_POST['lcni_frontend_recommend_signal_style_font']) ? wp_unslash($_POST['lcni_frontend_recommend_signal_style_font']) : 'inherit',
+                            'text_color' => isset($_POST['lcni_frontend_recommend_signal_style_text_color']) ? wp_unslash($_POST['lcni_frontend_recommend_signal_style_text_color']) : '',
+                            'background' => isset($_POST['lcni_frontend_recommend_signal_style_background']) ? wp_unslash($_POST['lcni_frontend_recommend_signal_style_background']) : '',
+                            'border' => isset($_POST['lcni_frontend_recommend_signal_style_border']) ? wp_unslash($_POST['lcni_frontend_recommend_signal_style_border']) : '',
+                            'border_radius' => isset($_POST['lcni_frontend_recommend_signal_style_border_radius']) ? wp_unslash($_POST['lcni_frontend_recommend_signal_style_border_radius']) : 8,
+                            'header_font_size' => isset($_POST['lcni_frontend_recommend_signal_style_header_font_size']) ? wp_unslash($_POST['lcni_frontend_recommend_signal_style_header_font_size']) : 14,
+                            'row_font_size' => isset($_POST['lcni_frontend_recommend_signal_style_row_font_size']) ? wp_unslash($_POST['lcni_frontend_recommend_signal_style_row_font_size']) : 14,
+                            'header_background' => isset($_POST['lcni_frontend_recommend_signal_style_header_background']) ? wp_unslash($_POST['lcni_frontend_recommend_signal_style_header_background']) : '',
+                            'header_text_color' => isset($_POST['lcni_frontend_recommend_signal_style_header_text_color']) ? wp_unslash($_POST['lcni_frontend_recommend_signal_style_header_text_color']) : '',
+                            'value_background' => isset($_POST['lcni_frontend_recommend_signal_style_value_background']) ? wp_unslash($_POST['lcni_frontend_recommend_signal_style_value_background']) : '',
+                            'value_text_color' => isset($_POST['lcni_frontend_recommend_signal_style_value_text_color']) ? wp_unslash($_POST['lcni_frontend_recommend_signal_style_value_text_color']) : '',
+                            'row_divider_color' => isset($_POST['lcni_frontend_recommend_signal_style_row_divider_color']) ? wp_unslash($_POST['lcni_frontend_recommend_signal_style_row_divider_color']) : '',
+                            'row_divider_width' => isset($_POST['lcni_frontend_recommend_signal_style_row_divider_width']) ? wp_unslash($_POST['lcni_frontend_recommend_signal_style_row_divider_width']) : 1,
+                            'row_hover_bg' => isset($_POST['lcni_frontend_recommend_signal_style_row_hover_bg']) ? wp_unslash($_POST['lcni_frontend_recommend_signal_style_row_hover_bg']) : '',
+                            'head_height' => isset($_POST['lcni_frontend_recommend_signal_style_head_height']) ? wp_unslash($_POST['lcni_frontend_recommend_signal_style_head_height']) : 30,
+                            'sticky_column' => isset($_POST['lcni_frontend_recommend_signal_style_sticky_column']) ? wp_unslash($_POST['lcni_frontend_recommend_signal_style_sticky_column']) : 'signal__symbol',
+                            'sticky_header' => isset($_POST['lcni_frontend_recommend_signal_style_sticky_header']) ? 1 : 0,
+                        ],
+                    ];
+
+                    $sanitized = $this->sanitize_recommend_signal_settings($input);
+                    update_option('lcni_frontend_settings_recommend_signal', $sanitized);
                 } elseif ($module === 'watchlist') {
                     $existing_watchlist = $this->sanitize_watchlist_settings(get_option('lcni_watchlist_settings', []));
                     $existing_label_pairs = $this->normalize_watchlist_column_label_pairs($existing_watchlist['column_labels'] ?? []);
@@ -697,7 +725,7 @@ class LCNI_Settings {
         $redirect_page = in_array($redirect_page, ['lcni-settings', 'lcni-data-viewer'], true) ? $redirect_page : 'lcni-settings';
         $redirect_url = admin_url('admin.php?page=' . $redirect_page);
 
-        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange', 'lcni-tab-update-runtime', 'lcni-tab-update-ohlc-latest', 'lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-chart-builder', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format'], true)) {
+        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange', 'lcni-tab-update-runtime', 'lcni-tab-update-ohlc-latest', 'lcni-tab-frontend-signals', 'lcni-tab-frontend-recommend-signal', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-chart-builder', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format'], true)) {
             $redirect_url = add_query_arg('tab', $redirect_tab, $redirect_url);
         }
 
@@ -1554,7 +1582,7 @@ class LCNI_Settings {
 
         $active_tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'general';
         $rule_sub_tabs = ['lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange'];
-        $frontend_sub_tabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-chart-builder', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format'];
+        $frontend_sub_tabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-recommend-signal', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-chart-builder', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format'];
         $update_data_sub_tabs = ['lcni-tab-update-runtime', 'lcni-tab-update-ohlc-latest'];
         if (in_array($active_tab, $rule_sub_tabs, true)) {
             $active_tab = 'rule_settings';
@@ -3014,6 +3042,7 @@ private function sanitize_module_title($value, $fallback) {
         <p>Cấu hình hiển thị frontend cho từng shortcode module.</p>
         <div class="lcni-sub-tab-nav" id="lcni-front-sub-tabs">
             <button type="button" data-sub-tab="lcni-tab-frontend-signals">LCNi Signals</button>
+            <button type="button" data-sub-tab="lcni-tab-frontend-recommend-signal">Recommend Signal</button>
             <button type="button" data-sub-tab="lcni-tab-frontend-overview">Stock Overview</button>
             <button type="button" data-sub-tab="lcni-tab-frontend-chart">Stock Chart</button>
             <button type="button" data-sub-tab="lcni-tab-frontend-chart-analyst">Chart Analyst</button>
@@ -3026,6 +3055,7 @@ private function sanitize_module_title($value, $fallback) {
             <button type="button" data-sub-tab="lcni-tab-frontend-member">Member</button>
         </div>
         <?php $this->render_frontend_module_form('signals', 'lcni-tab-frontend-signals', $signals_labels, $signals); ?>
+        <?php $this->render_frontend_recommend_signal_form('recommend_signal', 'lcni-tab-frontend-recommend-signal'); ?>
         <?php $this->render_frontend_module_form('overview', 'lcni-tab-frontend-overview', $overview_labels, $overview); ?>
         <?php $this->render_frontend_chart_form('chart', 'lcni-tab-frontend-chart', $chart); ?>
         <?php $this->render_frontend_chart_analyst_form('chart_analyst', 'lcni-tab-frontend-chart-analyst', $chart_analyst); ?>
@@ -3052,13 +3082,13 @@ private function sanitize_module_title($value, $fallback) {
                 const activate = function(tabId){
                     buttons.forEach((btn) => btn.classList.toggle('active', btn.getAttribute('data-sub-tab') === tabId));
                     panes.forEach((pane) => {
-                        if (pane.id === 'lcni-tab-frontend-signals' || pane.id === 'lcni-tab-frontend-overview' || pane.id === 'lcni-tab-frontend-chart' || pane.id === 'lcni-tab-frontend-chart-analyst' || pane.id === 'lcni-tab-frontend-chart-builder' || pane.id === 'lcni-tab-frontend-watchlist' || pane.id === 'lcni-tab-frontend-filter' || pane.id === 'lcni-tab-frontend-style-config' || pane.id === 'lcni-tab-frontend-column-label' || pane.id === 'lcni-tab-frontend-data-format' || pane.id === 'lcni-tab-frontend-member') {
+                        if (pane.id === 'lcni-tab-frontend-signals' || pane.id === 'lcni-tab-frontend-recommend-signal' || pane.id === 'lcni-tab-frontend-overview' || pane.id === 'lcni-tab-frontend-chart' || pane.id === 'lcni-tab-frontend-chart-analyst' || pane.id === 'lcni-tab-frontend-chart-builder' || pane.id === 'lcni-tab-frontend-watchlist' || pane.id === 'lcni-tab-frontend-filter' || pane.id === 'lcni-tab-frontend-style-config' || pane.id === 'lcni-tab-frontend-column-label' || pane.id === 'lcni-tab-frontend-data-format' || pane.id === 'lcni-tab-frontend-member') {
                             pane.classList.toggle('active', pane.id === tabId);
                         }
                     });
                 };
                 buttons.forEach((btn) => btn.addEventListener('click', () => activate(btn.getAttribute('data-sub-tab'))));
-                const validTabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-chart-builder', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format', 'lcni-tab-frontend-member'];
+                const validTabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-recommend-signal', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-chart-builder', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format', 'lcni-tab-frontend-member'];
                 activate(validTabs.includes(current) ? current : 'lcni-tab-frontend-signals');
 
                 const bindFrontendModuleSortable = (form) => {
@@ -4233,6 +4263,252 @@ private function sanitize_module_title($value, $fallback) {
                 </tbody></table>
                 <?php submit_button('Save'); ?>
             </form>
+        </div>
+        <?php
+    }
+
+
+    private function get_recommend_signal_column_catalog() {
+        global $wpdb;
+
+        $sources = [
+            'rule' => ['table' => $wpdb->prefix . 'lcni_recommend_rule', 'label' => 'Rule'],
+            'signal' => ['table' => $wpdb->prefix . 'lcni_recommend_signal', 'label' => 'Signal'],
+            'ohlc' => ['table' => $wpdb->prefix . 'lcni_ohlc_latest', 'label' => 'OHLC Latest'],
+        ];
+
+        $catalog = [];
+        foreach ($sources as $source_key => $source) {
+            $table = (string) ($source['table'] ?? '');
+            if ($table === '') {
+                continue;
+            }
+
+            $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+            if ($exists !== $table) {
+                continue;
+            }
+
+            $columns = $wpdb->get_col("SHOW COLUMNS FROM {$table}");
+            if (!is_array($columns)) {
+                continue;
+            }
+
+            foreach ($columns as $column) {
+                $field = sanitize_key((string) $column);
+                if ($field === '') {
+                    continue;
+                }
+
+                $key = $source_key . '__' . $field;
+                $catalog[$key] = [
+                    'source' => $source_key,
+                    'column' => $field,
+                    'label' => ($source['label'] ?? $source_key) . ' · ' . ucwords(str_replace('_', ' ', $field)),
+                ];
+            }
+        }
+
+        return $catalog;
+    }
+
+    private function sanitize_recommend_signal_settings($input) {
+        $catalog = $this->get_recommend_signal_column_catalog();
+        $allowed_keys = array_keys($catalog);
+        $default_columns = array_values(array_filter(['signal__symbol', 'rule__name', 'signal__entry_price', 'signal__current_price', 'signal__r_multiple', 'signal__position_state', 'signal__status'], static function ($column) use ($allowed_keys) {
+            return in_array($column, $allowed_keys, true);
+        }));
+
+        $allowed_columns = isset($input['allowed_columns']) && is_array($input['allowed_columns'])
+            ? array_values(array_intersect($allowed_keys, array_map('sanitize_key', $input['allowed_columns'])))
+            : $default_columns;
+
+        if (empty($allowed_columns)) {
+            $allowed_columns = !empty($default_columns) ? $default_columns : array_slice($allowed_keys, 0, 8);
+        }
+
+        $column_order_raw = isset($input['column_order']) && is_array($input['column_order']) ? $input['column_order'] : [];
+        $column_order = array_values(array_filter(array_map('sanitize_key', $column_order_raw), static function ($column) use ($allowed_columns) {
+            return in_array($column, $allowed_columns, true);
+        }));
+        foreach ($allowed_columns as $column) {
+            if (!in_array($column, $column_order, true)) {
+                $column_order[] = $column;
+            }
+        }
+
+        $styles = isset($input['styles']) && is_array($input['styles']) ? $input['styles'] : [];
+
+        return [
+            'allowed_columns' => $allowed_columns,
+            'column_order' => $column_order,
+            'styles' => [
+                'font' => sanitize_text_field($styles['font'] ?? 'inherit'),
+                'text_color' => sanitize_hex_color($styles['text_color'] ?? '#111827') ?: '#111827',
+                'background' => sanitize_hex_color($styles['background'] ?? '#ffffff') ?: '#ffffff',
+                'border' => sanitize_text_field($styles['border'] ?? '1px solid #e5e7eb'),
+                'border_radius' => max(0, min(24, (int) ($styles['border_radius'] ?? 8))),
+                'header_font_size' => max(10, min(30, (int) ($styles['header_font_size'] ?? 14))),
+                'row_font_size' => max(10, min(30, (int) ($styles['row_font_size'] ?? 14))),
+                'header_background' => sanitize_hex_color($styles['header_background'] ?? '#ffffff') ?: '#ffffff',
+                'header_text_color' => sanitize_hex_color($styles['header_text_color'] ?? '#111827') ?: '#111827',
+                'value_background' => sanitize_hex_color($styles['value_background'] ?? '#ffffff') ?: '#ffffff',
+                'value_text_color' => sanitize_hex_color($styles['value_text_color'] ?? '#111827') ?: '#111827',
+                'row_divider_color' => sanitize_hex_color($styles['row_divider_color'] ?? '#e5e7eb') ?: '#e5e7eb',
+                'row_divider_width' => max(1, min(6, (int) ($styles['row_divider_width'] ?? 1))),
+                'row_hover_bg' => sanitize_hex_color($styles['row_hover_bg'] ?? '#f3f4f6') ?: '#f3f4f6',
+                'head_height' => max(24, min(120, (int) ($styles['head_height'] ?? 30))),
+                'sticky_column' => in_array(sanitize_key($styles['sticky_column'] ?? 'signal__symbol'), $allowed_columns, true) ? sanitize_key($styles['sticky_column'] ?? 'signal__symbol') : ($allowed_columns[0] ?? 'signal__symbol'),
+                'sticky_header' => !empty($styles['sticky_header']) ? 1 : 0,
+            ],
+        ];
+    }
+
+    private function render_frontend_recommend_signal_form($module, $tab_id) {
+        $settings = $this->sanitize_recommend_signal_settings(get_option('lcni_frontend_settings_recommend_signal', []));
+        $catalog = $this->get_recommend_signal_column_catalog();
+        $allowed_columns = (array) ($settings['allowed_columns'] ?? []);
+        $column_order = (array) ($settings['column_order'] ?? $allowed_columns);
+        ?>
+        <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
+            <div class="lcni-sub-tab-nav" id="lcni-recommend-signal-sub-tabs">
+                <button type="button" data-recommend-signal-sub-tab="lcni-recommend-signal-columns">Columns</button>
+                <button type="button" data-recommend-signal-sub-tab="lcni-recommend-signal-style">Style</button>
+            </div>
+
+            <div id="lcni-recommend-signal-columns" class="lcni-watchlist-pane">
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                    <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                    <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
+                    <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                    <input type="hidden" name="lcni_frontend_recommend_signal_column_order" value="<?php echo esc_attr(implode(',', $column_order)); ?>" data-recommend-signal-selected-order>
+                    <h3>Recommend Signal Columns</h3>
+                    <p>Chọn cột hiển thị cho shortcode <code>[lcni_signals]</code> từ các bảng rule/signal/ohlc_latest.</p>
+                    <div style="display:grid;grid-template-columns:80% 20%;gap:12px;align-items:start;">
+                        <div class="lcni-front-grid" style="margin:0;">
+                            <?php foreach ($catalog as $key => $meta) : ?>
+                                <label><input type="checkbox" name="lcni_frontend_recommend_signal_allowed_columns[]" value="<?php echo esc_attr($key); ?>" data-recommend-signal-columns-checkbox <?php checked(in_array($key, $allowed_columns, true)); ?>> <?php echo esc_html((string) ($meta['label'] ?? $key)); ?></label>
+                            <?php endforeach; ?>
+                        </div>
+                        <div>
+                            <p><strong>Selected order</strong></p>
+                            <ol data-recommend-signal-selected-list style="margin:0;padding-left:18px;max-height:360px;overflow:auto;">
+                                <?php foreach ($column_order as $column) : ?>
+                                    <li draggable="true" data-recommend-signal-selected-column="<?php echo esc_attr($column); ?>" style="cursor:move;padding:4px 0;"><?php echo esc_html((string) ($catalog[$column]['label'] ?? $column)); ?></li>
+                                <?php endforeach; ?>
+                            </ol>
+                        </div>
+                    </div>
+                    <?php submit_button('Save'); ?>
+                </form>
+            </div>
+
+            <div id="lcni-recommend-signal-style" class="lcni-watchlist-pane">
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                    <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                    <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
+                    <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                    <?php foreach ($allowed_columns as $column) : ?><input type="hidden" name="lcni_frontend_recommend_signal_allowed_columns[]" value="<?php echo esc_attr($column); ?>"><?php endforeach; ?>
+                    <input type="hidden" name="lcni_frontend_recommend_signal_column_order" value="<?php echo esc_attr(implode(',', $column_order)); ?>">
+                    <h3>Recommend Signal Style Config</h3>
+                    <p><label>Font <input type="text" name="lcni_frontend_recommend_signal_style_font" value="<?php echo esc_attr((string) ($settings['styles']['font'] ?? 'inherit')); ?>"></label></p>
+                    <p><label>Text color <input type="color" name="lcni_frontend_recommend_signal_style_text_color" value="<?php echo esc_attr((string) ($settings['styles']['text_color'] ?? '#111827')); ?>"></label></p>
+                    <p><label>Background <input type="color" name="lcni_frontend_recommend_signal_style_background" value="<?php echo esc_attr((string) ($settings['styles']['background'] ?? '#ffffff')); ?>"></label></p>
+                    <p><label>Border <input type="text" name="lcni_frontend_recommend_signal_style_border" value="<?php echo esc_attr((string) ($settings['styles']['border'] ?? '1px solid #e5e7eb')); ?>"></label></p>
+                    <p><label>Border radius <input type="number" min="0" max="24" name="lcni_frontend_recommend_signal_style_border_radius" value="<?php echo esc_attr((string) ($settings['styles']['border_radius'] ?? 8)); ?>"> px</label></p>
+                    <p><label>Header label font size <input type="number" min="10" max="30" name="lcni_frontend_recommend_signal_style_header_font_size" value="<?php echo esc_attr((string) ($settings['styles']['header_font_size'] ?? 14)); ?>"> px</label></p>
+                    <p><label>Row font size <input type="number" min="10" max="30" name="lcni_frontend_recommend_signal_style_row_font_size" value="<?php echo esc_attr((string) ($settings['styles']['row_font_size'] ?? 14)); ?>"> px</label></p>
+                    <p><label>Header background <input type="color" name="lcni_frontend_recommend_signal_style_header_background" value="<?php echo esc_attr((string) ($settings['styles']['header_background'] ?? '#ffffff')); ?>"></label></p>
+                    <p><label>Header text color <input type="color" name="lcni_frontend_recommend_signal_style_header_text_color" value="<?php echo esc_attr((string) ($settings['styles']['header_text_color'] ?? '#111827')); ?>"></label></p>
+                    <p><label>Value background <input type="color" name="lcni_frontend_recommend_signal_style_value_background" value="<?php echo esc_attr((string) ($settings['styles']['value_background'] ?? '#ffffff')); ?>"></label></p>
+                    <p><label>Value text color <input type="color" name="lcni_frontend_recommend_signal_style_value_text_color" value="<?php echo esc_attr((string) ($settings['styles']['value_text_color'] ?? '#111827')); ?>"></label></p>
+                    <p><label>Row divider color <input type="color" name="lcni_frontend_recommend_signal_style_row_divider_color" value="<?php echo esc_attr((string) ($settings['styles']['row_divider_color'] ?? '#e5e7eb')); ?>"></label></p>
+                    <p><label>Row divider width <input type="number" min="1" max="6" name="lcni_frontend_recommend_signal_style_row_divider_width" value="<?php echo esc_attr((string) ($settings['styles']['row_divider_width'] ?? 1)); ?>"> px</label></p>
+                    <p><label>Row hover background <input type="color" name="lcni_frontend_recommend_signal_style_row_hover_bg" value="<?php echo esc_attr((string) ($settings['styles']['row_hover_bg'] ?? '#f3f4f6')); ?>"></label></p>
+                    <p><label>Header row height <input type="number" min="24" max="120" name="lcni_frontend_recommend_signal_style_head_height" value="<?php echo esc_attr((string) ($settings['styles']['head_height'] ?? 30)); ?>"> px</label></p>
+                    <p><label>Sticky column
+                        <select name="lcni_frontend_recommend_signal_style_sticky_column">
+                            <?php foreach ($allowed_columns as $column) : ?>
+                                <option value="<?php echo esc_attr($column); ?>" <?php selected((string) ($settings['styles']['sticky_column'] ?? ''), $column); ?>><?php echo esc_html((string) ($catalog[$column]['label'] ?? $column)); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label></p>
+                    <p><label><input type="checkbox" name="lcni_frontend_recommend_signal_style_sticky_header" value="1" <?php checked((int) ($settings['styles']['sticky_header'] ?? 0), 1); ?>> Sticky header row</label></p>
+                    <?php submit_button('Save'); ?>
+                </form>
+            </div>
+
+            <script>
+                (function(){
+                    const root = document.getElementById('<?php echo esc_js($tab_id); ?>');
+                    if (!root) return;
+                    const nav = root.querySelector('#lcni-recommend-signal-sub-tabs');
+                    if (!nav) return;
+                    const buttons = nav.querySelectorAll('button[data-recommend-signal-sub-tab]');
+                    const panes = root.querySelectorAll('.lcni-watchlist-pane');
+                    const validTabs = ['lcni-recommend-signal-columns', 'lcni-recommend-signal-style'];
+                    const url = new URL(window.location.href);
+                    const activate = function(tabId) {
+                        const resolved = validTabs.includes(tabId) ? tabId : validTabs[0];
+                        buttons.forEach((btn) => btn.classList.toggle('active', btn.getAttribute('data-recommend-signal-sub-tab') === resolved));
+                        panes.forEach((pane) => pane.classList.toggle('active', pane.id === resolved));
+                        const nextUrl = new URL(window.location.href);
+                        nextUrl.searchParams.set('recommend_signal_tab', resolved);
+                        window.history.replaceState({}, '', nextUrl.toString());
+                    };
+                    buttons.forEach((btn) => btn.addEventListener('click', () => activate(btn.getAttribute('data-recommend-signal-sub-tab'))));
+
+                    const form = root.querySelector('#lcni-recommend-signal-columns form');
+                    if (form) {
+                        const selectedList = form.querySelector('[data-recommend-signal-selected-list]');
+                        const hiddenOrder = form.querySelector('[data-recommend-signal-selected-order]');
+                        const labelMap = {};
+                        form.querySelectorAll('[data-recommend-signal-columns-checkbox]').forEach((checkbox) => {
+                            const parentLabel = checkbox.closest('label');
+                            labelMap[checkbox.value] = parentLabel ? parentLabel.textContent.trim() : checkbox.value;
+                        });
+
+                        const syncOrder = () => {
+                            hiddenOrder.value = Array.from(selectedList.querySelectorAll('[data-recommend-signal-selected-column]')).map((node) => node.getAttribute('data-recommend-signal-selected-column') || '').filter(Boolean).join(',');
+                        };
+
+                        const bindDnD = () => {
+                            let dragging = null;
+                            selectedList.querySelectorAll('[data-recommend-signal-selected-column]').forEach((item) => {
+                                item.addEventListener('dragstart', () => { dragging = item; item.style.opacity = '0.5'; });
+                                item.addEventListener('dragend', () => { item.style.opacity = ''; dragging = null; syncOrder(); });
+                                item.addEventListener('dragover', (event) => event.preventDefault());
+                                item.addEventListener('drop', (event) => {
+                                    event.preventDefault();
+                                    if (!dragging || dragging === item) return;
+                                    const rect = item.getBoundingClientRect();
+                                    const after = (event.clientY - rect.top) > rect.height / 2;
+                                    if (after) item.after(dragging); else item.before(dragging);
+                                    syncOrder();
+                                });
+                            });
+                        };
+
+                        const rebuildSelected = () => {
+                            const checked = Array.from(form.querySelectorAll('[data-recommend-signal-columns-checkbox]:checked')).map((node) => node.value);
+                            const existing = Array.from(selectedList.querySelectorAll('[data-recommend-signal-selected-column]')).map((node) => node.getAttribute('data-recommend-signal-selected-column') || '');
+                            const next = existing.filter((field) => checked.includes(field));
+                            checked.forEach((field) => { if (!next.includes(field)) next.push(field); });
+                            selectedList.innerHTML = next.map((field) => `<li draggable="true" data-recommend-signal-selected-column="${field}" style="cursor:move;padding:4px 0;">${labelMap[field] || field}</li>`).join('');
+                            bindDnD();
+                            syncOrder();
+                        };
+
+                        form.querySelectorAll('[data-recommend-signal-columns-checkbox]').forEach((checkbox) => checkbox.addEventListener('change', rebuildSelected));
+                        bindDnD();
+                        syncOrder();
+                    }
+
+                    activate(url.searchParams.get('recommend_signal_tab') || validTabs[0]);
+                })();
+            </script>
         </div>
         <?php
     }

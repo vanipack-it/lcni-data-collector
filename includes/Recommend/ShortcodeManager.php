@@ -25,25 +25,87 @@ class ShortcodeManager {
 
     public function render_signals($atts = []) {
         $atts = shortcode_atts(['rule_id' => 0, 'status' => '', 'limit' => 20, 'symbol' => ''], $atts, 'lcni_signals');
-        $rows = $this->signal_repository->list_signals($atts);
+        $frontend_settings = $this->get_recommend_signal_frontend_settings();
+        $columns = (array) ($frontend_settings['column_order'] ?? []);
+
+        $rows = $this->signal_repository->list_signals([
+            'rule_id' => $atts['rule_id'],
+            'status' => $atts['status'],
+            'limit' => $atts['limit'],
+            'symbol' => $atts['symbol'],
+            'selected_columns' => $columns,
+        ]);
+
+        $catalog = $this->signal_repository->get_recommend_column_catalog();
+        $styles = (array) ($frontend_settings['styles'] ?? []);
+        $wrapper_style = sprintf('font-family:%s;color:%s;background:%s;border:%s;border-radius:%dpx;overflow:auto;',
+            esc_attr((string) ($styles['font'] ?? 'inherit')),
+            esc_attr((string) ($styles['text_color'] ?? '#111827')),
+            esc_attr((string) ($styles['background'] ?? '#ffffff')),
+            esc_attr((string) ($styles['border'] ?? '1px solid #e5e7eb')),
+            (int) ($styles['border_radius'] ?? 8)
+        );
 
         ob_start();
-        echo '<table><thead><tr><th>Symbol</th><th>Entry</th><th>Current</th><th>R</th><th>State</th><th>Action</th><th>Status</th></tr></thead><tbody>';
+        echo '<div class="lcni-recommend-signals-table" style="' . $wrapper_style . '">';
+        echo '<table style="width:100%;border-collapse:collapse;font-size:' . (int) ($styles['row_font_size'] ?? 14) . 'px;">';
+        echo '<thead><tr style="height:' . (int) ($styles['head_height'] ?? 30) . 'px;background:' . esc_attr((string) ($styles['header_background'] ?? '#ffffff')) . ';color:' . esc_attr((string) ($styles['header_text_color'] ?? '#111827')) . ';">';
+        foreach ($columns as $column) {
+            $label = isset($catalog[$column]) ? (ucwords(str_replace('_', ' ', (string) $catalog[$column]['column']))) : $column;
+            echo '<th style="text-align:left;padding:8px;border-bottom:' . (int) ($styles['row_divider_width'] ?? 1) . 'px solid ' . esc_attr((string) ($styles['row_divider_color'] ?? '#e5e7eb')) . ';font-size:' . (int) ($styles['header_font_size'] ?? 14) . 'px;">' . esc_html($label) . '</th>';
+        }
+        echo '</tr></thead><tbody>';
+
         foreach ($rows as $row) {
-            $action = $this->position_engine->action_for_state((string) $row['position_state']);
-            echo '<tr>';
-            echo '<td>' . esc_html($row['symbol']) . '</td>';
-            echo '<td>' . esc_html((string) $row['entry_price']) . '</td>';
-            echo '<td>' . esc_html((string) $row['current_price']) . '</td>';
-            echo '<td>' . esc_html(number_format((float) $row['r_multiple'], 2)) . '</td>';
-            echo '<td>' . esc_html((string) $row['position_state']) . '</td>';
-            echo '<td>' . esc_html($action) . '</td>';
-            echo '<td>' . esc_html((string) $row['status']) . '</td>';
+            echo '<tr style="background:' . esc_attr((string) ($styles['value_background'] ?? '#ffffff')) . ';color:' . esc_attr((string) ($styles['value_text_color'] ?? '#111827')) . ';">';
+            foreach ($columns as $column) {
+                $value = isset($row[$column]) ? $row[$column] : '';
+                if (is_numeric($value)) {
+                    $value = (float) $value;
+                    $value = (abs($value) >= 1000 || floor($value) != $value) ? number_format($value, 2, '.', ',') : (string) ((int) $value);
+                }
+                echo '<td style="padding:8px;border-bottom:' . (int) ($styles['row_divider_width'] ?? 1) . 'px solid ' . esc_attr((string) ($styles['row_divider_color'] ?? '#e5e7eb')) . ';">' . esc_html((string) $value) . '</td>';
+            }
             echo '</tr>';
         }
-        echo '</tbody></table>';
+
+        echo '</tbody></table></div>';
 
         return ob_get_clean();
+    }
+
+    private function get_recommend_signal_frontend_settings() {
+        $saved = get_option('lcni_frontend_settings_recommend_signal', []);
+        if (!is_array($saved)) {
+            $saved = [];
+        }
+
+        $columns = isset($saved['column_order']) && is_array($saved['column_order']) ? array_values(array_map('sanitize_key', $saved['column_order'])) : [];
+        if (empty($columns)) {
+            $columns = ['signal__symbol', 'rule__name', 'signal__entry_price', 'signal__current_price', 'signal__r_multiple', 'signal__position_state', 'signal__status'];
+        }
+
+        $styles = isset($saved['styles']) && is_array($saved['styles']) ? $saved['styles'] : [];
+
+        return [
+            'column_order' => $columns,
+            'styles' => [
+                'font' => sanitize_text_field($styles['font'] ?? 'inherit'),
+                'text_color' => sanitize_hex_color($styles['text_color'] ?? '#111827') ?: '#111827',
+                'background' => sanitize_hex_color($styles['background'] ?? '#ffffff') ?: '#ffffff',
+                'border' => sanitize_text_field($styles['border'] ?? '1px solid #e5e7eb'),
+                'border_radius' => max(0, min(24, (int) ($styles['border_radius'] ?? 8))),
+                'header_font_size' => max(10, min(30, (int) ($styles['header_font_size'] ?? 14))),
+                'row_font_size' => max(10, min(30, (int) ($styles['row_font_size'] ?? 14))),
+                'header_background' => sanitize_hex_color($styles['header_background'] ?? '#ffffff') ?: '#ffffff',
+                'header_text_color' => sanitize_hex_color($styles['header_text_color'] ?? '#111827') ?: '#111827',
+                'value_background' => sanitize_hex_color($styles['value_background'] ?? '#ffffff') ?: '#ffffff',
+                'value_text_color' => sanitize_hex_color($styles['value_text_color'] ?? '#111827') ?: '#111827',
+                'row_divider_color' => sanitize_hex_color($styles['row_divider_color'] ?? '#e5e7eb') ?: '#e5e7eb',
+                'row_divider_width' => max(1, min(6, (int) ($styles['row_divider_width'] ?? 1))),
+                'head_height' => max(24, min(120, (int) ($styles['head_height'] ?? 30))),
+            ],
+        ];
     }
 
     public function render_performance($atts = []) {
