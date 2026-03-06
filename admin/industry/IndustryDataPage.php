@@ -10,6 +10,11 @@ class LCNI_Industry_Data_Page {
     const ACTION_HANDLE = 'lcni_industry_data_action';
     const NONCE_ACTION = 'lcni_industry_data_nonce_action';
 
+    const TAB_MATERIALIZED = 'materialized';
+    const TAB_INDEX = 'index';
+    const TAB_RETURN = 'return';
+    const TAB_METRICS = 'metrics';
+
     public function __construct() {
         add_action('admin_menu', [$this, 'register_menu']);
         add_action('admin_post_' . self::ACTION_HANDLE, [$this, 'handle_actions']);
@@ -109,6 +114,18 @@ class LCNI_Industry_Data_Page {
 
         $stats = LCNI_DB::get_industry_analysis_table_stats();
         $rebuild_progress = LCNI_DB::get_industry_rebuild_progress();
+        $table_stats_by_name = $this->index_stats_by_table_name($stats);
+
+        $tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : self::TAB_MATERIALIZED;
+        $allowed_tabs = [
+            self::TAB_MATERIALIZED,
+            self::TAB_INDEX,
+            self::TAB_RETURN,
+            self::TAB_METRICS,
+        ];
+        if (!in_array($tab, $allowed_tabs, true)) {
+            $tab = self::TAB_MATERIALIZED;
+        }
 
         $notice = isset($_GET['lcni_notice']) ? sanitize_text_field(wp_unslash($_GET['lcni_notice'])) : '';
         $notice_type = isset($_GET['lcni_notice_type']) ? sanitize_key(wp_unslash($_GET['lcni_notice_type'])) : 'success';
@@ -124,27 +141,43 @@ class LCNI_Industry_Data_Page {
 
             <p><?php echo esc_html__('Trang này giúp kiểm tra nhanh tình trạng dữ liệu ngành và chạy rebuild thủ công khi bảng dữ liệu đang trống.', 'lcni-data-collector'); ?></p>
 
-            <h2><?php echo esc_html__('Industry Materialized Tables', 'lcni-data-collector'); ?></h2>
-            <table class="widefat striped" style="max-width: 980px;">
-                <thead>
-                <tr>
-                    <th><?php echo esc_html__('Table', 'lcni-data-collector'); ?></th>
-                    <th><?php echo esc_html__('Exists', 'lcni-data-collector'); ?></th>
-                    <th><?php echo esc_html__('Rows', 'lcni-data-collector'); ?></th>
-                    <th><?php echo esc_html__('Latest event_time', 'lcni-data-collector'); ?></th>
-                </tr>
-                </thead>
-                <tbody>
-                <?php foreach ($stats as $item) : ?>
-                    <tr>
-                        <td><code><?php echo esc_html((string) ($item['table'] ?? '')); ?></code></td>
-                        <td><?php echo esc_html(!empty($item['exists']) ? 'Yes' : 'No'); ?></td>
-                        <td><?php echo esc_html((string) ((int) ($item['rows'] ?? 0))); ?></td>
-                        <td><?php echo esc_html((string) ((int) ($item['latest_event_time'] ?? 0))); ?></td>
-                    </tr>
-                <?php endforeach; ?>
-                </tbody>
-            </table>
+            <h2 class="nav-tab-wrapper" style="max-width: 980px;">
+                <?php
+                $tabs = [
+                    self::TAB_MATERIALIZED => 'Materialized',
+                    self::TAB_INDEX => 'Index',
+                    self::TAB_RETURN => 'Return',
+                    self::TAB_METRICS => 'Metrics',
+                ];
+                foreach ($tabs as $tab_key => $tab_label) {
+                    $tab_url = add_query_arg(
+                        [
+                            'page' => self::PAGE_SLUG,
+                            'tab' => $tab_key,
+                        ],
+                        admin_url('admin.php')
+                    );
+                    $active_class = $tab === $tab_key ? ' nav-tab-active' : '';
+                    ?>
+                    <a href="<?php echo esc_url($tab_url); ?>" class="nav-tab<?php echo esc_attr($active_class); ?>"><?php echo esc_html($tab_label); ?></a>
+                    <?php
+                }
+                ?>
+            </h2>
+
+            <?php if ($tab === self::TAB_MATERIALIZED) : ?>
+                <h2><?php echo esc_html__('Industry Materialized Tables', 'lcni-data-collector'); ?></h2>
+                <?php $this->render_stats_table($stats); ?>
+            <?php elseif ($tab === self::TAB_INDEX) : ?>
+                <h2><?php echo esc_html__('Industry Index Table', 'lcni-data-collector'); ?></h2>
+                <?php $this->render_stats_table([$table_stats_by_name['wp_lcni_industry_index'] ?? null]); ?>
+            <?php elseif ($tab === self::TAB_RETURN) : ?>
+                <h2><?php echo esc_html__('Industry Return Table', 'lcni-data-collector'); ?></h2>
+                <?php $this->render_stats_table([$table_stats_by_name['wp_lcni_industry_return'] ?? null]); ?>
+            <?php else : ?>
+                <h2><?php echo esc_html__('Industry Metrics Table', 'lcni-data-collector'); ?></h2>
+                <?php $this->render_stats_table([$table_stats_by_name['wp_lcni_industry_metrics'] ?? null]); ?>
+            <?php endif; ?>
 
             <h2 style="margin-top: 24px;"><?php echo esc_html__('Manual Controls', 'lcni-data-collector'); ?></h2>
             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
@@ -173,6 +206,63 @@ class LCNI_Industry_Data_Page {
                 </p>
             <?php endif; ?>
         </div>
+        <?php
+    }
+
+    private function index_stats_by_table_name($stats) {
+        $indexed = [];
+
+        foreach ((array) $stats as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $table_name = isset($item['table']) ? (string) $item['table'] : '';
+            if ($table_name === '') {
+                continue;
+            }
+
+            $indexed[$table_name] = $item;
+        }
+
+        return $indexed;
+    }
+
+    private function render_stats_table($rows) {
+        ?>
+        <table class="widefat striped" style="max-width: 980px;">
+            <thead>
+            <tr>
+                <th><?php echo esc_html__('Table', 'lcni-data-collector'); ?></th>
+                <th><?php echo esc_html__('Exists', 'lcni-data-collector'); ?></th>
+                <th><?php echo esc_html__('Rows', 'lcni-data-collector'); ?></th>
+                <th><?php echo esc_html__('Latest event_time', 'lcni-data-collector'); ?></th>
+            </tr>
+            </thead>
+            <tbody>
+            <?php
+            $has_rows = false;
+            foreach ((array) $rows as $item) :
+                if (!is_array($item)) {
+                    continue;
+                }
+                $has_rows = true;
+                ?>
+                <tr>
+                    <td><code><?php echo esc_html((string) ($item['table'] ?? '')); ?></code></td>
+                    <td><?php echo esc_html(!empty($item['exists']) ? 'Yes' : 'No'); ?></td>
+                    <td><?php echo esc_html((string) ((int) ($item['rows'] ?? 0))); ?></td>
+                    <td><?php echo esc_html((string) ((int) ($item['latest_event_time'] ?? 0))); ?></td>
+                </tr>
+            <?php endforeach; ?>
+
+            <?php if (!$has_rows) : ?>
+                <tr>
+                    <td colspan="4"><?php echo esc_html__('No table statistics found.', 'lcni-data-collector'); ?></td>
+                </tr>
+            <?php endif; ?>
+            </tbody>
+        </table>
         <?php
     }
 }
