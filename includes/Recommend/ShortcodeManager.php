@@ -61,7 +61,7 @@ class ShortcodeManager {
         $row_hover_background = (string) ($styles['row_hover_bg'] ?? '#f3f4f6');
         $sticky_column = (string) ($styles['sticky_column'] ?? 'signal__symbol');
         $sticky_header_enabled = !empty($styles['sticky_header']);
-        $wrapper_style = sprintf('font-family:%s;color:%s;background:%s;border:%s;border-radius:%dpx;overflow:auto;',
+        $wrapper_style = sprintf('font-family:%s;color:%s;background:%s;border:%s;border-radius:%dpx;overflow:auto;position:relative;',
             esc_attr((string) ($styles['font'] ?? 'inherit')),
             esc_attr((string) ($styles['text_color'] ?? '#111827')),
             esc_attr((string) ($styles['background'] ?? '#ffffff')),
@@ -159,6 +159,10 @@ class ShortcodeManager {
                 'row_divider_color' => sanitize_hex_color($styles['row_divider_color'] ?? '#e5e7eb') ?: '#e5e7eb',
                 'row_divider_width' => max(1, min(6, (int) ($styles['row_divider_width'] ?? 1))),
                 'head_height' => max(24, min(120, (int) ($styles['head_height'] ?? 30))),
+                'sticky_column' => in_array(sanitize_key((string) ($styles['sticky_column'] ?? 'signal__symbol')), $columns, true)
+                    ? sanitize_key((string) ($styles['sticky_column'] ?? 'signal__symbol'))
+                    : ($columns[0] ?? 'signal__symbol'),
+                'sticky_header' => !empty($styles['sticky_header']) ? 1 : 0,
                 'cell_color_rules' => $this->sanitize_cell_color_rules($styles['cell_color_rules'] ?? [], $columns),
             ],
         ];
