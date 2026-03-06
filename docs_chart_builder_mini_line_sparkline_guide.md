@@ -10,7 +10,7 @@ Template `mini_line_sparkline` phù hợp khi bạn muốn hiển thị **nhiề
 - **Trục Y (hàng):** nhóm theo chiều dữ liệu thứ hai (ví dụ: `industry_name`, `exchange`).
 - **Series:** giá trị số để vẽ đường mini line trong từng ô (ví dụ: `close`, `avg_price`, `volume`).
 
-> Lưu ý: template này yêu cầu map đủ 2 axis (`axis_slots = 2`) và 1 series (`series_slots = 1`).
+> Lưu ý: template này yêu cầu map đủ 2 axis (`axis_slots = 2`) và tối đa 3 series (`series_slots = 3`).
 
 ---
 
@@ -31,11 +31,11 @@ Trong khối kéo-thả trường dữ liệu:
 
 - **X Axis:** thả trường dùng làm nhóm cột.
 - **Y Axis:** thả trường dùng làm nhóm hàng.
-- **Series 1:** thả trường số để vẽ sparkline.
+- **Series 1/2/3:** thả các trường số để vẽ nhiều đường trong cùng mini chart.
 
 Khuyến nghị:
 
-- Trường `Series 1` nên là số và có đủ dữ liệu theo từng cặp `X Axis + Y Axis`.
+- Các trường `Series` nên là số và có đủ dữ liệu theo từng cặp `X Axis + mini chart` tại cùng mốc `X Axis`.
 - Nếu dữ liệu quá thưa, nhiều ô sẽ không hiển thị line.
 
 ### Bước 4 — Tùy chỉnh thuộc tính series
@@ -90,7 +90,7 @@ Hệ thống sẽ tạo các ô sparkline theo từng giao điểm `symbol × in
 ## 4) Checklist nhanh trước khi publish
 
 - [ ] Đã chọn đúng template **Mini Line Charts (Sparkline)**.
-- [ ] Đã map đủ **X Axis**, **Y Axis**, **Series 1**.
+- [ ] Đã map đủ **X Axis**, **Y Axis**, và ít nhất **Series 1** (có thể thêm Series 2/3).
 - [ ] Series là trường số (không phải text).
 - [ ] Preview hiển thị đầy đủ các ô cần thiết.
 - [ ] Filter mapping đúng với tham số frontend cần truyền.

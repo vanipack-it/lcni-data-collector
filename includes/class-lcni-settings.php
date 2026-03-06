@@ -3167,7 +3167,7 @@ private function sanitize_module_title($value, $fallback) {
             'rsi_zone' => ['label' => 'RSI Zone', 'axis_slots' => 1, 'series_slots' => 2],
             'smart_money_flow' => ['label' => 'Smart Money Flow', 'axis_slots' => 1, 'series_slots' => 3],
             'candlestick' => ['label' => 'Candlestick', 'axis_slots' => 1, 'series_slots' => 4],
-            'mini_line_sparkline' => ['label' => 'Mini Line Charts (Sparkline)', 'axis_slots' => 2, 'series_slots' => 1],
+            'mini_line_sparkline' => ['label' => 'Mini Line Charts (Sparkline)', 'axis_slots' => 2, 'series_slots' => 3],
         ];
         ?>
         <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
@@ -3589,90 +3589,86 @@ private function sanitize_module_title($value, $fallback) {
                         ];
 
                         if (templateKey === 'mini_line_sparkline') {
-                            const xDimensionField = p.x;
-                            const yDimensionField = p.y;
-                            const valueField = p.seriesFields[0] || '';
-                            const xDimensionData = Array.from(new Set(p.rows.map((row) => String(row[xDimensionField] || '')).filter(Boolean)));
-                            const yDimensionData = yDimensionField
-                                ? Array.from(new Set(p.rows.map((row) => String(row[yDimensionField] || '')).filter(Boolean)))
-                                : ['Nhóm 1'];
-                            const matrix = {
-                                x: {
-                                    data: xDimensionData,
-                                    levelSize: 42,
-                                    label: { fontSize: 13, color: '#555' },
-                                },
-                                y: {
-                                    data: yDimensionData.map((item) => ({ value: item })),
-                                    levelSize: 60,
-                                    label: { fontSize: 12, color: '#777' },
-                                },
-                                corner: {
-                                    data: [{ coord: [-1, -1], value: 'Nhóm / Mã' }],
-                                    label: { fontSize: 12, color: '#777' },
-                                },
-                                top: 24,
-                                bottom: 80,
-                                width: '92%',
-                                left: 'center',
-                            };
+                            const xField = p.x;
+                            const miniChartField = p.y;
+                            const xAxisValues = Array.from(new Set(p.rows.map((row) => String(row[xField] || '')).filter(Boolean)));
+                            const miniChartKeys = miniChartField
+                                ? Array.from(new Set(p.rows.map((row) => String(row[miniChartField] || '')).filter(Boolean)))
+                                : ['Mini Chart'];
+
+                            const chartPerRow = 4;
+                            const columnGap = 3;
+                            const rowGap = 6;
+                            const rowCount = Math.ceil(miniChartKeys.length / chartPerRow);
+                            const topArea = 4;
+                            const bottomArea = 16;
+                            const availableHeight = 100 - topArea - bottomArea - rowGap * Math.max(0, rowCount - 1);
+                            const availableWidth = 100 - columnGap * Math.max(0, chartPerRow - 1);
+                            const cellHeight = availableHeight / Math.max(1, rowCount);
+                            const cellWidth = availableWidth / chartPerRow;
 
                             const option = {
-                                tooltip: { trigger: 'axis' },
-                                matrix,
-                                dataZoom: [
-                                    { type: 'slider', xAxisIndex: 'all', left: '10%', right: '10%', bottom: 26, height: 24 },
-                                    { type: 'inside', xAxisIndex: 'all' },
-                                ],
+                                tooltip: {
+                                    trigger: 'axis',
+                                    formatter: (params) => {
+                                        if (!Array.isArray(params) || !params.length) return '';
+                                        const axisLabel = params[0].axisValueLabel || params[0].axisValue || '';
+                                        const lines = [axisLabel, params[0].seriesName.split(' · ')[0]];
+                                        params.forEach((item) => {
+                                            const label = item.seriesName.split(' · ').slice(1).join(' · ') || item.seriesName;
+                                            lines.push(item.marker + label + ': ' + Number(item.data || 0));
+                                        });
+                                        return lines.join('<br/>');
+                                    },
+                                },
                                 grid: [],
                                 xAxis: [],
                                 yAxis: [],
                                 series: [],
+                                graphic: [],
                             };
 
-                            yDimensionData.forEach((yValue, yidx) => {
-                                xDimensionData.forEach((xValue, xidx) => {
-                                    const id = xidx + '|' + yidx;
-                                    const cellRows = p.rows.filter((row) => String(row[xDimensionField] || '') === xValue && String((row[yDimensionField] || yValue)) === yValue);
-                                    if (!cellRows.length) return;
-                                    option.grid.push({
-                                        id,
-                                        coordinateSystem: 'matrix',
-                                        coord: [xValue, yValue],
-                                        top: 8,
-                                        bottom: 8,
-                                        left: 'center',
-                                        width: '92%',
-                                        containLabel: true,
-                                    });
-                                    option.xAxis.push({
-                                        type: 'category',
-                                        id,
-                                        gridId: id,
-                                        data: cellRows.map((_, idx) => String(idx + 1)),
-                                        axisTick: { show: false },
-                                        axisLabel: { show: false },
-                                        axisLine: { show: false },
-                                        splitLine: { show: false },
-                                    });
-                                    option.yAxis.push({
-                                        id,
-                                        gridId: id,
-                                        scale: true,
-                                        axisLabel: { show: false },
-                                        axisLine: { show: false },
-                                        axisTick: { show: false },
-                                        splitLine: { show: false },
-                                    });
+                            miniChartKeys.forEach((chartKey, chartIndex) => {
+                                const col = chartIndex % chartPerRow;
+                                const row = Math.floor(chartIndex / chartPerRow);
+                                const gridId = 'mini-' + chartIndex;
+                                const left = col * (cellWidth + columnGap);
+                                const top = topArea + row * (cellHeight + rowGap);
+                                const isBottomRow = row === rowCount - 1;
+                                const rowsByXAxis = {};
+
+                                p.rows.forEach((rowData) => {
+                                    const currentChartKey = miniChartField ? String(rowData[miniChartField] || '') : 'Mini Chart';
+                                    const axisValue = String(rowData[xField] || '');
+                                    if (currentChartKey === chartKey && axisValue) {
+                                        rowsByXAxis[axisValue] = rowData;
+                                    }
+                                });
+
+                                option.grid.push({ id: gridId, left: left + '%', top: top + '%', width: cellWidth + '%', height: cellHeight + '%', containLabel: false });
+                                option.xAxis.push({ type: 'category', id: gridId, gridId: gridId, data: xAxisValues, axisTick: { show: false }, axisLine: { show: isBottomRow }, axisLabel: { show: isBottomRow, fontSize: 10 }, splitLine: { show: false } });
+                                option.yAxis.push({ id: gridId, gridId: gridId, type: 'value', scale: true, axisLabel: { show: false }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false } });
+                                option.graphic.push({ type: 'text', left: (left + 0.4) + '%', top: (top - 1.8) + '%', style: { text: chartKey, fontSize: 11, fontWeight: 600, fill: '#4b5563' } });
+
+                                p.seriesFields.forEach((field, seriesIndex) => {
+                                    const colorInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-color')[seriesIndex];
+                                    const lineStyleInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-line-style')[seriesIndex];
+                                    const lineColor = (colorInput && colorInput.value) || ['#5470c6', '#91cc75', '#ee6666'][seriesIndex % 3];
                                     option.series.push({
-                                        xAxisId: id,
-                                        yAxisId: id,
+                                        name: chartKey + ' · ' + field,
+                                        xAxisId: gridId,
+                                        yAxisId: gridId,
                                         type: 'line',
                                         smooth: true,
                                         symbol: 'none',
-                                        lineStyle: { lineWidth: 1.2, color: '#5470c6' },
-                                        itemStyle: { color: '#5470c6' },
-                                        data: cellRows.map((row) => Number(row[valueField] || 0)),
+                                        connectNulls: true,
+                                        lineStyle: { lineWidth: 1.2, type: (lineStyleInput && lineStyleInput.value) || 'solid', color: lineColor },
+                                        itemStyle: { color: lineColor },
+                                        data: xAxisValues.map((axisValue) => {
+                                            const rowData = rowsByXAxis[axisValue] || null;
+                                            const numeric = rowData ? Number(rowData[field]) : null;
+                                            return Number.isFinite(numeric) ? numeric : null;
+                                        }),
                                     });
                                 });
                             });
