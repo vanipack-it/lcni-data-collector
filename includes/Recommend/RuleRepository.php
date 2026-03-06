@@ -207,7 +207,7 @@ class RuleRepository {
                 $clause = '';
                 $clause_param = null;
 
-                if ($operator === '>' || $operator === '<') {
+                if (in_array($operator, ['>', '<', '>=', '<='], true)) {
                     if (!is_numeric($raw_value)) {
                         continue;
                     }
@@ -220,6 +220,14 @@ class RuleRepository {
                 } elseif ($operator === 'not_contains') {
                     $clause = $column_ref . ' NOT LIKE %s';
                     $clause_param = '%' . $this->wpdb->esc_like($raw_value) . '%';
+                } elseif ($operator === '!=') {
+                    if (is_numeric($raw_value)) {
+                        $clause = $column_ref . ' != %f';
+                        $clause_param = (float) $raw_value;
+                    } else {
+                        $clause = $column_ref . ' != %s';
+                        $clause_param = $raw_value;
+                    }
                 } elseif (is_numeric($raw_value)) {
                     $clause = $column_ref . ' = %f';
                     $clause_param = (float) $raw_value;
@@ -244,16 +252,16 @@ class RuleRepository {
         }
 
         if (!empty($rule_where)) {
-            $combined_rule_sql = $rule_where[0];
+            $combined_rule_sql = '(' . $rule_where[0] . ')';
             for ($rule_index = 1; $rule_index < count($rule_where); $rule_index++) {
                 $join_operator = $rule_joins[$rule_index - 1] ?? 'AND';
                 if (!in_array($join_operator, ['AND', 'OR'], true)) {
                     $join_operator = 'AND';
                 }
-                $combined_rule_sql .= ' ' . $join_operator . ' ' . $rule_where[$rule_index];
+                $combined_rule_sql = '(' . $combined_rule_sql . ' ' . $join_operator . ' (' . $rule_where[$rule_index] . '))';
             }
 
-            $where[] = '(' . $combined_rule_sql . ')';
+            $where[] = $combined_rule_sql;
             $params = array_merge($params, $rule_params);
         }
 
@@ -525,7 +533,7 @@ class RuleRepository {
             $operator = $operator_aliases[$operator];
         }
 
-        if (!in_array($operator, ['=', '>', '<', 'contains', 'not_contains'], true)) {
+        if (!in_array($operator, ['=', '!=', '>', '>=', '<', '<=', 'contains', 'not_contains'], true)) {
             return '=';
         }
 
