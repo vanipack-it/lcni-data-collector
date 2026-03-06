@@ -6439,8 +6439,59 @@ class LCNI_DB {
             return;
         }
 
+        self::refresh_industry_analysis_extended_metrics([], [], true);
+
+        update_option($migration_flag, 'yes');
+        self::log_change('backfill_industry_analysis_extended_metrics', 'Backfilled industry extended columns via 8-step SQL pipeline.');
+    }
+
+    private static function refresh_industry_analysis_extended_metrics($event_times = [], $timeframes = ['1D'], $full_rebuild = false) {
+        global $wpdb;
+
+        $return_table = $wpdb->prefix . 'lcni_industry_return';
+        $index_table = $wpdb->prefix . 'lcni_industry_index';
+        $metrics_table = $wpdb->prefix . 'lcni_industry_metrics';
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $mapping_table = $wpdb->prefix . 'lcni_sym_icb_market';
+
+        $timeframes = array_values(array_unique(array_filter(array_map(static function ($timeframe) {
+            return strtoupper(trim((string) $timeframe));
+        }, (array) $timeframes))));
+
+        if (empty($timeframes)) {
+            $timeframes = ['1D'];
+        }
+
+        $event_times = array_values(array_unique(array_filter(array_map('intval', (array) $event_times), static function ($v) {
+            return $v > 0;
+        })));
+
+        if ($full_rebuild || empty($event_times)) {
+            $event_times = $wpdb->get_col(
+                $wpdb->prepare(
+                    "SELECT DISTINCT event_time FROM {$return_table} WHERE timeframe = %s ORDER BY event_time ASC",
+                    $timeframes[0]
+                )
+            );
+            $event_times = array_values(array_unique(array_filter(array_map('intval', (array) $event_times), static function ($v) {
+                return $v > 0;
+            })));
+        }
+
+        if (empty($event_times)) {
+            return;
+        }
+
+        $event_placeholders = implode(', ', array_fill(0, count($event_times), '%d'));
+        $timeframe_placeholders = implode(', ', array_fill(0, count($timeframes), '%s'));
+        $params = array_merge($event_times, $timeframes);
+        $scope_sql = "event_time IN ({$event_placeholders}) AND timeframe IN ({$timeframe_placeholders})";
+        $scope_sql_return = "r.event_time IN ({$event_placeholders}) AND r.timeframe IN ({$timeframe_placeholders})";
+        $scope_sql_index = "i.event_time IN ({$event_placeholders}) AND i.timeframe IN ({$timeframe_placeholders})";
+        $scope_sql_metrics = "m.event_time IN ({$event_placeholders}) AND m.timeframe IN ({$timeframe_placeholders})";
+
         // Step 1: update industry_volume
-        $wpdb->query("UPDATE {$return_table} r
+        $wpdb->query($wpdb->prepare("UPDATE {$return_table} r
             INNER JOIN (
                 SELECT
                     o.event_time,
@@ -6449,12 +6500,14 @@ class LCNI_DB {
                     SUM(COALESCE(o.volume, 0)) AS industry_volume
                 FROM {$ohlc_table} o
                 LEFT JOIN {$mapping_table} m ON UPPER(TRIM(m.symbol)) = UPPER(TRIM(o.symbol))
+                WHERE o.event_time IN ({$event_placeholders}) AND o.timeframe IN ({$timeframe_placeholders})
                 GROUP BY o.event_time, o.timeframe, COALESCE(m.id_icb2, 0)
             ) v ON v.event_time = r.event_time AND v.timeframe = r.timeframe AND v.id_icb2 = r.id_icb2
-            SET r.industry_volume = v.industry_volume");
+            SET r.industry_volume = v.industry_volume
+            WHERE {$scope_sql_return}", $params));
 
         // Step 2: update value_ma20
-        $wpdb->query("UPDATE {$return_table} r
+        $wpdb->query($wpdb->prepare("UPDATE {$return_table} r
             INNER JOIN (
                 SELECT id, AVG(industry_value) OVER(
                     PARTITION BY id_icb2, timeframe
@@ -6463,17 +6516,19 @@ class LCNI_DB {
                 ) AS value_ma20
                 FROM {$return_table}
             ) rolling ON rolling.id = r.id
-            SET r.value_ma20 = rolling.value_ma20");
+            SET r.value_ma20 = rolling.value_ma20
+            WHERE {$scope_sql_return}", $params));
 
         // Step 3: update money_flow_ratio
-        $wpdb->query("UPDATE {$return_table}
+        $wpdb->query($wpdb->prepare("UPDATE {$return_table}
             SET money_flow_ratio = CASE
                 WHEN COALESCE(value_ma20, 0) <= 0 THEN NULL
                 ELSE industry_value / value_ma20
-            END");
+            END
+            WHERE {$scope_sql}", $params));
 
         // Step 4: update index_ma50
-        $wpdb->query("UPDATE {$index_table} i
+        $wpdb->query($wpdb->prepare("UPDATE {$index_table} i
             INNER JOIN (
                 SELECT id, AVG(industry_index) OVER(
                     PARTITION BY id_icb2, timeframe
@@ -6482,19 +6537,21 @@ class LCNI_DB {
                 ) AS index_ma50
                 FROM {$index_table}
             ) rolling ON rolling.id = i.id
-            SET i.index_ma50 = rolling.index_ma50");
+            SET i.index_ma50 = rolling.index_ma50
+            WHERE {$scope_sql_index}", $params));
 
         // Step 5: update industry_trend
-        $wpdb->query("UPDATE {$index_table}
+        $wpdb->query($wpdb->prepare("UPDATE {$index_table}
             SET industry_trend = CASE
                 WHEN COALESCE(index_ma50, 0) <= 0 THEN NULL
                 WHEN ABS(industry_index - index_ma50) / index_ma50 < 0.02 THEN 'Tích lũy'
                 WHEN industry_index > index_ma50 THEN 'Xu hướng tăng'
                 ELSE 'Xu hướng giảm'
-            END");
+            END
+            WHERE {$scope_sql}", $params));
 
         // Step 6: update leader_stock_ratio
-        $wpdb->query("UPDATE {$metrics_table} m
+        $wpdb->query($wpdb->prepare("UPDATE {$metrics_table} m
             INNER JOIN (
                 SELECT
                     o.event_time,
@@ -6504,22 +6561,25 @@ class LCNI_DB {
                     COUNT(*) AS total_stocks
                 FROM {$ohlc_table} o
                 LEFT JOIN {$mapping_table} map ON UPPER(TRIM(map.symbol)) = UPPER(TRIM(o.symbol))
+                WHERE o.event_time IN ({$event_placeholders}) AND o.timeframe IN ({$timeframe_placeholders})
                 GROUP BY o.event_time, o.timeframe, COALESCE(map.id_icb2, 0)
             ) b ON b.event_time = m.event_time AND b.timeframe = m.timeframe AND b.id_icb2 = m.id_icb2
             SET m.leader_stock_ratio = CASE
                 WHEN COALESCE(b.total_stocks, 0) = 0 THEN NULL
                 ELSE b.stocks_breakout / b.total_stocks
-            END");
+            END
+            WHERE {$scope_sql_metrics}", $params));
 
         // Step 7: update updown_ratio
-        $wpdb->query("UPDATE {$metrics_table}
+        $wpdb->query($wpdb->prepare("UPDATE {$metrics_table}
             SET updown_ratio = CASE
                 WHEN (total_stocks - stocks_up) <= 0 THEN NULL
                 ELSE stocks_up / (total_stocks - stocks_up)
-            END");
+            END
+            WHERE {$scope_sql}", $params));
 
         // Step 8: update industry_phase
-        $wpdb->query("UPDATE {$metrics_table} m
+        $wpdb->query($wpdb->prepare("UPDATE {$metrics_table} m
             LEFT JOIN {$return_table} r ON r.event_time = m.event_time AND r.timeframe = m.timeframe AND r.id_icb2 = m.id_icb2
             SET m.industry_phase = CASE
                 WHEN m.momentum > 0 AND m.relative_strength > 0 AND COALESCE(r.money_flow_ratio, 0) > 1.2 THEN 'Bứt phá'
@@ -6527,10 +6587,8 @@ class LCNI_DB {
                 WHEN ABS(m.momentum) <= 0.01 THEN 'Tích lũy'
                 WHEN m.momentum < 0 AND m.relative_strength < 0 THEN 'Suy yếu'
                 ELSE 'Tích lũy'
-            END");
-
-        update_option($migration_flag, 'yes');
-        self::log_change('backfill_industry_analysis_extended_metrics', 'Backfilled industry extended columns via 8-step SQL pipeline.');
+            END
+            WHERE {$scope_sql_metrics}", $params));
     }
 
     public static function rebuild_industry_analysis_snapshot($timeframes = ['1D'], $force_rebuild = true) {
@@ -6931,6 +6989,8 @@ class LCNI_DB {
                 (int) $metric_row['id']
             ));
         }
+
+        self::refresh_industry_analysis_extended_metrics($event_times, $timeframes, $full_rebuild);
 
         return count($event_times);
     }
