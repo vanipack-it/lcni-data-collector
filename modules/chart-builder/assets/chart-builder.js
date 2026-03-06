@@ -73,6 +73,80 @@
     return Object.values(grouped);
   };
 
+  const parseNumericValue = (value) => {
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : null;
+    }
+
+    if (typeof value === 'string') {
+      const cleaned = value.replace(/[%\s,]/g, '');
+      if (cleaned === '') {
+        return null;
+      }
+      const parsed = Number(cleaned);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const normalizeHeatmapRows = (rows, cfg, seriesCfg) => {
+    const valueField = (seriesCfg[0] && (seriesCfg[0].field || seriesCfg[0].value_field || seriesCfg[0].valueField)) || '';
+    const xField = cfg.xAxis || 'event_time';
+    const yField = cfg.yAxis || 'icb2';
+
+    if (rows && !Array.isArray(rows) && Array.isArray(rows.x) && Array.isArray(rows.y) && Array.isArray(rows.data)) {
+      const normalizedMatrix = rows.data
+        .map((item) => {
+          if (!Array.isArray(item) || item.length < 3) return null;
+          const xIndex = Number(item[0]);
+          const yIndex = Number(item[1]);
+          const value = parseNumericValue(item[2]);
+          if (!Number.isInteger(xIndex) || !Number.isInteger(yIndex) || value === null) {
+            return null;
+          }
+          return [xIndex, yIndex, value];
+        })
+        .filter(Boolean);
+
+      return {
+        xData: rows.x,
+        yData: rows.y,
+        matrixData: normalizedMatrix,
+        valueField,
+      };
+    }
+
+    const xValues = [];
+    const yValues = [];
+    const xMap = new Map();
+    const yMap = new Map();
+    const matrixData = [];
+
+    (Array.isArray(rows) ? rows : []).forEach((row) => {
+      const xValue = String(row[xField] || '').trim();
+      const yValue = String(row[yField] || '').trim();
+      const value = parseNumericValue(valueField ? row[valueField] : null);
+      if (!xValue || !yValue || value === null) {
+        return;
+      }
+
+      if (!xMap.has(xValue)) {
+        xMap.set(xValue, xValues.length);
+        xValues.push(xValue);
+      }
+      if (!yMap.has(yValue)) {
+        yMap.set(yValue, yValues.length);
+        yValues.push(yValue);
+      }
+
+      matrixData.push([xMap.get(xValue), yMap.get(yValue), value]);
+    });
+
+    return { xData: xValues, yData: yValues, matrixData, valueField };
+  };
+
   const buildOption = (payload, rows) => {
     const cfg = payload.config || {};
     const chartType = payload.chart_type || cfg.template || 'multi_line';
@@ -230,19 +304,18 @@
     }
 
     if (isHeatmapMatrix || isHeatmapMatrix2) {
-      const xData = Array.isArray(rows.x) ? rows.x : [];
-      const yData = Array.isArray(rows.y) ? rows.y : [];
-      const matrixData = Array.isArray(rows.data) ? rows.data : [];
+      const { xData, yData, matrixData, valueField } = normalizeHeatmapRows(rows, cfg, seriesCfg);
       const heatmapCfg = cfg.heatmap || {};
       const heatmapColors = [
         heatmapCfg.low || '#d73027',
         heatmapCfg.mid || '#fee08b',
         heatmapCfg.high || '#1a9850',
       ];
-      const maxValue = matrixData.reduce((acc, item) => {
-        const value = Number(Array.isArray(item) ? item[2] : 0);
-        return Number.isFinite(value) ? Math.max(acc, value) : acc;
-      }, 0);
+      const values = matrixData.map((item) => item[2]).filter((value) => Number.isFinite(value));
+      const minValue = values.length ? Math.min(...values) : 0;
+      const maxValue = values.length ? Math.max(...values) : 0;
+      const visualMin = minValue;
+      const visualMax = maxValue > minValue ? maxValue : minValue + 1;
 
       return {
         title: { text: payload.name || '' },
@@ -251,7 +324,7 @@
           formatter: (params) => {
             const xLabel = xData[params.data[0]] || '';
             const yLabel = yData[params.data[1]] || '';
-            return yLabel + '<br/>' + xLabel + ': ' + formatValue(params.data[2], 'percent');
+            return yLabel + '<br/>' + xLabel + ': ' + formatValue(params.data[2], valueField || 'percent');
           },
         },
         grid: { height: '72%', top: '10%' },
@@ -262,8 +335,8 @@
           { type: 'inside', xAxisIndex: 0 },
         ],
         visualMap: {
-          min: 0,
-          max: maxValue > 0 ? maxValue : 30,
+          min: visualMin,
+          max: visualMax,
           calculable: true,
           orient: 'horizontal',
           left: 'center',
@@ -274,7 +347,7 @@
           name: '%GTGD',
           type: 'heatmap',
           data: matrixData,
-          label: { show: true, formatter: (item) => formatValue(item.value && item.value[2], 'percent') },
+          label: { show: true, formatter: (item) => formatValue(item.value && item.value[2], valueField || 'percent') },
           emphasis: {
             itemStyle: {
               shadowBlur: 10,
