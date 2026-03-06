@@ -4401,6 +4401,20 @@ private function sanitize_module_title($value, $fallback) {
         $rule_values = isset($rule_input['values']) && is_array($rule_input['values']) ? $rule_input['values'] : [];
         $rule_bg_colors = isset($rule_input['bg_colors']) && is_array($rule_input['bg_colors']) ? $rule_input['bg_colors'] : [];
         $rule_text_colors = isset($rule_input['text_colors']) && is_array($rule_input['text_colors']) ? $rule_input['text_colors'] : [];
+
+        // Backward-compatible format: saved as list of rule objects.
+        if (empty($rule_columns) && empty($rule_operators) && empty($rule_values) && !empty($rule_input) && isset($rule_input[0]) && is_array($rule_input[0])) {
+            foreach ($rule_input as $rule) {
+                if (!is_array($rule)) {
+                    continue;
+                }
+                $rule_columns[] = $rule['column'] ?? '';
+                $rule_operators[] = $rule['operator'] ?? '';
+                $rule_values[] = $rule['value'] ?? '';
+                $rule_bg_colors[] = $rule['bg_color'] ?? '';
+                $rule_text_colors[] = $rule['text_color'] ?? '';
+            }
+        }
         $rule_count = max(count($rule_columns), count($rule_operators), count($rule_values), count($rule_bg_colors), count($rule_text_colors));
         $allowed_operators = ['>', '>=', '<', '<=', '=', '!=', 'contains', 'not_contains'];
         $cell_color_rules = [];
