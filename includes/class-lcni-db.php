@@ -6497,7 +6497,7 @@ class LCNI_DB {
                 COALESCE(
                     SUM(
                         COALESCE(
-                            o.pct_change,
+                            o.pct_t_1,
                             CASE
                                 WHEN COALESCE(prev.close_price, 0) > 0 THEN (o.close_price / prev.close_price) - 1
                                 ELSE 0
