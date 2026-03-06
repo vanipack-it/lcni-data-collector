@@ -3124,7 +3124,7 @@ private function sanitize_module_title($value, $fallback) {
         }
 
         $source = isset($_GET['data_source']) ? sanitize_key(wp_unslash($_GET['data_source'])) : '';
-        $fields = LCNI_Chart_Builder_Repository::get_table_columns($source);
+        $fields = LCNI_Chart_Builder_Repository::get_table_columns($source, true);
         wp_send_json_success(['fields' => $fields]);
     }
 
@@ -3134,7 +3134,7 @@ private function sanitize_module_title($value, $fallback) {
         }
 
         $source = isset($_GET['data_source']) ? sanitize_key(wp_unslash($_GET['data_source'])) : '';
-        $field = isset($_GET['field']) ? sanitize_key(wp_unslash($_GET['field'])) : '';
+        $field = isset($_GET['field']) ? sanitize_text_field((string) wp_unslash($_GET['field'])) : '';
         $values = LCNI_Chart_Builder_Repository::get_distinct_field_values($source, $field, 120);
         wp_send_json_success(['values' => $values]);
     }
@@ -3499,12 +3499,33 @@ private function sanitize_module_title($value, $fallback) {
                         }
                     };
 
-                    const addFilterSlot = (value = '') => {
+                    const sanitizeFilterFieldKey = (value) => String(value || '').replace(/[^a-zA-Z0-9_.]/g, '');
+                    const escapeHtml = (value) => String(value || '').replace(/[&<>\"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[ch] || ch));
+
+                    const syncFilterValueInputs = (field, values) => {
+                        const safeField = sanitizeFilterFieldKey(field);
+                        if (!safeField) return;
+                        tabRoot.querySelectorAll('input[data-filter-value-field="' + safeField + '"]').forEach((node) => node.remove());
+                        values.forEach((value) => {
+                            const input = document.createElement('input');
+                            input.type = 'hidden';
+                            input.name = 'lcni_chart_builder[filter_value][' + safeField + '][]';
+                            input.value = value;
+                            input.setAttribute('data-filter-value-field', safeField);
+                            tabRoot.querySelector('#lcni-chart-builder-form').appendChild(input);
+                        });
+                    };
+
+                    const addFilterSlot = (value = '', selectedValues = []) => {
                         const idx = tabRoot.querySelectorAll('.lcni-chart-builder-filter-field').length;
-                        const zone = mkDropZone('filter-' + idx, 'Filter ' + (idx + 1) + ' (drag field)', (z) => { const f = tabRoot.querySelectorAll('.lcni-chart-builder-filter-field')[idx]; if (f) f.value = ''; z.querySelector('[data-text]').textContent = 'Filter ' + (idx + 1) + ' (drag field)'; filterValuesContainer.innerHTML = ''; });
+                        const zone = mkDropZone('filter-' + idx, 'Filter ' + (idx + 1) + ' (drag field)', (z) => { const f = tabRoot.querySelectorAll('.lcni-chart-builder-filter-field')[idx]; if (f) { syncFilterValueInputs(f.value || '', []); f.value = ''; } z.querySelector('[data-text]').textContent = 'Filter ' + (idx + 1) + ' (drag field)'; filterValuesContainer.innerHTML = ''; });
                         filterContainer.appendChild(zone);
                         const input = document.createElement('input'); input.type = 'hidden'; input.name = 'lcni_chart_builder[filter_field][]'; input.className = 'lcni-chart-builder-filter-field'; input.value = value; filterContainer.appendChild(input);
-                        if (value) { zone.querySelector('[data-text]').textContent = 'Filter ' + (idx + 1) + ': ' + value; loadFilterValues(idx, value); }
+                        if (value) {
+                            syncFilterValueInputs(value, selectedValues);
+                            zone.querySelector('[data-text]').textContent = 'Filter ' + (idx + 1) + ': ' + value;
+                            loadFilterValues(idx, value);
+                        }
                     };
 
                     const loadFilterValues = (idx, field) => {
@@ -3512,7 +3533,19 @@ private function sanitize_module_title($value, $fallback) {
                         const endpoint = '<?php echo esc_js(admin_url('admin-ajax.php')); ?>?action=lcni_chart_builder_filter_values&data_source=' + encodeURIComponent(src) + '&field=' + encodeURIComponent(field);
                         fetch(endpoint, { credentials: 'same-origin' }).then((r) => r.json()).then((json) => {
                             const values = (json && json.success && json.data && Array.isArray(json.data.values)) ? json.data.values : [];
-                            filterValuesContainer.innerHTML = '<div class="lcni-filter-values"><strong>Filter ' + (idx + 1) + ': ' + field + '</strong>' + values.map((v) => '<label style="display:block;"><input type="checkbox" disabled checked> ' + v + '</label>').join('') + '</div>';
+                            const safeField = sanitizeFilterFieldKey(field);
+                            const selected = new Set(Array.from(tabRoot.querySelectorAll('input[data-filter-value-field="' + safeField + '"]')).map((node) => node.value));
+                            if (!selected.size) values.forEach((value) => selected.add(String(value)));
+                            syncFilterValueInputs(field, Array.from(selected));
+                            filterValuesContainer.innerHTML = '<div class="lcni-filter-values" data-filter-values-field="' + escapeHtml(safeField) + '"><strong>Filter ' + (idx + 1) + ': ' + escapeHtml(field) + '</strong>' + values.map((v) => { const checked = selected.has(String(v)) ? ' checked' : ''; return '<label style="display:block;"><input type="checkbox" value="' + escapeHtml(v) + '"' + checked + '> ' + escapeHtml(v) + '</label>'; }).join('') + '</div>';
+                            const box = filterValuesContainer.querySelector('[data-filter-values-field="' + safeField + '"]');
+                            if (!box) return;
+                            box.addEventListener('change', (event) => {
+                                const target = event.target;
+                                if (!target || target.tagName !== 'INPUT' || target.type !== 'checkbox') return;
+                                const nextValues = Array.from(box.querySelectorAll('input[type="checkbox"]:checked')).map((node) => node.value);
+                                syncFilterValueInputs(field, nextValues);
+                            });
                         });
                     };
 
@@ -3826,7 +3859,14 @@ private function sanitize_module_title($value, $fallback) {
                             applySeriesPropertiesToPanel(panel, idx);
                         });
                         filterContainer.innerHTML = ''; filterValuesContainer.innerHTML = '';
-                        (Array.isArray(config.filters) ? config.filters : ['']).forEach((f) => addFilterSlot(f || ''));
+                        tabRoot.querySelectorAll('input[data-filter-value-field]').forEach((node) => node.remove());
+                        const filterValueMap = (config && typeof config.filter_values === 'object' && config.filter_values)
+                            ? config.filter_values
+                            : {};
+                        (Array.isArray(config.filters) ? config.filters : ['']).forEach((f) => {
+                            const selectedValues = Array.isArray(filterValueMap[f]) ? filterValueMap[f] : [];
+                            addFilterSlot(f || '', selectedValues);
+                        });
                         reloadFields(); renderPreview(); paneButtons[0].click();
                     }));
 

@@ -6,12 +6,27 @@ if (!defined('ABSPATH')) {
 
 class LCNI_Chart_Builder_Service {
 
+    private static function sanitize_field_token($raw) {
+        $raw = (string) $raw;
+        if (strpos($raw, '.') !== false) {
+            [$source_key, $column] = array_pad(explode('.', $raw, 2), 2, '');
+            $source_key = sanitize_key($source_key);
+            $column = sanitize_key($column);
+            if ($source_key !== '' && $column !== '') {
+                return $source_key . '.' . $column;
+            }
+        }
+
+        return sanitize_key($raw);
+    }
+
     public static function sanitize_payload($raw) {
         $config = [
-            'xAxis' => sanitize_key((string) ($raw['xAxis'] ?? 'event_time')),
-            'yAxis' => sanitize_key((string) ($raw['yAxis'] ?? '')),
+            'xAxis' => self::sanitize_field_token((string) ($raw['xAxis'] ?? 'event_time')),
+            'yAxis' => self::sanitize_field_token((string) ($raw['yAxis'] ?? '')),
             'series' => [],
             'filters' => [],
+            'filter_values' => [],
             'template' => sanitize_key((string) ($raw['template'] ?? 'multi_line')),
         ];
 
@@ -27,7 +42,7 @@ class LCNI_Chart_Builder_Service {
         $count = max(count($series_names), count($series_fields), count($series_types), count($series_colors));
         for ($i = 0; $i < $count; $i++) {
             $name = sanitize_text_field((string) ($series_names[$i] ?? ''));
-            $field = sanitize_key((string) ($series_fields[$i] ?? ''));
+            $field = self::sanitize_field_token((string) ($series_fields[$i] ?? ''));
             $type = sanitize_key((string) ($series_types[$i] ?? 'line'));
             $color = sanitize_hex_color((string) ($series_colors[$i] ?? '')) ?: '';
             $stack = !empty($series_stacks[$i]);
@@ -60,12 +75,30 @@ class LCNI_Chart_Builder_Service {
 
         $filter_fields = isset($raw['filter_field']) ? (array) $raw['filter_field'] : [];
         foreach ($filter_fields as $field) {
-            $sanitized = sanitize_key((string) $field);
+            $sanitized = self::sanitize_field_token((string) $field);
             if ($sanitized !== '') {
                 $config['filters'][] = $sanitized;
             }
         }
         $config['filters'] = array_values(array_unique($config['filters']));
+
+        $filter_values = isset($raw['filter_value']) && is_array($raw['filter_value']) ? $raw['filter_value'] : [];
+        foreach ($filter_values as $field => $values) {
+            $field_token = self::sanitize_field_token((string) $field);
+            if ($field_token === '' || !in_array($field_token, $config['filters'], true)) {
+                continue;
+            }
+
+            $sanitized_values = array_values(array_filter(array_map(static function ($value) {
+                return sanitize_text_field((string) $value);
+            }, (array) $values), static function ($value) {
+                return $value !== '';
+            }));
+
+            if (!empty($sanitized_values)) {
+                $config['filter_values'][$field_token] = $sanitized_values;
+            }
+        }
 
         return [
             'id' => isset($raw['id']) ? absint($raw['id']) : 0,
@@ -109,7 +142,7 @@ class LCNI_Chart_Builder_Service {
 
         $series_labels = [];
         foreach ((array) ($config['series'] ?? []) as $item) {
-            $field = sanitize_key((string) ($item['field'] ?? ''));
+            $field = self::sanitize_field_token((string) ($item['field'] ?? ''));
             if ($field === '') {
                 continue;
             }
@@ -118,7 +151,7 @@ class LCNI_Chart_Builder_Service {
 
         $filter_fields = [];
         foreach ((array) ($config['filters'] ?? []) as $filter_field) {
-            $sanitized = sanitize_key((string) $filter_field);
+            $sanitized = self::sanitize_field_token((string) $filter_field);
             if ($sanitized !== '') {
                 $filter_fields[] = $sanitized;
             }
@@ -127,11 +160,11 @@ class LCNI_Chart_Builder_Service {
 
         $chart_type = (string) ($chart['chart_type'] ?? 'multi_line');
         if ($chart_type === 'heatmap_matrix' || $chart_type === 'heatmap_matrix_2') {
-            $x_axis = sanitize_key((string) ($config['xAxis'] ?? 'timeframe'));
-            $y_axis = sanitize_key((string) ($config['yAxis'] ?? 'icb2'));
+            $x_axis = self::sanitize_field_token((string) ($config['xAxis'] ?? 'timeframe'));
+            $y_axis = self::sanitize_field_token((string) ($config['yAxis'] ?? 'icb2'));
             $value_field = '';
             foreach ((array) ($config['series'] ?? []) as $item) {
-                $candidate = sanitize_key((string) ($item['field'] ?? ''));
+                $candidate = self::sanitize_field_token((string) ($item['field'] ?? ''));
                 if ($candidate !== '') {
                     $value_field = $candidate;
                     break;
