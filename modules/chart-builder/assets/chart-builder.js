@@ -169,133 +169,146 @@
     const preparedRows = normalizeRowsByTemplate(rows, chartType, cfg);
 
     if (isMiniLineSparkline) {
-      const xDimensionField = cfg.xAxis || '';
-      const yDimensionField = cfg.yAxis || '';
-      const valueField = (seriesCfg[0] && seriesCfg[0].field) || '';
-      const timeField = cfg.timeAxis || 'event_time';
-      const xDimensionData = [];
-      const yDimensionData = [];
+      const xField = cfg.xAxis || 'event_time';
+      const miniChartField = cfg.yAxis || '';
+      const miniChartMap = new Map();
+      const xAxisValues = [];
       const xSet = new Set();
-      const ySet = new Set();
-      const cells = {};
 
-      preparedRows.forEach((row, rowIndex) => {
-        const xValue = String(row[xDimensionField] || '').trim();
-        const yValue = String(row[yDimensionField] || '').trim();
-        const numericValue = Number(row[valueField]);
-        if (!xValue || !yValue || !Number.isFinite(numericValue)) {
+      preparedRows.forEach((row) => {
+        const xValue = String(row[xField] || '').trim();
+        const chartKey = miniChartField ? String(row[miniChartField] || '').trim() : 'Mini Chart';
+        if (!xValue || !chartKey) {
           return;
         }
 
         if (!xSet.has(xValue)) {
           xSet.add(xValue);
-          xDimensionData.push(xValue);
-        }
-        if (!ySet.has(yValue)) {
-          ySet.add(yValue);
-          yDimensionData.push(yValue);
+          xAxisValues.push(xValue);
         }
 
-        const id = `${xValue}|${yValue}`;
-        if (!cells[id]) {
-          cells[id] = [];
+        if (!miniChartMap.has(chartKey)) {
+          miniChartMap.set(chartKey, {});
         }
-
-        const timeValue = row[timeField] || row.event_time || row.date || rowIndex;
-        cells[id].push([String(timeValue), numericValue]);
+        miniChartMap.get(chartKey)[xValue] = row;
       });
 
-      const matrix = {
-        x: {
-          data: xDimensionData,
-          levelSize: 42,
-          label: { fontSize: 13, color: '#555' },
-        },
-        y: {
-          data: yDimensionData.map((item) => ({ value: item })),
-          levelSize: 62,
-          label: { fontSize: 12, color: '#777' },
-        },
-        corner: {
-          data: [{ coord: [-1, -1], value: 'Nhóm / Mã' }],
-          label: { fontSize: 12, color: '#777' },
-        },
-        top: 24,
-        bottom: 80,
-        width: '92%',
-        left: 'center',
-      };
+      const miniChartKeys = Array.from(miniChartMap.keys());
+      const miniSeriesCfg = seriesCfg.filter((item) => item && item.field);
+      if (!miniChartKeys.length || !xAxisValues.length || !miniSeriesCfg.length) {
+        return { title: { text: payload.name || '' }, series: [] };
+      }
+
+      const chartPerRow = 4;
+      const columnGap = 3;
+      const rowGap = 6;
+      const rowCount = Math.ceil(miniChartKeys.length / chartPerRow);
+      const topArea = payload.name ? 12 : 4;
+      const bottomArea = 16;
+      const availableHeight = 100 - topArea - bottomArea - rowGap * Math.max(0, rowCount - 1);
+      const availableWidth = 100 - columnGap * Math.max(0, chartPerRow - 1);
+      const cellHeight = availableHeight / Math.max(1, rowCount);
+      const cellWidth = availableWidth / chartPerRow;
 
       const option = {
         title: { text: payload.name || '' },
-        matrix,
-        tooltip: { trigger: 'axis' },
-        dataZoom: [
-          { type: 'slider', xAxisIndex: 'all', left: '10%', right: '10%', bottom: 26, height: 24, throttle: 120 },
-          { type: 'inside', xAxisIndex: 'all', throttle: 120 },
-        ],
+        tooltip: {
+          trigger: 'axis',
+          formatter: (params) => {
+            if (!Array.isArray(params) || !params.length) return '';
+            const axisLabel = params[0].axisValueLabel || params[0].axisValue || '';
+            const lines = [axisLabel, params[0].seriesName.split(' · ')[0]];
+            params.forEach((item) => {
+              const label = item.seriesName.split(' · ').slice(1).join(' · ') || item.seriesName;
+              lines.push(`${item.marker}${label}: ${formatValue(item.data, item.seriesField || '')}`);
+            });
+            return lines.join('<br/>');
+          },
+        },
         grid: [],
         xAxis: [],
         yAxis: [],
         series: [],
+        graphic: [],
         animationDurationUpdate: 300,
       };
 
-      yDimensionData.forEach((yValue, yidx) => {
-        xDimensionData.forEach((xValue, xidx) => {
-          const id = `${xidx}|${yidx}`;
-          const cellKey = `${xValue}|${yValue}`;
-          const cellSeries = cells[cellKey] || [];
-          if (!cellSeries.length) {
-            return;
-          }
+      miniChartKeys.forEach((chartKey, chartIndex) => {
+        const col = chartIndex % chartPerRow;
+        const row = Math.floor(chartIndex / chartPerRow);
+        const gridId = `mini-${chartIndex}`;
+        const left = col * (cellWidth + columnGap);
+        const top = topArea + row * (cellHeight + rowGap);
+        const isBottomRow = row === rowCount - 1;
 
-          option.grid.push({
-            id,
-            coordinateSystem: 'matrix',
-            coord: [xValue, yValue],
-            top: 8,
-            bottom: 8,
-            left: 'center',
-            width: '92%',
-            containLabel: true,
-          });
+        option.grid.push({
+          id: gridId,
+          left: `${left}%`,
+          top: `${top}%`,
+          width: `${cellWidth}%`,
+          height: `${cellHeight}%`,
+          containLabel: false,
+        });
 
-          option.xAxis.push({
-            type: 'category',
-            id,
-            gridId: id,
-            axisTick: { show: false },
-            axisLabel: { show: false },
-            axisLine: { show: false },
-            splitLine: { show: false },
-            data: cellSeries.map((item) => item[0]),
-          });
+        option.xAxis.push({
+          type: 'category',
+          id: gridId,
+          gridId,
+          data: xAxisValues,
+          axisTick: { show: false },
+          axisLine: { show: isBottomRow },
+          axisLabel: { show: isBottomRow, fontSize: 10 },
+          splitLine: { show: false },
+        });
 
-          option.yAxis.push({
-            id,
-            gridId: id,
-            scale: true,
-            axisLabel: { show: false },
-            axisLine: { show: false },
-            axisTick: { show: false },
-            splitLine: { show: false },
+        option.yAxis.push({
+          id: gridId,
+          gridId,
+          type: 'value',
+          scale: true,
+          axisLabel: { show: false },
+          axisLine: { show: false },
+          axisTick: { show: false },
+          splitLine: { show: false },
+        });
+
+        option.graphic.push({
+          type: 'text',
+          left: `${left + 0.4}%`,
+          top: `${top - 1.8}%`,
+          style: {
+            text: chartKey,
+            fontSize: 11,
+            fontWeight: 600,
+            fill: '#4b5563',
+          },
+        });
+
+        miniSeriesCfg.forEach((seriesItem, seriesIndex) => {
+          const field = seriesItem.field || '';
+          const lineColor = seriesItem.color || ['#5470c6', '#91cc75', '#ee6666'][seriesIndex % 3];
+          const data = xAxisValues.map((axisValue) => {
+            const rowData = miniChartMap.get(chartKey)[axisValue] || null;
+            const numeric = rowData ? Number(rowData[field]) : null;
+            return Number.isFinite(numeric) ? numeric : null;
           });
 
           option.series.push({
-            name: `${yValue} - ${xValue}`,
-            xAxisId: id,
-            yAxisId: id,
+            name: `${chartKey} · ${labels[field] || seriesItem.name || field || `Series ${seriesIndex + 1}`}`,
+            seriesField: field,
+            xAxisId: gridId,
+            yAxisId: gridId,
             type: 'line',
             smooth: true,
             symbol: 'none',
+            connectNulls: true,
             lineStyle: {
               lineWidth: 1.2,
-              type: (seriesCfg[0] && seriesCfg[0].line_style) || 'solid',
-              color: (seriesCfg[0] && seriesCfg[0].color) || '#5470c6',
+              type: seriesItem.line_style || 'solid',
+              color: lineColor,
             },
-            itemStyle: { color: (seriesCfg[0] && seriesCfg[0].color) || '#5470c6' },
-            data: cellSeries.map((item) => item[1]),
+            itemStyle: { color: lineColor },
+            data,
           });
         });
       });
