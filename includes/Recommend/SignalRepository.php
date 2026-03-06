@@ -9,12 +9,14 @@ class SignalRepository {
     private $table;
     private $symbols_table;
     private $has_timeframe_column;
+    private $recommend_column_catalog;
 
     public function __construct(wpdb $wpdb) {
         $this->wpdb = $wpdb;
         $this->table = $wpdb->prefix . 'lcni_recommend_signal';
         $this->symbols_table = $wpdb->prefix . 'lcni_symbols';
         $this->has_timeframe_column = null;
+        $this->recommend_column_catalog = null;
     }
 
     public function get_open_signals() {
@@ -149,10 +151,42 @@ class SignalRepository {
             $params[] = strtoupper(sanitize_text_field((string) $filters['symbol']));
         }
 
+        $catalog = $this->get_recommend_column_catalog();
+        $selected_columns = isset($filters['selected_columns']) && is_array($filters['selected_columns'])
+            ? array_values(array_intersect(array_keys($catalog), array_map('sanitize_key', $filters['selected_columns'])))
+            : [];
+
+        if (empty($selected_columns)) {
+            $selected_columns = array_values(array_filter(['signal__symbol', 'rule__name', 'signal__entry_price', 'signal__current_price', 'signal__r_multiple', 'signal__position_state', 'signal__status'], static function ($column) use ($catalog) {
+                return isset($catalog[$column]);
+            }));
+        }
+
+        $selects = ['s.id AS signal__id'];
+        foreach ($selected_columns as $key) {
+            if (!isset($catalog[$key])) {
+                continue;
+            }
+            $meta = $catalog[$key];
+            $source = $meta['source'];
+            $column = $meta['column'];
+            if (!in_array($source, ['signal', 'rule', 'ohlc'], true) || sanitize_key($column) !== $column) {
+                continue;
+            }
+            if ($source === 'signal') {
+                $selects[] = "s.{$column} AS {$key}";
+            } elseif ($source === 'rule') {
+                $selects[] = "r.{$column} AS {$key}";
+            } else {
+                $selects[] = "o.{$column} AS {$key}";
+            }
+        }
+
         $limit = max(1, min(300, (int) ($filters['limit'] ?? 20)));
-        $sql = "SELECT s.*, r.name AS rule_name, r.add_at_r, r.exit_at_r
+        $sql = 'SELECT ' . implode(', ', array_unique($selects)) . "
             FROM {$this->table} s
             LEFT JOIN {$this->wpdb->prefix}lcni_recommend_rule r ON r.id = s.rule_id
+            LEFT JOIN {$this->wpdb->prefix}lcni_ohlc_latest o ON o.symbol = s.symbol
             WHERE " . implode(' AND ', $where) . "
             ORDER BY s.entry_time DESC
             LIMIT %d";
@@ -160,6 +194,48 @@ class SignalRepository {
         $params[] = $limit;
 
         return $this->wpdb->get_results($this->wpdb->prepare($sql, $params), ARRAY_A);
+    }
+
+    public function get_recommend_column_catalog() {
+        if (is_array($this->recommend_column_catalog)) {
+            return $this->recommend_column_catalog;
+        }
+
+        $sources = [
+            'signal' => $this->table,
+            'rule' => $this->wpdb->prefix . 'lcni_recommend_rule',
+            'ohlc' => $this->wpdb->prefix . 'lcni_ohlc_latest',
+        ];
+
+        $catalog = [];
+        foreach ($sources as $source => $table) {
+            $exists = $this->wpdb->get_var($this->wpdb->prepare('SHOW TABLES LIKE %s', $table));
+            if ($exists !== $table) {
+                continue;
+            }
+
+            $columns = $this->wpdb->get_col("SHOW COLUMNS FROM {$table}");
+            if (!is_array($columns)) {
+                continue;
+            }
+
+            foreach ($columns as $column) {
+                $field = sanitize_key((string) $column);
+                if ($field === '') {
+                    continue;
+                }
+
+                $key = $source . '__' . $field;
+                $catalog[$key] = [
+                    'source' => $source,
+                    'column' => $field,
+                ];
+            }
+        }
+
+        $this->recommend_column_catalog = $catalog;
+
+        return $catalog;
     }
 
     public function find_open_signal_by_symbol($symbol) {
