@@ -3147,6 +3147,12 @@ private function sanitize_module_title($value, $fallback) {
             'thong_ke_nganh_icb_2' => 'wp_lcni_thong_ke_nganh_icb_2',
             'thong_ke_nganh_icb_2_toan_thi_truong' => 'wp_lcni_thong_ke_nganh_icb_2_toan_thi_truong',
             'thong_ke_thi_truong' => 'wp_lcni_thong_ke_thi_truong',
+            'industry_return' => 'wp_lcni_industry_return',
+            'industry_index' => 'wp_lcni_industry_index',
+            'industry_metrics' => 'wp_lcni_industry_metrics',
+            'recommend_performance' => 'wp_lcni_recommend_performance',
+            'recommend_rule' => 'wp_lcni_recommend_rule',
+            'recommend_signal' => 'wp_lcni_recommend_signal',
             'money_flow' => 'wp_lcni_money_flow',
             'stock_stats' => 'wp_lcni_stock_stats',
         ];
@@ -4114,9 +4120,48 @@ private function sanitize_module_title($value, $fallback) {
         <?php
     }
 
-    private function render_global_column_label_form($module, $tab_id, $watchlist_settings) {
+
+    private function get_global_column_label_candidates() {
+        global $wpdb;
+
         $service = new LCNI_WatchlistService(new LCNI_WatchlistRepository());
-        $all_columns = $service->get_all_columns();
+        $columns = $service->get_all_columns();
+
+        $target_tables = [
+            $wpdb->prefix . 'lcni_industry_return',
+            $wpdb->prefix . 'lcni_industry_index',
+            $wpdb->prefix . 'lcni_industry_metrics',
+            $wpdb->prefix . 'lcni_recommend_performance',
+            $wpdb->prefix . 'lcni_recommend_rule',
+            $wpdb->prefix . 'lcni_recommend_signal',
+            $wpdb->prefix . 'lcni_thong_ke_thi_truong',
+            $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2_toan_thi_truong',
+            $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2',
+        ];
+
+        foreach ($target_tables as $table_name) {
+            $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table_name));
+            if ($exists !== $table_name) {
+                continue;
+            }
+
+            $table_columns = $wpdb->get_col("SHOW COLUMNS FROM {$table_name}");
+            foreach ((array) $table_columns as $column) {
+                $column_key = sanitize_key((string) $column);
+                if ($column_key !== '') {
+                    $columns[] = $column_key;
+                }
+            }
+        }
+
+        $columns = array_values(array_unique(array_filter(array_map('sanitize_key', (array) $columns))));
+        sort($columns, SORT_STRING);
+
+        return $columns;
+    }
+
+    private function render_global_column_label_form($module, $tab_id, $watchlist_settings) {
+        $all_columns = $this->get_global_column_label_candidates();
         $configured = get_option('lcni_column_labels', $watchlist_settings['column_labels'] ?? []);
         $map = [];
         foreach ((array) $configured as $key => $item) {

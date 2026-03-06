@@ -194,6 +194,8 @@ class LCNI_DB {
         self::sync_frontend_settings_with_new_ohlc_columns();
         self::backfill_market_statistics_tables();
         self::backfill_industry_analysis_tables();
+        self::ensure_industry_analysis_extended_schema();
+        self::backfill_industry_analysis_extended_metrics();
         self::ensure_ohlc_symbol_type_column();
         self::ensure_ohlc_indexes();
         self::ensure_ohlc_latest_snapshot_infrastructure();
@@ -708,6 +710,7 @@ class LCNI_DB {
         self::ensure_ohlc_latest_snapshot_infrastructure();
         self::ensure_market_statistics_schema();
         self::ensure_industry_analysis_schema();
+        self::ensure_industry_analysis_extended_schema();
         self::ensure_chart_builder_schema();
         self::normalize_ohlc_numeric_columns();
         self::normalize_legacy_ratio_columns();
@@ -6368,6 +6371,166 @@ class LCNI_DB {
             self::add_index_if_missing($metrics_table, 'idx_timeframe_event', '(timeframe, event_time)');
             self::add_index_if_missing($metrics_table, 'idx_score', '(industry_score_raw)');
         }
+    }
+
+    private static function ensure_industry_analysis_extended_schema() {
+        global $wpdb;
+
+        $return_table = $wpdb->prefix . 'lcni_industry_return';
+        $index_table = $wpdb->prefix . 'lcni_industry_index';
+        $metrics_table = $wpdb->prefix . 'lcni_industry_metrics';
+
+        $return_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $return_table));
+        if ($return_exists === $return_table) {
+            if (!self::table_has_column($return_table, 'industry_volume')) {
+                $wpdb->query("ALTER TABLE {$return_table} ADD COLUMN industry_volume BIGINT NULL");
+            }
+            if (!self::table_has_column($return_table, 'value_ma20')) {
+                $wpdb->query("ALTER TABLE {$return_table} ADD COLUMN value_ma20 DECIMAL(20,2) NULL");
+            }
+            if (!self::table_has_column($return_table, 'money_flow_ratio')) {
+                $wpdb->query("ALTER TABLE {$return_table} ADD COLUMN money_flow_ratio DECIMAL(10,4) NULL");
+            }
+        }
+
+        $index_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $index_table));
+        if ($index_exists === $index_table) {
+            if (!self::table_has_column($index_table, 'index_ma50')) {
+                $wpdb->query("ALTER TABLE {$index_table} ADD COLUMN index_ma50 DECIMAL(14,4) NULL");
+            }
+            if (!self::table_has_column($index_table, 'industry_trend')) {
+                $wpdb->query("ALTER TABLE {$index_table} ADD COLUMN industry_trend VARCHAR(30) NULL");
+            }
+        }
+
+        $metrics_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $metrics_table));
+        if ($metrics_exists === $metrics_table) {
+            if (!self::table_has_column($metrics_table, 'leader_stock_ratio')) {
+                $wpdb->query("ALTER TABLE {$metrics_table} ADD COLUMN leader_stock_ratio DECIMAL(10,4) NULL");
+            }
+            if (!self::table_has_column($metrics_table, 'updown_ratio')) {
+                $wpdb->query("ALTER TABLE {$metrics_table} ADD COLUMN updown_ratio DECIMAL(10,4) NULL");
+            }
+            if (!self::table_has_column($metrics_table, 'industry_phase')) {
+                $wpdb->query("ALTER TABLE {$metrics_table} ADD COLUMN industry_phase VARCHAR(30) NULL");
+            }
+        }
+    }
+
+    private static function backfill_industry_analysis_extended_metrics() {
+        global $wpdb;
+
+        $migration_flag = 'lcni_industry_analysis_extended_metrics_backfilled_v1';
+        if (get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        $return_table = $wpdb->prefix . 'lcni_industry_return';
+        $index_table = $wpdb->prefix . 'lcni_industry_index';
+        $metrics_table = $wpdb->prefix . 'lcni_industry_metrics';
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $mapping_table = $wpdb->prefix . 'lcni_sym_icb_market';
+
+        if (
+            $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $return_table)) !== $return_table
+            || $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $index_table)) !== $index_table
+            || $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $metrics_table)) !== $metrics_table
+        ) {
+            return;
+        }
+
+        // Step 1: update industry_volume
+        $wpdb->query("UPDATE {$return_table} r
+            INNER JOIN (
+                SELECT
+                    o.event_time,
+                    o.timeframe,
+                    COALESCE(m.id_icb2, 0) AS id_icb2,
+                    SUM(COALESCE(o.volume, 0)) AS industry_volume
+                FROM {$ohlc_table} o
+                LEFT JOIN {$mapping_table} m ON UPPER(TRIM(m.symbol)) = UPPER(TRIM(o.symbol))
+                GROUP BY o.event_time, o.timeframe, COALESCE(m.id_icb2, 0)
+            ) v ON v.event_time = r.event_time AND v.timeframe = r.timeframe AND v.id_icb2 = r.id_icb2
+            SET r.industry_volume = v.industry_volume");
+
+        // Step 2: update value_ma20
+        $wpdb->query("UPDATE {$return_table} r
+            INNER JOIN (
+                SELECT id, AVG(industry_value) OVER(
+                    PARTITION BY id_icb2, timeframe
+                    ORDER BY event_time
+                    ROWS BETWEEN 19 PRECEDING AND CURRENT ROW
+                ) AS value_ma20
+                FROM {$return_table}
+            ) rolling ON rolling.id = r.id
+            SET r.value_ma20 = rolling.value_ma20");
+
+        // Step 3: update money_flow_ratio
+        $wpdb->query("UPDATE {$return_table}
+            SET money_flow_ratio = CASE
+                WHEN COALESCE(value_ma20, 0) <= 0 THEN NULL
+                ELSE industry_value / value_ma20
+            END");
+
+        // Step 4: update index_ma50
+        $wpdb->query("UPDATE {$index_table} i
+            INNER JOIN (
+                SELECT id, AVG(industry_index) OVER(
+                    PARTITION BY id_icb2, timeframe
+                    ORDER BY event_time
+                    ROWS BETWEEN 49 PRECEDING AND CURRENT ROW
+                ) AS index_ma50
+                FROM {$index_table}
+            ) rolling ON rolling.id = i.id
+            SET i.index_ma50 = rolling.index_ma50");
+
+        // Step 5: update industry_trend
+        $wpdb->query("UPDATE {$index_table}
+            SET industry_trend = CASE
+                WHEN COALESCE(index_ma50, 0) <= 0 THEN NULL
+                WHEN ABS(industry_index - index_ma50) / index_ma50 < 0.02 THEN 'Tích lũy'
+                WHEN industry_index > index_ma50 THEN 'Xu hướng tăng'
+                ELSE 'Xu hướng giảm'
+            END");
+
+        // Step 6: update leader_stock_ratio
+        $wpdb->query("UPDATE {$metrics_table} m
+            INNER JOIN (
+                SELECT
+                    o.event_time,
+                    o.timeframe,
+                    COALESCE(map.id_icb2, 0) AS id_icb2,
+                    SUM(CASE WHEN COALESCE(o.pct_t_1, 0) >= 0.03 THEN 1 ELSE 0 END) AS stocks_breakout,
+                    COUNT(*) AS total_stocks
+                FROM {$ohlc_table} o
+                LEFT JOIN {$mapping_table} map ON UPPER(TRIM(map.symbol)) = UPPER(TRIM(o.symbol))
+                GROUP BY o.event_time, o.timeframe, COALESCE(map.id_icb2, 0)
+            ) b ON b.event_time = m.event_time AND b.timeframe = m.timeframe AND b.id_icb2 = m.id_icb2
+            SET m.leader_stock_ratio = CASE
+                WHEN COALESCE(b.total_stocks, 0) = 0 THEN NULL
+                ELSE b.stocks_breakout / b.total_stocks
+            END");
+
+        // Step 7: update updown_ratio
+        $wpdb->query("UPDATE {$metrics_table}
+            SET updown_ratio = CASE
+                WHEN (total_stocks - stocks_up) <= 0 THEN NULL
+                ELSE stocks_up / (total_stocks - stocks_up)
+            END");
+
+        // Step 8: update industry_phase
+        $wpdb->query("UPDATE {$metrics_table} m
+            LEFT JOIN {$return_table} r ON r.event_time = m.event_time AND r.timeframe = m.timeframe AND r.id_icb2 = m.id_icb2
+            SET m.industry_phase = CASE
+                WHEN m.momentum > 0 AND m.relative_strength > 0 AND COALESCE(r.money_flow_ratio, 0) > 1.2 THEN 'Bứt phá'
+                WHEN m.momentum > 0 AND m.relative_strength > 0 AND COALESCE(r.money_flow_ratio, 0) >= 0.9 AND COALESCE(r.money_flow_ratio, 0) <= 1.2 THEN 'Tăng ổn định'
+                WHEN ABS(m.momentum) <= 0.01 THEN 'Tích lũy'
+                WHEN m.momentum < 0 AND m.relative_strength < 0 THEN 'Suy yếu'
+                ELSE 'Tích lũy'
+            END");
+
+        update_option($migration_flag, 'yes');
+        self::log_change('backfill_industry_analysis_extended_metrics', 'Backfilled industry extended columns via 8-step SQL pipeline.');
     }
 
     public static function rebuild_industry_analysis_snapshot($timeframes = ['1D'], $force_rebuild = true) {

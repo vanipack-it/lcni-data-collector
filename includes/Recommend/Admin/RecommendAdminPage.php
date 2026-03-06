@@ -291,6 +291,15 @@ class LCNI_Recommend_Admin_Page {
             $wpdb->prefix . 'lcni_icb2' => $wpdb->prefix . 'lcni_icb2',
             $wpdb->prefix . 'lcni_sym_icb_market' => $wpdb->prefix . 'lcni_sym_icb_market',
             $wpdb->prefix . 'lcni_symbol_tongquan' => $wpdb->prefix . 'lcni_symbol_tongquan',
+            $wpdb->prefix . 'lcni_industry_return' => $wpdb->prefix . 'lcni_industry_return',
+            $wpdb->prefix . 'lcni_industry_index' => $wpdb->prefix . 'lcni_industry_index',
+            $wpdb->prefix . 'lcni_industry_metrics' => $wpdb->prefix . 'lcni_industry_metrics',
+            $wpdb->prefix . 'lcni_recommend_rule' => $wpdb->prefix . 'lcni_recommend_rule',
+            $wpdb->prefix . 'lcni_recommend_signal' => $wpdb->prefix . 'lcni_recommend_signal',
+            $wpdb->prefix . 'lcni_recommend_performance' => $wpdb->prefix . 'lcni_recommend_performance',
+            $wpdb->prefix . 'lcni_thong_ke_thi_truong' => $wpdb->prefix . 'lcni_thong_ke_thi_truong',
+            $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2' => $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2',
+            $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2_toan_thi_truong' => $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2_toan_thi_truong',
         ];
     }
 
