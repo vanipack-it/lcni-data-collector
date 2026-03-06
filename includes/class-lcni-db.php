@@ -6396,6 +6396,133 @@ class LCNI_DB {
         return (int) self::rebuild_industry_analysis_incremental([], (array) $timeframes, true);
     }
 
+    public static function rebuild_industry_analysis_snapshot_chunked($timeframes = ['1D'], $batch_size = 5, $reset = false) {
+        global $wpdb;
+
+        $return_table = $wpdb->prefix . 'lcni_industry_return';
+        $index_table = $wpdb->prefix . 'lcni_industry_index';
+        $metrics_table = $wpdb->prefix . 'lcni_industry_metrics';
+
+        $return_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $return_table));
+        $index_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $index_table));
+        $metrics_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $metrics_table));
+
+        if ($return_exists !== $return_table || $index_exists !== $index_table || $metrics_exists !== $metrics_table) {
+            return [
+                'processed' => 0,
+                'remaining' => 0,
+                'total' => 0,
+                'done' => true,
+                'status' => 'missing_tables',
+            ];
+        }
+
+        $timeframes = array_values(array_unique(array_filter(array_map(static function ($timeframe) {
+            return strtoupper(trim((string) $timeframe));
+        }, (array) $timeframes))));
+        if (empty($timeframes)) {
+            $timeframes = ['1D'];
+        }
+
+        $batch_size = max(1, min(30, (int) $batch_size));
+        $progress_option = 'lcni_industry_rebuild_progress_v1';
+        $progress = get_option($progress_option, null);
+
+        if ($reset || !is_array($progress) || empty($progress['event_times']) || empty($progress['timeframes']) || $progress['timeframes'] !== $timeframes) {
+            $wpdb->query("TRUNCATE TABLE {$return_table}");
+            $wpdb->query("TRUNCATE TABLE {$index_table}");
+            $wpdb->query("TRUNCATE TABLE {$metrics_table}");
+
+            self::sync_symbol_market_icb_mapping();
+
+            $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+            $event_times = $wpdb->get_col(
+                $wpdb->prepare(
+                    "SELECT DISTINCT event_time FROM {$ohlc_table} WHERE timeframe = %s ORDER BY event_time ASC",
+                    $timeframes[0]
+                )
+            );
+
+            $progress = [
+                'event_times' => array_values(array_map('intval', (array) $event_times)),
+                'offset' => 0,
+                'total' => count((array) $event_times),
+                'timeframes' => $timeframes,
+            ];
+        }
+
+        $total = (int) ($progress['total'] ?? 0);
+        $offset = (int) ($progress['offset'] ?? 0);
+        $event_times = (array) ($progress['event_times'] ?? []);
+
+        if ($total <= 0 || empty($event_times)) {
+            delete_option($progress_option);
+            return [
+                'processed' => 0,
+                'remaining' => 0,
+                'total' => 0,
+                'done' => true,
+                'status' => 'empty_source',
+            ];
+        }
+
+        $batch_events = array_slice($event_times, $offset, $batch_size);
+        if (empty($batch_events)) {
+            delete_option($progress_option);
+            return [
+                'processed' => 0,
+                'remaining' => 0,
+                'total' => $total,
+                'done' => true,
+                'status' => 'completed',
+            ];
+        }
+
+        $processed = (int) self::rebuild_industry_analysis_incremental($batch_events, $timeframes, false);
+        $offset += count($batch_events);
+        $remaining = max(0, $total - $offset);
+
+        if ($remaining === 0) {
+            delete_option($progress_option);
+            update_option('lcni_industry_analysis_backfilled_v1', 'yes');
+            return [
+                'processed' => $processed,
+                'remaining' => 0,
+                'total' => $total,
+                'done' => true,
+                'status' => 'completed',
+            ];
+        }
+
+        $progress['offset'] = $offset;
+        update_option($progress_option, $progress, false);
+
+        return [
+            'processed' => $processed,
+            'remaining' => $remaining,
+            'total' => $total,
+            'done' => false,
+            'status' => 'in_progress',
+        ];
+    }
+
+    public static function get_industry_rebuild_progress() {
+        $progress = get_option('lcni_industry_rebuild_progress_v1', null);
+        if (!is_array($progress) || empty($progress['event_times'])) {
+            return null;
+        }
+
+        $total = (int) ($progress['total'] ?? 0);
+        $offset = (int) ($progress['offset'] ?? 0);
+
+        return [
+            'total' => $total,
+            'processed' => max(0, min($offset, $total)),
+            'remaining' => max(0, $total - $offset),
+            'timeframes' => (array) ($progress['timeframes'] ?? ['1D']),
+        ];
+    }
+
     public static function get_industry_analysis_table_stats() {
         global $wpdb;
 

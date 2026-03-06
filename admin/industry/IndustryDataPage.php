@@ -38,14 +38,51 @@ class LCNI_Industry_Data_Page {
         $type = 'success';
 
         if ($control_action === 'rebuild_industry_tables') {
-            $rows = LCNI_DB::rebuild_industry_analysis_snapshot(['1D'], true);
+            $result = LCNI_DB::rebuild_industry_analysis_snapshot_chunked(['1D'], 5, true);
 
-            if ($rows > 0) {
-                update_option('lcni_industry_analysis_backfilled_v1', 'yes');
-                $message = sprintf('Đã rebuild dữ liệu ngành thành công. Số phiên xử lý: %d.', (int) $rows);
+            if (!empty($result['processed']) || (!empty($result['done']) && ($result['status'] ?? '') === 'completed')) {
+                if (!empty($result['done'])) {
+                    $message = sprintf(
+                        'Đã rebuild hoàn tất dữ liệu ngành theo lô. Số phiên xử lý: %d/%d.',
+                        (int) ($result['total'] ?? 0),
+                        (int) ($result['total'] ?? 0)
+                    );
+                } else {
+                    $processed = max(0, (int) ($result['total'] ?? 0) - (int) ($result['remaining'] ?? 0));
+                    $message = sprintf(
+                        'Đã khởi động rebuild dữ liệu ngành theo lô để giảm tải. Tiến độ: %d/%d phiên, còn lại %d phiên. Bấm nút thêm để chạy lô kế tiếp.',
+                        $processed,
+                        (int) ($result['total'] ?? 0),
+                        (int) ($result['remaining'] ?? 0)
+                    );
+                }
+            } elseif (($result['status'] ?? '') === 'empty_source') {
+                $type = 'error';
+                $message = 'Không có dữ liệu nguồn để rebuild dữ liệu ngành.';
             } else {
                 $type = 'error';
                 $message = 'Không rebuild được dữ liệu ngành. Hãy kiểm tra bảng OHLC, mapping ngành hoặc dữ liệu nguồn đầu vào.';
+            }
+        } elseif ($control_action === 'rebuild_industry_tables_continue') {
+            $result = LCNI_DB::rebuild_industry_analysis_snapshot_chunked(['1D'], 5, false);
+
+            if (($result['status'] ?? '') === 'completed') {
+                $message = sprintf(
+                    'Đã rebuild hoàn tất dữ liệu ngành theo lô. Số phiên xử lý: %d/%d.',
+                    (int) ($result['total'] ?? 0),
+                    (int) ($result['total'] ?? 0)
+                );
+            } elseif (($result['status'] ?? '') === 'in_progress') {
+                $processed = max(0, (int) ($result['total'] ?? 0) - (int) ($result['remaining'] ?? 0));
+                $message = sprintf(
+                    'Đã chạy thêm 1 lô rebuild dữ liệu ngành. Tiến độ: %d/%d phiên, còn lại %d phiên.',
+                    $processed,
+                    (int) ($result['total'] ?? 0),
+                    (int) ($result['remaining'] ?? 0)
+                );
+            } else {
+                $type = 'error';
+                $message = 'Không thể tiếp tục rebuild theo lô. Hãy thử chạy lại từ đầu.';
             }
         } else {
             $type = 'error';
@@ -71,6 +108,7 @@ class LCNI_Industry_Data_Page {
         }
 
         $stats = LCNI_DB::get_industry_analysis_table_stats();
+        $rebuild_progress = LCNI_DB::get_industry_rebuild_progress();
 
         $notice = isset($_GET['lcni_notice']) ? sanitize_text_field(wp_unslash($_GET['lcni_notice'])) : '';
         $notice_type = isset($_GET['lcni_notice_type']) ? sanitize_key(wp_unslash($_GET['lcni_notice_type'])) : 'success';
@@ -114,10 +152,26 @@ class LCNI_Industry_Data_Page {
                 <input type="hidden" name="action" value="<?php echo esc_attr(self::ACTION_HANDLE); ?>">
                 <p>
                     <button type="submit" class="button button-primary" name="lcni_industry_action" value="rebuild_industry_tables">
-                        <?php echo esc_html__('Rebuild Industry Tables', 'lcni-data-collector'); ?>
+                        <?php echo esc_html__('Start Chunked Rebuild Industry Tables', 'lcni-data-collector'); ?>
+                    </button>
+                    <button type="submit" class="button" name="lcni_industry_action" value="rebuild_industry_tables_continue" style="margin-left: 8px;">
+                        <?php echo esc_html__('Run Next Chunk', 'lcni-data-collector'); ?>
                     </button>
                 </p>
             </form>
+
+            <?php if (!empty($rebuild_progress)) : ?>
+                <p>
+                    <?php
+                    echo esc_html(sprintf(
+                        'Chunk progress: %d/%d phiên đã xử lý, còn lại %d phiên.',
+                        (int) ($rebuild_progress['processed'] ?? 0),
+                        (int) ($rebuild_progress['total'] ?? 0),
+                        (int) ($rebuild_progress['remaining'] ?? 0)
+                    ));
+                    ?>
+                </p>
+            <?php endif; ?>
         </div>
         <?php
     }
