@@ -5050,7 +5050,7 @@ class LCNI_DB {
             $trang_thai_h3m = self::determine_peak_status($close, $h3m);
             $trang_thai_h6m = self::determine_peak_status($close, $h6m);
             $trang_thai_h1y = self::determine_peak_status($close, $h1y);
-            $compression_1m = ($h1m !== null && $l1m !== null) ? self::safe_ratio_pct($h1m - $l1m, $h1m) : null;
+            $compression_1m = ($h1m !== null && $l1m !== null && (float) $h1m != 0.0) ? (($h1m - $l1m) / $h1m) : null;
 
             $nen_types[] = $nen_type;
 
