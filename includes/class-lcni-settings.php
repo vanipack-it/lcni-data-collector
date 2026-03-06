@@ -445,6 +445,12 @@ class LCNI_Settings {
 
                         return is_scalar($value) ? (string) $value : $default;
                     };
+                    $recommend_rule_columns = isset($_POST['lcni_frontend_recommend_signal_style_rule_column']) ? (array) wp_unslash($_POST['lcni_frontend_recommend_signal_style_rule_column']) : [];
+                    $recommend_rule_operators = isset($_POST['lcni_frontend_recommend_signal_style_rule_operator']) ? (array) wp_unslash($_POST['lcni_frontend_recommend_signal_style_rule_operator']) : [];
+                    $recommend_rule_values = isset($_POST['lcni_frontend_recommend_signal_style_rule_value']) ? (array) wp_unslash($_POST['lcni_frontend_recommend_signal_style_rule_value']) : [];
+                    $recommend_rule_bg_colors = isset($_POST['lcni_frontend_recommend_signal_style_rule_bg_color']) ? (array) wp_unslash($_POST['lcni_frontend_recommend_signal_style_rule_bg_color']) : [];
+                    $recommend_rule_text_colors = isset($_POST['lcni_frontend_recommend_signal_style_rule_text_color']) ? (array) wp_unslash($_POST['lcni_frontend_recommend_signal_style_rule_text_color']) : [];
+
                     $input = [
                         'allowed_columns' => $recommend_allowed_columns,
                         'column_order' => explode(',', (string) $recommend_column_order_raw),
@@ -466,6 +472,13 @@ class LCNI_Settings {
                             'head_height' => $recommend_scalar_post('lcni_frontend_recommend_signal_style_head_height', 30),
                             'sticky_column' => $recommend_scalar_post('lcni_frontend_recommend_signal_style_sticky_column', 'signal__symbol'),
                             'sticky_header' => isset($_POST['lcni_frontend_recommend_signal_style_sticky_header']) ? 1 : 0,
+                            'cell_color_rules' => [
+                                'columns' => $recommend_rule_columns,
+                                'operators' => $recommend_rule_operators,
+                                'values' => $recommend_rule_values,
+                                'bg_colors' => $recommend_rule_bg_colors,
+                                'text_colors' => $recommend_rule_text_colors,
+                            ],
                         ],
                     ];
 
@@ -4382,6 +4395,39 @@ private function sanitize_module_title($value, $fallback) {
 
         $styles = isset($input['styles']) && is_array($input['styles']) ? $input['styles'] : [];
         $sticky_column = sanitize_key((string) ($styles['sticky_column'] ?? 'signal__symbol'));
+        $rule_input = isset($styles['cell_color_rules']) && is_array($styles['cell_color_rules']) ? $styles['cell_color_rules'] : [];
+        $rule_columns = isset($rule_input['columns']) && is_array($rule_input['columns']) ? $rule_input['columns'] : [];
+        $rule_operators = isset($rule_input['operators']) && is_array($rule_input['operators']) ? $rule_input['operators'] : [];
+        $rule_values = isset($rule_input['values']) && is_array($rule_input['values']) ? $rule_input['values'] : [];
+        $rule_bg_colors = isset($rule_input['bg_colors']) && is_array($rule_input['bg_colors']) ? $rule_input['bg_colors'] : [];
+        $rule_text_colors = isset($rule_input['text_colors']) && is_array($rule_input['text_colors']) ? $rule_input['text_colors'] : [];
+        $rule_count = max(count($rule_columns), count($rule_operators), count($rule_values), count($rule_bg_colors), count($rule_text_colors));
+        $allowed_operators = ['>', '>=', '<', '<=', '=', '!=', 'contains', 'not_contains'];
+        $cell_color_rules = [];
+
+        for ($index = 0; $index < $rule_count; $index++) {
+            $column = sanitize_key((string) ($rule_columns[$index] ?? ''));
+            $operator = sanitize_text_field((string) ($rule_operators[$index] ?? ''));
+            $value = trim(sanitize_text_field((string) ($rule_values[$index] ?? '')));
+            $bg_color = sanitize_hex_color((string) ($rule_bg_colors[$index] ?? ''));
+            $text_color = sanitize_hex_color((string) ($rule_text_colors[$index] ?? ''));
+
+            if ($column === '' || !in_array($column, $allowed_columns, true) || !in_array($operator, $allowed_operators, true) || $value === '') {
+                continue;
+            }
+
+            if (!$bg_color && !$text_color) {
+                continue;
+            }
+
+            $cell_color_rules[] = [
+                'column' => $column,
+                'operator' => $operator,
+                'value' => $value,
+                'bg_color' => $bg_color,
+                'text_color' => $text_color,
+            ];
+        }
 
         return [
             'allowed_columns' => $allowed_columns,
@@ -4404,6 +4450,7 @@ private function sanitize_module_title($value, $fallback) {
                 'head_height' => max(24, min(120, (int) ($styles['head_height'] ?? 30))),
                 'sticky_column' => in_array($sticky_column, $allowed_columns, true) ? $sticky_column : ($allowed_columns[0] ?? 'signal__symbol'),
                 'sticky_header' => !empty($styles['sticky_header']) ? 1 : 0,
+                'cell_color_rules' => array_slice($cell_color_rules, 0, 100),
             ],
         ];
     }
@@ -4480,6 +4527,46 @@ private function sanitize_module_title($value, $fallback) {
                         </select>
                     </label></p>
                     <p><label><input type="checkbox" name="lcni_frontend_recommend_signal_style_sticky_header" value="1" <?php checked((int) ($settings['styles']['sticky_header'] ?? 0), 1); ?>> Sticky header row</label></p>
+                    <h4>Cell color rules</h4>
+                    <p>Cấu hình màu theo giá trị ô để frontend hiển thị theo điều kiện.</p>
+                    <?php $recommend_rules = (array) ($settings['styles']['cell_color_rules'] ?? []); ?>
+                    <table class="widefat" style="max-width:980px;">
+                        <thead>
+                            <tr>
+                                <th>Cột</th>
+                                <th>Toán tử</th>
+                                <th>Giá trị so sánh</th>
+                                <th>Màu nền</th>
+                                <th>Màu chữ</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php for ($rule_index = 0; $rule_index < 8; $rule_index++) :
+                                $rule = is_array($recommend_rules[$rule_index] ?? null) ? $recommend_rules[$rule_index] : [];
+                            ?>
+                            <tr>
+                                <td>
+                                    <select name="lcni_frontend_recommend_signal_style_rule_column[]">
+                                        <option value="">-- Chọn cột --</option>
+                                        <?php foreach ($allowed_columns as $column) : ?>
+                                            <option value="<?php echo esc_attr($column); ?>" <?php selected((string) ($rule['column'] ?? ''), $column); ?>><?php echo esc_html((string) ($catalog[$column]['label'] ?? $column)); ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </td>
+                                <td>
+                                    <select name="lcni_frontend_recommend_signal_style_rule_operator[]">
+                                        <?php foreach (['>', '>=', '<', '<=', '=', '!=', 'contains', 'not_contains'] as $operator) : ?>
+                                            <option value="<?php echo esc_attr($operator); ?>" <?php selected((string) ($rule['operator'] ?? ''), $operator); ?>><?php echo esc_html($operator); ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </td>
+                                <td><input type="text" name="lcni_frontend_recommend_signal_style_rule_value[]" value="<?php echo esc_attr((string) ($rule['value'] ?? '')); ?>"></td>
+                                <td><input type="color" name="lcni_frontend_recommend_signal_style_rule_bg_color[]" value="<?php echo esc_attr((string) ($rule['bg_color'] ?? '#ffffff')); ?>"></td>
+                                <td><input type="color" name="lcni_frontend_recommend_signal_style_rule_text_color[]" value="<?php echo esc_attr((string) ($rule['text_color'] ?? '#111827')); ?>"></td>
+                            </tr>
+                            <?php endfor; ?>
+                        </tbody>
+                    </table>
                     <?php submit_button('Save'); ?>
                 </form>
             </div>
