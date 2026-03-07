@@ -95,12 +95,16 @@ class ShortcodeManager {
         $filter_apply_button_background = (string) ($styles['filter_apply_button_background'] ?? '#2563eb');
         $filter_apply_button_hover_background = (string) ($styles['filter_apply_button_hover_background'] ?? '#1d4ed8');
         $filter_apply_button_icon = $this->sanitize_icon_class((string) ($styles['filter_apply_button_icon'] ?? 'fa-solid fa-check'), 'fa-solid fa-check');
+        $filter_apply_button_label = sanitize_text_field((string) ($styles['filter_apply_button_label'] ?? 'Apply'));
         $filter_clear_button_color = (string) ($styles['filter_clear_button_color'] ?? '#111827');
         $filter_clear_button_background = (string) ($styles['filter_clear_button_background'] ?? '#e5e7eb');
         $filter_clear_button_hover_background = (string) ($styles['filter_clear_button_hover_background'] ?? '#d1d5db');
         $filter_clear_button_icon = $this->sanitize_icon_class((string) ($styles['filter_clear_button_icon'] ?? 'fa-solid fa-eraser'), 'fa-solid fa-eraser');
+        $filter_clear_button_label = sanitize_text_field((string) ($styles['filter_clear_button_label'] ?? 'Clear'));
+        $filter_panel_button_border = sanitize_text_field((string) ($styles['filter_panel_button_border'] ?? '1px solid #9ca3af'));
+        $filter_panel_button_border_radius = (int) ($styles['filter_panel_button_border_radius'] ?? 6);
         $table_max_height = (int) ($styles['table_max_height'] ?? 560);
-        $wrapper_style = sprintf('font-family:%s;color:%s;background:%s;border:%s;border-radius:%dpx;overflow:auto;max-width:100%%;max-height:%dpx;position:relative;isolation:isolate;-webkit-overflow-scrolling:touch;--lcni-signals-filter-btn-color:%s;--lcni-signals-filter-btn-bg:%s;--lcni-signals-watchlist-btn-color:%s;--lcni-signals-watchlist-btn-active-color:%s;--lcni-signals-filter-btn-height:%dpx;--lcni-signals-filter-btn-font-size:%dpx;--lcni-signals-watchlist-btn-height:%dpx;--lcni-signals-watchlist-btn-font-size:%dpx;--lcni-signals-panel-btn-height:%dpx;--lcni-signals-panel-btn-font-size:%dpx;--lcni-signals-apply-btn-bg:%s;--lcni-signals-apply-btn-color:%s;--lcni-signals-apply-btn-hover-bg:%s;--lcni-signals-clear-btn-bg:%s;--lcni-signals-clear-btn-color:%s;--lcni-signals-clear-btn-hover-bg:%s;',
+        $wrapper_style = sprintf('font-family:%s;color:%s;background:%s;border:%s;border-radius:%dpx;overflow:auto;max-width:100%%;max-height:%dpx;position:relative;isolation:isolate;-webkit-overflow-scrolling:touch;--lcni-signals-filter-btn-color:%s;--lcni-signals-filter-btn-bg:%s;--lcni-signals-watchlist-btn-color:%s;--lcni-signals-watchlist-btn-active-color:%s;--lcni-signals-filter-btn-height:%dpx;--lcni-signals-filter-btn-font-size:%dpx;--lcni-signals-watchlist-btn-height:%dpx;--lcni-signals-watchlist-btn-font-size:%dpx;--lcni-signals-panel-btn-height:%dpx;--lcni-signals-panel-btn-font-size:%dpx;--lcni-signals-apply-btn-bg:%s;--lcni-signals-apply-btn-color:%s;--lcni-signals-apply-btn-hover-bg:%s;--lcni-signals-clear-btn-bg:%s;--lcni-signals-clear-btn-color:%s;--lcni-signals-clear-btn-hover-bg:%s;--lcni-signals-panel-btn-border:%s;--lcni-signals-panel-btn-radius:%dpx;',
             esc_attr((string) ($styles['font'] ?? 'inherit')),
             esc_attr((string) ($styles['text_color'] ?? '#111827')),
             esc_attr((string) ($styles['background'] ?? '#ffffff')),
@@ -122,11 +126,13 @@ class ShortcodeManager {
             esc_attr($filter_apply_button_hover_background),
             esc_attr($filter_clear_button_background),
             esc_attr($filter_clear_button_color),
-            esc_attr($filter_clear_button_hover_background)
+            esc_attr($filter_clear_button_hover_background),
+            esc_attr($filter_panel_button_border),
+            $filter_panel_button_border_radius
         );
 
         ob_start();
-        echo '<div class="lcni-recommend-signals-table" data-lcni-signals-table data-watchlist-rest-base="' . esc_attr($watchlist_rest_base) . '" data-login-url="' . esc_url($login_url) . '" data-register-url="' . esc_url($register_url) . '" data-is-logged-in="' . (is_user_logged_in() ? '1' : '0') . '" data-rest-nonce="' . esc_attr(wp_create_nonce('wp_rest')) . '" data-watchlist-icon="' . esc_attr($watchlist_button_icon) . '" data-watchlist-active-icon="' . esc_attr($watchlist_button_active_icon) . '" data-filter-apply-icon="' . esc_attr($filter_apply_button_icon) . '" data-filter-clear-icon="' . esc_attr($filter_clear_button_icon) . '" style="' . $wrapper_style . '">';
+        echo '<div class="lcni-recommend-signals-table" data-lcni-signals-table data-watchlist-rest-base="' . esc_attr($watchlist_rest_base) . '" data-login-url="' . esc_url($login_url) . '" data-register-url="' . esc_url($register_url) . '" data-is-logged-in="' . (is_user_logged_in() ? '1' : '0') . '" data-rest-nonce="' . esc_attr(wp_create_nonce('wp_rest')) . '" data-watchlist-icon="' . esc_attr($watchlist_button_icon) . '" data-watchlist-active-icon="' . esc_attr($watchlist_button_active_icon) . '" data-filter-apply-icon="' . esc_attr($filter_apply_button_icon) . '" data-filter-clear-icon="' . esc_attr($filter_clear_button_icon) . '" data-filter-apply-label="' . esc_attr($filter_apply_button_label) . '" data-filter-clear-label="' . esc_attr($filter_clear_button_label) . '" style="' . $wrapper_style . '">';
         echo '<table style="width:100%;border-collapse:separate;border-spacing:0;font-size:' . (int) ($styles['row_font_size'] ?? 14) . 'px;">';
         $head_row_style = 'height:' . (int) ($styles['head_height'] ?? 30) . 'px;background:' . esc_attr((string) ($styles['header_background'] ?? '#ffffff')) . ';color:' . esc_attr((string) ($styles['header_text_color'] ?? '#111827')) . ';';
         echo '<thead><tr style="' . $head_row_style . '">';
@@ -203,7 +209,7 @@ class ShortcodeManager {
 .lcni-signals-filter-hint{font-size:12px;color:#6b7280;margin:0 0 6px}
 .lcni-signals-filter-pop [data-lcni-values]{display:grid;gap:4px;max-height:240px;overflow:auto;margin:8px 0}
 .lcni-signals-filter-actions{display:flex;gap:8px;justify-content:flex-end}
-.lcni-signals-filter-actions .lcni-btn{height:var(--lcni-signals-panel-btn-height,32px);font-size:var(--lcni-signals-panel-btn-font-size,14px);padding:0 12px;display:inline-flex;align-items:center;gap:6px}
+.lcni-signals-filter-actions .lcni-btn{height:var(--lcni-signals-panel-btn-height,32px);font-size:var(--lcni-signals-panel-btn-font-size,14px);padding:0 12px;display:inline-flex;align-items:center;gap:6px;border:var(--lcni-signals-panel-btn-border,1px solid #9ca3af);border-radius:var(--lcni-signals-panel-btn-radius,6px)}
 .lcni-signals-filter-actions [data-lcni-clear]{background:var(--lcni-signals-clear-btn-bg,#e5e7eb);color:var(--lcni-signals-clear-btn-color,#111827)}
 .lcni-signals-filter-actions [data-lcni-clear]:hover{background:var(--lcni-signals-clear-btn-hover-bg,#d1d5db)}
 .lcni-signals-filter-actions [data-lcni-apply]{background:var(--lcni-signals-apply-btn-bg,#2563eb);color:var(--lcni-signals-apply-btn-color,#ffffff)}
@@ -280,7 +286,9 @@ class ShortcodeManager {
       const title=esc((th.querySelector('span')||{}).textContent||field);
       const applyIcon=esc(host.dataset.filterApplyIcon||'fa-solid fa-check');
       const clearIcon=esc(host.dataset.filterClearIcon||'fa-solid fa-eraser');
-      pop.innerHTML='<strong class="lcni-signals-filter-pop-title">Lọc '+title+'</strong><p class="lcni-signals-filter-hint">Kiểu lọc: '+(numericMode?'Số':'Text')+'</p><input type="search" class="lcni-signals-filter-search" placeholder="Tìm nhanh giá trị..." data-lcni-filter-search><div data-lcni-values></div><div class="lcni-signals-filter-actions"><button type="button" class="lcni-btn" data-lcni-clear><i class="'+clearIcon+'" aria-hidden="true"></i><span>Clear</span></button><button type="button" class="lcni-btn" data-lcni-apply><i class="'+applyIcon+'" aria-hidden="true"></i><span>Apply</span></button></div>';
+      const applyLabel=esc(host.dataset.filterApplyLabel||'Apply');
+      const clearLabel=esc(host.dataset.filterClearLabel||'Clear');
+      pop.innerHTML='<strong class="lcni-signals-filter-pop-title">Lọc '+title+'</strong><p class="lcni-signals-filter-hint">Kiểu lọc: '+(numericMode?'Số':'Text')+'</p><input type="search" class="lcni-signals-filter-search" placeholder="Tìm nhanh giá trị..." data-lcni-filter-search><div data-lcni-values></div><div class="lcni-signals-filter-actions"><button type="button" class="lcni-btn" data-lcni-clear><i class="'+clearIcon+'" aria-hidden="true"></i><span>'+clearLabel+'</span></button><button type="button" class="lcni-btn" data-lcni-apply><i class="'+applyIcon+'" aria-hidden="true"></i><span>'+applyLabel+'</span></button></div>';
       document.body.appendChild(pop);
       const valuesWrap=pop.querySelector('[data-lcni-values]');
       const searchInput=pop.querySelector('[data-lcni-filter-search]');
@@ -295,7 +303,7 @@ class ShortcodeManager {
       pop.style.top=(rect.bottom+6)+'px';
       pop.style.left=Math.max(8,Math.min(window.innerWidth-pop.offsetWidth-8,rect.left))+'px';
       pop.addEventListener('click',(ev)=>{
-        if(ev.target.closest('[data-lcni-clear]')){host.__lcniFilters=host.__lcniFilters||{};delete host.__lcniFilters[field];applyFilters(host);return;}
+        if(ev.target.closest('[data-lcni-clear]')){selectedSet.clear();host.__lcniFilters=host.__lcniFilters||{};delete host.__lcniFilters[field];applyFilters(host);pop.remove();return;}
         if(ev.target.closest('[data-lcni-apply]')){const selectedValues=Array.from(pop.querySelectorAll('input[type="checkbox"]:checked')).map((n)=>n.value);host.__lcniFilters=host.__lcniFilters||{};if(!selectedValues.length||selectedValues.length===values.length)delete host.__lcniFilters[field];else host.__lcniFilters[field]=selectedValues;applyFilters(host);pop.remove();}
       });
       return;
@@ -374,12 +382,16 @@ HTML;
                 'filter_apply_button_background' => sanitize_hex_color($styles['filter_apply_button_background'] ?? '#2563eb') ?: '#2563eb',
                 'filter_apply_button_hover_background' => sanitize_hex_color($styles['filter_apply_button_hover_background'] ?? '#1d4ed8') ?: '#1d4ed8',
                 'filter_apply_button_icon' => sanitize_text_field((string) ($styles['filter_apply_button_icon'] ?? 'fa-solid fa-check')),
+                'filter_apply_button_label' => sanitize_text_field((string) ($styles['filter_apply_button_label'] ?? 'Apply')),
                 'filter_clear_button_color' => sanitize_hex_color($styles['filter_clear_button_color'] ?? '#111827') ?: '#111827',
                 'filter_clear_button_background' => sanitize_hex_color($styles['filter_clear_button_background'] ?? '#e5e7eb') ?: '#e5e7eb',
                 'filter_clear_button_hover_background' => sanitize_hex_color($styles['filter_clear_button_hover_background'] ?? '#d1d5db') ?: '#d1d5db',
                 'filter_clear_button_icon' => sanitize_text_field((string) ($styles['filter_clear_button_icon'] ?? 'fa-solid fa-eraser')),
+                'filter_clear_button_label' => sanitize_text_field((string) ($styles['filter_clear_button_label'] ?? 'Clear')),
                 'filter_panel_button_height' => max(24, min(64, (int) ($styles['filter_panel_button_height'] ?? 32))),
                 'filter_panel_button_font_size' => max(10, min(24, (int) ($styles['filter_panel_button_font_size'] ?? 14))),
+                'filter_panel_button_border' => sanitize_text_field((string) ($styles['filter_panel_button_border'] ?? '1px solid #9ca3af')),
+                'filter_panel_button_border_radius' => max(0, min(24, (int) ($styles['filter_panel_button_border_radius'] ?? 6))),
                 'table_max_height' => max(240, min(1600, (int) ($styles['table_max_height'] ?? 560))),
                 'cell_color_rules' => $this->sanitize_cell_color_rules($styles['cell_color_rules'] ?? [], $columns),
             ],
