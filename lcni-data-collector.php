@@ -2,7 +2,7 @@
 /*
 Plugin Name: LCNI Data Collector
 Description: LCNI Market Data Engine: lấy nến, lưu DB, cron auto update
-Version: 5.5.0
+Version: 5.5.6
 */
 
 if (!defined('ABSPATH')) {
@@ -15,6 +15,9 @@ define('LCNI_CRON_HOOK', 'lcni_collect_data_cron');
 define('LCNI_SEED_CRON_HOOK', 'lcni_seed_batch_cron');
 define('LCNI_SECDEF_DAILY_CRON_HOOK', 'lcni_sync_secdef_daily_cron');
 define('LCNI_RULE_REBUILD_CRON_HOOK', 'lcni_rule_rebuild_batch_cron');
+define('LCNI_SEED_FETCH_CRON_HOOK', 'lcni_seed_fetch_cron');
+define('LCNI_COMPUTE_CRON_HOOK', 'lcni_compute_cron');
+define('LCNI_SNAPSHOT_REFRESH_CRON_HOOK', 'lcni_snapshot_refresh_cron');
 
 require_once LCNI_PATH . 'includes/class-lcni-db.php';
 require_once LCNI_PATH . 'includes/class-lcni-api.php';
@@ -107,6 +110,13 @@ function lcni_register_custom_cron_schedules($schedules) {
         ];
     }
 
+    if (!isset($schedules['five_minutes'])) {
+        $schedules['five_minutes'] = [
+            'interval' => 5 * MINUTE_IN_SECONDS,
+            'display' => 'Every Five Minutes (LCNI)',
+        ];
+    }
+
     return $schedules;
 }
 
@@ -146,6 +156,18 @@ function lcni_ensure_cron_scheduled() {
         $timezone = wp_timezone();
         $tomorrow_start = new DateTimeImmutable('tomorrow 08:00:00', $timezone);
         wp_schedule_event($tomorrow_start->getTimestamp(), 'daily', LCNI_SECDEF_DAILY_CRON_HOOK);
+    }
+
+    if (!wp_next_scheduled(LCNI_SEED_FETCH_CRON_HOOK)) {
+        wp_schedule_event(current_time('timestamp') + 30, 'lcni_every_minute', LCNI_SEED_FETCH_CRON_HOOK);
+    }
+
+    if (!wp_next_scheduled(LCNI_COMPUTE_CRON_HOOK)) {
+        wp_schedule_event(current_time('timestamp') + (2 * MINUTE_IN_SECONDS), 'five_minutes', LCNI_COMPUTE_CRON_HOOK);
+    }
+
+    if (!wp_next_scheduled(LCNI_SNAPSHOT_REFRESH_CRON_HOOK)) {
+        wp_schedule_event(current_time('timestamp') + (3 * MINUTE_IN_SECONDS), 'five_minutes', LCNI_SNAPSHOT_REFRESH_CRON_HOOK);
     }
 
     LCNI_Recommend_Module::ensure_cron();
@@ -214,6 +236,21 @@ function lcni_deactivate_plugin() {
         wp_unschedule_event($rule_rebuild_timestamp, LCNI_RULE_REBUILD_CRON_HOOK);
     }
 
+    $seed_fetch_timestamp = wp_next_scheduled(LCNI_SEED_FETCH_CRON_HOOK);
+    if ($seed_fetch_timestamp) {
+        wp_unschedule_event($seed_fetch_timestamp, LCNI_SEED_FETCH_CRON_HOOK);
+    }
+
+    $compute_timestamp = wp_next_scheduled(LCNI_COMPUTE_CRON_HOOK);
+    if ($compute_timestamp) {
+        wp_unschedule_event($compute_timestamp, LCNI_COMPUTE_CRON_HOOK);
+    }
+
+    $snapshot_refresh_timestamp = wp_next_scheduled(LCNI_SNAPSHOT_REFRESH_CRON_HOOK);
+    if ($snapshot_refresh_timestamp) {
+        wp_unschedule_event($snapshot_refresh_timestamp, LCNI_SNAPSHOT_REFRESH_CRON_HOOK);
+    }
+
     $runtime_update_timestamp = wp_next_scheduled(LCNI_Update_Manager::CRON_HOOK);
     if ($runtime_update_timestamp) {
         wp_unschedule_event($runtime_update_timestamp, LCNI_Update_Manager::CRON_HOOK);
@@ -236,8 +273,20 @@ function lcni_run_cron_incremental_sync() {
 }
 
 function lcni_run_seed_batch() {
+    // Backward-compatible hook: keep old cron name but use fetch-only stage.
     LCNI_SeedScheduler::run_batch();
-    LCNI_DB::run_seed_serial_pipeline('seed_cron');
+}
+
+function lcni_run_seed_fetch_cron() {
+    LCNI_SeedScheduler::run_batch();
+}
+
+function lcni_run_compute_cron() {
+    LCNI_DB::run_compute_pipeline_cron();
+}
+
+function lcni_run_snapshot_refresh_cron() {
+    LCNI_DB::run_snapshot_refresh_cron();
 }
 
 function lcni_run_daily_secdef_sync() {
@@ -251,6 +300,9 @@ function lcni_run_rule_rebuild_batch() {
 add_filter('cron_schedules', 'lcni_register_custom_cron_schedules');
 add_action(LCNI_CRON_HOOK, 'lcni_run_cron_incremental_sync');
 add_action(LCNI_SEED_CRON_HOOK, 'lcni_run_seed_batch');
+add_action(LCNI_SEED_FETCH_CRON_HOOK, 'lcni_run_seed_fetch_cron');
+add_action(LCNI_COMPUTE_CRON_HOOK, 'lcni_run_compute_cron');
+add_action(LCNI_SNAPSHOT_REFRESH_CRON_HOOK, 'lcni_run_snapshot_refresh_cron');
 add_action(LCNI_SECDEF_DAILY_CRON_HOOK, 'lcni_run_daily_secdef_sync');
 add_action(LCNI_RULE_REBUILD_CRON_HOOK, 'lcni_run_rule_rebuild_batch');
 add_action('plugins_loaded', 'lcni_ensure_plugin_tables');
