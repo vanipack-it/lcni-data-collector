@@ -9,6 +9,7 @@ class SignalRepository {
     private $table;
     private $symbols_table;
     private $market_table;
+    private $mapping_table;
     private $icb2_table;
     private $has_timeframe_column;
     private $recommend_column_catalog;
@@ -18,6 +19,7 @@ class SignalRepository {
         $this->table = $wpdb->prefix . 'lcni_recommend_signal';
         $this->symbols_table = $wpdb->prefix . 'lcni_symbols';
         $this->market_table = $wpdb->prefix . 'lcni_marketid';
+        $this->mapping_table = $wpdb->prefix . 'lcni_sym_icb_market';
         $this->icb2_table = $wpdb->prefix . 'lcni_icb2';
         $this->has_timeframe_column = null;
         $this->recommend_column_catalog = null;
@@ -200,8 +202,9 @@ class SignalRepository {
             LEFT JOIN {$this->wpdb->prefix}lcni_recommend_rule r ON r.id = s.rule_id
             LEFT JOIN {$this->wpdb->prefix}lcni_ohlc_latest o ON o.symbol = s.symbol
             LEFT JOIN {$this->symbols_table} sym ON sym.symbol = s.symbol
-            LEFT JOIN {$this->market_table} m ON m.market_id = sym.market_id
-            LEFT JOIN {$this->icb2_table} i ON i.id_icb2 = sym.id_icb2
+            LEFT JOIN {$this->mapping_table} map ON map.symbol = s.symbol
+            LEFT JOIN {$this->market_table} m ON m.market_id = COALESCE(map.market_id, sym.market_id)
+            LEFT JOIN {$this->icb2_table} i ON i.id_icb2 = COALESCE(map.id_icb2, sym.id_icb2)
             WHERE " . implode(' AND ', $where) . "
             ORDER BY s.entry_time DESC
             LIMIT %d";
