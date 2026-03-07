@@ -80,23 +80,53 @@ class ShortcodeManager {
         $sticky_header_enabled = !empty($styles['sticky_header']);
         $filter_button_color = (string) ($styles['filter_button_color'] ?? '#374151');
         $filter_button_background = (string) ($styles['filter_button_background'] ?? '#ffffff');
+        $filter_button_height = (int) ($styles['filter_button_height'] ?? 28);
+        $filter_button_font_size = (int) ($styles['filter_button_font_size'] ?? 14);
+        $filter_button_icon = $this->sanitize_icon_class((string) ($styles['filter_button_icon'] ?? 'fa-solid fa-filter'), 'fa-solid fa-filter');
         $watchlist_button_color = (string) ($styles['watchlist_button_color'] ?? '#dc2626');
         $watchlist_button_active_color = (string) ($styles['watchlist_button_active_color'] ?? '#16a34a');
-        $wrapper_style = sprintf('font-family:%s;color:%s;background:%s;border:%s;border-radius:%dpx;overflow-x:auto;overflow-y:%s;position:relative;-webkit-overflow-scrolling:touch;--lcni-signals-filter-btn-color:%s;--lcni-signals-filter-btn-bg:%s;--lcni-signals-watchlist-btn-color:%s;--lcni-signals-watchlist-btn-active-color:%s;',
+        $watchlist_button_height = (int) ($styles['watchlist_button_height'] ?? 28);
+        $watchlist_button_font_size = (int) ($styles['watchlist_button_font_size'] ?? 15);
+        $watchlist_button_icon = $this->sanitize_icon_class((string) ($styles['watchlist_button_icon'] ?? 'fa-solid fa-heart'), 'fa-solid fa-heart');
+        $watchlist_button_active_icon = $this->sanitize_icon_class((string) ($styles['watchlist_button_active_icon'] ?? 'fa-solid fa-check'), 'fa-solid fa-check');
+        $filter_panel_button_height = (int) ($styles['filter_panel_button_height'] ?? 32);
+        $filter_panel_button_font_size = (int) ($styles['filter_panel_button_font_size'] ?? 14);
+        $filter_apply_button_color = (string) ($styles['filter_apply_button_color'] ?? '#ffffff');
+        $filter_apply_button_background = (string) ($styles['filter_apply_button_background'] ?? '#2563eb');
+        $filter_apply_button_hover_background = (string) ($styles['filter_apply_button_hover_background'] ?? '#1d4ed8');
+        $filter_apply_button_icon = $this->sanitize_icon_class((string) ($styles['filter_apply_button_icon'] ?? 'fa-solid fa-check'), 'fa-solid fa-check');
+        $filter_clear_button_color = (string) ($styles['filter_clear_button_color'] ?? '#111827');
+        $filter_clear_button_background = (string) ($styles['filter_clear_button_background'] ?? '#e5e7eb');
+        $filter_clear_button_hover_background = (string) ($styles['filter_clear_button_hover_background'] ?? '#d1d5db');
+        $filter_clear_button_icon = $this->sanitize_icon_class((string) ($styles['filter_clear_button_icon'] ?? 'fa-solid fa-eraser'), 'fa-solid fa-eraser');
+        $table_max_height = (int) ($styles['table_max_height'] ?? 560);
+        $wrapper_style = sprintf('font-family:%s;color:%s;background:%s;border:%s;border-radius:%dpx;overflow:auto;max-width:100%%;max-height:%dpx;position:relative;isolation:isolate;-webkit-overflow-scrolling:touch;--lcni-signals-filter-btn-color:%s;--lcni-signals-filter-btn-bg:%s;--lcni-signals-watchlist-btn-color:%s;--lcni-signals-watchlist-btn-active-color:%s;--lcni-signals-filter-btn-height:%dpx;--lcni-signals-filter-btn-font-size:%dpx;--lcni-signals-watchlist-btn-height:%dpx;--lcni-signals-watchlist-btn-font-size:%dpx;--lcni-signals-panel-btn-height:%dpx;--lcni-signals-panel-btn-font-size:%dpx;--lcni-signals-apply-btn-bg:%s;--lcni-signals-apply-btn-color:%s;--lcni-signals-apply-btn-hover-bg:%s;--lcni-signals-clear-btn-bg:%s;--lcni-signals-clear-btn-color:%s;--lcni-signals-clear-btn-hover-bg:%s;',
             esc_attr((string) ($styles['font'] ?? 'inherit')),
             esc_attr((string) ($styles['text_color'] ?? '#111827')),
             esc_attr((string) ($styles['background'] ?? '#ffffff')),
             esc_attr((string) ($styles['border'] ?? '1px solid #e5e7eb')),
             (int) ($styles['border_radius'] ?? 8),
-            $sticky_header_enabled ? 'visible' : 'auto',
+            $table_max_height,
             esc_attr($filter_button_color),
             esc_attr($filter_button_background),
             esc_attr($watchlist_button_color),
-            esc_attr($watchlist_button_active_color)
+            esc_attr($watchlist_button_active_color),
+            $filter_button_height,
+            $filter_button_font_size,
+            $watchlist_button_height,
+            $watchlist_button_font_size,
+            $filter_panel_button_height,
+            $filter_panel_button_font_size,
+            esc_attr($filter_apply_button_background),
+            esc_attr($filter_apply_button_color),
+            esc_attr($filter_apply_button_hover_background),
+            esc_attr($filter_clear_button_background),
+            esc_attr($filter_clear_button_color),
+            esc_attr($filter_clear_button_hover_background)
         );
 
         ob_start();
-        echo '<div class="lcni-recommend-signals-table" data-lcni-signals-table data-watchlist-rest-base="' . esc_attr($watchlist_rest_base) . '" data-login-url="' . esc_url($login_url) . '" data-register-url="' . esc_url($register_url) . '" data-is-logged-in="' . (is_user_logged_in() ? '1' : '0') . '" data-rest-nonce="' . esc_attr(wp_create_nonce('wp_rest')) . '" style="' . $wrapper_style . '">';
+        echo '<div class="lcni-recommend-signals-table" data-lcni-signals-table data-watchlist-rest-base="' . esc_attr($watchlist_rest_base) . '" data-login-url="' . esc_url($login_url) . '" data-register-url="' . esc_url($register_url) . '" data-is-logged-in="' . (is_user_logged_in() ? '1' : '0') . '" data-rest-nonce="' . esc_attr(wp_create_nonce('wp_rest')) . '" data-watchlist-icon="' . esc_attr($watchlist_button_icon) . '" data-watchlist-active-icon="' . esc_attr($watchlist_button_active_icon) . '" data-filter-apply-icon="' . esc_attr($filter_apply_button_icon) . '" data-filter-clear-icon="' . esc_attr($filter_clear_button_icon) . '" style="' . $wrapper_style . '">';
         echo '<table style="width:100%;border-collapse:separate;border-spacing:0;font-size:' . (int) ($styles['row_font_size'] ?? 14) . 'px;">';
         $head_row_style = 'height:' . (int) ($styles['head_height'] ?? 30) . 'px;background:' . esc_attr((string) ($styles['header_background'] ?? '#ffffff')) . ';color:' . esc_attr((string) ($styles['header_text_color'] ?? '#111827')) . ';';
         echo '<thead><tr style="' . $head_row_style . '">';
@@ -109,7 +139,7 @@ class ShortcodeManager {
             if ($sticky_column === $column) {
                 $th_style .= 'position:sticky;left:0;z-index:' . ($sticky_header_enabled ? '25' : '5') . ';';
             }
-            echo '<th style="' . $th_style . '" data-lcni-field="' . esc_attr($column) . '"><span>' . esc_html($label) . '</span><button type="button" class="lcni-signals-filter-btn" data-lcni-filter-btn aria-label="Lọc nhanh"><i class="fa-solid fa-filter" aria-hidden="true"></i></button></th>';
+            echo '<th style="' . $th_style . '" data-lcni-field="' . esc_attr($column) . '"><span>' . esc_html($label) . '</span><button type="button" class="lcni-signals-filter-btn" data-lcni-filter-btn aria-label="Lọc nhanh"><i class="' . esc_attr($filter_button_icon) . '" aria-hidden="true"></i></button></th>';
         }
         echo '</tr></thead><tbody>';
 
@@ -137,7 +167,7 @@ class ShortcodeManager {
                 if ($column === 'signal__symbol') {
                     $symbol = strtoupper(sanitize_text_field((string) $raw_value));
                     $detail_url = $this->build_stock_detail_url($stock_detail_base_url, $symbol);
-                    $watchlist_btn = '<button type="button" class="lcni-signals-watchlist-btn" data-lcni-watchlist-add data-symbol="' . esc_attr($symbol) . '" aria-label="Thêm vào watchlist"><i class="fa-solid fa-heart" aria-hidden="true"></i></button>';
+                    $watchlist_btn = '<button type="button" class="lcni-signals-watchlist-btn" data-lcni-watchlist-add data-symbol="' . esc_attr($symbol) . '" aria-label="Thêm vào watchlist"><i class="' . esc_attr($watchlist_button_icon) . '" aria-hidden="true"></i></button>';
                     if ($detail_url !== '') {
                         $value = '<a href="' . esc_url($detail_url) . '">' . esc_html((string) $value) . '</a>';
                         echo '<td data-lcni-field="' . esc_attr($column) . '" data-lcni-value="' . esc_attr((string) $raw_value) . '" style="' . $cell_style_attr . '"><span class="lcni-signals-symbol-cell">' . $value . $watchlist_btn . '</span></td>';
@@ -166,12 +196,20 @@ class ShortcodeManager {
 
         return <<<'HTML'
 <style>
-.lcni-signals-filter-btn{margin-left:6px;border:0;background:var(--lcni-signals-filter-btn-bg,#ffffff);cursor:pointer;color:var(--lcni-signals-filter-btn-color,#374151);padding:2px;border-radius:4px}
-.lcni-signals-filter-pop{position:fixed;z-index:999999;background:#fff;border:1px solid #d1d5db;border-radius:8px;padding:10px;min-width:220px;max-width:320px;max-height:300px;overflow:auto;box-shadow:0 10px 30px rgba(17,24,39,.2)}
-.lcni-signals-filter-pop [data-lcni-values]{display:grid;gap:4px;max-height:180px;overflow:auto;margin:8px 0}
+.lcni-signals-filter-btn{margin-left:6px;border:0;background:var(--lcni-signals-filter-btn-bg,#ffffff);cursor:pointer;color:var(--lcni-signals-filter-btn-color,#374151);padding:0 8px;height:var(--lcni-signals-filter-btn-height,28px);min-width:var(--lcni-signals-filter-btn-height,28px);border-radius:6px;font-size:var(--lcni-signals-filter-btn-font-size,14px);display:inline-flex;align-items:center;justify-content:center}
+.lcni-signals-filter-pop{position:fixed;z-index:999999;background:#fff;border:1px solid #d1d5db;border-radius:8px;padding:10px;min-width:240px;max-width:360px;max-height:min(65vh,420px);overflow:auto;box-shadow:0 10px 30px rgba(17,24,39,.2)}
+.lcni-signals-filter-pop-title{display:block;font-size:15px}
+.lcni-signals-filter-search{width:100%;box-sizing:border-box;height:34px;padding:0 10px;margin:8px 0;border:1px solid #d1d5db;border-radius:6px}
+.lcni-signals-filter-hint{font-size:12px;color:#6b7280;margin:0 0 6px}
+.lcni-signals-filter-pop [data-lcni-values]{display:grid;gap:4px;max-height:240px;overflow:auto;margin:8px 0}
 .lcni-signals-filter-actions{display:flex;gap:8px;justify-content:flex-end}
+.lcni-signals-filter-actions .lcni-btn{height:var(--lcni-signals-panel-btn-height,32px);font-size:var(--lcni-signals-panel-btn-font-size,14px);padding:0 12px;display:inline-flex;align-items:center;gap:6px}
+.lcni-signals-filter-actions [data-lcni-clear]{background:var(--lcni-signals-clear-btn-bg,#e5e7eb);color:var(--lcni-signals-clear-btn-color,#111827)}
+.lcni-signals-filter-actions [data-lcni-clear]:hover{background:var(--lcni-signals-clear-btn-hover-bg,#d1d5db)}
+.lcni-signals-filter-actions [data-lcni-apply]{background:var(--lcni-signals-apply-btn-bg,#2563eb);color:var(--lcni-signals-apply-btn-color,#ffffff)}
+.lcni-signals-filter-actions [data-lcni-apply]:hover{background:var(--lcni-signals-apply-btn-hover-bg,#1d4ed8)}
 .lcni-signals-symbol-cell{display:flex;gap:8px;align-items:center}
-.lcni-signals-watchlist-btn{border:0;background:transparent;cursor:pointer;color:var(--lcni-signals-watchlist-btn-color,#dc2626);padding:0}
+.lcni-signals-watchlist-btn{border:0;background:transparent;cursor:pointer;color:var(--lcni-signals-watchlist-btn-color,#dc2626);padding:0;height:var(--lcni-signals-watchlist-btn-height,28px);min-width:var(--lcni-signals-watchlist-btn-height,28px);display:inline-flex;align-items:center;justify-content:center;font-size:var(--lcni-signals-watchlist-btn-font-size,15px)}
 .lcni-signals-watchlist-btn.is-active{color:var(--lcni-signals-watchlist-btn-active-color,#16a34a)}
 .lcni-signals-modal{position:fixed;inset:0;background:rgba(17,24,39,.45);display:flex;align-items:center;justify-content:center;z-index:999999}
 .lcni-signals-modal-card{background:#fff;border-radius:10px;padding:14px;width:min(92vw,420px)}
@@ -186,7 +224,8 @@ class ShortcodeManager {
   const closeModal=()=>{const n=document.querySelector('.lcni-signals-modal');if(n)n.remove()};
   const showModal=(html)=>{closeModal();const n=document.createElement('div');n.className='lcni-signals-modal';n.innerHTML='<div class="lcni-signals-modal-card">'+html+'</div>';n.addEventListener('click',(e)=>{if(e.target===n||e.target.closest('[data-lcni-close]'))closeModal()});document.body.appendChild(n)};
   const watchlistApi=(host,path,opt)=>fetch((host.dataset.watchlistRestBase||'').replace(/\/$/,'')+path,{method:(opt&&opt.method)||'GET',headers:{'Content-Type':'application/json','X-WP-Nonce':host.dataset.restNonce||''},credentials:'same-origin',body:opt&&opt.body?JSON.stringify(opt.body):undefined}).then(async(r)=>{const p=await r.json().catch(()=>({}));if(!r.ok)throw p;return p&&typeof p==='object'&&Object.prototype.hasOwnProperty.call(p,'data')?p.data:p});
-  const setButtonState=(btn)=>{const icon=btn.querySelector('i');if(!icon)return;icon.className=btn.classList.contains('is-active')?'fa-solid fa-check':'fa-solid fa-heart'};
+  const setButtonState=(btn)=>{const icon=btn.querySelector('i');if(!icon)return;icon.className=btn.classList.contains('is-active')?(btn.closest('[data-lcni-signals-table]')?.dataset.watchlistActiveIcon||'fa-solid fa-check'):(btn.closest('[data-lcni-signals-table]')?.dataset.watchlistIcon||'fa-solid fa-heart')};
+  const isNumericValues=(values)=>values.length>0&&values.every((v)=>{const n=Number(String(v).replace(/,/g,''));return Number.isFinite(n);});
 
   const openWatchlist=(host,symbol,btn)=>{
     if(host.dataset.isLoggedIn!=='1'){
@@ -220,6 +259,8 @@ class ShortcodeManager {
     });
   };
 
+  const closeAllPopups=()=>document.querySelectorAll('.lcni-signals-filter-pop').forEach((n)=>n.remove());
+
   document.addEventListener('click',(e)=>{
     const watchBtn=e.target.closest('[data-lcni-watchlist-add]');
     if(watchBtn){const host=watchBtn.closest('[data-lcni-signals-table]');if(!host)return;e.preventDefault();e.stopPropagation();openWatchlist(host,String(watchBtn.dataset.symbol||'').toUpperCase(),watchBtn);return;}
@@ -229,24 +270,38 @@ class ShortcodeManager {
       e.preventDefault();e.stopPropagation();
       const host=filterBtn.closest('[data-lcni-signals-table]');if(!host)return;
       const th=filterBtn.closest('th[data-lcni-field]');const field=th?th.dataset.lcniField:'';if(!field)return;
-      const values=[...new Set(Array.from(host.querySelectorAll('tbody td[data-lcni-field="'+field+'"]')).map((n)=>String(n.dataset.lcniValue||'')).filter(Boolean))].sort();
-      document.querySelectorAll('.lcni-signals-filter-pop').forEach((n)=>n.remove());
+      const values=[...new Set(Array.from(host.querySelectorAll('tbody td[data-lcni-field="'+field+'"]')).map((n)=>String(n.dataset.lcniValue||'')).filter(Boolean))].sort((a,b)=>{const na=Number(a);const nb=Number(b);if(Number.isFinite(na)&&Number.isFinite(nb))return na-nb;return String(a).localeCompare(String(b),'vi');});
+      closeAllPopups();
       const pop=document.createElement('div');
       pop.className='lcni-signals-filter-pop';
-      const checked=((host.__lcniFilters||{})[field]||values);
-      pop.innerHTML='<strong>Lọc '+esc((th.querySelector('span')||{}).textContent||field)+'</strong><div data-lcni-values>'+values.map((v)=>'<label><input type="checkbox" value="'+esc(v)+'" '+(checked.includes(v)?'checked':'')+'> '+esc(v)+'</label>').join('')+'</div><div class="lcni-signals-filter-actions"><button type="button" class="lcni-btn" data-lcni-clear>Clear</button><button type="button" class="lcni-btn" data-lcni-apply>Apply</button></div>';
+      const selected=((host.__lcniFilters||{})[field]||values).slice();
+      const selectedSet=new Set(selected);
+      const numericMode=isNumericValues(values);
+      const title=esc((th.querySelector('span')||{}).textContent||field);
+      const applyIcon=esc(host.dataset.filterApplyIcon||'fa-solid fa-check');
+      const clearIcon=esc(host.dataset.filterClearIcon||'fa-solid fa-eraser');
+      pop.innerHTML='<strong class="lcni-signals-filter-pop-title">Lọc '+title+'</strong><p class="lcni-signals-filter-hint">Kiểu lọc: '+(numericMode?'Số':'Text')+'</p><input type="search" class="lcni-signals-filter-search" placeholder="Tìm nhanh giá trị..." data-lcni-filter-search><div data-lcni-values></div><div class="lcni-signals-filter-actions"><button type="button" class="lcni-btn" data-lcni-clear><i class="'+clearIcon+'" aria-hidden="true"></i><span>Clear</span></button><button type="button" class="lcni-btn" data-lcni-apply><i class="'+applyIcon+'" aria-hidden="true"></i><span>Apply</span></button></div>';
       document.body.appendChild(pop);
+      const valuesWrap=pop.querySelector('[data-lcni-values]');
+      const searchInput=pop.querySelector('[data-lcni-filter-search]');
+      const renderValues=(keyword)=>{
+        const q=String(keyword||'').trim().toLowerCase();
+        const filtered=values.filter((v)=>!q||String(v).toLowerCase().includes(q));
+        valuesWrap.innerHTML=filtered.map((v)=>'<label><input type="checkbox" value="'+esc(v)+'" '+(selectedSet.has(v)?'checked':'')+'> '+esc(v)+'</label>').join('') || '<em>Không có giá trị phù hợp</em>';
+      };
+      renderValues('');
+      if(searchInput){searchInput.addEventListener('input',()=>renderValues(searchInput.value));}
       const rect=filterBtn.getBoundingClientRect();
       pop.style.top=(rect.bottom+6)+'px';
       pop.style.left=Math.max(8,Math.min(window.innerWidth-pop.offsetWidth-8,rect.left))+'px';
       pop.addEventListener('click',(ev)=>{
-        if(ev.target.closest('[data-lcni-clear]')){host.__lcniFilters=host.__lcniFilters||{};delete host.__lcniFilters[field];applyFilters(host);pop.remove();return;}
-        if(ev.target.closest('[data-lcni-apply]')){const selected=Array.from(pop.querySelectorAll('input[type="checkbox"]:checked')).map((n)=>n.value);host.__lcniFilters=host.__lcniFilters||{};if(!selected.length||selected.length===values.length)delete host.__lcniFilters[field];else host.__lcniFilters[field]=selected;applyFilters(host);pop.remove();}
+        if(ev.target.closest('[data-lcni-clear]')){host.__lcniFilters=host.__lcniFilters||{};delete host.__lcniFilters[field];applyFilters(host);return;}
+        if(ev.target.closest('[data-lcni-apply]')){const selectedValues=Array.from(pop.querySelectorAll('input[type="checkbox"]:checked')).map((n)=>n.value);host.__lcniFilters=host.__lcniFilters||{};if(!selectedValues.length||selectedValues.length===values.length)delete host.__lcniFilters[field];else host.__lcniFilters[field]=selectedValues;applyFilters(host);pop.remove();}
       });
       return;
     }
 
-    if(!e.target.closest('.lcni-signals-filter-pop')) document.querySelectorAll('.lcni-signals-filter-pop').forEach((n)=>n.remove());
+    if(!e.target.closest('.lcni-signals-filter-pop')) closeAllPopups();
 
     const row=e.target.closest('.lcni-recommend-signals-table tbody tr');
     if(!row||e.target.closest('a,button,i,svg,[role=button]')) return;
@@ -306,8 +361,26 @@ HTML;
                 'sticky_header' => !empty($styles['sticky_header']) ? 1 : 0,
                 'filter_button_color' => sanitize_hex_color($styles['filter_button_color'] ?? '#374151') ?: '#374151',
                 'filter_button_background' => sanitize_hex_color($styles['filter_button_background'] ?? '#ffffff') ?: '#ffffff',
+                'filter_button_height' => max(20, min(60, (int) ($styles['filter_button_height'] ?? 28))),
+                'filter_button_font_size' => max(10, min(24, (int) ($styles['filter_button_font_size'] ?? 14))),
+                'filter_button_icon' => sanitize_text_field((string) ($styles['filter_button_icon'] ?? 'fa-solid fa-filter')),
                 'watchlist_button_color' => sanitize_hex_color($styles['watchlist_button_color'] ?? '#dc2626') ?: '#dc2626',
                 'watchlist_button_active_color' => sanitize_hex_color($styles['watchlist_button_active_color'] ?? '#16a34a') ?: '#16a34a',
+                'watchlist_button_height' => max(20, min(60, (int) ($styles['watchlist_button_height'] ?? 28))),
+                'watchlist_button_font_size' => max(10, min(24, (int) ($styles['watchlist_button_font_size'] ?? 15))),
+                'watchlist_button_icon' => sanitize_text_field((string) ($styles['watchlist_button_icon'] ?? 'fa-solid fa-heart')),
+                'watchlist_button_active_icon' => sanitize_text_field((string) ($styles['watchlist_button_active_icon'] ?? 'fa-solid fa-check')),
+                'filter_apply_button_color' => sanitize_hex_color($styles['filter_apply_button_color'] ?? '#ffffff') ?: '#ffffff',
+                'filter_apply_button_background' => sanitize_hex_color($styles['filter_apply_button_background'] ?? '#2563eb') ?: '#2563eb',
+                'filter_apply_button_hover_background' => sanitize_hex_color($styles['filter_apply_button_hover_background'] ?? '#1d4ed8') ?: '#1d4ed8',
+                'filter_apply_button_icon' => sanitize_text_field((string) ($styles['filter_apply_button_icon'] ?? 'fa-solid fa-check')),
+                'filter_clear_button_color' => sanitize_hex_color($styles['filter_clear_button_color'] ?? '#111827') ?: '#111827',
+                'filter_clear_button_background' => sanitize_hex_color($styles['filter_clear_button_background'] ?? '#e5e7eb') ?: '#e5e7eb',
+                'filter_clear_button_hover_background' => sanitize_hex_color($styles['filter_clear_button_hover_background'] ?? '#d1d5db') ?: '#d1d5db',
+                'filter_clear_button_icon' => sanitize_text_field((string) ($styles['filter_clear_button_icon'] ?? 'fa-solid fa-eraser')),
+                'filter_panel_button_height' => max(24, min(64, (int) ($styles['filter_panel_button_height'] ?? 32))),
+                'filter_panel_button_font_size' => max(10, min(24, (int) ($styles['filter_panel_button_font_size'] ?? 14))),
+                'table_max_height' => max(240, min(1600, (int) ($styles['table_max_height'] ?? 560))),
                 'cell_color_rules' => $this->sanitize_cell_color_rules($styles['cell_color_rules'] ?? [], $columns),
             ],
         ];
@@ -387,6 +460,21 @@ HTML;
         }
 
         return (string) $value;
+    }
+
+    private function sanitize_icon_class($icon_class, $fallback) {
+        $icon = preg_replace('/[^a-zA-Z0-9\-\s]/', '', (string) $icon_class);
+        $icon = trim((string) $icon);
+
+        if ($icon === '') {
+            $icon = trim((string) $fallback);
+        }
+
+        if ($icon === '') {
+            $icon = 'fa-solid fa-circle';
+        }
+
+        return $icon;
     }
 
     private function sanitize_cell_color_rules($rules, $columns) {
