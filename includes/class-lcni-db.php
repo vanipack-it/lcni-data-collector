@@ -689,8 +689,7 @@ class LCNI_DB {
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
-            UNIQUE KEY uniq_symbol_timeframe_status (symbol, timeframe, status),
-            KEY idx_symbol_timeframe (symbol, timeframe),
+            UNIQUE KEY uniq_symbol_timeframe (symbol, timeframe),
             KEY idx_status (status)
         ) {$charset_collate};";
 
@@ -1827,14 +1826,33 @@ class LCNI_DB {
     }
 
     public static function run_compute_pipeline_cron() {
-        $seed_stats = LCNI_SeedRepository::get_dashboard_stats();
-        $seeding_active = ((int) ($seed_stats['total'] ?? 0) > 0) && ((int) ($seed_stats['done'] ?? 0) < (int) ($seed_stats['total'] ?? 0));
+        $seed_stats     = LCNI_SeedRepository::get_dashboard_stats();
+        $seeding_active = ((int) ($seed_stats['total'] ?? 0) > 0)
+            && ((int) ($seed_stats['done'] ?? 0) < (int) ($seed_stats['total'] ?? 0));
 
         $series_batch = $seeding_active ? 20 : 200;
-        $tasks = self::dequeue_rebuild_batch($series_batch);
+        $tasks        = self::dequeue_rebuild_batch($series_batch);
+
+        // Time-budget: leave 10 s headroom before the next cron tick (5 min interval).
+        $time_budget = 290; // seconds
+        $start_time  = time();
 
         foreach ($tasks as $task) {
-            $symbol = strtoupper((string) ($task['symbol'] ?? ''));
+            if (time() - $start_time >= $time_budget) {
+                // Re-enqueue remaining tasks for the next tick by marking them pending again.
+                $remaining_ids = array_map(static function ($t) {
+                    return (int) $t['id'];
+                }, array_slice($tasks, array_search($task, $tasks, true)));
+
+                if (!empty($remaining_ids)) {
+                    global $wpdb;
+                    $id_in = implode(',', array_map('intval', $remaining_ids));
+                    $wpdb->query("UPDATE {$wpdb->prefix}lcni_rebuild_queue SET status = 'pending', updated_at = NOW() WHERE id IN ({$id_in})");
+                }
+                break;
+            }
+
+            $symbol    = strtoupper((string) ($task['symbol'] ?? ''));
             $timeframe = strtoupper((string) ($task['timeframe'] ?? ''));
             if ($symbol === '' || $timeframe === '') {
                 self::mark_task_complete((int) $task['id']);
@@ -1849,8 +1867,8 @@ class LCNI_DB {
         $rs_batch = $seeding_active ? 30 : 300;
         self::process_seed_rebuild_pipeline([
             'series_metrics' => 0,
-            'rs_metrics' => $rs_batch,
-            'market_stats' => $rs_batch,
+            'rs_metrics'     => $rs_batch,
+            'market_stats'   => $rs_batch,
         ]);
     }
 
@@ -4889,10 +4907,21 @@ class LCNI_DB {
         }
 
         $table = $wpdb->prefix . 'lcni_ohlc';
+        // All numeric indicator columns that incremental_rebuild may write.
+        // String/label columns are handled separately via wpdb->update() per-row.
         $columns = [
-            'ma20', 'ma50', 'ma100', 'ma200',
-            'macd', 'macd_signal', 'macd_histogram',
-            'rsi', 'pct_t_1', 'pct_t_3', 'pct_1w', 'pct_1m', 'pct_3m', 'pct_6m', 'pct_1y',
+            'pct_t_1', 'pct_t_3', 'pct_1w', 'pct_1m', 'pct_3m', 'pct_6m', 'pct_1y',
+            'ma10', 'ma20', 'ma50', 'ma100', 'ma200',
+            'vol_ma10', 'vol_ma20',
+            'gia_sv_ma10', 'gia_sv_ma20', 'gia_sv_ma50', 'gia_sv_ma100', 'gia_sv_ma200',
+            'vol_sv_vol_ma10', 'vol_sv_vol_ma20',
+            'h1m', 'h3m', 'h6m', 'h1y',
+            'l1m', 'l3m', 'l6m', 'l1y',
+            'macd', 'macd_signal', 'macd_histogram', 'macd_manh', 'macd_diem_dong_luong',
+            'rsi',
+            'xay_nen_count_30',
+            'pct_to_h1m', 'pct_to_h3m', 'pct_to_h6m', 'pct_to_h1y',
+            'compression_1m', 'breakout_potential_score',
         ];
 
         $updated_total = 0;
@@ -4959,8 +4988,8 @@ class LCNI_DB {
     public static function incremental_rebuild_ohlc_indicators($symbol, $timeframe, $from_trading_index) {
         global $wpdb;
 
-        $table = $wpdb->prefix . 'lcni_ohlc';
-        $symbol = strtoupper((string) $symbol);
+        $table     = $wpdb->prefix . 'lcni_ohlc';
+        $symbol    = strtoupper((string) $symbol);
         $timeframe = strtoupper((string) $timeframe);
 
         $max_index = (int) $wpdb->get_var($wpdb->prepare(
@@ -4973,10 +5002,12 @@ class LCNI_DB {
             return 0;
         }
 
+        // Load INDICATOR_LOOKBACK extra rows before from_trading_index for warmup
         $start_index = max(1, min((int) $from_trading_index, $max_index) - self::INDICATOR_LOOKBACK);
+
         $rows = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT id, trading_index, close_price
+                "SELECT id, trading_index, open_price, close_price, high_price, low_price, volume
                 FROM {$table}
                 WHERE symbol = %s AND timeframe = %s AND trading_index >= %d
                 ORDER BY trading_index ASC, event_time ASC, id ASC",
@@ -4991,51 +5022,282 @@ class LCNI_DB {
             return 0;
         }
 
-        $closes = array_map('floatval', wp_list_pluck($rows, 'close_price'));
-        $ma20 = self::compute_ma($closes, 20);
-        $ma50 = self::compute_ma($closes, 50);
-        $ma100 = self::compute_ma($closes, 100);
-        $ma200 = self::compute_ma($closes, 200);
-        $ema12 = self::compute_ema($closes, 12);
-        $ema26 = self::compute_ema($closes, 26);
-        $rsi14 = self::compute_rsi($closes, 14);
-        $macd = [];
-        for ($i = 0; $i < count($closes); $i++) {
-            $macd[] = ($ema12[$i] === null || $ema26[$i] === null) ? null : ($ema12[$i] - $ema26[$i]);
-        }
-        $signal = self::compute_ema(array_map(static function ($value) {
-            return $value === null ? 0.0 : (float) $value;
-        }, $macd), 9);
+        $n       = count($rows);
+        $closes  = array_map('floatval', wp_list_pluck($rows, 'close_price'));
+        $highs   = array_map('floatval', wp_list_pluck($rows, 'high_price'));
+        $lows    = array_map('floatval', wp_list_pluck($rows, 'low_price'));
+        $volumes = array_map('floatval', wp_list_pluck($rows, 'volume'));
 
+        // --- Compute all indicators as arrays (O(n) each) ---
+        $ma10_arr  = self::compute_ma($closes, 10);
+        $ma20_arr  = self::compute_ma($closes, 20);
+        $ma50_arr  = self::compute_ma($closes, 50);
+        $ma100_arr = self::compute_ma($closes, 100);
+        $ma200_arr = self::compute_ma($closes, 200);
+
+        $vol_ma10_arr = self::compute_ma($volumes, 10);
+        $vol_ma20_arr = self::compute_ma($volumes, 20);
+
+        $ema12_arr = self::compute_ema($closes, 12);
+        $ema26_arr = self::compute_ema($closes, 26);
+        $rsi14_arr = self::compute_rsi($closes, 14);
+
+        $macd_arr = [];
+        for ($i = 0; $i < $n; $i++) {
+            $macd_arr[] = ($ema12_arr[$i] === null || $ema26_arr[$i] === null)
+                ? null
+                : ($ema12_arr[$i] - $ema26_arr[$i]);
+        }
+        $signal_arr = self::compute_ema(array_map(static function ($v) {
+            return $v === null ? 0.0 : (float) $v;
+        }, $macd_arr), 9);
+
+        // Signal context for xay_nen / pha_nen
+        $rules    = self::get_rule_settings();
+        $exchange = self::get_exchange_by_symbol($symbol);
+
+        $xay_nen_flags = [];
+        $nen_types     = [];
+
+        // Build per-row xay_nen / nen_type pass (needs sequential state)
+        for ($i = 0; $i < $n; $i++) {
+            $close     = $closes[$i];
+            $volume    = $volumes[$i];
+            $ma10      = $ma10_arr[$i];
+            $ma20      = $ma20_arr[$i];
+            $ma50      = $ma50_arr[$i];
+            $vol_ma20  = $vol_ma20_arr[$i];
+            $rsi       = $rsi14_arr[$i];
+
+            $xay_nen = self::is_xay_nen(
+                $rsi,
+                self::safe_ratio_pct($close, $ma10),
+                self::safe_ratio_pct($close, $ma20),
+                self::safe_ratio_pct($close, $ma50),
+                self::safe_ratio_pct($volume, $vol_ma20),
+                $volume,
+                self::change_pct($closes, $i, 1),
+                self::change_pct($closes, $i, 5),
+                self::change_pct($closes, $i, 21),
+                self::change_pct($closes, $i, 63),
+                $rules
+            );
+            $xay_nen_flags[] = $xay_nen === 'xây nền' ? 1 : 0;
+            $window_start    = max(0, count($xay_nen_flags) - 30);
+            $xay_nen_count_30 = array_sum(array_slice($xay_nen_flags, $window_start));
+            $nen_types[]     = self::determine_nen_type($xay_nen_count_30, $rules);
+        }
+
+        // --- Build computed_rows only for rows >= from_trading_index ---
         $computed_rows = [];
-        for ($i = 0; $i < count($rows); $i++) {
+        for ($i = 0; $i < $n; $i++) {
             $trading_index = (int) ($rows[$i]['trading_index'] ?? 0);
             if ($trading_index < (int) $from_trading_index) {
                 continue;
             }
 
-            $histogram = ($macd[$i] === null || $signal[$i] === null) ? null : ($macd[$i] - $signal[$i]);
+            $close    = $closes[$i];
+            $volume   = $volumes[$i];
+            $high     = $highs[$i];
+            $low      = $lows[$i];
+
+            $ma10     = $ma10_arr[$i];
+            $ma20     = $ma20_arr[$i];
+            $ma50     = $ma50_arr[$i];
+            $ma100    = $ma100_arr[$i];
+            $ma200    = $ma200_arr[$i];
+            $vol_ma10 = $vol_ma10_arr[$i];
+            $vol_ma20 = $vol_ma20_arr[$i];
+            $rsi      = $rsi14_arr[$i];
+            $macd_v   = $macd_arr[$i];
+            $signal_v = $signal_arr[$i];
+
+            $histogram = ($macd_v === null || $signal_v === null) ? null : ($macd_v - $signal_v);
+
+            // MACD labels
+            $prev_macd        = $i > 0 ? $macd_arr[$i - 1] : null;
+            $prev_signal      = $i > 0 ? $signal_arr[$i - 1] : null;
+            $prev_histogram   = ($prev_macd !== null && $prev_signal !== null) ? ($prev_macd - $prev_signal) : null;
+            $macd_hist_tang_flag = ($i > 0 && $prev_histogram !== null && $histogram !== null && $histogram > $prev_histogram);
+            $macd_cat = 'Không cắt signal';
+            if ($i > 0 && $macd_v !== null && $signal_v !== null && $prev_macd !== null && $prev_signal !== null) {
+                if ($macd_v > $signal_v && $prev_macd <= $prev_signal) {
+                    $macd_cat = 'Cắt lên signal';
+                } elseif ($macd_v < $signal_v && $prev_macd >= $prev_signal) {
+                    $macd_cat = 'Cắt xuống signal';
+                }
+            }
+            $macd_tren_0       = ($macd_v !== null && $macd_v > 0) ? 'Trên 0' : 'Không trên 0';
+            $macd_hist_tang    = $macd_hist_tang_flag ? 'Đang tăng' : 'Không tăng';
+            $macd_manh         = ($macd_v !== null && $signal_v !== null && $macd_v > $signal_v && $macd_v > 0 && $macd_hist_tang_flag) ? 1 : 0;
+            $macd_diem = 0;
+            if ($macd_v !== null && $signal_v !== null && $macd_v > $signal_v) { $macd_diem += 30; }
+            if ($macd_v !== null && $macd_v > 0)                               { $macd_diem += 30; }
+            if ($histogram !== null && $histogram > 0)                         { $macd_diem += 20; }
+            if ($macd_hist_tang_flag)                                           { $macd_diem += 20; }
+
+            // H/L windows
+            $h1m = self::window_max($highs, $i, 21);
+            $h3m = self::window_max($highs, $i, 63);
+            $h6m = self::window_max($highs, $i, 126);
+            $h1y = self::window_max($highs, $i, 252);
+            $l1m = self::window_min($lows, $i, 21);
+            $l3m = self::window_min($lows, $i, 63);
+            $l6m = self::window_min($lows, $i, 126);
+            $l1y = self::window_min($lows, $i, 252);
+
+            $pct_t_1       = self::change_pct($closes, $i, 1);
+            $vol_sv_ma10   = self::safe_ratio_pct($volume, $vol_ma10);
+            $vol_sv_ma20   = self::safe_ratio_pct($volume, $vol_ma20);
+
+            $previous_nen_type = $i > 0 ? ($nen_types[$i - 1] ?? null) : null;
+            $pha_nen           = self::determine_pha_nen($previous_nen_type, $pct_t_1, $vol_sv_ma20, $rules);
+            $tang_gia_kem_vol  = self::determine_tang_gia_kem_vol(
+                $exchange,
+                $pct_t_1,
+                self::ratio_from_ratio_pct($vol_sv_ma10),
+                self::ratio_from_ratio_pct($vol_sv_ma20),
+                $rules
+            );
+            $smart_money = self::determine_smart_money($symbol, $pha_nen, $tang_gia_kem_vol);
+            $rsi_status  = self::determine_rsi_status($rsi);
+
+            $prev_close   = $i > 0 ? $closes[$i - 1] : null;
+            $prev_vol     = $i > 0 ? $volumes[$i - 1] : null;
+            $prev_close1w = $i >= 5 ? $closes[$i - 5] : null;
+            $prev_vol1w   = $i >= 5 ? $volumes[$i - 5] : null;
+            $hanh_vi_gia    = self::determine_hanh_vi_gia($symbol, $close, $prev_close, $volume, $prev_vol);
+            $hanh_vi_gia_1w = self::determine_hanh_vi_gia_1w($symbol, $close, $prev_close1w, $volume, $prev_vol1w);
+
+            $open = (float) ($rows[$i]['open_price'] ?? 0);
+            $one_candle = self::determine_one_candle($open, $high, $low, $close);
+            $two_candle_pattern = self::determine_two_candle_pattern(
+                $i > 0 ? (float) ($rows[$i - 1]['open_price'] ?? 0)  : null,
+                $i > 0 ? $closes[$i - 1]                               : null,
+                $i > 0 ? $highs[$i - 1]                                : null,
+                $i > 0 ? $lows[$i - 1]                                 : null,
+                $open, $close
+            );
+            $three_candle_pattern = self::determine_three_candle_pattern(
+                $i > 1 ? (float) ($rows[$i - 2]['open_price'] ?? 0) : null,
+                $i > 1 ? $closes[$i - 2]                              : null,
+                $i > 0 ? (float) ($rows[$i - 1]['open_price'] ?? 0) : null,
+                $i > 0 ? $closes[$i - 1]                              : null,
+                $open, $close
+            );
+
+            $pct_h1m       = self::safe_ratio_pct($close, $h1m);
+            $pct_h3m       = self::safe_ratio_pct($close, $h3m);
+            $pct_h6m       = self::safe_ratio_pct($close, $h6m);
+            $pct_h1y       = self::safe_ratio_pct($close, $h1y);
+            $compression   = ($h1m !== null && $l1m !== null && (float) $h1m != 0.0)
+                ? (($h1m - $l1m) / $h1m)
+                : null;
+
+            $xay_nen_val      = $xay_nen_flags[$i] === 1 ? 'xây nền' : 'không xây nền';
+            $window_start_i   = max(0, $i + 1 - 30);
+            $xay_nen_count_30 = array_sum(array_slice($xay_nen_flags, $window_start_i, $i + 1 - $window_start_i));
+
             $computed_rows[] = [
-                'id' => (int) $rows[$i]['id'],
-                'ma20' => $ma20[$i],
-                'ma50' => $ma50[$i],
-                'ma100' => $ma100[$i],
-                'ma200' => $ma200[$i],
-                'macd' => $macd[$i],
-                'macd_signal' => $signal[$i],
-                'macd_histogram' => $histogram,
-                'rsi' => $rsi14[$i],
-                'pct_t_1' => self::change_pct($closes, $i, 1),
-                'pct_t_3' => self::change_pct($closes, $i, 3),
-                'pct_1w' => self::change_pct($closes, $i, 5),
-                'pct_1m' => self::change_pct($closes, $i, 21),
-                'pct_3m' => self::change_pct($closes, $i, 63),
-                'pct_6m' => self::change_pct($closes, $i, 126),
-                'pct_1y' => self::change_pct($closes, $i, 252),
+                'id'                      => (int) $rows[$i]['id'],
+                // Numeric indicators
+                'pct_t_1'                 => $pct_t_1,
+                'pct_t_3'                 => self::change_pct($closes, $i, 3),
+                'pct_1w'                  => self::change_pct($closes, $i, 5),
+                'pct_1m'                  => self::change_pct($closes, $i, 21),
+                'pct_3m'                  => self::change_pct($closes, $i, 63),
+                'pct_6m'                  => self::change_pct($closes, $i, 126),
+                'pct_1y'                  => self::change_pct($closes, $i, 252),
+                'ma10'                    => self::normalize_nullable_price($ma10),
+                'ma20'                    => self::normalize_nullable_price($ma20),
+                'ma50'                    => self::normalize_nullable_price($ma50),
+                'ma100'                   => self::normalize_nullable_price($ma100),
+                'ma200'                   => self::normalize_nullable_price($ma200),
+                'vol_ma10'               => $vol_ma10,
+                'vol_ma20'               => $vol_ma20,
+                'gia_sv_ma10'            => self::safe_ratio_pct($close, $ma10),
+                'gia_sv_ma20'            => self::safe_ratio_pct($close, $ma20),
+                'gia_sv_ma50'            => self::safe_ratio_pct($close, $ma50),
+                'gia_sv_ma100'           => self::safe_ratio_pct($close, $ma100),
+                'gia_sv_ma200'           => self::safe_ratio_pct($close, $ma200),
+                'vol_sv_vol_ma10'        => $vol_sv_ma10,
+                'vol_sv_vol_ma20'        => $vol_sv_ma20,
+                'h1m'                    => self::normalize_nullable_price($h1m),
+                'h3m'                    => self::normalize_nullable_price($h3m),
+                'h6m'                    => self::normalize_nullable_price($h6m),
+                'h1y'                    => self::normalize_nullable_price($h1y),
+                'l1m'                    => self::normalize_nullable_price($l1m),
+                'l3m'                    => self::normalize_nullable_price($l3m),
+                'l6m'                    => self::normalize_nullable_price($l6m),
+                'l1y'                    => self::normalize_nullable_price($l1y),
+                'macd'                   => $macd_v,
+                'macd_signal'            => $signal_v,
+                'macd_histogram'         => $histogram,
+                'macd_manh'              => $macd_manh,
+                'macd_diem_dong_luong'   => $macd_diem,
+                'xay_nen_count_30'       => $xay_nen_count_30,
+                'rsi'                    => $rsi,
+                'pct_to_h1m'            => $pct_h1m !== null ? $pct_h1m * 100 : null,
+                'pct_to_h3m'            => $pct_h3m !== null ? $pct_h3m * 100 : null,
+                'pct_to_h6m'            => $pct_h6m !== null ? $pct_h6m * 100 : null,
+                'pct_to_h1y'            => $pct_h1y !== null ? $pct_h1y * 100 : null,
+                'compression_1m'        => $compression !== null ? $compression * 100 : null,
+                'breakout_potential_score' => self::calculate_breakout_potential_score(
+                    self::determine_peak_status($close, $h1m),
+                    $compression !== null ? $compression * 100 : null,
+                    $rsi, $close, $ma20, $tang_gia_kem_vol, $smart_money,
+                    self::determine_peak_status($close, $h3m)
+                ),
+                // String / label columns - handled separately via mixed update
+                '_str' => [
+                    'macd_cat'           => $macd_cat,
+                    'macd_tren_0'        => $macd_tren_0,
+                    'macd_hist_tang'     => $macd_hist_tang,
+                    'rsi_status'         => $rsi_status,
+                    'xay_nen'           => $xay_nen_val,
+                    'nen_type'          => $nen_types[$i],
+                    'pha_nen'           => $pha_nen,
+                    'tang_gia_kem_vol'  => $tang_gia_kem_vol,
+                    'hanh_vi_gia'       => $hanh_vi_gia,
+                    'hanh_vi_gia_1w'    => $hanh_vi_gia_1w,
+                    'smart_money'       => $smart_money,
+                    'one_candle'        => $one_candle,
+                    'two_candle_pattern'   => $two_candle_pattern,
+                    'three_candle_pattern' => $three_candle_pattern,
+                    'trang_thai_h1m'    => self::determine_peak_status($close, $h1m),
+                    'trang_thai_h3m'    => self::determine_peak_status($close, $h3m),
+                    'trang_thai_h6m'    => self::determine_peak_status($close, $h6m),
+                    'trang_thai_h1y'    => self::determine_peak_status($close, $h1y),
+                    'position_1m'       => self::determine_range_position($close, $l1m, $h1m),
+                    'position_3m'       => self::determine_range_position($close, $l3m, $h3m),
+                    'position_6m'       => self::determine_range_position($close, $l6m, $h6m),
+                    'position_1y'       => self::determine_range_position($close, $l1y, $h1y),
+                ],
             ];
         }
 
-        return self::bulk_update_indicator_rows($computed_rows);
+        // Write numeric columns via CASE WHEN bulk UPDATE
+        $numeric_rows = array_map(static function ($r) {
+            $out = $r;
+            unset($out['_str']);
+            return $out;
+        }, $computed_rows);
+        $affected = self::bulk_update_indicator_rows($numeric_rows);
+
+        // Write string columns individually (small set, only changed rows)
+        foreach ($computed_rows as $row) {
+            $id = (int) $row['id'];
+            if ($id <= 0 || empty($row['_str'])) {
+                continue;
+            }
+            $wpdb->update(
+                $wpdb->prefix . 'lcni_ohlc',
+                $row['_str'],
+                ['id' => $id]
+            );
+        }
+
+        return $affected;
     }
 
     public static function rebuild_missing_ohlc_indicators($limit = 20) {
@@ -6483,25 +6745,50 @@ class LCNI_DB {
     }
 
     private static function window_average($series, $index, $window) {
-        $computed = self::compute_ma(array_slice((array) $series, 0, $index + 1), (int) $window);
-
-        return $computed[$index] ?? null;
+        // Shim kept for rebuild_ohlc_indicators (legacy full-rebuild path).
+        // Uses direct loop – no array_slice allocation per call.
+        $window = max(1, (int) $window);
+        $index  = (int) $index;
+        if ($index + 1 < $window) {
+            return null;
+        }
+        $sum = 0.0;
+        for ($j = $index - $window + 1; $j <= $index; $j++) {
+            $sum += (float) $series[$j];
+        }
+        return $sum / $window;
     }
 
     private static function window_max($series, $index, $window) {
+        $window = max(1, (int) $window);
+        $index  = (int) $index;
         if ($index + 1 < $window) {
             return null;
         }
-
-        return max(array_slice($series, $index - $window + 1, $window));
+        $max = null;
+        for ($j = $index - $window + 1; $j <= $index; $j++) {
+            $v = (float) $series[$j];
+            if ($max === null || $v > $max) {
+                $max = $v;
+            }
+        }
+        return $max;
     }
 
     private static function window_min($series, $index, $window) {
+        $window = max(1, (int) $window);
+        $index  = (int) $index;
         if ($index + 1 < $window) {
             return null;
         }
-
-        return min(array_slice($series, $index - $window + 1, $window));
+        $min = null;
+        for ($j = $index - $window + 1; $j <= $index; $j++) {
+            $v = (float) $series[$j];
+            if ($min === null || $v < $min) {
+                $min = $v;
+            }
+        }
+        return $min;
     }
 
     private static function safe_ratio_pct($value, $base) {
