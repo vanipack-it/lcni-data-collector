@@ -45,7 +45,26 @@ class LCNI_Industry_Monitor
         wp_enqueue_style('lcni-industry-monitor');
         wp_enqueue_script('lcni-industry-monitor');
 
+        $settings = LCNI_Industry_Settings::get_settings();
+        $metric_labels = LCNI_Industry_Settings::get_metric_labels();
+        $supported_metrics = $this->data->get_supported_metrics();
+
+        $metrics = array_values(array_intersect($supported_metrics, (array) $settings['enabled_metrics']));
+        if (empty($metrics)) {
+            $metrics = $supported_metrics;
+        }
+
+        $metric_options = array();
+        foreach ($metrics as $metric_key) {
+            $metric_options[] = array(
+                'key' => $metric_key,
+                'label' => $metric_labels[$metric_key] ?? $metric_key,
+            );
+        }
+
+        $default_metric = $metrics[0] ?? 'money_flow_share';
         $nonce = wp_create_nonce('lcni_industry_data_nonce');
+
         wp_localize_script(
             'lcni-industry-monitor',
             'LCNIIndustryMonitor',
@@ -53,11 +72,14 @@ class LCNI_Industry_Monitor
                 'ajaxUrl' => admin_url('admin-ajax.php'),
                 'nonce' => $nonce,
                 'defaultTimeframe' => '1D',
-                'defaultMetric' => 'money_flow_share',
+                'defaultMetric' => $default_metric,
+                'filterBaseUrl' => $settings['industry_filter_url'],
+                'rowHoverEnabled' => ! empty($settings['row_hover_enabled']),
+                'gradientMode' => $settings['gradient_mode'],
+                'gradientStartColor' => $settings['gradient_start_color'],
+                'gradientEndColor' => $settings['gradient_end_color'],
             )
         );
-
-        $metrics = $this->data->get_supported_metrics();
 
         ob_start();
         include LCNI_INDUSTRY_MONITOR_PATH . 'templates/industry-table.php';
@@ -72,20 +94,29 @@ class LCNI_Industry_Monitor
             wp_send_json_error(array('message' => 'Invalid nonce.'), 403);
         }
 
+        $settings = LCNI_Industry_Settings::get_settings();
+        $allowed_metrics = array_values(array_intersect($this->data->get_supported_metrics(), (array) $settings['enabled_metrics']));
+        if (empty($allowed_metrics)) {
+            $allowed_metrics = $this->data->get_supported_metrics();
+        }
+
         $metric = isset($_POST['metric']) ? sanitize_key(wp_unslash($_POST['metric'])) : 'money_flow_share';
         $timeframe = isset($_POST['timeframe']) ? sanitize_text_field(wp_unslash($_POST['timeframe'])) : '1D';
         $limit = isset($_POST['limit']) ? absint($_POST['limit']) : 30;
 
-        if (! in_array($metric, $this->data->get_supported_metrics(), true)) {
+        if (! in_array($metric, $allowed_metrics, true)) {
             wp_send_json_error(array('message' => 'Unsupported metric.'), 400);
         }
 
-        $columns = $this->data->get_event_times($timeframe, $limit);
+        $columns = $this->data->get_event_times($timeframe, $limit, $metric);
         $rows = $this->data->get_metric_rows($metric, $timeframe, $columns);
+
+        $formatted_columns = array_map(array($this->data, 'format_event_time'), $columns);
 
         wp_send_json_success(
             array(
-                'columns' => $columns,
+                'columns' => $formatted_columns,
+                'rawColumns' => $columns,
                 'rows' => $rows,
             )
         );

@@ -1,6 +1,13 @@
 .lcni-industry-monitor {
     width: 100%;
     max-width: 100%;
+    --lcni-row-bg: #ffffff;
+    --lcni-row-border-color: #e2e2e2;
+    --lcni-row-border-width: 1px;
+    --lcni-row-height: 40px;
+    --lcni-header-bg: #f7f7f7;
+    --lcni-header-height: 44px;
+    --lcni-row-font-size: 14px;
 }
 
 .lcni-industry-monitor__controls {
@@ -25,17 +32,24 @@
 
 .lcni-industry-monitor__table th,
 .lcni-industry-monitor__table td {
-    border: 1px solid #e2e2e2;
+    border-style: solid;
+    border-color: var(--lcni-row-border-color);
+    border-width: 0 0 var(--lcni-row-border-width) 0;
     padding: 8px 10px;
     white-space: nowrap;
-    background: #fff;
+    background: var(--lcni-row-bg);
+    min-height: var(--lcni-row-height);
+    height: var(--lcni-row-height);
+    font-size: var(--lcni-row-font-size);
 }
 
 .lcni-industry-monitor__table thead th {
     position: sticky;
     top: 0;
     z-index: 3;
-    background: #f7f7f7;
+    background: var(--lcni-header-bg);
+    min-height: var(--lcni-header-height);
+    height: var(--lcni-header-height);
 }
 
 .lcni-industry-monitor__table thead th:first-child,
@@ -44,6 +58,15 @@
     left: 0;
     z-index: 4;
     background: #fafafa;
+}
+
+.lcni-industry-monitor__row.is-hoverable {
+    cursor: pointer;
+}
+
+.lcni-industry-monitor__row.is-hoverable:hover th,
+.lcni-industry-monitor__row.is-hoverable:hover td {
+    filter: brightness(0.96);
 }
 
 @media (max-width: 768px) {

@@ -11,13 +11,13 @@ class LCNI_Industry_Data
 
     /** @var array<string, array<string, string>> */
     private $metric_map = array(
-        'money_flow_share' => array('table' => 'wp_lcni_industry_metrics', 'column' => 'money_flow_share'),
-        'momentum' => array('table' => 'wp_lcni_industry_metrics', 'column' => 'momentum'),
-        'relative_strength' => array('table' => 'wp_lcni_industry_metrics', 'column' => 'relative_strength'),
-        'breadth' => array('table' => 'wp_lcni_industry_metrics', 'column' => 'breadth'),
-        'industry_index' => array('table' => 'wp_lcni_industry_index', 'column' => 'industry_index'),
-        'industry_return' => array('table' => 'wp_lcni_industry_return', 'column' => 'industry_return'),
-        'industry_volume' => array('table' => 'wp_lcni_industry_return', 'column' => 'industry_volume'),
+        'money_flow_share' => array('table' => 'lcni_industry_metrics', 'column' => 'money_flow_share'),
+        'momentum' => array('table' => 'lcni_industry_metrics', 'column' => 'momentum'),
+        'relative_strength' => array('table' => 'lcni_industry_metrics', 'column' => 'relative_strength'),
+        'breadth' => array('table' => 'lcni_industry_metrics', 'column' => 'breadth'),
+        'industry_index' => array('table' => 'lcni_industry_index', 'column' => 'industry_index'),
+        'industry_return' => array('table' => 'lcni_industry_return', 'column' => 'industry_return'),
+        'industry_volume' => array('table' => 'lcni_industry_return', 'column' => 'industry_volume'),
     );
 
     public function __construct($db = null)
@@ -48,25 +48,77 @@ class LCNI_Industry_Data
     }
 
     /**
+     * @param mixed $raw
+     * @return int|null
+     */
+    private function normalize_event_time($raw)
+    {
+        if ($raw === null || $raw === '') {
+            return null;
+        }
+
+        if (is_numeric($raw)) {
+            $value = (int) $raw;
+            if ($value > 2000000000000) {
+                return (int) floor($value / 1000);
+            }
+            if ($value > 2000000000 && $value < 2000000000000) {
+                return $value;
+            }
+            if ($value > 0 && $value < 1000000000) {
+                return $value;
+            }
+        }
+
+        $parsed = strtotime((string) $raw);
+        if ($parsed === false) {
+            return null;
+        }
+
+        return (int) $parsed;
+    }
+
+    /**
+     * @param int $timestamp
+     * @return string
+     */
+    public function format_event_time($timestamp)
+    {
+        return gmdate('Y-m-d H:i', (int) $timestamp);
+    }
+
+    /**
      * @param string $timeframe
      * @param int    $limit
+     * @param string $metric
      * @return int[]
      */
-    public function get_event_times($timeframe = '1D', $limit = 30)
+    public function get_event_times($timeframe = '1D', $limit = 30, $metric = 'money_flow_share')
     {
         $timeframe = sanitize_text_field($timeframe);
         $limit = max(1, min(200, absint($limit)));
+        $resolved = $this->resolve_metric($metric) ?: $this->resolve_metric('money_flow_share');
 
+        $table = $this->wpdb->prefix . $resolved['table'];
         $sql = "SELECT DISTINCT event_time
-                FROM wp_lcni_industry_metrics
+                FROM {$table}
                 WHERE timeframe = %s
                 ORDER BY event_time DESC
                 LIMIT %d";
 
-        $prepared = $this->wpdb->prepare($sql, $timeframe, $limit);
-        $rows = $this->wpdb->get_col($prepared);
+        $prepared = $this->wpdb->prepare($sql, $timeframe, $limit * 4);
+        $rows = (array) $this->wpdb->get_col($prepared);
 
-        return array_map('intval', (array) $rows);
+        $normalized = array();
+        foreach ($rows as $raw_time) {
+            $value = $this->normalize_event_time($raw_time);
+            if ($value !== null) {
+                $normalized[$value] = $value;
+            }
+        }
+
+        rsort($normalized, SORT_NUMERIC);
+        return array_slice(array_values($normalized), 0, $limit);
     }
 
     /**
@@ -87,17 +139,16 @@ class LCNI_Industry_Data
             return array();
         }
 
-        $placeholders = implode(',', array_fill(0, count($event_times), '%d'));
+        $table = $this->wpdb->prefix . $resolved['table'];
+        $icb_table = $this->wpdb->prefix . 'lcni_icb2';
 
         $sql = "SELECT src.id_icb2, icb.name_icb2, src.event_time, src.{$resolved['column']} AS metric_value
-                FROM {$resolved['table']} src
-                INNER JOIN wp_lcni_icb2 icb ON src.id_icb2 = icb.id_icb2
+                FROM {$table} src
+                INNER JOIN {$icb_table} icb ON src.id_icb2 = icb.id_icb2
                 WHERE src.timeframe = %s
-                  AND src.event_time IN ($placeholders)
                 ORDER BY icb.name_icb2 ASC, src.event_time DESC";
 
-        $params = array_merge(array(sanitize_text_field($timeframe)), $event_times);
-        $prepared = $this->wpdb->prepare($sql, $params);
+        $prepared = $this->wpdb->prepare($sql, sanitize_text_field($timeframe));
         $rows = $this->wpdb->get_results($prepared, ARRAY_A);
 
         $time_index = array_flip($event_times);
@@ -105,8 +156,8 @@ class LCNI_Industry_Data
 
         foreach ((array) $rows as $row) {
             $industry = isset($row['name_icb2']) ? (string) $row['name_icb2'] : '';
-            $event_time = isset($row['event_time']) ? (int) $row['event_time'] : 0;
-            if ($industry === '' || ! isset($time_index[$event_time])) {
+            $event_time = $this->normalize_event_time($row['event_time'] ?? null);
+            if ($industry === '' || $event_time === null || ! isset($time_index[$event_time])) {
                 continue;
             }
 
@@ -121,11 +172,7 @@ class LCNI_Industry_Data
                 continue;
             }
 
-            if ($metric === 'industry_volume') {
-                $grouped[$industry][$index] = (int) $raw_value;
-            } else {
-                $grouped[$industry][$index] = (float) $raw_value;
-            }
+            $grouped[$industry][$index] = ($metric === 'industry_volume') ? (int) $raw_value : (float) $raw_value;
         }
 
         $result = array();
