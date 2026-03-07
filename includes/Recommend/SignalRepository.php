@@ -8,6 +8,8 @@ class SignalRepository {
     private $wpdb;
     private $table;
     private $symbols_table;
+    private $market_table;
+    private $icb2_table;
     private $has_timeframe_column;
     private $recommend_column_catalog;
 
@@ -15,6 +17,8 @@ class SignalRepository {
         $this->wpdb = $wpdb;
         $this->table = $wpdb->prefix . 'lcni_recommend_signal';
         $this->symbols_table = $wpdb->prefix . 'lcni_symbols';
+        $this->market_table = $wpdb->prefix . 'lcni_marketid';
+        $this->icb2_table = $wpdb->prefix . 'lcni_icb2';
         $this->has_timeframe_column = null;
         $this->recommend_column_catalog = null;
     }
@@ -170,15 +174,23 @@ class SignalRepository {
             $meta = $catalog[$key];
             $source = $meta['source'];
             $column = $meta['column'];
-            if (!in_array($source, ['signal', 'rule', 'ohlc'], true) || sanitize_key($column) !== $column) {
+            if (!in_array($source, ['signal', 'rule', 'ohlc', 'market', 'icb2', 'calc'], true) || sanitize_key($column) !== $column) {
                 continue;
             }
             if ($source === 'signal') {
                 $selects[] = "s.{$column} AS {$key}";
             } elseif ($source === 'rule') {
                 $selects[] = "r.{$column} AS {$key}";
-            } else {
+            } elseif ($source === 'ohlc') {
                 $selects[] = "o.{$column} AS {$key}";
+            } elseif ($source === 'market') {
+                $selects[] = "m.{$column} AS {$key}";
+            } elseif ($source === 'icb2') {
+                $selects[] = "i.{$column} AS {$key}";
+            } elseif ($column === 'npl_current') {
+                $selects[] = 'CASE WHEN s.entry_price IS NOT NULL AND s.entry_price > 0 THEN ((COALESCE(s.current_price, 0) - s.entry_price) / s.entry_price) * 100 ELSE NULL END AS signal__npl_current';
+            } elseif ($column === 'npl_closed') {
+                $selects[] = "CASE WHEN s.status = 'closed' AND s.entry_price IS NOT NULL AND s.entry_price > 0 AND s.exit_price IS NOT NULL THEN ((s.exit_price - s.entry_price) / s.entry_price) * 100 ELSE NULL END AS signal__npl_closed";
             }
         }
 
@@ -187,6 +199,9 @@ class SignalRepository {
             FROM {$this->table} s
             LEFT JOIN {$this->wpdb->prefix}lcni_recommend_rule r ON r.id = s.rule_id
             LEFT JOIN {$this->wpdb->prefix}lcni_ohlc_latest o ON o.symbol = s.symbol
+            LEFT JOIN {$this->symbols_table} sym ON sym.symbol = s.symbol
+            LEFT JOIN {$this->market_table} m ON m.market_id = sym.market_id
+            LEFT JOIN {$this->icb2_table} i ON i.id_icb2 = sym.id_icb2
             WHERE " . implode(' AND ', $where) . "
             ORDER BY s.entry_time DESC
             LIMIT %d";
@@ -205,6 +220,8 @@ class SignalRepository {
             'signal' => $this->table,
             'rule' => $this->wpdb->prefix . 'lcni_recommend_rule',
             'ohlc' => $this->wpdb->prefix . 'lcni_ohlc_latest',
+            'market' => $this->market_table,
+            'icb2' => $this->icb2_table,
         ];
 
         $catalog = [];
@@ -232,6 +249,15 @@ class SignalRepository {
                 ];
             }
         }
+
+        $catalog['signal__npl_current'] = [
+            'source' => 'calc',
+            'column' => 'npl_current',
+        ];
+        $catalog['signal__npl_closed'] = [
+            'source' => 'calc',
+            'column' => 'npl_closed',
+        ];
 
         $this->recommend_column_catalog = $catalog;
 

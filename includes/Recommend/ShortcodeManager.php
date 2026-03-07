@@ -20,6 +20,10 @@ class ShortcodeManager {
         'signal__exit_time' => 'Thời điểm bán',
         'signal__final_r' => 'R cuối cùng',
         'signal__holding_days' => 'Số ngày nắm giữ',
+        'market__exchange' => 'Sàn',
+        'icb2__name_icb2' => 'Ngành ICB2',
+        'signal__npl_current' => 'NPL hiện tại (%)',
+        'signal__npl_closed' => 'NPL đã chốt (%)',
     ];
 
     private $signal_repository;
@@ -36,6 +40,7 @@ class ShortcodeManager {
 
     public function register_shortcodes() {
         add_shortcode('lcni_signals', [$this, 'render_signals']);
+        add_shortcode('lcni_signals_rule', [$this, 'render_signals_rule']);
         add_shortcode('lcni_performance', [$this, 'render_performance']);
         add_shortcode('lcni_signal', [$this, 'render_signal_card']);
     }
@@ -61,7 +66,7 @@ class ShortcodeManager {
         $row_hover_background = (string) ($styles['row_hover_bg'] ?? '#f3f4f6');
         $sticky_column = (string) ($styles['sticky_column'] ?? 'signal__symbol');
         $sticky_header_enabled = !empty($styles['sticky_header']);
-        $wrapper_style = sprintf('font-family:%s;color:%s;background:%s;border:%s;border-radius:%dpx;overflow:auto;position:relative;',
+        $wrapper_style = sprintf('font-family:%s;color:%s;background:%s;border:%s;border-radius:%dpx;overflow:auto;position:relative;-webkit-overflow-scrolling:touch;',
             esc_attr((string) ($styles['font'] ?? 'inherit')),
             esc_attr((string) ($styles['text_color'] ?? '#111827')),
             esc_attr((string) ($styles['background'] ?? '#ffffff')),
@@ -79,7 +84,7 @@ class ShortcodeManager {
         echo '<thead><tr style="' . $head_row_style . '">';
         foreach ($columns as $column) {
             $label = $this->resolve_column_label($column, $catalog);
-            $th_style = 'text-align:left;padding:8px;border-bottom:' . (int) ($styles['row_divider_width'] ?? 1) . 'px solid ' . esc_attr((string) ($styles['row_divider_color'] ?? '#e5e7eb')) . ';font-size:' . (int) ($styles['header_font_size'] ?? 14) . 'px;background:' . esc_attr((string) ($styles['header_background'] ?? '#ffffff')) . ';';
+            $th_style = 'text-align:left;padding:8px;border-bottom:' . (int) ($styles['row_divider_width'] ?? 1) . 'px solid ' . esc_attr((string) ($styles['row_divider_color'] ?? '#e5e7eb')) . ';font-size:' . (int) ($styles['header_font_size'] ?? 14) . 'px;background:' . esc_attr((string) ($styles['header_background'] ?? '#ffffff')) . ';white-space:nowrap;line-height:1.2;';
             if ($sticky_header_enabled) {
                 $th_style .= 'position:sticky;top:0;z-index:20;';
             }
@@ -97,7 +102,7 @@ class ShortcodeManager {
                 $raw_value = $value;
                 $value = $this->format_signal_value($column, $value);
                 $cell_style = $this->resolve_recommend_signal_cell_style($column, $raw_value, $styles);
-                $cell_style_attr = 'padding:8px;border-bottom:' . (int) ($styles['row_divider_width'] ?? 1) . 'px solid ' . esc_attr((string) ($styles['row_divider_color'] ?? '#e5e7eb')) . ';';
+                $cell_style_attr = 'padding:8px;border-bottom:' . (int) ($styles['row_divider_width'] ?? 1) . 'px solid ' . esc_attr((string) ($styles['row_divider_color'] ?? '#e5e7eb')) . ';white-space:nowrap;line-height:1.2;';
                 if ($cell_style['background'] !== '') {
                     $cell_style_attr .= 'background:' . esc_attr($cell_style['background']) . ';';
                 }
@@ -127,6 +132,17 @@ class ShortcodeManager {
         echo '</tbody></table></div>';
 
         return ob_get_clean();
+    }
+
+
+    public function render_signals_rule($atts = []) {
+        $atts = shortcode_atts(['rule_id' => 0, 'status' => '', 'limit' => 200, 'symbol' => ''], $atts, 'lcni_signals_rule');
+        $atts['rule_id'] = (int) $atts['rule_id'];
+        if ($atts['rule_id'] <= 0) {
+            return '';
+        }
+
+        return $this->render_signals($atts);
     }
 
     private function get_recommend_signal_frontend_settings() {
@@ -230,6 +246,10 @@ class ShortcodeManager {
             if ($timestamp > 0) {
                 return wp_date('d-m-Y', $timestamp);
             }
+        }
+
+        if (($field === 'npl_current' || $field === 'npl_closed') && is_numeric($value)) {
+            return number_format((float) $value, 2, '.', ',') . '%';
         }
 
         if (is_numeric($value)) {

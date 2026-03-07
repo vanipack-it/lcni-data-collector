@@ -4314,6 +4314,8 @@ private function sanitize_module_title($value, $fallback) {
             'rule' => ['table' => $wpdb->prefix . 'lcni_recommend_rule', 'label' => 'Rule'],
             'signal' => ['table' => $wpdb->prefix . 'lcni_recommend_signal', 'label' => 'Signal'],
             'ohlc' => ['table' => $wpdb->prefix . 'lcni_ohlc_latest', 'label' => 'OHLC Latest'],
+            'market' => ['table' => $wpdb->prefix . 'lcni_marketid', 'label' => 'Market'],
+            'icb2' => ['table' => $wpdb->prefix . 'lcni_icb2', 'label' => 'ICB2'],
         ];
 
         $catalog = [];
@@ -4347,6 +4349,17 @@ private function sanitize_module_title($value, $fallback) {
                 ];
             }
         }
+
+        $catalog['signal__npl_current'] = [
+            'source' => 'calc',
+            'column' => 'npl_current',
+            'label' => 'Signal · NPL Current (%)',
+        ];
+        $catalog['signal__npl_closed'] = [
+            'source' => 'calc',
+            'column' => 'npl_closed',
+            'label' => 'Signal · NPL Closed (%)',
+        ];
 
         return $catalog;
     }
@@ -4554,9 +4567,9 @@ private function sanitize_module_title($value, $fallback) {
                                 <th>Màu chữ</th>
                             </tr>
                         </thead>
-                        <tbody>
-                            <?php for ($rule_index = 0; $rule_index < 8; $rule_index++) :
-                                $rule = is_array($recommend_rules[$rule_index] ?? null) ? $recommend_rules[$rule_index] : [];
+                        <tbody id="lcni-recommend-signal-rule-body">
+                            <?php foreach ($recommend_rules as $rule) :
+                                $rule = is_array($rule) ? $rule : [];
                             ?>
                             <tr>
                                 <td>
@@ -4578,9 +4591,32 @@ private function sanitize_module_title($value, $fallback) {
                                 <td><input type="color" name="lcni_frontend_recommend_signal_style_rule_bg_color[]" value="<?php echo esc_attr((string) ($rule['bg_color'] ?? '#ffffff')); ?>"></td>
                                 <td><input type="color" name="lcni_frontend_recommend_signal_style_rule_text_color[]" value="<?php echo esc_attr((string) ($rule['text_color'] ?? '#111827')); ?>"></td>
                             </tr>
-                            <?php endfor; ?>
+                            <?php endforeach; ?>
                         </tbody>
                     </table>
+                    <p><button type="button" class="button" id="lcni-recommend-signal-add-rule">+ Add rule</button></p>
+                    <template id="lcni-recommend-signal-rule-template">
+                        <tr>
+                            <td>
+                                <select name="lcni_frontend_recommend_signal_style_rule_column[]">
+                                    <option value="">-- Chọn cột --</option>
+                                    <?php foreach ($allowed_columns as $column) : ?>
+                                        <option value="<?php echo esc_attr($column); ?>"><?php echo esc_html((string) ($catalog[$column]['label'] ?? $column)); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </td>
+                            <td>
+                                <select name="lcni_frontend_recommend_signal_style_rule_operator[]">
+                                    <?php foreach (['>', '>=', '<', '<=', '=', '!=', 'contains', 'not_contains'] as $operator) : ?>
+                                        <option value="<?php echo esc_attr($operator); ?>"><?php echo esc_html($operator); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </td>
+                            <td><input type="text" name="lcni_frontend_recommend_signal_style_rule_value[]" value=""></td>
+                            <td><input type="color" name="lcni_frontend_recommend_signal_style_rule_bg_color[]" value="#ffffff"></td>
+                            <td><input type="color" name="lcni_frontend_recommend_signal_style_rule_text_color[]" value="#111827"></td>
+                        </tr>
+                    </template>
                     <?php submit_button('Save'); ?>
                 </form>
             </div>
@@ -4648,6 +4684,17 @@ private function sanitize_module_title($value, $fallback) {
 
                         form.querySelectorAll('[data-recommend-signal-columns-checkbox]').forEach((checkbox) => checkbox.addEventListener('change', rebuildSelected));
                         rebuildSelected();
+                    }
+
+
+                    const addRuleButton = root.querySelector('#lcni-recommend-signal-add-rule');
+                    const ruleBody = root.querySelector('#lcni-recommend-signal-rule-body');
+                    const ruleTemplate = root.querySelector('#lcni-recommend-signal-rule-template');
+                    if (addRuleButton && ruleBody && ruleTemplate) {
+                        addRuleButton.addEventListener('click', () => {
+                            const row = ruleTemplate.content.firstElementChild.cloneNode(true);
+                            ruleBody.appendChild(row);
+                        });
                     }
 
                     activate(url.searchParams.get('recommend_signal_tab') || validTabs[0]);
