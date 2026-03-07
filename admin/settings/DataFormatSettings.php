@@ -62,6 +62,8 @@ class LCNI_Data_Format_Settings {
         'tang_truong_dt_quy_gan_nhi',
         'tang_truong_ln_quy_gan_nhat',
         'tang_truong_ln_quy_gan_nhi',
+        'npl_current',
+        'npl_closed',
     ];
 
     public function __construct() {
