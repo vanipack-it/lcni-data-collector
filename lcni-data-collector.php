@@ -82,6 +82,21 @@ require_once LCNI_PATH . 'includes/Recommend/ShortcodeManager.php';
 require_once LCNI_PATH . 'includes/Recommend/Admin/RecommendAdminPage.php';
 require_once LCNI_PATH . 'includes/Recommend/RecommendModule.php';
 require_once LCNI_PATH . 'includes/class-lcni-industry-shortcodes.php';
+require_once LCNI_PATH . 'lcni-industry-monitor/includes/class-industry-data.php';
+require_once LCNI_PATH . 'lcni-industry-monitor/includes/class-industry-monitor.php';
+require_once LCNI_PATH . 'lcni-industry-monitor/admin/class-industry-settings.php';
+
+if (!defined('LCNI_INDUSTRY_MONITOR_VERSION')) {
+    define('LCNI_INDUSTRY_MONITOR_VERSION', '5.5.2');
+}
+
+if (!defined('LCNI_INDUSTRY_MONITOR_PATH')) {
+    define('LCNI_INDUSTRY_MONITOR_PATH', LCNI_PATH . 'lcni-industry-monitor/');
+}
+
+if (!defined('LCNI_INDUSTRY_MONITOR_URL')) {
+    define('LCNI_INDUSTRY_MONITOR_URL', LCNI_URL . 'lcni-industry-monitor/');
+}
 
 function lcni_register_custom_cron_schedules($schedules) {
     if (!isset($schedules['lcni_every_minute'])) {
@@ -263,6 +278,15 @@ new LCNI_Industry_Data_Page();
 new LCNI_Member_Module();
 new LCNI_Recommend_Module();
 new LCNI_Industry_Shortcodes();
+
+$lcni_industry_monitor = new LCNI_Industry_Monitor(new LCNI_Industry_Data());
+$lcni_industry_monitor->register_hooks();
+
+if (is_admin()) {
+    $lcni_industry_settings = new LCNI_Industry_Settings();
+    $lcni_industry_settings->register_hooks();
+}
+
 LCNI_Update_Manager::init();
 LCNI_OHLC_Latest_Manager::init();
 new LCNI_Rest_API();
