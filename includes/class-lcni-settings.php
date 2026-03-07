@@ -472,6 +472,10 @@ class LCNI_Settings {
                             'head_height' => $recommend_scalar_post('lcni_frontend_recommend_signal_style_head_height', 30),
                             'sticky_column' => $recommend_scalar_post('lcni_frontend_recommend_signal_style_sticky_column', 'signal__symbol'),
                             'sticky_header' => isset($_POST['lcni_frontend_recommend_signal_style_sticky_header']) ? 1 : 0,
+                            'filter_button_color' => $recommend_scalar_post('lcni_frontend_recommend_signal_style_filter_button_color', ''),
+                            'filter_button_background' => $recommend_scalar_post('lcni_frontend_recommend_signal_style_filter_button_background', ''),
+                            'watchlist_button_color' => $recommend_scalar_post('lcni_frontend_recommend_signal_style_watchlist_button_color', ''),
+                            'watchlist_button_active_color' => $recommend_scalar_post('lcni_frontend_recommend_signal_style_watchlist_button_active_color', ''),
                             'cell_color_rules' => [
                                 'columns' => $recommend_rule_columns,
                                 'operators' => $recommend_rule_operators,
@@ -4477,6 +4481,10 @@ private function sanitize_module_title($value, $fallback) {
                 'head_height' => max(24, min(120, (int) ($styles['head_height'] ?? 30))),
                 'sticky_column' => in_array($sticky_column, $allowed_columns, true) ? $sticky_column : ($allowed_columns[0] ?? 'signal__symbol'),
                 'sticky_header' => !empty($styles['sticky_header']) ? 1 : 0,
+                'filter_button_color' => sanitize_hex_color($styles['filter_button_color'] ?? '#374151') ?: '#374151',
+                'filter_button_background' => sanitize_hex_color($styles['filter_button_background'] ?? '#ffffff') ?: '#ffffff',
+                'watchlist_button_color' => sanitize_hex_color($styles['watchlist_button_color'] ?? '#dc2626') ?: '#dc2626',
+                'watchlist_button_active_color' => sanitize_hex_color($styles['watchlist_button_active_color'] ?? '#16a34a') ?: '#16a34a',
                 'cell_color_rules' => array_slice($cell_color_rules, 0, 100),
             ],
         ];
@@ -4554,6 +4562,11 @@ private function sanitize_module_title($value, $fallback) {
                         </select>
                     </label></p>
                     <p><label><input type="checkbox" name="lcni_frontend_recommend_signal_style_sticky_header" value="1" <?php checked((int) ($settings['styles']['sticky_header'] ?? 0), 1); ?>> Sticky header row</label></p>
+                    <h4>Nhóm nút trong bảng</h4>
+                    <p><label>Màu nút filter <input type="color" name="lcni_frontend_recommend_signal_style_filter_button_color" value="<?php echo esc_attr((string) ($settings['styles']['filter_button_color'] ?? '#374151')); ?>"></label></p>
+                    <p><label>Nền nút filter <input type="color" name="lcni_frontend_recommend_signal_style_filter_button_background" value="<?php echo esc_attr((string) ($settings['styles']['filter_button_background'] ?? '#ffffff')); ?>"></label></p>
+                    <p><label>Màu nút watchlist <input type="color" name="lcni_frontend_recommend_signal_style_watchlist_button_color" value="<?php echo esc_attr((string) ($settings['styles']['watchlist_button_color'] ?? '#dc2626')); ?>"></label></p>
+                    <p><label>Màu nút watchlist (active) <input type="color" name="lcni_frontend_recommend_signal_style_watchlist_button_active_color" value="<?php echo esc_attr((string) ($settings['styles']['watchlist_button_active_color'] ?? '#16a34a')); ?>"></label></p>
                     <h4>Cell color rules</h4>
                     <p>Cấu hình màu theo giá trị ô để frontend hiển thị theo điều kiện.</p>
                     <?php $recommend_rules = (array) ($settings['styles']['cell_color_rules'] ?? []); ?>
