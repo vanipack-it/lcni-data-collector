@@ -1887,6 +1887,242 @@ class LCNI_DB {
         return self::refresh_ohlc_latest_snapshot();
     }
 
+    // -------------------------------------------------------------------------
+    // Indicator Field Groups — dùng cho Rebuild Tool trên admin
+    // -------------------------------------------------------------------------
+
+    /**
+     * Trả về định nghĩa các nhóm indicator.
+     * Mỗi nhóm có: label, fields (danh sách cột đại diện để check NULL),
+     * và rebuild_callback — tên method hoặc tag nội bộ.
+     */
+    public static function get_indicator_field_groups() {
+        return [
+            'ma' => [
+                'label'   => 'Moving Average (MA10–200)',
+                'fields'  => ['ma10', 'ma20', 'ma50', 'ma100', 'ma200'],
+                'rebuild' => 'incremental',
+            ],
+            'vol_ma' => [
+                'label'   => 'Volume MA & tỉ lệ Vol/MA',
+                'fields'  => ['vol_ma10', 'vol_ma20', 'vol_sv_vol_ma10', 'vol_sv_vol_ma20'],
+                'rebuild' => 'incremental',
+            ],
+            'gia_sv_ma' => [
+                'label'   => 'Giá so với MA (gia_sv_ma*)',
+                'fields'  => ['gia_sv_ma10', 'gia_sv_ma20', 'gia_sv_ma50', 'gia_sv_ma100', 'gia_sv_ma200'],
+                'rebuild' => 'incremental',
+            ],
+            'macd' => [
+                'label'   => 'MACD (macd, signal, histogram, labels)',
+                'fields'  => ['macd', 'macd_signal', 'macd_histogram', 'macd_cat', 'macd_tren_0', 'macd_hist_tang', 'macd_manh', 'macd_diem_dong_luong'],
+                'rebuild' => 'incremental',
+            ],
+            'rsi' => [
+                'label'   => 'RSI & trạng thái RSI',
+                'fields'  => ['rsi', 'rsi_status'],
+                'rebuild' => 'incremental',
+            ],
+            'pct' => [
+                'label'   => 'Phần trăm thay đổi (pct_t_1 → pct_1y)',
+                'fields'  => ['pct_t_1', 'pct_t_3', 'pct_1w', 'pct_1m', 'pct_3m', 'pct_6m', 'pct_1y'],
+                'rebuild' => 'incremental',
+            ],
+            'hl_range' => [
+                'label'   => 'High/Low 1m–1y & vị trí giá',
+                'fields'  => ['h1m', 'h3m', 'h6m', 'h1y', 'l1m', 'l3m', 'l6m', 'l1y', 'pct_to_h1m', 'pct_to_h1y', 'trang_thai_h1m', 'trang_thai_h1y', 'compression_1m', 'position_1m', 'position_1y', 'breakout_potential_score'],
+                'rebuild' => 'incremental',
+            ],
+            'xay_nen' => [
+                'label'   => 'Xây nền & Nền type',
+                'fields'  => ['xay_nen', 'xay_nen_count_30', 'nen_type'],
+                'rebuild' => 'incremental',
+            ],
+            'pha_nen_smart' => [
+                'label'   => 'Pha nền / Tăng giá kém Vol / Smart Money',
+                'fields'  => ['pha_nen', 'tang_gia_kem_vol', 'smart_money'],
+                'rebuild' => 'incremental',
+            ],
+            'hanh_vi' => [
+                'label'   => 'Hành vi giá (hanh_vi_gia, hanh_vi_gia_1w)',
+                'fields'  => ['hanh_vi_gia', 'hanh_vi_gia_1w'],
+                'rebuild' => 'incremental',
+            ],
+            'candle_pattern' => [
+                'label'   => 'Mô hình nến (1/2/3 nến)',
+                'fields'  => ['one_candle', 'two_candle_pattern', 'three_candle_pattern'],
+                'rebuild' => 'incremental',
+            ],
+            'rs_metrics' => [
+                'label'   => 'RS Exchange (rs_1m/1w/3m, status, recommend)',
+                'fields'  => ['rs_1m_by_exchange', 'rs_1w_by_exchange', 'rs_3m_by_exchange', 'rs_exchange_status', 'rs_exchange_recommend'],
+                'rebuild' => 'rs',
+            ],
+        ];
+    }
+
+    /**
+     * Đếm số row bị NULL cho representative field của mỗi group.
+     * Trả về ['group_key' => ['missing_rows' => int, 'checked_field' => string], ...]
+     */
+    public static function count_missing_indicator_rows(array $group_keys, $symbol = '', $timeframe = '') {
+        global $wpdb;
+
+        $table   = $wpdb->prefix . 'lcni_ohlc';
+        $groups  = self::get_indicator_field_groups();
+        $symbol  = strtoupper(trim((string) $symbol));
+        $tf      = strtoupper(trim((string) $timeframe));
+        $result  = [];
+
+        $where_extra = '';
+        $params_extra = [];
+        if ($symbol !== '') {
+            $where_extra  .= ' AND symbol = %s';
+            $params_extra[] = $symbol;
+        }
+        if ($tf !== '') {
+            $where_extra  .= ' AND timeframe = %s';
+            $params_extra[] = $tf;
+        }
+
+        foreach ($group_keys as $key) {
+            if (!isset($groups[$key])) {
+                continue;
+            }
+            // Dùng field đầu tiên làm representative
+            $check_field = $groups[$key]['fields'][0];
+            $sql         = "SELECT COUNT(*) FROM {$table} WHERE `{$check_field}` IS NULL" . $where_extra;
+            $count       = $params_extra
+                ? (int) $wpdb->get_var($wpdb->prepare($sql, $params_extra))
+                : (int) $wpdb->get_var($sql);
+
+            $result[$key] = [
+                'missing_rows'   => $count,
+                'checked_field'  => $check_field,
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
+     * Rebuild indicator cho các nhóm được chọn.
+     * Với nhóm rebuild='incremental': load series và chạy incremental_rebuild.
+     * Với nhóm rebuild='rs': chạy lại RS pipeline.
+     * $batch = số series xử lý tối đa trong một lần gọi.
+     */
+    public static function rebuild_indicators_for_groups(array $group_keys, $symbol = '', $timeframe = '', $batch = 50) {
+        global $wpdb;
+
+        $table    = $wpdb->prefix . 'lcni_ohlc';
+        $groups   = self::get_indicator_field_groups();
+        $symbol   = strtoupper(trim((string) $symbol));
+        $tf       = strtoupper(trim((string) $timeframe));
+        $batch    = max(1, min(500, (int) $batch));
+
+        // Phân loại group theo loại rebuild
+        $incremental_groups = [];
+        $rs_needed          = false;
+
+        foreach ($group_keys as $key) {
+            if (!isset($groups[$key])) {
+                continue;
+            }
+            if ($groups[$key]['rebuild'] === 'rs') {
+                $rs_needed = true;
+            } else {
+                $incremental_groups[] = $key;
+            }
+        }
+
+        $rebuilt_groups = [];
+        $affected_total = 0;
+
+        // --- Incremental rebuild path ---
+        if (!empty($incremental_groups)) {
+            // Lấy danh sách series cần rebuild (có ít nhất 1 field NULL)
+            // Dùng field đại diện của group đầu tiên để lọc series nhanh
+            $rep_field = $groups[$incremental_groups[0]]['fields'][0];
+
+            $series_sql   = "SELECT DISTINCT symbol, timeframe FROM {$table} WHERE `{$rep_field}` IS NULL";
+            $series_params = [];
+            if ($symbol !== '') { $series_sql .= ' AND symbol = %s';    $series_params[] = $symbol; }
+            if ($tf !== '')     { $series_sql .= ' AND timeframe = %s'; $series_params[] = $tf; }
+            $series_sql .= ' LIMIT %d';
+            $series_params[] = $batch;
+
+            $series_list = $series_params
+                ? $wpdb->get_results($wpdb->prepare($series_sql, $series_params), ARRAY_A)
+                : $wpdb->get_results($series_sql . " LIMIT {$batch}", ARRAY_A);
+
+            foreach ((array) $series_list as $series) {
+                $sym = strtoupper((string) ($series['symbol'] ?? ''));
+                $tf2 = strtoupper((string) ($series['timeframe'] ?? ''));
+                if ($sym === '' || $tf2 === '') {
+                    continue;
+                }
+                self::rebuild_ohlc_trading_index($sym, $tf2);
+                $affected = self::incremental_rebuild_ohlc_indicators($sym, $tf2, 1);
+                $affected_total += (int) $affected;
+            }
+
+            // Đếm lại số row còn thiếu sau rebuild
+            foreach ($incremental_groups as $key) {
+                $check_field = $groups[$key]['fields'][0];
+                $count_sql   = "SELECT COUNT(*) FROM {$table} WHERE `{$check_field}` IS NULL";
+                $count_params = [];
+                if ($symbol !== '') { $count_sql .= ' AND symbol = %s';    $count_params[] = $symbol; }
+                if ($tf !== '')     { $count_sql .= ' AND timeframe = %s'; $count_params[] = $tf; }
+                $remaining = $count_params
+                    ? (int) $wpdb->get_var($wpdb->prepare($count_sql, $count_params))
+                    : (int) $wpdb->get_var($count_sql);
+
+                $rebuilt_groups[$key] = [
+                    'affected'  => $affected_total,
+                    'remaining' => $remaining,
+                ];
+            }
+        }
+
+        // --- RS rebuild path ---
+        if ($rs_needed) {
+            $rs_series_sql    = "SELECT DISTINCT symbol, timeframe FROM {$table} WHERE rs_1m_by_exchange IS NULL";
+            $rs_series_params = [];
+            if ($symbol !== '') { $rs_series_sql .= ' AND symbol = %s';    $rs_series_params[] = $symbol; }
+            if ($tf !== '')     { $rs_series_sql .= ' AND timeframe = %s'; $rs_series_params[] = $tf; }
+            $rs_series_sql .= ' LIMIT %d';
+            $rs_series_params[] = $batch;
+
+            $rs_series = $rs_series_params
+                ? $wpdb->get_results($wpdb->prepare($rs_series_sql, $rs_series_params), ARRAY_A)
+                : $wpdb->get_results($rs_series_sql, ARRAY_A);
+
+            if (!empty($rs_series)) {
+                $event_times = $wpdb->get_col(
+                    "SELECT DISTINCT event_time FROM {$table}"
+                    . ($symbol !== '' ? $wpdb->prepare(' WHERE symbol = %s', $symbol) : '')
+                    . ' ORDER BY event_time ASC'
+                );
+                $timeframes_list = array_unique(array_column($rs_series, 'timeframe'));
+
+                self::rebuild_rs_1m_by_exchange($event_times, $timeframes_list);
+                self::rebuild_rs_1w_by_exchange($event_times, $timeframes_list);
+                self::rebuild_rs_3m_by_exchange($event_times, $timeframes_list);
+                self::rebuild_rs_exchange_signals($event_times, $timeframes_list);
+            }
+
+            $rebuilt_groups['rs_metrics'] = [
+                'remaining' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table} WHERE rs_1m_by_exchange IS NULL"),
+            ];
+        }
+
+        return [
+            'rebuilt_groups' => $rebuilt_groups,
+            'series_count'   => isset($series_list) ? count((array) $series_list) : 0,
+            'affected_rows'  => $affected_total,
+        ];
+    }
+
     private static function is_peak_hours_mode() {
         $degraded = get_option('lcni_seed_rebuild_degraded_mode', 'auto');
         if ($degraded === 'always') {
