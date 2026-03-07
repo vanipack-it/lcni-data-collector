@@ -1,4 +1,31 @@
 (function () {
+    function hexToRgb(hex) {
+        if (!hex) return null;
+        var normalized = String(hex).replace('#', '');
+        if (normalized.length === 3) {
+            normalized = normalized.split('').map(function (c) { return c + c; }).join('');
+        }
+        if (normalized.length !== 6) return null;
+        var intVal = parseInt(normalized, 16);
+        if (isNaN(intVal)) return null;
+        return {
+            r: (intVal >> 16) & 255,
+            g: (intVal >> 8) & 255,
+            b: intVal & 255
+        };
+    }
+
+    function blendColor(startHex, endHex, ratio) {
+        var start = hexToRgb(startHex);
+        var end = hexToRgb(endHex);
+        if (!start || !end) return '';
+        var clamp = Math.max(0, Math.min(1, ratio));
+        var r = Math.round(start.r + (end.r - start.r) * clamp);
+        var g = Math.round(start.g + (end.g - start.g) * clamp);
+        var b = Math.round(start.b + (end.b - start.b) * clamp);
+        return 'rgb(' + r + ',' + g + ',' + b + ')';
+    }
+
     function postData(metric, timeframe) {
         var form = new FormData();
         form.append('action', 'lcni_industry_data');
@@ -14,6 +41,36 @@
         }).then(function (response) {
             return response.json();
         });
+    }
+
+    function buildFilterUrl(industryName) {
+        var base = LCNIIndustryMonitor.filterBaseUrl || window.location.origin;
+        var url;
+        try {
+            url = new URL(base, window.location.origin);
+        } catch (e) {
+            url = new URL(window.location.href);
+        }
+        url.searchParams.set('apply_filter', '1');
+        url.searchParams.set('name_icb2', industryName || '');
+        return url.toString();
+    }
+
+    function applyGradient(tr, rowIndex, colIndex, totalRows, totalCols) {
+        var mode = LCNIIndustryMonitor.gradientMode || 'none';
+        if (mode === 'none') {
+            return;
+        }
+        var ratio = 0;
+        if (mode === 'row') {
+            ratio = totalRows > 1 ? rowIndex / (totalRows - 1) : 0;
+        } else if (mode === 'column') {
+            ratio = totalCols > 1 ? colIndex / (totalCols - 1) : 0;
+        }
+        var color = blendColor(LCNIIndustryMonitor.gradientStartColor, LCNIIndustryMonitor.gradientEndColor, ratio);
+        if (color) {
+            tr.children[colIndex + 1].style.backgroundColor = color;
+        }
     }
 
     function renderTable(data) {
@@ -32,18 +89,35 @@
             headerRow.appendChild(th);
         });
 
-        (data.rows || []).forEach(function (row) {
+        var rows = data.rows || [];
+        rows.forEach(function (row, rowIndex) {
             var tr = document.createElement('tr');
+            tr.className = 'lcni-industry-monitor__row';
+
+            if (LCNIIndustryMonitor.rowHoverEnabled) {
+                tr.classList.add('is-hoverable');
+            }
+
+            var industryName = row.industry || '';
+            tr.dataset.industry = industryName;
 
             var industryCell = document.createElement('th');
             industryCell.className = 'lcni-industry-monitor__sticky-col';
-            industryCell.textContent = row.industry || '';
+            industryCell.textContent = industryName;
             tr.appendChild(industryCell);
 
-            (row.values || []).forEach(function (value) {
+            (row.values || []).forEach(function (value, colIndex) {
                 var td = document.createElement('td');
                 td.textContent = (value === null || typeof value === 'undefined') ? '-' : String(value);
                 tr.appendChild(td);
+                applyGradient(tr, rowIndex, colIndex, rows.length, (row.values || []).length);
+            });
+
+            tr.addEventListener('click', function () {
+                if (!industryName) {
+                    return;
+                }
+                window.location.href = buildFilterUrl(industryName);
             });
 
             body.appendChild(tr);
@@ -74,6 +148,13 @@
         var timeframeEl = document.getElementById('lcni-industry-timeframe');
         if (!metricEl || !timeframeEl) {
             return;
+        }
+
+        if (LCNIIndustryMonitor.defaultMetric) {
+            metricEl.value = LCNIIndustryMonitor.defaultMetric;
+        }
+        if (LCNIIndustryMonitor.defaultTimeframe) {
+            timeframeEl.value = LCNIIndustryMonitor.defaultTimeframe;
         }
 
         metricEl.addEventListener('change', loadData);
