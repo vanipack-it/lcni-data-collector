@@ -15,6 +15,7 @@ class LCNI_DB {
     const RULE_REBUILD_BATCH_SIZE = 5;
     const SEED_REBUILD_QUEUE_OPTION = 'lcni_seed_rebuild_queue_v1';
     const SEED_REBUILD_WATERMARK_OPTION = 'lcni_seed_rebuild_watermark_v1';
+    const SEED_PIPELINE_LOCK_OPTION = 'lcni_seed_pipeline_lock_v1';
     const SCHEMA_ENSURE_LOCK_OPTION = 'lcni_schema_ensure_lock_v1';
     const SCHEMA_ENSURE_LOCK_TTL = 120;
     const DEFAULT_MARKETS = [
@@ -1603,6 +1604,25 @@ class LCNI_DB {
             'market_stats' => max(1, (int) get_option('lcni_seed_rebuild_market_batch_size', 120)),
         ];
         $batch_limits = array_merge($defaults, is_array($batch_sizes) ? $batch_sizes : []);
+        $serial_groups = !isset($batch_limits['serial_groups']) ? true : (bool) $batch_limits['serial_groups'];
+
+        if ($serial_groups) {
+            $active_group = '';
+            foreach (['series_metrics', 'rs_metrics', 'market_stats'] as $group_name) {
+                if (!empty($groups[$group_name])) {
+                    $active_group = $group_name;
+                    break;
+                }
+            }
+
+            if ($active_group !== '') {
+                foreach (['series_metrics', 'rs_metrics', 'market_stats'] as $group_name) {
+                    if ($group_name !== $active_group) {
+                        $batch_limits[$group_name] = 0;
+                    }
+                }
+            }
+        }
 
         $processed = [
             'series_metrics' => 0,
@@ -1717,6 +1737,7 @@ class LCNI_DB {
             'remaining' => $remaining,
             'done' => array_sum($remaining) === 0,
             'degraded_mode' => self::is_peak_hours_mode(),
+            'serial_groups' => $serial_groups,
         ];
     }
 
@@ -4086,15 +4107,77 @@ class LCNI_DB {
             return;
         }
 
-        foreach ($normalized_series as $series) {
-            self::rebuild_ohlc_series_metrics($series['symbol'], $series['timeframe']);
+        self::enqueue_seed_rebuild_tasks(
+            array_values($normalized_series),
+            array_keys($normalized_event_times),
+            array_keys($normalized_timeframes)
+        );
+
+        self::log_change(
+            'csv_import_post_process_queued',
+            sprintf(
+                'Queued post-import rebuild pipeline: series=%d, event_times=%d, timeframes=%d.',
+                count($normalized_series),
+                count($normalized_event_times),
+                count($normalized_timeframes)
+            )
+        );
+    }
+
+    public static function run_seed_serial_pipeline($context = 'cron', $batch_sizes = []) {
+        $now = time();
+        $lock_until = (int) get_option(self::SEED_PIPELINE_LOCK_OPTION, 0);
+        if ($lock_until > $now) {
+            return [
+                'status' => 'skipped_locked',
+                'context' => sanitize_key((string) $context),
+                'lock_until' => $lock_until,
+            ];
         }
 
-        self::rebuild_missing_ohlc_indicators(5);
-        self::rebuild_rs_1m_by_exchange(array_keys($normalized_event_times), array_keys($normalized_timeframes));
-        self::rebuild_rs_1w_by_exchange(array_keys($normalized_event_times), array_keys($normalized_timeframes));
-        self::rebuild_rs_3m_by_exchange([], array_keys($normalized_timeframes));
-        self::rebuild_rs_exchange_signals([], array_keys($normalized_timeframes));
+        update_option(self::SEED_PIPELINE_LOCK_OPTION, $now + 55, false);
+
+        try {
+            $import_lock_until = (int) get_option('lcni_csv_import_lock_until', 0);
+            $import_running = $import_lock_until > $now;
+
+            $seed_stats = LCNI_SeedRepository::get_dashboard_stats();
+            $seed_in_progress = ((int) ($seed_stats['total'] ?? 0) > 0) && ((int) ($seed_stats['done'] ?? 0) < (int) ($seed_stats['total'] ?? 0));
+
+            $optimization = self::optimize_seed_dataset();
+            $pipeline = self::process_seed_rebuild_pipeline(array_merge((array) $batch_sizes, ['serial_groups' => true]));
+
+            $snapshot = [
+                'status' => 'skipped',
+                'reason' => 'pipeline_not_done',
+            ];
+
+            if (!empty($pipeline['done']) && !$seed_in_progress && !$import_running) {
+                $snapshot = self::refresh_ohlc_latest_snapshot();
+            } elseif ($import_running) {
+                $snapshot = [
+                    'status' => 'skipped',
+                    'reason' => 'import_running',
+                ];
+            } elseif ($seed_in_progress) {
+                $snapshot = [
+                    'status' => 'skipped',
+                    'reason' => 'seed_running',
+                ];
+            }
+
+            return [
+                'status' => 'ok',
+                'context' => sanitize_key((string) $context),
+                'seed_in_progress' => $seed_in_progress,
+                'import_running' => $import_running,
+                'optimization' => $optimization,
+                'pipeline' => $pipeline,
+                'snapshot' => $snapshot,
+            ];
+        } finally {
+            delete_option(self::SEED_PIPELINE_LOCK_OPTION);
+        }
     }
 
     public static function count_csv_rows($file_path) {
