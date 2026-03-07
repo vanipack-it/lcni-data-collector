@@ -474,8 +474,26 @@ class LCNI_Settings {
                             'sticky_header' => isset($_POST['lcni_frontend_recommend_signal_style_sticky_header']) ? 1 : 0,
                             'filter_button_color' => $recommend_scalar_post('lcni_frontend_recommend_signal_style_filter_button_color', ''),
                             'filter_button_background' => $recommend_scalar_post('lcni_frontend_recommend_signal_style_filter_button_background', ''),
+                            'filter_button_height' => $recommend_scalar_post('lcni_frontend_recommend_signal_style_filter_button_height', 28),
+                            'filter_button_font_size' => $recommend_scalar_post('lcni_frontend_recommend_signal_style_filter_button_font_size', 14),
+                            'filter_button_icon' => $recommend_scalar_post('lcni_frontend_recommend_signal_style_filter_button_icon', 'fa-solid fa-filter'),
                             'watchlist_button_color' => $recommend_scalar_post('lcni_frontend_recommend_signal_style_watchlist_button_color', ''),
                             'watchlist_button_active_color' => $recommend_scalar_post('lcni_frontend_recommend_signal_style_watchlist_button_active_color', ''),
+                            'watchlist_button_height' => $recommend_scalar_post('lcni_frontend_recommend_signal_style_watchlist_button_height', 28),
+                            'watchlist_button_font_size' => $recommend_scalar_post('lcni_frontend_recommend_signal_style_watchlist_button_font_size', 15),
+                            'watchlist_button_icon' => $recommend_scalar_post('lcni_frontend_recommend_signal_style_watchlist_button_icon', 'fa-solid fa-heart'),
+                            'watchlist_button_active_icon' => $recommend_scalar_post('lcni_frontend_recommend_signal_style_watchlist_button_active_icon', 'fa-solid fa-check'),
+                            'filter_apply_button_color' => $recommend_scalar_post('lcni_frontend_recommend_signal_style_filter_apply_button_color', ''),
+                            'filter_apply_button_background' => $recommend_scalar_post('lcni_frontend_recommend_signal_style_filter_apply_button_background', ''),
+                            'filter_apply_button_hover_background' => $recommend_scalar_post('lcni_frontend_recommend_signal_style_filter_apply_button_hover_background', ''),
+                            'filter_apply_button_icon' => $recommend_scalar_post('lcni_frontend_recommend_signal_style_filter_apply_button_icon', 'fa-solid fa-check'),
+                            'filter_clear_button_color' => $recommend_scalar_post('lcni_frontend_recommend_signal_style_filter_clear_button_color', ''),
+                            'filter_clear_button_background' => $recommend_scalar_post('lcni_frontend_recommend_signal_style_filter_clear_button_background', ''),
+                            'filter_clear_button_hover_background' => $recommend_scalar_post('lcni_frontend_recommend_signal_style_filter_clear_button_hover_background', ''),
+                            'filter_clear_button_icon' => $recommend_scalar_post('lcni_frontend_recommend_signal_style_filter_clear_button_icon', 'fa-solid fa-eraser'),
+                            'filter_panel_button_height' => $recommend_scalar_post('lcni_frontend_recommend_signal_style_filter_panel_button_height', 32),
+                            'filter_panel_button_font_size' => $recommend_scalar_post('lcni_frontend_recommend_signal_style_filter_panel_button_font_size', 14),
+                            'table_max_height' => $recommend_scalar_post('lcni_frontend_recommend_signal_style_table_max_height', 560),
                             'cell_color_rules' => [
                                 'columns' => $recommend_rule_columns,
                                 'operators' => $recommend_rule_operators,
@@ -4483,8 +4501,26 @@ private function sanitize_module_title($value, $fallback) {
                 'sticky_header' => !empty($styles['sticky_header']) ? 1 : 0,
                 'filter_button_color' => sanitize_hex_color($styles['filter_button_color'] ?? '#374151') ?: '#374151',
                 'filter_button_background' => sanitize_hex_color($styles['filter_button_background'] ?? '#ffffff') ?: '#ffffff',
+                'filter_button_height' => max(20, min(60, (int) ($styles['filter_button_height'] ?? 28))),
+                'filter_button_font_size' => max(10, min(24, (int) ($styles['filter_button_font_size'] ?? 14))),
+                'filter_button_icon' => sanitize_text_field((string) ($styles['filter_button_icon'] ?? 'fa-solid fa-filter')),
                 'watchlist_button_color' => sanitize_hex_color($styles['watchlist_button_color'] ?? '#dc2626') ?: '#dc2626',
                 'watchlist_button_active_color' => sanitize_hex_color($styles['watchlist_button_active_color'] ?? '#16a34a') ?: '#16a34a',
+                'watchlist_button_height' => max(20, min(60, (int) ($styles['watchlist_button_height'] ?? 28))),
+                'watchlist_button_font_size' => max(10, min(24, (int) ($styles['watchlist_button_font_size'] ?? 15))),
+                'watchlist_button_icon' => sanitize_text_field((string) ($styles['watchlist_button_icon'] ?? 'fa-solid fa-heart')),
+                'watchlist_button_active_icon' => sanitize_text_field((string) ($styles['watchlist_button_active_icon'] ?? 'fa-solid fa-check')),
+                'filter_apply_button_color' => sanitize_hex_color($styles['filter_apply_button_color'] ?? '#ffffff') ?: '#ffffff',
+                'filter_apply_button_background' => sanitize_hex_color($styles['filter_apply_button_background'] ?? '#2563eb') ?: '#2563eb',
+                'filter_apply_button_hover_background' => sanitize_hex_color($styles['filter_apply_button_hover_background'] ?? '#1d4ed8') ?: '#1d4ed8',
+                'filter_apply_button_icon' => sanitize_text_field((string) ($styles['filter_apply_button_icon'] ?? 'fa-solid fa-check')),
+                'filter_clear_button_color' => sanitize_hex_color($styles['filter_clear_button_color'] ?? '#111827') ?: '#111827',
+                'filter_clear_button_background' => sanitize_hex_color($styles['filter_clear_button_background'] ?? '#e5e7eb') ?: '#e5e7eb',
+                'filter_clear_button_hover_background' => sanitize_hex_color($styles['filter_clear_button_hover_background'] ?? '#d1d5db') ?: '#d1d5db',
+                'filter_clear_button_icon' => sanitize_text_field((string) ($styles['filter_clear_button_icon'] ?? 'fa-solid fa-eraser')),
+                'filter_panel_button_height' => max(24, min(64, (int) ($styles['filter_panel_button_height'] ?? 32))),
+                'filter_panel_button_font_size' => max(10, min(24, (int) ($styles['filter_panel_button_font_size'] ?? 14))),
+                'table_max_height' => max(240, min(1600, (int) ($styles['table_max_height'] ?? 560))),
                 'cell_color_rules' => array_slice($cell_color_rules, 0, 100),
             ],
         ];
@@ -4565,8 +4601,27 @@ private function sanitize_module_title($value, $fallback) {
                     <h4>Nhóm nút trong bảng</h4>
                     <p><label>Màu nút filter <input type="color" name="lcni_frontend_recommend_signal_style_filter_button_color" value="<?php echo esc_attr((string) ($settings['styles']['filter_button_color'] ?? '#374151')); ?>"></label></p>
                     <p><label>Nền nút filter <input type="color" name="lcni_frontend_recommend_signal_style_filter_button_background" value="<?php echo esc_attr((string) ($settings['styles']['filter_button_background'] ?? '#ffffff')); ?>"></label></p>
+                    <p><label>Chiều cao nút filter <input type="number" min="20" max="60" name="lcni_frontend_recommend_signal_style_filter_button_height" value="<?php echo esc_attr((string) ($settings['styles']['filter_button_height'] ?? 28)); ?>"> px</label></p>
+                    <p><label>Font size nút filter <input type="number" min="10" max="24" name="lcni_frontend_recommend_signal_style_filter_button_font_size" value="<?php echo esc_attr((string) ($settings['styles']['filter_button_font_size'] ?? 14)); ?>"> px</label></p>
+                    <p><label>Icon nút filter (Font Awesome class) <input type="text" name="lcni_frontend_recommend_signal_style_filter_button_icon" value="<?php echo esc_attr((string) ($settings['styles']['filter_button_icon'] ?? 'fa-solid fa-filter')); ?>"></label></p>
                     <p><label>Màu nút watchlist <input type="color" name="lcni_frontend_recommend_signal_style_watchlist_button_color" value="<?php echo esc_attr((string) ($settings['styles']['watchlist_button_color'] ?? '#dc2626')); ?>"></label></p>
                     <p><label>Màu nút watchlist (active) <input type="color" name="lcni_frontend_recommend_signal_style_watchlist_button_active_color" value="<?php echo esc_attr((string) ($settings['styles']['watchlist_button_active_color'] ?? '#16a34a')); ?>"></label></p>
+                    <p><label>Chiều cao nút watchlist <input type="number" min="20" max="60" name="lcni_frontend_recommend_signal_style_watchlist_button_height" value="<?php echo esc_attr((string) ($settings['styles']['watchlist_button_height'] ?? 28)); ?>"> px</label></p>
+                    <p><label>Font size nút watchlist <input type="number" min="10" max="24" name="lcni_frontend_recommend_signal_style_watchlist_button_font_size" value="<?php echo esc_attr((string) ($settings['styles']['watchlist_button_font_size'] ?? 15)); ?>"> px</label></p>
+                    <p><label>Icon nút watchlist <input type="text" name="lcni_frontend_recommend_signal_style_watchlist_button_icon" value="<?php echo esc_attr((string) ($settings['styles']['watchlist_button_icon'] ?? 'fa-solid fa-heart')); ?>"></label></p>
+                    <p><label>Icon nút watchlist (active) <input type="text" name="lcni_frontend_recommend_signal_style_watchlist_button_active_icon" value="<?php echo esc_attr((string) ($settings['styles']['watchlist_button_active_icon'] ?? 'fa-solid fa-check')); ?>"></label></p>
+                    <h4>Nút trong popup lọc</h4>
+                    <p><label>Nền nút Apply <input type="color" name="lcni_frontend_recommend_signal_style_filter_apply_button_background" value="<?php echo esc_attr((string) ($settings['styles']['filter_apply_button_background'] ?? '#2563eb')); ?>"></label></p>
+                    <p><label>Màu chữ nút Apply <input type="color" name="lcni_frontend_recommend_signal_style_filter_apply_button_color" value="<?php echo esc_attr((string) ($settings['styles']['filter_apply_button_color'] ?? '#ffffff')); ?>"></label></p>
+                    <p><label>Nền hover nút Apply <input type="color" name="lcni_frontend_recommend_signal_style_filter_apply_button_hover_background" value="<?php echo esc_attr((string) ($settings['styles']['filter_apply_button_hover_background'] ?? '#1d4ed8')); ?>"></label></p>
+                    <p><label>Icon nút Apply <input type="text" name="lcni_frontend_recommend_signal_style_filter_apply_button_icon" value="<?php echo esc_attr((string) ($settings['styles']['filter_apply_button_icon'] ?? 'fa-solid fa-check')); ?>"></label></p>
+                    <p><label>Nền nút Clear <input type="color" name="lcni_frontend_recommend_signal_style_filter_clear_button_background" value="<?php echo esc_attr((string) ($settings['styles']['filter_clear_button_background'] ?? '#e5e7eb')); ?>"></label></p>
+                    <p><label>Màu chữ nút Clear <input type="color" name="lcni_frontend_recommend_signal_style_filter_clear_button_color" value="<?php echo esc_attr((string) ($settings['styles']['filter_clear_button_color'] ?? '#111827')); ?>"></label></p>
+                    <p><label>Nền hover nút Clear <input type="color" name="lcni_frontend_recommend_signal_style_filter_clear_button_hover_background" value="<?php echo esc_attr((string) ($settings['styles']['filter_clear_button_hover_background'] ?? '#d1d5db')); ?>"></label></p>
+                    <p><label>Icon nút Clear <input type="text" name="lcni_frontend_recommend_signal_style_filter_clear_button_icon" value="<?php echo esc_attr((string) ($settings['styles']['filter_clear_button_icon'] ?? 'fa-solid fa-eraser')); ?>"></label></p>
+                    <p><label>Chiều cao nút popup filter <input type="number" min="24" max="64" name="lcni_frontend_recommend_signal_style_filter_panel_button_height" value="<?php echo esc_attr((string) ($settings['styles']['filter_panel_button_height'] ?? 32)); ?>"> px</label></p>
+                    <p><label>Font size nút popup filter <input type="number" min="10" max="24" name="lcni_frontend_recommend_signal_style_filter_panel_button_font_size" value="<?php echo esc_attr((string) ($settings['styles']['filter_panel_button_font_size'] ?? 14)); ?>"> px</label></p>
+                    <p><label>Chiều cao vùng cuộn bảng <input type="number" min="240" max="1600" name="lcni_frontend_recommend_signal_style_table_max_height" value="<?php echo esc_attr((string) ($settings['styles']['table_max_height'] ?? 560)); ?>"> px</label></p>
                     <h4>Cell color rules</h4>
                     <p>Cấu hình màu theo giá trị ô để frontend hiển thị theo điều kiện.</p>
                     <?php $recommend_rules = (array) ($settings['styles']['cell_color_rules'] ?? []); ?>
