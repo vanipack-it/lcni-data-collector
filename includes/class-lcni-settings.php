@@ -20,6 +20,8 @@ class LCNI_Settings {
         add_action('wp_ajax_lcni_report_snapshot', [$this, 'ajax_report_snapshot']);
         add_action('wp_ajax_lcni_chart_builder_fields', [$this, 'ajax_chart_builder_fields']);
         add_action('wp_ajax_lcni_chart_builder_filter_values', [$this, 'ajax_chart_builder_filter_values']);
+        add_action('wp_ajax_lcni_indicator_check', [$this, 'ajax_indicator_check']);
+        add_action('wp_ajax_lcni_indicator_rebuild', [$this, 'ajax_indicator_rebuild']);
     }
 
     public function menu() {
@@ -300,8 +302,8 @@ class LCNI_Settings {
             }
         } elseif ($action === 'run_seed_batch') {
             $summary = LCNI_SeedScheduler::run_batch();
-            $pipeline = LCNI_DB::run_seed_serial_pipeline('manual_run_seed_batch');
-            $this->set_notice('success', 'Đã chạy batch tiếp theo: ' . wp_json_encode(['seed' => $summary, 'pipeline' => $pipeline]));
+            LCNI_DB::run_compute_pipeline_cron();
+            $this->set_notice('success', 'Đã chạy batch tiếp theo: ' . wp_json_encode(['seed' => $summary]));
         } elseif ($action === 'pause_seed') {
             LCNI_SeedScheduler::pause();
             $this->set_notice('success', 'Đã tạm dừng seed queue.');
@@ -1130,7 +1132,7 @@ class LCNI_Settings {
                     array_values(array_keys($accumulated_timeframes))
                 );
                 $this->release_csv_import_lock();
-                LCNI_DB::run_seed_serial_pipeline('csv_import_finalize');
+                LCNI_DB::run_compute_pipeline_cron();
             }
 
             $status['message'] = sprintf(
@@ -1371,6 +1373,52 @@ class LCNI_Settings {
 
         $status = LCNI_DB::get_rule_rebuild_status();
         wp_send_json_success($status);
+    }
+
+    /**
+     * AJAX: kiểm tra số lượng row bị thiếu cho từng nhóm indicator.
+     * POST params: nonce, groups[] (danh sách group key)
+     */
+    public function ajax_indicator_check() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Forbidden'], 403);
+        }
+
+        check_ajax_referer('lcni_indicator_rebuild_nonce', 'nonce');
+
+        $requested_groups = isset($_POST['groups']) && is_array($_POST['groups'])
+            ? array_map('sanitize_key', (array) $_POST['groups'])
+            : array_keys(LCNI_DB::get_indicator_field_groups());
+
+        $result = LCNI_DB::count_missing_indicator_rows($requested_groups);
+        wp_send_json_success($result);
+    }
+
+    /**
+     * AJAX: rebuild indicator cho các group được chọn.
+     * POST params: nonce, groups[], symbol (optional), timeframe (optional)
+     */
+    public function ajax_indicator_rebuild() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Forbidden'], 403);
+        }
+
+        check_ajax_referer('lcni_indicator_rebuild_nonce', 'nonce');
+
+        $groups = isset($_POST['groups']) && is_array($_POST['groups'])
+            ? array_map('sanitize_key', (array) $_POST['groups'])
+            : [];
+
+        if (empty($groups)) {
+            wp_send_json_error(['message' => 'Không có nhóm field nào được chọn.']);
+        }
+
+        $symbol    = isset($_POST['symbol'])    ? strtoupper(sanitize_text_field((string) $_POST['symbol']))    : '';
+        $timeframe = isset($_POST['timeframe']) ? strtoupper(sanitize_text_field((string) $_POST['timeframe'])) : '';
+        $batch     = max(1, min(500, (int) ($POST['batch'] ?? 50)));
+
+        $result = LCNI_DB::rebuild_indicators_for_groups($groups, $symbol, $timeframe, $batch);
+        wp_send_json_success($result);
     }
 
     private function format_mysql_datetime_to_gmt7($datetime) {
@@ -1826,6 +1874,207 @@ class LCNI_Settings {
                 <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_redirect_tab" value="seed_dashboard"><input type="hidden" name="lcni_admin_action" value="run_seed_batch"><?php submit_button('Run 1 Batch', 'secondary', 'submit', false); ?></form>
                 <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_redirect_tab" value="seed_dashboard"><input type="hidden" name="lcni_admin_action" value="pause_seed"><?php submit_button('Pause Seed', 'secondary', 'submit', false); ?></form>
                 <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_redirect_tab" value="seed_dashboard"><input type="hidden" name="lcni_admin_action" value="resume_seed"><?php submit_button('Resume Seed', 'secondary', 'submit', false); ?></form>
+
+                <?php /* ===== INDICATOR REBUILD TOOL ===== */ ?>
+                <div id="lcni-indicator-rebuild-tool" style="margin-top:20px;padding:16px;background:#fff;border:1px solid #dcdcde;border-radius:6px;max-width:900px;">
+                    <h3 style="margin-top:0;margin-bottom:4px;">🔧 Kiểm tra &amp; Rebuild Indicator</h3>
+                    <p style="margin-top:0;color:#50575e;font-size:13px;">Chọn nhóm indicator cần kiểm tra hoặc rebuild. Nhấn <strong>Kiểm tra</strong> để đếm row thiếu dữ liệu, sau đó nhấn <strong>Rebuild</strong> để tính lại.</p>
+
+                    <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px;">
+                        <div>
+                            <label style="display:block;font-size:12px;font-weight:600;margin-bottom:3px;">Symbol <small style="font-weight:400;">(để trống = tất cả)</small></label>
+                            <input type="text" id="lcni-irt-symbol" placeholder="VD: VNM, HPG" style="width:140px;text-transform:uppercase;" oninput="this.value=this.value.toUpperCase()">
+                        </div>
+                        <div>
+                            <label style="display:block;font-size:12px;font-weight:600;margin-bottom:3px;">Timeframe</label>
+                            <select id="lcni-irt-timeframe">
+                                <option value="">Tất cả</option>
+                                <option value="1D">1D</option>
+                                <option value="1W">1W</option>
+                                <option value="1M">1M</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="display:block;font-size:12px;font-weight:600;margin-bottom:3px;">Batch/tick</label>
+                            <input type="number" id="lcni-irt-batch" value="50" min="1" max="500" style="width:80px;">
+                        </div>
+                        <button type="button" id="lcni-irt-check-btn" class="button button-secondary">🔍 Kiểm tra thiếu</button>
+                        <button type="button" id="lcni-irt-rebuild-btn" class="button button-primary" disabled>⚡ Rebuild đã chọn</button>
+                        <button type="button" id="lcni-irt-select-all-btn" class="button button-link" style="align-self:flex-end;">Chọn tất cả</button>
+                        <button type="button" id="lcni-irt-deselect-all-btn" class="button button-link" style="align-self:flex-end;">Bỏ chọn</button>
+                    </div>
+
+                    <?php
+                    $indicator_groups = LCNI_DB::get_indicator_field_groups();
+                    ?>
+                    <table class="widefat striped" id="lcni-irt-table" style="table-layout:fixed;">
+                        <thead>
+                            <tr>
+                                <th style="width:36px;"><input type="checkbox" id="lcni-irt-check-all" title="Chọn tất cả"></th>
+                                <th>Nhóm indicator</th>
+                                <th>Các field</th>
+                                <th style="width:130px;">Row thiếu</th>
+                                <th style="width:160px;">Trạng thái</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($indicator_groups as $group_key => $group) : ?>
+                            <tr id="lcni-irt-row-<?php echo esc_attr($group_key); ?>" data-group="<?php echo esc_attr($group_key); ?>">
+                                <td><input type="checkbox" class="lcni-irt-group-cb" value="<?php echo esc_attr($group_key); ?>"></td>
+                                <td><strong><?php echo esc_html($group['label']); ?></strong></td>
+                                <td><code style="font-size:11px;word-break:break-all;"><?php echo esc_html(implode(', ', $group['fields'])); ?></code></td>
+                                <td class="lcni-irt-count" style="font-weight:600;">—</td>
+                                <td class="lcni-irt-status" style="color:#50575e;font-size:12px;">Chưa kiểm tra</td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+
+                    <div id="lcni-irt-log" style="margin-top:10px;min-height:32px;padding:8px 10px;background:#f6f7f7;border:1px solid #dcdcde;border-radius:4px;font-size:12px;font-family:monospace;white-space:pre-wrap;display:none;max-height:180px;overflow-y:auto;"></div>
+                </div>
+
+                <script>
+                (function() {
+                    const nonce = '<?php echo esc_js(wp_create_nonce('lcni_indicator_rebuild_nonce')); ?>';
+                    const ajaxUrl = '<?php echo esc_js(admin_url('admin-ajax.php')); ?>';
+
+                    const checkBtn    = document.getElementById('lcni-irt-check-btn');
+                    const rebuildBtn  = document.getElementById('lcni-irt-rebuild-btn');
+                    const selectAll   = document.getElementById('lcni-irt-select-all-btn');
+                    const deselectAll = document.getElementById('lcni-irt-deselect-all-btn');
+                    const checkAll    = document.getElementById('lcni-irt-check-all');
+                    const logEl       = document.getElementById('lcni-irt-log');
+                    const symbolEl    = document.getElementById('lcni-irt-symbol');
+                    const tfEl        = document.getElementById('lcni-irt-timeframe');
+                    const batchEl     = document.getElementById('lcni-irt-batch');
+
+                    function log(msg) {
+                        logEl.style.display = 'block';
+                        logEl.textContent += '[' + new Date().toLocaleTimeString('vi-VN') + '] ' + msg + '
+';
+                        logEl.scrollTop = logEl.scrollHeight;
+                    }
+
+                    function getCheckedGroups() {
+                        return Array.from(document.querySelectorAll('.lcni-irt-group-cb:checked')).map(cb => cb.value);
+                    }
+
+                    function getAllGroups() {
+                        return Array.from(document.querySelectorAll('.lcni-irt-group-cb')).map(cb => cb.value);
+                    }
+
+                    function setRowStatus(group, count, statusText, statusColor) {
+                        const row = document.getElementById('lcni-irt-row-' + group);
+                        if (!row) return;
+                        row.querySelector('.lcni-irt-count').textContent = count !== null ? count.toLocaleString('vi-VN') : '—';
+                        const statusEl = row.querySelector('.lcni-irt-status');
+                        statusEl.textContent = statusText;
+                        statusEl.style.color  = statusColor || '#50575e';
+                        if (count > 0) {
+                            row.style.background = '#fff8e5';
+                        } else if (count === 0) {
+                            row.style.background = '#ecf9f1';
+                        } else {
+                            row.style.background = '';
+                        }
+                    }
+
+                    function updateRebuildBtnState() {
+                        rebuildBtn.disabled = getCheckedGroups().length === 0;
+                    }
+
+                    document.querySelectorAll('.lcni-irt-group-cb').forEach(cb => {
+                        cb.addEventListener('change', updateRebuildBtnState);
+                    });
+
+                    checkAll.addEventListener('change', function() {
+                        document.querySelectorAll('.lcni-irt-group-cb').forEach(cb => { cb.checked = checkAll.checked; });
+                        updateRebuildBtnState();
+                    });
+
+                    selectAll.addEventListener('click', function() {
+                        document.querySelectorAll('.lcni-irt-group-cb').forEach(cb => { cb.checked = true; });
+                        checkAll.checked = true;
+                        updateRebuildBtnState();
+                    });
+
+                    deselectAll.addEventListener('click', function() {
+                        document.querySelectorAll('.lcni-irt-group-cb').forEach(cb => { cb.checked = false; });
+                        checkAll.checked = false;
+                        updateRebuildBtnState();
+                    });
+
+                    checkBtn.addEventListener('click', function() {
+                        const groups = getAllGroups();
+                        checkBtn.disabled = true;
+                        checkBtn.textContent = '⏳ Đang kiểm tra...';
+                        log('Kiểm tra ' + groups.length + ' nhóm...');
+
+                        const body = new URLSearchParams();
+                        body.append('action', 'lcni_indicator_check');
+                        body.append('nonce', nonce);
+                        groups.forEach(g => body.append('groups[]', g));
+                        if (symbolEl.value.trim()) body.append('symbol', symbolEl.value.trim());
+                        if (tfEl.value) body.append('timeframe', tfEl.value);
+
+                        fetch(ajaxUrl, { method: 'POST', body })
+                            .then(r => r.json())
+                            .then(json => {
+                                if (!json.success) { log('Lỗi: ' + (json.data?.message || 'unknown')); return; }
+                                const data = json.data;
+                                let totalMissing = 0;
+                                groups.forEach(g => {
+                                    const info = data[g] || {};
+                                    const count = info.missing_rows ?? null;
+                                    if (count !== null) totalMissing += count;
+                                    const statusText = count === null ? 'Lỗi' : (count === 0 ? '✅ Đầy đủ' : '⚠️ Thiếu ' + count.toLocaleString('vi-VN') + ' row');
+                                    const statusColor = count === null ? '#d63638' : (count === 0 ? '#00a32a' : '#996800');
+                                    setRowStatus(g, count, statusText, statusColor);
+                                });
+                                log('Xong. Tổng row thiếu: ' + totalMissing.toLocaleString('vi-VN'));
+                            })
+                            .catch(e => log('Lỗi mạng: ' + e.message))
+                            .finally(() => { checkBtn.disabled = false; checkBtn.textContent = '🔍 Kiểm tra thiếu'; });
+                    });
+
+                    rebuildBtn.addEventListener('click', function() {
+                        const groups = getCheckedGroups();
+                        if (!groups.length) return;
+                        if (!confirm('Rebuild ' + groups.length + ' nhóm indicator?
+Thao tác này ghi đè dữ liệu cũ.')) return;
+
+                        rebuildBtn.disabled = true;
+                        rebuildBtn.textContent = '⏳ Đang rebuild...';
+                        groups.forEach(g => setRowStatus(g, null, '⏳ Đang tính...', '#2271b1'));
+                        log('Bắt đầu rebuild: ' + groups.join(', '));
+
+                        const body = new URLSearchParams();
+                        body.append('action', 'lcni_indicator_rebuild');
+                        body.append('nonce', nonce);
+                        groups.forEach(g => body.append('groups[]', g));
+                        if (symbolEl.value.trim()) body.append('symbol', symbolEl.value.trim());
+                        if (tfEl.value) body.append('timeframe', tfEl.value);
+                        body.append('batch', batchEl.value || '50');
+
+                        fetch(ajaxUrl, { method: 'POST', body })
+                            .then(r => r.json())
+                            .then(json => {
+                                if (!json.success) { log('Lỗi: ' + (json.data?.message || 'unknown')); return; }
+                                const data = json.data;
+                                log('Rebuild xong: ' + JSON.stringify(data));
+                                const rebuilt = data.rebuilt_groups || {};
+                                groups.forEach(g => {
+                                    const info = rebuilt[g] || {};
+                                    setRowStatus(g, info.remaining ?? null,
+                                        info.affected !== undefined ? '✅ Đã rebuild ' + info.affected + ' row' : '✅ Xong',
+                                        '#00a32a');
+                                });
+                            })
+                            .catch(e => log('Lỗi mạng: ' + e.message))
+                            .finally(() => { rebuildBtn.disabled = false; rebuildBtn.textContent = '⚡ Rebuild đã chọn'; });
+                    });
+                })();
+                </script>
 
                 <h2 style="margin-top:20px;">Seed Dashboard</h2>
                 <p id="lcni-dashboard-updated-at" style="margin-top:0;color:#50575e;">Cập nhật realtime mỗi 5 giây.</p>
