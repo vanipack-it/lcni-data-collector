@@ -300,10 +300,8 @@ class LCNI_Settings {
             }
         } elseif ($action === 'run_seed_batch') {
             $summary = LCNI_SeedScheduler::run_batch();
-            $optimization = LCNI_DB::optimize_seed_dataset();
-            LCNI_DB::process_seed_rebuild_pipeline();
-            LCNI_DB::refresh_ohlc_latest_snapshot();
-            $this->set_notice('success', 'Đã chạy batch tiếp theo: ' . wp_json_encode(['seed' => $summary, 'optimization' => $optimization]));
+            $pipeline = LCNI_DB::run_seed_serial_pipeline('manual_run_seed_batch');
+            $this->set_notice('success', 'Đã chạy batch tiếp theo: ' . wp_json_encode(['seed' => $summary, 'pipeline' => $pipeline]));
         } elseif ($action === 'pause_seed') {
             LCNI_SeedScheduler::pause();
             $this->set_notice('success', 'Đã tạm dừng seed queue.');
@@ -1132,7 +1130,7 @@ class LCNI_Settings {
                     array_values(array_keys($accumulated_timeframes))
                 );
                 $this->release_csv_import_lock();
-                LCNI_DB::optimize_seed_dataset();
+                LCNI_DB::run_seed_serial_pipeline('csv_import_finalize');
             }
 
             $status['message'] = sprintf(
