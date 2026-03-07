@@ -1,0 +1,54 @@
+.lcni-industry-monitor {
+    width: 100%;
+    max-width: 100%;
+}
+
+.lcni-industry-monitor__controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 12px;
+    align-items: center;
+}
+
+.lcni-industry-monitor__table-wrap {
+    overflow-x: auto;
+    width: 100%;
+    border: 1px solid #ddd;
+}
+
+.lcni-industry-monitor__table {
+    border-collapse: collapse;
+    width: max-content;
+    min-width: 100%;
+}
+
+.lcni-industry-monitor__table th,
+.lcni-industry-monitor__table td {
+    border: 1px solid #e2e2e2;
+    padding: 8px 10px;
+    white-space: nowrap;
+    background: #fff;
+}
+
+.lcni-industry-monitor__table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: #f7f7f7;
+}
+
+.lcni-industry-monitor__table thead th:first-child,
+.lcni-industry-monitor__sticky-col {
+    position: sticky;
+    left: 0;
+    z-index: 4;
+    background: #fafafa;
+}
+
+@media (max-width: 768px) {
+    .lcni-industry-monitor__controls {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
