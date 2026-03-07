@@ -78,16 +78,22 @@ class ShortcodeManager {
         $row_hover_background = (string) ($styles['row_hover_bg'] ?? '#f3f4f6');
         $sticky_column = (string) ($styles['sticky_column'] ?? 'signal__symbol');
         $sticky_header_enabled = !empty($styles['sticky_header']);
-        $wrapper_style = sprintf('font-family:%s;color:%s;background:%s;border:%s;border-radius:%dpx;overflow:auto;position:relative;-webkit-overflow-scrolling:touch;',
+        $filter_button_color = (string) ($styles['filter_button_color'] ?? '#374151');
+        $filter_button_background = (string) ($styles['filter_button_background'] ?? '#ffffff');
+        $watchlist_button_color = (string) ($styles['watchlist_button_color'] ?? '#dc2626');
+        $watchlist_button_active_color = (string) ($styles['watchlist_button_active_color'] ?? '#16a34a');
+        $wrapper_style = sprintf('font-family:%s;color:%s;background:%s;border:%s;border-radius:%dpx;overflow-x:auto;overflow-y:%s;position:relative;-webkit-overflow-scrolling:touch;--lcni-signals-filter-btn-color:%s;--lcni-signals-filter-btn-bg:%s;--lcni-signals-watchlist-btn-color:%s;--lcni-signals-watchlist-btn-active-color:%s;',
             esc_attr((string) ($styles['font'] ?? 'inherit')),
             esc_attr((string) ($styles['text_color'] ?? '#111827')),
             esc_attr((string) ($styles['background'] ?? '#ffffff')),
             esc_attr((string) ($styles['border'] ?? '1px solid #e5e7eb')),
-            (int) ($styles['border_radius'] ?? 8)
+            (int) ($styles['border_radius'] ?? 8),
+            $sticky_header_enabled ? 'visible' : 'auto',
+            esc_attr($filter_button_color),
+            esc_attr($filter_button_background),
+            esc_attr($watchlist_button_color),
+            esc_attr($watchlist_button_active_color)
         );
-        if ($sticky_header_enabled) {
-            $wrapper_style .= 'max-height:min(70vh,720px);overscroll-behavior:contain;';
-        }
 
         ob_start();
         echo '<div class="lcni-recommend-signals-table" data-lcni-signals-table data-watchlist-rest-base="' . esc_attr($watchlist_rest_base) . '" data-login-url="' . esc_url($login_url) . '" data-register-url="' . esc_url($register_url) . '" data-is-logged-in="' . (is_user_logged_in() ? '1' : '0') . '" data-rest-nonce="' . esc_attr(wp_create_nonce('wp_rest')) . '" style="' . $wrapper_style . '">';
@@ -160,13 +166,13 @@ class ShortcodeManager {
 
         return <<<'HTML'
 <style>
-.lcni-signals-filter-btn{margin-left:6px;border:0;background:transparent;cursor:pointer;color:inherit;padding:2px}
+.lcni-signals-filter-btn{margin-left:6px;border:0;background:var(--lcni-signals-filter-btn-bg,#ffffff);cursor:pointer;color:var(--lcni-signals-filter-btn-color,#374151);padding:2px;border-radius:4px}
 .lcni-signals-filter-pop{position:fixed;z-index:999999;background:#fff;border:1px solid #d1d5db;border-radius:8px;padding:10px;min-width:220px;max-width:320px;max-height:300px;overflow:auto;box-shadow:0 10px 30px rgba(17,24,39,.2)}
 .lcni-signals-filter-pop [data-lcni-values]{display:grid;gap:4px;max-height:180px;overflow:auto;margin:8px 0}
 .lcni-signals-filter-actions{display:flex;gap:8px;justify-content:flex-end}
 .lcni-signals-symbol-cell{display:flex;gap:8px;align-items:center}
-.lcni-signals-watchlist-btn{border:0;background:transparent;cursor:pointer;color:#dc2626;padding:0}
-.lcni-signals-watchlist-btn.is-active{color:#16a34a}
+.lcni-signals-watchlist-btn{border:0;background:transparent;cursor:pointer;color:var(--lcni-signals-watchlist-btn-color,#dc2626);padding:0}
+.lcni-signals-watchlist-btn.is-active{color:var(--lcni-signals-watchlist-btn-active-color,#16a34a)}
 .lcni-signals-modal{position:fixed;inset:0;background:rgba(17,24,39,.45);display:flex;align-items:center;justify-content:center;z-index:999999}
 .lcni-signals-modal-card{background:#fff;border-radius:10px;padding:14px;width:min(92vw,420px)}
 .lcni-signals-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
@@ -298,6 +304,10 @@ HTML;
                     ? sanitize_key((string) ($styles['sticky_column'] ?? 'signal__symbol'))
                     : ($columns[0] ?? 'signal__symbol'),
                 'sticky_header' => !empty($styles['sticky_header']) ? 1 : 0,
+                'filter_button_color' => sanitize_hex_color($styles['filter_button_color'] ?? '#374151') ?: '#374151',
+                'filter_button_background' => sanitize_hex_color($styles['filter_button_background'] ?? '#ffffff') ?: '#ffffff',
+                'watchlist_button_color' => sanitize_hex_color($styles['watchlist_button_color'] ?? '#dc2626') ?: '#dc2626',
+                'watchlist_button_active_color' => sanitize_hex_color($styles['watchlist_button_active_color'] ?? '#16a34a') ?: '#16a34a',
                 'cell_color_rules' => $this->sanitize_cell_color_rules($styles['cell_color_rules'] ?? [], $columns),
             ],
         ];
