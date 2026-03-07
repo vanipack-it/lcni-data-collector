@@ -18,6 +18,7 @@ class LCNI_DB {
     const SEED_PIPELINE_LOCK_OPTION = 'lcni_seed_pipeline_lock_v1';
     const SCHEMA_ENSURE_LOCK_OPTION = 'lcni_schema_ensure_lock_v1';
     const SCHEMA_ENSURE_LOCK_TTL = 120;
+    const INDICATOR_LOOKBACK = 260;
     const DEFAULT_MARKETS = [
         ['market_id' => '1', 'exchange' => 'UPCOM'],
         ['market_id' => '2', 'exchange' => 'HOSE'],
@@ -126,6 +127,7 @@ class LCNI_DB {
                 $wpdb->prefix . 'lcni_industry_index',
                 $wpdb->prefix . 'lcni_industry_metrics',
                 $wpdb->prefix . 'lcni_charts',
+                $wpdb->prefix . 'lcni_rebuild_queue',
             ];
 
             foreach ($required_tables as $table) {
@@ -228,6 +230,7 @@ class LCNI_DB {
         $industry_index_table = $wpdb->prefix . 'lcni_industry_index';
         $industry_metrics_table = $wpdb->prefix . 'lcni_industry_metrics';
         $charts_table = $wpdb->prefix . 'lcni_charts';
+        $rebuild_queue_table = $wpdb->prefix . 'lcni_rebuild_queue';
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
@@ -677,6 +680,20 @@ class LCNI_DB {
             KEY idx_data_source (data_source)
         ) {$charset_collate};";
 
+        $sql_rebuild_queue = "CREATE TABLE {$rebuild_queue_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            symbol VARCHAR(20) NOT NULL,
+            timeframe VARCHAR(10) NOT NULL,
+            priority INT NOT NULL DEFAULT 100,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY uniq_symbol_timeframe_status (symbol, timeframe, status),
+            KEY idx_symbol_timeframe (symbol, timeframe),
+            KEY idx_status (status)
+        ) {$charset_collate};";
+
         dbDelta($sql_ohlc);
         dbDelta($sql_security_definition);
         dbDelta($sql_symbols);
@@ -698,6 +715,7 @@ class LCNI_DB {
         dbDelta($sql_industry_index);
         dbDelta($sql_industry_metrics);
         dbDelta($sql_charts);
+        dbDelta($sql_rebuild_queue);
 
         self::seed_market_reference_data($market_table);
         self::seed_index_name_reference_data($index_name_table);
@@ -1739,6 +1757,116 @@ class LCNI_DB {
             'degraded_mode' => self::is_peak_hours_mode(),
             'serial_groups' => $serial_groups,
         ];
+    }
+
+
+    public static function enqueue_rebuild_task($symbol, $timeframe, $priority = 100, $from_trading_index = null) {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_rebuild_queue';
+        $symbol = strtoupper(trim((string) $symbol));
+        $timeframe = strtoupper(trim((string) $timeframe));
+        if ($symbol === '' || $timeframe === '') {
+            return false;
+        }
+
+        $sql = "INSERT INTO {$table} (symbol, timeframe, priority, status, created_at)
+            VALUES (%s, %s, %d, 'pending', %s)
+            ON DUPLICATE KEY UPDATE priority = LEAST(priority, VALUES(priority)), status = 'pending', updated_at = VALUES(created_at)";
+
+        return $wpdb->query(
+            $wpdb->prepare(
+                $sql,
+                $symbol,
+                $timeframe,
+                (int) $priority,
+                current_time('mysql')
+            )
+        ) !== false;
+    }
+
+    public static function dequeue_rebuild_batch($limit = 20) {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_rebuild_queue';
+        $limit = max(1, (int) $limit);
+        $tasks = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT id, symbol, timeframe, priority FROM {$table}
+                WHERE status = 'pending'
+                ORDER BY priority ASC, created_at ASC
+                LIMIT %d",
+                $limit
+            ),
+            ARRAY_A
+        );
+
+        if (empty($tasks)) {
+            return [];
+        }
+
+        $ids = array_map('intval', wp_list_pluck($tasks, 'id'));
+        $id_placeholders = implode(', ', array_fill(0, count($ids), '%d'));
+        $params = array_merge([current_time('mysql')], $ids);
+        $sql = "UPDATE {$table} SET status = 'processing', updated_at = %s WHERE id IN ({$id_placeholders})";
+        $wpdb->query($wpdb->prepare($sql, $params));
+
+        return $tasks;
+    }
+
+    public static function mark_task_complete($task_id) {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_rebuild_queue';
+
+        return $wpdb->delete(
+            $table,
+            ['id' => (int) $task_id],
+            ['%d']
+        );
+    }
+
+    public static function run_compute_pipeline_cron() {
+        $seed_stats = LCNI_SeedRepository::get_dashboard_stats();
+        $seeding_active = ((int) ($seed_stats['total'] ?? 0) > 0) && ((int) ($seed_stats['done'] ?? 0) < (int) ($seed_stats['total'] ?? 0));
+
+        $series_batch = $seeding_active ? 20 : 200;
+        $tasks = self::dequeue_rebuild_batch($series_batch);
+
+        foreach ($tasks as $task) {
+            $symbol = strtoupper((string) ($task['symbol'] ?? ''));
+            $timeframe = strtoupper((string) ($task['timeframe'] ?? ''));
+            if ($symbol === '' || $timeframe === '') {
+                self::mark_task_complete((int) $task['id']);
+                continue;
+            }
+
+            self::rebuild_ohlc_trading_index($symbol, $timeframe);
+            self::incremental_rebuild_ohlc_indicators($symbol, $timeframe, 1);
+            self::mark_task_complete((int) $task['id']);
+        }
+
+        $rs_batch = $seeding_active ? 30 : 300;
+        self::process_seed_rebuild_pipeline([
+            'series_metrics' => 0,
+            'rs_metrics' => $rs_batch,
+            'market_stats' => $rs_batch,
+        ]);
+    }
+
+    public static function run_snapshot_refresh_cron() {
+        global $wpdb;
+
+        $queue_table = $wpdb->prefix . 'lcni_rebuild_queue';
+        $pending = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$queue_table} WHERE status IN ('pending', 'processing')");
+        $seed_stats = LCNI_SeedRepository::get_dashboard_stats();
+        $seed_pending = max(0, (int) ($seed_stats['total'] ?? 0) - (int) ($seed_stats['done'] ?? 0));
+
+        if ($pending > 0 || $seed_pending > 0) {
+            return false;
+        }
+
+        return self::refresh_ohlc_latest_snapshot();
     }
 
     private static function is_peak_hours_mode() {
@@ -4598,8 +4726,6 @@ class LCNI_DB {
     }
 
     public static function upsert_ohlc_rows($rows, $options = []) {
-        global $wpdb;
-
         $defaults = [
             'process_seed_pipeline' => true,
             'refresh_latest_snapshot' => true,
@@ -4615,12 +4741,8 @@ class LCNI_DB {
             ];
         }
 
-        $table = $wpdb->prefix . 'lcni_ohlc';
-        $inserted = 0;
-        $updated = 0;
+        $normalized_rows = [];
         $touched_series = [];
-        $touched_event_times = [];
-        $touched_timeframes = [];
 
         foreach ($rows as $row) {
             $event_time = isset($row['event_time']) ? (int) $row['event_time'] : 0;
@@ -4628,10 +4750,16 @@ class LCNI_DB {
                 continue;
             }
 
-            $record = [
-                'symbol' => strtoupper((string) ($row['symbol'] ?? '')),
-                'timeframe' => strtoupper((string) ($row['timeframe'] ?? '1D')),
-                'symbol_type' => in_array(strtoupper((string) ($row['symbol'] ?? '')), self::INDEX_SYMBOLS, true) ? 'INDEX' : 'STOCK',
+            $symbol = strtoupper((string) ($row['symbol'] ?? ''));
+            $timeframe = strtoupper((string) ($row['timeframe'] ?? '1D'));
+            if ($symbol === '' || $timeframe === '') {
+                continue;
+            }
+
+            $normalized_rows[] = [
+                'symbol' => $symbol,
+                'timeframe' => $timeframe,
+                'symbol_type' => in_array($symbol, self::INDEX_SYMBOLS, true) ? 'INDEX' : 'STOCK',
                 'event_time' => $event_time,
                 'open_price' => self::normalize_price($row['open'] ?? 0),
                 'high_price' => self::normalize_price($row['high'] ?? 0),
@@ -4641,22 +4769,88 @@ class LCNI_DB {
                 'value_traded' => self::normalize_price((($row['close'] ?? 0) * ($row['volume'] ?? 0))),
             ];
 
-            if ($record['symbol'] === '') {
+            $series_key = $symbol . '|' . $timeframe;
+            $touched_series[$series_key] = [
+                'symbol' => $symbol,
+                'timeframe' => $timeframe,
+                'event_time' => $event_time,
+            ];
+        }
+
+        if (empty($normalized_rows)) {
+            return [
+                'inserted' => 0,
+                'updated' => 0,
+            ];
+        }
+
+        $summary = self::bulk_upsert_ohlc_rows($normalized_rows, 500);
+
+        if (!empty($touched_series)) {
+            foreach ($touched_series as $series_item) {
+                self::enqueue_rebuild_task($series_item['symbol'], $series_item['timeframe'], 10, (int) $series_item['event_time']);
+            }
+
+            if ($process_seed_pipeline) {
+                self::run_compute_pipeline_cron();
+            }
+
+            self::repair_incomplete_latest_metrics_for_series(
+                array_map(static function ($item) {
+                    return [
+                        'symbol' => $item['symbol'],
+                        'timeframe' => $item['timeframe'],
+                    ];
+                }, array_values($touched_series)),
+                [],
+                []
+            );
+
+            if ($refresh_latest_snapshot) {
+                self::perform_refresh_ohlc_latest_snapshot(array_keys(array_column(array_values($touched_series), 'symbol', 'symbol')));
+            }
+        }
+
+        return $summary;
+    }
+
+    public static function bulk_upsert_ohlc_rows(array $rows, int $chunk_size = 500) {
+        global $wpdb;
+
+        if (empty($rows)) {
+            return ['inserted' => 0, 'updated' => 0];
+        }
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $inserted = 0;
+        $updated = 0;
+        $chunk_size = max(1, $chunk_size);
+
+        foreach (array_chunk($rows, $chunk_size) as $chunk) {
+            $row_placeholders = [];
+            $params = [];
+
+            foreach ($chunk as $row) {
+                $row_placeholders[] = '(%s, %s, %s, %d, %f, %f, %f, %f, %d, %f)';
+                $params[] = strtoupper((string) ($row['symbol'] ?? ''));
+                $params[] = strtoupper((string) ($row['timeframe'] ?? '1D'));
+                $params[] = strtoupper((string) ($row['symbol_type'] ?? 'STOCK'));
+                $params[] = (int) ($row['event_time'] ?? 0);
+                $params[] = self::normalize_price($row['open_price'] ?? 0);
+                $params[] = self::normalize_price($row['high_price'] ?? 0);
+                $params[] = self::normalize_price($row['low_price'] ?? 0);
+                $params[] = self::normalize_price($row['close_price'] ?? 0);
+                $params[] = (int) ($row['volume'] ?? 0);
+                $params[] = self::normalize_price($row['value_traded'] ?? 0);
+            }
+
+            if (empty($row_placeholders)) {
                 continue;
             }
 
-            $series_key = $record['symbol'] . '|' . $record['timeframe'];
-            $touched_series[$series_key] = [
-                'symbol' => $record['symbol'],
-                'timeframe' => $record['timeframe'],
-            ];
-            $touched_event_times[$record['event_time']] = true;
-            $touched_timeframes[$record['timeframe']] = true;
-
-            $query = $wpdb->prepare(
-                "INSERT INTO {$table}
+            $sql = "INSERT INTO {$table}
                 (symbol, timeframe, symbol_type, event_time, open_price, high_price, low_price, close_price, volume, value_traded)
-                VALUES (%s, %s, %s, %d, %f, %f, %f, %f, %d, %f)
+                VALUES " . implode(', ', $row_placeholders) . "
                 ON DUPLICATE KEY UPDATE
                     symbol_type = VALUES(symbol_type),
                     open_price = VALUES(open_price),
@@ -4664,54 +4858,184 @@ class LCNI_DB {
                     low_price = VALUES(low_price),
                     close_price = VALUES(close_price),
                     volume = VALUES(volume),
-                    value_traded = VALUES(value_traded)",
-                $record['symbol'],
-                $record['timeframe'],
-                $record['symbol_type'],
-                $record['event_time'],
-                $record['open_price'],
-                $record['high_price'],
-                $record['low_price'],
-                $record['close_price'],
-                $record['volume'],
-                $record['value_traded']
-            );
+                    value_traded = VALUES(value_traded)";
 
-            $result = $wpdb->query($query);
+            $prepared = $wpdb->prepare($sql, $params);
+            $result = $wpdb->query($prepared);
 
-            if ($result === 1) {
-                $inserted++;
-            } elseif ($result === 2 || $result === 0) {
-                $updated++;
-            }
-        }
-
-        if (!empty($touched_series)) {
-            self::enqueue_seed_rebuild_tasks(
-                array_values($touched_series),
-                array_keys($touched_event_times),
-                array_keys($touched_timeframes)
-            );
-
-            if ($process_seed_pipeline) {
-                self::process_seed_rebuild_pipeline();
+            if ($result === false) {
+                continue;
             }
 
-            self::repair_incomplete_latest_metrics_for_series(
-                array_values($touched_series),
-                array_keys($touched_event_times),
-                array_keys($touched_timeframes)
-            );
-
-            if ($refresh_latest_snapshot) {
-                self::perform_refresh_ohlc_latest_snapshot(array_column($touched_series, 'symbol'));
+            $rows_in_chunk = count($chunk);
+            if ($result >= ($rows_in_chunk * 2)) {
+                $updated += (int) floor($result / 2);
+            } else {
+                $inserted += (int) $result;
             }
         }
 
         return [
-            'inserted' => $inserted,
-            'updated' => $updated,
+            'inserted' => max(0, $inserted),
+            'updated' => max(0, $updated),
         ];
+    }
+
+    public static function bulk_update_indicator_rows(array $computed_rows) {
+        global $wpdb;
+
+        if (empty($computed_rows)) {
+            return 0;
+        }
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $columns = [
+            'ma20', 'ma50', 'ma100', 'ma200',
+            'macd', 'macd_signal', 'macd_histogram',
+            'rsi', 'pct_t_1', 'pct_t_3', 'pct_1w', 'pct_1m', 'pct_3m', 'pct_6m', 'pct_1y',
+        ];
+
+        $updated_total = 0;
+        foreach (array_chunk($computed_rows, 200) as $chunk) {
+            $ids = [];
+            $cases = [];
+            $params = [];
+
+            foreach ($columns as $column) {
+                $cases[$column] = [];
+            }
+
+            foreach ($chunk as $row) {
+                $id = (int) ($row['id'] ?? 0);
+                if ($id <= 0) {
+                    continue;
+                }
+
+                $ids[] = $id;
+                foreach ($columns as $column) {
+                    if (!array_key_exists($column, $row)) {
+                        continue;
+                    }
+
+                    if ($row[$column] === null) {
+                        $cases[$column][] = "WHEN %d THEN NULL";
+                        $params[] = $id;
+                    } else {
+                        $cases[$column][] = "WHEN %d THEN %f";
+                        $params[] = $id;
+                        $params[] = (float) $row[$column];
+                    }
+                }
+            }
+
+            if (empty($ids)) {
+                continue;
+            }
+
+            $set_clauses = [];
+            foreach ($columns as $column) {
+                if (empty($cases[$column])) {
+                    continue;
+                }
+                $set_clauses[] = "{$column} = CASE id " . implode(' ', $cases[$column]) . " ELSE {$column} END";
+            }
+
+            if (empty($set_clauses)) {
+                continue;
+            }
+
+            $id_placeholders = implode(', ', array_fill(0, count($ids), '%d'));
+            $sql = "UPDATE {$table} SET " . implode(', ', $set_clauses) . " WHERE id IN ({$id_placeholders})";
+            $prepared = $wpdb->prepare($sql, array_merge($params, $ids));
+            $result = $wpdb->query($prepared);
+            if ($result !== false) {
+                $updated_total += (int) $result;
+            }
+        }
+
+        return $updated_total;
+    }
+
+    public static function incremental_rebuild_ohlc_indicators($symbol, $timeframe, $from_trading_index) {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $symbol = strtoupper((string) $symbol);
+        $timeframe = strtoupper((string) $timeframe);
+
+        $max_index = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT MAX(trading_index) FROM {$table} WHERE symbol = %s AND timeframe = %s",
+            $symbol,
+            $timeframe
+        ));
+
+        if ($max_index <= 0) {
+            return 0;
+        }
+
+        $start_index = max(1, min((int) $from_trading_index, $max_index) - self::INDICATOR_LOOKBACK);
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT id, trading_index, close_price
+                FROM {$table}
+                WHERE symbol = %s AND timeframe = %s AND trading_index >= %d
+                ORDER BY trading_index ASC, event_time ASC, id ASC",
+                $symbol,
+                $timeframe,
+                $start_index
+            ),
+            ARRAY_A
+        );
+
+        if (empty($rows)) {
+            return 0;
+        }
+
+        $closes = array_map('floatval', wp_list_pluck($rows, 'close_price'));
+        $ma20 = self::compute_ma($closes, 20);
+        $ma50 = self::compute_ma($closes, 50);
+        $ma100 = self::compute_ma($closes, 100);
+        $ma200 = self::compute_ma($closes, 200);
+        $ema12 = self::compute_ema($closes, 12);
+        $ema26 = self::compute_ema($closes, 26);
+        $rsi14 = self::compute_rsi($closes, 14);
+        $macd = [];
+        for ($i = 0; $i < count($closes); $i++) {
+            $macd[] = ($ema12[$i] === null || $ema26[$i] === null) ? null : ($ema12[$i] - $ema26[$i]);
+        }
+        $signal = self::compute_ema(array_map(static function ($value) {
+            return $value === null ? 0.0 : (float) $value;
+        }, $macd), 9);
+
+        $computed_rows = [];
+        for ($i = 0; $i < count($rows); $i++) {
+            $trading_index = (int) ($rows[$i]['trading_index'] ?? 0);
+            if ($trading_index < (int) $from_trading_index) {
+                continue;
+            }
+
+            $histogram = ($macd[$i] === null || $signal[$i] === null) ? null : ($macd[$i] - $signal[$i]);
+            $computed_rows[] = [
+                'id' => (int) $rows[$i]['id'],
+                'ma20' => $ma20[$i],
+                'ma50' => $ma50[$i],
+                'ma100' => $ma100[$i],
+                'ma200' => $ma200[$i],
+                'macd' => $macd[$i],
+                'macd_signal' => $signal[$i],
+                'macd_histogram' => $histogram,
+                'rsi' => $rsi14[$i],
+                'pct_t_1' => self::change_pct($closes, $i, 1),
+                'pct_t_3' => self::change_pct($closes, $i, 3),
+                'pct_1w' => self::change_pct($closes, $i, 5),
+                'pct_1m' => self::change_pct($closes, $i, 21),
+                'pct_3m' => self::change_pct($closes, $i, 63),
+                'pct_6m' => self::change_pct($closes, $i, 126),
+                'pct_1y' => self::change_pct($closes, $i, 252),
+            ];
+        }
+
+        return self::bulk_update_indicator_rows($computed_rows);
     }
 
     public static function rebuild_missing_ohlc_indicators($limit = 20) {
@@ -4924,7 +5248,7 @@ class LCNI_DB {
 
     private static function rebuild_ohlc_series_metrics($symbol, $timeframe) {
         self::rebuild_ohlc_trading_index($symbol, $timeframe);
-        self::rebuild_ohlc_indicators($symbol, $timeframe);
+        self::incremental_rebuild_ohlc_indicators($symbol, $timeframe, 1);
     }
 
     private static function rebuild_ohlc_indicators($symbol, $timeframe) {
@@ -6073,14 +6397,95 @@ class LCNI_DB {
         return self::normalize_price($value);
     }
 
-    private static function window_average($series, $index, $window) {
-        if ($index + 1 < $window) {
-            return null;
+    public static function compute_ma(array $series, int $window) {
+        $window = max(1, (int) $window);
+        $result = array_fill(0, count($series), null);
+        $running_sum = 0.0;
+
+        foreach ($series as $index => $value) {
+            $running_sum += (float) $value;
+            if ($index >= $window) {
+                $running_sum -= (float) $series[$index - $window];
+            }
+
+            if ($index + 1 >= $window) {
+                $result[$index] = $running_sum / $window;
+            }
         }
 
-        $slice = array_slice($series, $index - $window + 1, $window);
+        return $result;
+    }
 
-        return array_sum($slice) / $window;
+    public static function compute_ema(array $series, int $window) {
+        $window = max(1, (int) $window);
+        $result = array_fill(0, count($series), null);
+        if (empty($series)) {
+            return $result;
+        }
+
+        $multiplier = 2 / ($window + 1);
+        $ema = null;
+        foreach ($series as $index => $value) {
+            $price = (float) $value;
+            if ($ema === null) {
+                $ema = $price;
+            } else {
+                $ema = (($price - $ema) * $multiplier) + $ema;
+            }
+
+            if ($index + 1 >= $window) {
+                $result[$index] = $ema;
+            }
+        }
+
+        return $result;
+    }
+
+    public static function compute_rsi(array $series, int $period) {
+        $period = max(1, (int) $period);
+        $result = array_fill(0, count($series), null);
+        if (count($series) <= 1) {
+            return $result;
+        }
+
+        $avg_gain = 0.0;
+        $avg_loss = 0.0;
+
+        for ($i = 1; $i < count($series); $i++) {
+            $change = (float) $series[$i] - (float) $series[$i - 1];
+            $gain = max($change, 0.0);
+            $loss = max(-$change, 0.0);
+
+            if ($i <= $period) {
+                $avg_gain += $gain;
+                $avg_loss += $loss;
+
+                if ($i === $period) {
+                    $avg_gain /= $period;
+                    $avg_loss /= $period;
+                }
+            } else {
+                $avg_gain = (($avg_gain * ($period - 1)) + $gain) / $period;
+                $avg_loss = (($avg_loss * ($period - 1)) + $loss) / $period;
+            }
+
+            if ($i >= $period) {
+                if ($avg_loss == 0.0) {
+                    $result[$i] = 100.0;
+                } else {
+                    $rs = $avg_gain / $avg_loss;
+                    $result[$i] = 100 - (100 / (1 + $rs));
+                }
+            }
+        }
+
+        return $result;
+    }
+
+    private static function window_average($series, $index, $window) {
+        $computed = self::compute_ma(array_slice((array) $series, 0, $index + 1), (int) $window);
+
+        return $computed[$index] ?? null;
     }
 
     private static function window_max($series, $index, $window) {
