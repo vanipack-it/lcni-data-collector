@@ -10,32 +10,12 @@
     --lcni-header-bg: #f7f7f7;
     --lcni-header-height: 44px;
     --lcni-row-font-size: 14px;
-}
-
-.lcni-industry-monitor__controls {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    margin-bottom: 12px;
-    align-items: center;
-}
-
-.lcni-industry-monitor__metric-picker {
-    display: flex;
-    flex-direction: column;
-    min-width: 260px;
-    gap: 6px;
-}
-
-.lcni-industry-monitor__metric-search,
-.lcni-industry-monitor__metric,
-.lcni-industry-monitor__session-limit,
-.lcni-industry-monitor__timeframe {
-    min-height: 32px;
+    --lcni-event-time-col-width: 140px;
 }
 
 .lcni-industry-monitor__table-wrap {
-    overflow: auto;
+    overflow-x: auto;
+    overflow-y: auto;
     width: 100%;
     max-height: 70vh;
     border: var(--lcni-table-border-width) solid var(--lcni-table-border-color);
@@ -70,17 +50,70 @@
     height: var(--lcni-header-height);
 }
 
-.lcni-industry-monitor__table thead th:first-child,
+.lcni-industry-monitor__sticky-industry,
 .lcni-industry-monitor__sticky-col {
     position: sticky;
     left: 0;
     z-index: 6;
     background: #fafafa;
     text-align: left;
+    width: 1%;
 }
 
-.lcni-industry-monitor__table thead th:first-child {
+.lcni-industry-monitor__sticky-industry {
     z-index: 7;
+}
+
+.lcni-industry-monitor__event-time,
+.lcni-industry-monitor__table td {
+    min-width: var(--lcni-event-time-col-width);
+}
+
+.lcni-industry-monitor__industry-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.lcni-industry-monitor__metric-dropdown {
+    position: relative;
+}
+
+.lcni-industry-monitor__metric-toggle {
+    min-width: 260px;
+}
+
+.lcni-industry-monitor__metric-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 20;
+    width: 280px;
+    border: 1px solid #d0d0d0;
+    background: #fff;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+    padding: 8px;
+}
+
+.lcni-industry-monitor__metric-search {
+    width: 100%;
+    margin-bottom: 8px;
+}
+
+.lcni-industry-monitor__metric-options {
+    max-height: 220px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.lcni-industry-monitor__metric-option {
+    text-align: left;
+    background: #f6f6f6;
+    border: 0;
+    padding: 6px 8px;
+    cursor: pointer;
 }
 
 .lcni-industry-monitor__row.is-hoverable {
@@ -90,11 +123,4 @@
 .lcni-industry-monitor__row.is-hoverable:hover th,
 .lcni-industry-monitor__row.is-hoverable:hover td {
     filter: brightness(0.96);
-}
-
-@media (max-width: 768px) {
-    .lcni-industry-monitor__controls {
-        flex-direction: column;
-        align-items: flex-start;
-    }
 }

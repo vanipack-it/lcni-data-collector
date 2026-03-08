@@ -27,26 +27,17 @@ class LCNI_Industry_Data
         $this->metric_map = $this->build_metric_map();
     }
 
-    /**
-     * @return string[]
-     */
+    /** @return string[] */
     public function get_supported_metrics()
     {
         return array_keys($this->metric_map);
     }
 
-    /**
-     * @return array<string, array<string, string>>
-     */
+    /** @return array<string, array<string, string>> */
     private function build_metric_map()
     {
         $map = $this->metric_map;
-        $table_whitelist = array(
-            'lcni_industry_metrics',
-            'lcni_industry_index',
-            'lcni_thong_ke_nganh_icb_2_toan_thi_truong',
-            'lcni_industry_return',
-        );
+        $table_whitelist = array('lcni_industry_metrics', 'lcni_industry_index', 'lcni_thong_ke_nganh_icb_2_toan_thi_truong', 'lcni_industry_return');
 
         foreach ($table_whitelist as $table_name) {
             $prefixed_table = $this->wpdb->prefix . $table_name;
@@ -65,55 +56,30 @@ class LCNI_Industry_Data
                     continue;
                 }
 
-                $map[$column] = array(
-                    'table' => $table_name,
-                    'column' => $column,
-                );
+                $map[$column] = array('table' => $table_name, 'column' => $column);
             }
         }
 
         return $map;
     }
 
-    /** @param string $column */
     private function is_excluded_column($column)
     {
-        $excluded = array(
-            'id',
-            'id_icb2',
-            'timeframe',
-            'event_time',
-            'created_at',
-            'updated_at',
-            'name_icb2',
-        );
-
-        return in_array($column, $excluded, true);
+        return in_array($column, array('id', 'id_icb2', 'timeframe', 'event_time', 'created_at', 'updated_at', 'name_icb2'), true);
     }
 
-    /** @param string $type */
     private function is_numeric_type($type)
     {
         return (bool) preg_match('/(int|decimal|numeric|float|double|real|bigint|smallint|tinyint)/', $type);
     }
 
-    /**
-     * @param string $metric
-     * @return array<string, string>|null
-     */
+    /** @return array<string, string>|null */
     private function resolve_metric($metric)
     {
-        if (! isset($this->metric_map[$metric])) {
-            return null;
-        }
-
-        return $this->metric_map[$metric];
+        return $this->metric_map[$metric] ?? null;
     }
 
-    /**
-     * @param mixed $raw
-     * @return int|null
-     */
+    /** @param mixed $raw */
     private function normalize_event_time($raw)
     {
         if ($raw === null || $raw === '') {
@@ -155,21 +121,49 @@ class LCNI_Industry_Data
         return (int) $parsed;
     }
 
-    /**
-     * @param int $timestamp
-     * @return string
-     */
-    public function format_event_time($timestamp)
+    /** @param mixed $raw */
+    private function normalize_event_time_key($raw)
     {
-        return gmdate('d-m-Y', (int) $timestamp);
+        if ($raw === null || $raw === '') {
+            return '';
+        }
+
+        return trim((string) $raw);
     }
 
-    /**
-     * @param string $timeframe
-     * @param int    $limit
-     * @param string $metric
-     * @return int[]
-     */
+    /** @param mixed $event_time_raw */
+    public function format_event_time($event_time_raw)
+    {
+        $raw = trim((string) $event_time_raw);
+        if ($raw === '') {
+            return '';
+        }
+
+        if (preg_match('/^\d{12}$/', $raw) === 1) {
+            $parsed = DateTime::createFromFormat('YmdHi', $raw, new DateTimeZone('UTC'));
+            return $parsed ? $parsed->format('d-m-Hi') : $raw;
+        }
+        if (preg_match('/^\d{14}$/', $raw) === 1) {
+            $parsed = DateTime::createFromFormat('YmdHis', $raw, new DateTimeZone('UTC'));
+            return $parsed ? $parsed->format('d-m-Hi') : $raw;
+        }
+        if (preg_match('/^\d{8}$/', $raw) === 1) {
+            $parsed = DateTime::createFromFormat('Ymd', $raw, new DateTimeZone('UTC'));
+            return $parsed ? $parsed->format('d-m-Y') : $raw;
+        }
+        if (preg_match('/^\d{2}-\d{2}-\d{4}$/', $raw) === 1) {
+            return $raw;
+        }
+
+        $timestamp = $this->normalize_event_time($raw);
+        if ($timestamp === null) {
+            return $raw;
+        }
+
+        return gmdate('d-m-Hi', (int) $timestamp);
+    }
+
+    /** @return string[] */
     public function get_event_times($timeframe = '1D', $limit = 30, $metric = 'money_flow_share')
     {
         $timeframe = sanitize_text_field($timeframe);
@@ -177,31 +171,42 @@ class LCNI_Industry_Data
         $resolved = $this->resolve_metric($metric) ?: $this->resolve_metric('money_flow_share');
 
         $table = $this->wpdb->prefix . $resolved['table'];
-        $sql = "SELECT DISTINCT event_time
-                FROM {$table}
-                WHERE timeframe = %s
-                ORDER BY event_time DESC
-                LIMIT %d";
+        $sql = "SELECT DISTINCT event_time FROM {$table} WHERE timeframe = %s ORDER BY event_time DESC LIMIT %d";
 
         $prepared = $this->wpdb->prepare($sql, $timeframe, $limit * 4);
         $rows = (array) $this->wpdb->get_col($prepared);
 
         $normalized = array();
         foreach ($rows as $raw_time) {
-            $value = $this->normalize_event_time($raw_time);
-            if ($value !== null) {
-                $normalized[$value] = $value;
+            $key = $this->normalize_event_time_key($raw_time);
+            if ($key === '') {
+                continue;
+            }
+            if (! isset($normalized[$key])) {
+                $normalized[$key] = array(
+                    'key' => $key,
+                    'sort' => $this->normalize_event_time($raw_time) ?? 0,
+                );
             }
         }
 
-        rsort($normalized, SORT_NUMERIC);
-        return array_slice(array_values($normalized), 0, $limit);
+        uasort($normalized, function ($left, $right) {
+            if ($left['sort'] === $right['sort']) {
+                return strcmp((string) $right['key'], (string) $left['key']);
+            }
+
+            return ((int) $right['sort']) <=> ((int) $left['sort']);
+        });
+
+        $keys = array_map(function ($entry) {
+            return (string) $entry['key'];
+        }, array_values($normalized));
+
+        return array_slice($keys, 0, $limit);
     }
 
     /**
-     * @param string $metric
-     * @param string $timeframe
-     * @param int[]  $event_times
+     * @param string[]  $event_times
      * @return array<int, array{industry:string, values:array<int, float|int|null>}>
      */
     public function get_metric_rows($metric, $timeframe, $event_times)
@@ -211,7 +216,7 @@ class LCNI_Industry_Data
             return array();
         }
 
-        $event_times = array_values(array_unique(array_map('intval', $event_times)));
+        $event_times = array_values(array_unique(array_map('strval', $event_times)));
         if (empty($event_times)) {
             return array();
         }
@@ -233,8 +238,8 @@ class LCNI_Industry_Data
 
         foreach ((array) $rows as $row) {
             $industry = isset($row['name_icb2']) ? (string) $row['name_icb2'] : '';
-            $event_time = $this->normalize_event_time($row['event_time'] ?? null);
-            if ($industry === '' || $event_time === null || ! isset($time_index[$event_time])) {
+            $event_time = $this->normalize_event_time_key($row['event_time'] ?? null);
+            if ($industry === '' || $event_time === '' || ! isset($time_index[$event_time])) {
                 continue;
             }
 
@@ -255,10 +260,7 @@ class LCNI_Industry_Data
 
         $result = array();
         foreach ($grouped as $industry => $values) {
-            $result[] = array(
-                'industry' => $industry,
-                'values' => $values,
-            );
+            $result[] = array('industry' => $industry, 'values' => $values);
         }
 
         return $result;
