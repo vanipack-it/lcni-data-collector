@@ -361,6 +361,45 @@ class LCNI_Settings {
             } else {
                 $this->set_notice('success', 'Đã đồng bộ thủ công OHLC latest.');
             }
+        } elseif ($action === 'save_industry_matrix_settings') {
+            if (!current_user_can('manage_options')) {
+                $this->set_notice('error', 'Không có quyền.');
+            } else {
+                $raw = isset($_POST['lcni_industry_matrix']) ? (array) wp_unslash($_POST['lcni_industry_matrix']) : [];
+
+                // Allowed fields whitelist
+                $all_fields   = LCNI_Industry_Matrix_Shortcode::get_all_fields();
+                $all_field_keys = [];
+                foreach ($all_fields as $tk => $td) {
+                    foreach (array_keys($td['fields']) as $col) {
+                        $all_field_keys[] = $tk . '__' . $col;
+                    }
+                }
+                $allowed_raw = isset($raw['allowed_fields']) && is_array($raw['allowed_fields']) ? $raw['allowed_fields'] : [];
+                $allowed = array_values(array_filter($allowed_raw, function ($f) use ($all_field_keys) {
+                    return in_array(sanitize_key((string) $f), $all_field_keys, true);
+                }));
+
+                $defaults = LCNI_Industry_Matrix_Shortcode::get_default_settings();
+                $saved = [
+                    'allowed_fields'       => $allowed,
+                    'row_bg'               => sanitize_hex_color($raw['row_bg']               ?? $defaults['row_bg']),
+                    'row_alt_bg'           => sanitize_hex_color($raw['row_alt_bg']           ?? $defaults['row_alt_bg']),
+                    'row_height'           => max(24, min(80, (int) ($raw['row_height']        ?? $defaults['row_height']))),
+                    'row_separator_color'  => sanitize_hex_color($raw['row_separator_color']  ?? $defaults['row_separator_color']),
+                    'row_separator_width'  => max(0, min(4, (int) ($raw['row_separator_width'] ?? $defaults['row_separator_width']))),
+                    'header_bg'            => sanitize_hex_color($raw['header_bg']            ?? $defaults['header_bg']),
+                    'header_height'        => max(28, min(80, (int) ($raw['header_height']     ?? $defaults['header_height']))),
+                    'font_size'            => max(10, min(20, (int) ($raw['font_size']         ?? $defaults['font_size']))),
+                    'stripe_mode'          => in_array($raw['stripe_mode'] ?? '', ['row','col','none'], true) ? $raw['stripe_mode'] : 'row',
+                    'col_stripe_a'         => sanitize_hex_color($raw['col_stripe_a']         ?? $defaults['col_stripe_a']),
+                    'col_stripe_b'         => sanitize_hex_color($raw['col_stripe_b']         ?? $defaults['col_stripe_b']),
+                ];
+
+                update_option(LCNI_Industry_Matrix_Shortcode::OPTION_KEY, $saved);
+                $this->set_notice('success', 'Đã lưu cài đặt Industry Matrix.');
+            }
+
         } elseif ($action === 'save_frontend_settings') {
             $module_raw = isset($_POST['lcni_frontend_module']) ? wp_unslash($_POST['lcni_frontend_module']) : '';
             $module = sanitize_key(is_scalar($module_raw) ? (string) $module_raw : '');
@@ -790,7 +829,7 @@ class LCNI_Settings {
         $redirect_page = in_array($redirect_page, ['lcni-settings', 'lcni-data-viewer'], true) ? $redirect_page : 'lcni-settings';
         $redirect_url = admin_url('admin.php?page=' . $redirect_page);
 
-        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange', 'lcni-tab-update-runtime', 'lcni-tab-update-ohlc-latest', 'lcni-tab-frontend-signals', 'lcni-tab-frontend-recommend-signal', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-chart-builder', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format'], true)) {
+        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange', 'lcni-tab-update-runtime', 'lcni-tab-update-ohlc-latest', 'lcni-tab-frontend-signals', 'lcni-tab-frontend-recommend-signal', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-chart-builder', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format', 'lcni-tab-frontend-industry-matrix'], true)) {
             $redirect_url = add_query_arg('tab', $redirect_tab, $redirect_url);
         }
 
@@ -1647,7 +1686,7 @@ class LCNI_Settings {
 
         $active_tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'general';
         $rule_sub_tabs = ['lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange'];
-        $frontend_sub_tabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-recommend-signal', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-chart-builder', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format'];
+        $frontend_sub_tabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-recommend-signal', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-chart-builder', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format', 'lcni-tab-frontend-industry-matrix'];
         $update_data_sub_tabs = ['lcni-tab-update-runtime', 'lcni-tab-update-ohlc-latest'];
         if (in_array($active_tab, $rule_sub_tabs, true)) {
             $active_tab = 'rule_settings';
@@ -3117,6 +3156,8 @@ private function sanitize_module_title($value, $fallback) {
             <button type="button" data-sub-tab="lcni-tab-frontend-style-config">Style Config</button>
             <button type="button" data-sub-tab="lcni-tab-frontend-column-label">Column Label</button>
             <button type="button" data-sub-tab="lcni-tab-frontend-data-format">Data Format</button>
+            <button type="button" data-sub-tab="lcni-tab-frontend-data-format">Data Format</button>
+            <button type="button" data-sub-tab="lcni-tab-frontend-industry-matrix">Industry Matrix</button>
             <button type="button" data-sub-tab="lcni-tab-frontend-member">Member</button>
         </div>
         <?php $this->render_frontend_module_form('signals', 'lcni-tab-frontend-signals', $signals_labels, $signals); ?>
@@ -3130,6 +3171,7 @@ private function sanitize_module_title($value, $fallback) {
         <?php $this->render_frontend_button_style_form('button_style', 'lcni-tab-frontend-style-config'); ?>
         <?php $this->render_global_column_label_form('column_labels', 'lcni-tab-frontend-column-label', $watchlist); ?>
         <?php $this->render_frontend_data_format_form('data_format', 'lcni-tab-frontend-data-format'); ?>
+        <?php $this->render_industry_matrix_settings_form('lcni-tab-frontend-industry-matrix'); ?>
         <div id="lcni-tab-frontend-member" class="lcni-sub-tab-content">
             <div class="lcni-front-form">
                 <h3>Member Frontend Settings</h3>
@@ -3147,13 +3189,13 @@ private function sanitize_module_title($value, $fallback) {
                 const activate = function(tabId){
                     buttons.forEach((btn) => btn.classList.toggle('active', btn.getAttribute('data-sub-tab') === tabId));
                     panes.forEach((pane) => {
-                        if (pane.id === 'lcni-tab-frontend-signals' || pane.id === 'lcni-tab-frontend-recommend-signal' || pane.id === 'lcni-tab-frontend-overview' || pane.id === 'lcni-tab-frontend-chart' || pane.id === 'lcni-tab-frontend-chart-analyst' || pane.id === 'lcni-tab-frontend-chart-builder' || pane.id === 'lcni-tab-frontend-watchlist' || pane.id === 'lcni-tab-frontend-filter' || pane.id === 'lcni-tab-frontend-style-config' || pane.id === 'lcni-tab-frontend-column-label' || pane.id === 'lcni-tab-frontend-data-format' || pane.id === 'lcni-tab-frontend-member') {
+                        if (pane.id === 'lcni-tab-frontend-signals' || pane.id === 'lcni-tab-frontend-recommend-signal' || pane.id === 'lcni-tab-frontend-overview' || pane.id === 'lcni-tab-frontend-chart' || pane.id === 'lcni-tab-frontend-chart-analyst' || pane.id === 'lcni-tab-frontend-chart-builder' || pane.id === 'lcni-tab-frontend-watchlist' || pane.id === 'lcni-tab-frontend-filter' || pane.id === 'lcni-tab-frontend-style-config' || pane.id === 'lcni-tab-frontend-column-label' || pane.id === 'lcni-tab-frontend-data-format' || pane.id === 'lcni-tab-frontend-industry-matrix' || pane.id === 'lcni-tab-frontend-member') {
                             pane.classList.toggle('active', pane.id === tabId);
                         }
                     });
                 };
                 buttons.forEach((btn) => btn.addEventListener('click', () => activate(btn.getAttribute('data-sub-tab'))));
-                const validTabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-recommend-signal', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-chart-builder', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format', 'lcni-tab-frontend-member'];
+                const validTabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-recommend-signal', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-chart-builder', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format', 'lcni-tab-frontend-industry-matrix', 'lcni-tab-frontend-member'];
                 activate(validTabs.includes(current) ? current : 'lcni-tab-frontend-signals');
 
                 const bindFrontendModuleSortable = (form) => {
@@ -5728,5 +5770,105 @@ private function render_frontend_watchlist_form($module, $tab_id, $settings) {
         </script>
         <?php
     }
+
+    private function render_industry_matrix_settings_form($tab_id) {
+        $settings   = LCNI_Industry_Matrix_Shortcode::get_settings();
+        $all_fields = LCNI_Industry_Matrix_Shortcode::get_all_fields();
+        $allowed    = (array) ($settings['allowed_fields'] ?? []);
+        ?>
+        <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
+            <div class="lcni-front-form" style="max-width:860px;">
+                <h3 style="margin-top:0;">Industry Matrix — Cài đặt shortcode <code>[lcni_industry_matrix]</code></h3>
+                <p class="description">Shortcode hiển thị bảng pivot ngành ICB2: hàng = Tên ngành, cột = Event_time, ô = giá trị field được chọn.</p>
+
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=frontend_settings')); ?>">
+                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                    <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                    <input type="hidden" name="lcni_admin_action" value="save_industry_matrix_settings">
+
+                    <!-- Allowed fields -->
+                    <h4 style="border-bottom:1px solid #ddd;padding-bottom:6px;">Các field được phép hiển thị</h4>
+                    <?php foreach ($all_fields as $table_key => $table_def) : ?>
+                        <p><strong><?php echo esc_html($table_def['label']); ?></strong></p>
+                        <div style="display:flex;flex-wrap:wrap;gap:8px 20px;margin-bottom:12px;">
+                            <?php foreach ($table_def['fields'] as $col => $col_label) : ?>
+                                <?php $fkey = $table_key . '__' . $col; ?>
+                                <label style="display:flex;align-items:center;gap:5px;font-size:13px;">
+                                    <input type="checkbox" name="lcni_industry_matrix[allowed_fields][]" value="<?php echo esc_attr($fkey); ?>" <?php checked(in_array($fkey, $allowed, true)); ?>>
+                                    <?php echo esc_html($col_label); ?>
+                                    <code style="font-size:10px;color:#888;"><?php echo esc_html($col); ?></code>
+                                </label>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endforeach; ?>
+
+                    <!-- Style settings -->
+                    <h4 style="border-bottom:1px solid #ddd;padding-bottom:6px;margin-top:20px;">Tùy chỉnh giao diện</h4>
+                    <table class="form-table" style="max-width:700px;">
+                        <tr>
+                            <th style="width:200px;">Màu nền hàng chẵn</th>
+                            <td><input type="color" name="lcni_industry_matrix[row_bg]" value="<?php echo esc_attr($settings['row_bg']); ?>"> <code><?php echo esc_html($settings['row_bg']); ?></code></td>
+                        </tr>
+                        <tr>
+                            <th>Màu nền hàng lẻ (stripe)</th>
+                            <td><input type="color" name="lcni_industry_matrix[row_alt_bg]" value="<?php echo esc_attr($settings['row_alt_bg']); ?>"> <code><?php echo esc_html($settings['row_alt_bg']); ?></code></td>
+                        </tr>
+                        <tr>
+                            <th>Chiều cao hàng (px)</th>
+                            <td><input type="number" name="lcni_industry_matrix[row_height]" value="<?php echo esc_attr($settings['row_height']); ?>" min="24" max="80" style="width:80px;"> px</td>
+                        </tr>
+                        <tr>
+                            <th>Màu đường phân tách hàng</th>
+                            <td><input type="color" name="lcni_industry_matrix[row_separator_color]" value="<?php echo esc_attr($settings['row_separator_color']); ?>"> <code><?php echo esc_html($settings['row_separator_color']); ?></code></td>
+                        </tr>
+                        <tr>
+                            <th>Độ dày đường phân tách (px)</th>
+                            <td><input type="number" name="lcni_industry_matrix[row_separator_width]" value="<?php echo esc_attr($settings['row_separator_width']); ?>" min="0" max="4" style="width:60px;"> px</td>
+                        </tr>
+                        <tr>
+                            <th>Màu nền Header row</th>
+                            <td><input type="color" name="lcni_industry_matrix[header_bg]" value="<?php echo esc_attr($settings['header_bg']); ?>"> <code><?php echo esc_html($settings['header_bg']); ?></code></td>
+                        </tr>
+                        <tr>
+                            <th>Chiều cao Header row (px)</th>
+                            <td><input type="number" name="lcni_industry_matrix[header_height]" value="<?php echo esc_attr($settings['header_height']); ?>" min="28" max="80" style="width:80px;"> px</td>
+                        </tr>
+                        <tr>
+                            <th>Font size (px)</th>
+                            <td><input type="number" name="lcni_industry_matrix[font_size]" value="<?php echo esc_attr($settings['font_size']); ?>" min="10" max="20" style="width:60px;"> px</td>
+                        </tr>
+                        <tr>
+                            <th>Dải màu nền (stripe mode)</th>
+                            <td>
+                                <?php foreach (['row' => 'Theo hàng', 'col' => 'Theo cột', 'none' => 'Không dải màu'] as $val => $lbl) : ?>
+                                    <label style="margin-right:14px;"><input type="radio" name="lcni_industry_matrix[stripe_mode]" value="<?php echo esc_attr($val); ?>" <?php checked($settings['stripe_mode'], $val); ?>> <?php echo esc_html($lbl); ?></label>
+                                <?php endforeach; ?>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>Màu cột A (stripe col)</th>
+                            <td><input type="color" name="lcni_industry_matrix[col_stripe_a]" value="<?php echo esc_attr($settings['col_stripe_a']); ?>"> <code><?php echo esc_html($settings['col_stripe_a']); ?></code></td>
+                        </tr>
+                        <tr>
+                            <th>Màu cột B (stripe col)</th>
+                            <td><input type="color" name="lcni_industry_matrix[col_stripe_b]" value="<?php echo esc_attr($settings['col_stripe_b']); ?>"> <code><?php echo esc_html($settings['col_stripe_b']); ?></code></td>
+                        </tr>
+                    </table>
+
+                    <?php submit_button('Lưu cài đặt Industry Matrix', 'primary', 'submit', true); ?>
+                </form>
+
+                <hr>
+                <h4>Cách dùng shortcode</h4>
+                <code style="display:block;padding:10px;background:#f6f7f7;border-radius:4px;">[lcni_industry_matrix timeframe="1D" limit="30"]</code>
+                <ul style="margin-top:8px;font-size:13px;">
+                    <li><strong>timeframe</strong>: 1D, 1W, 1M (mặc định 1D)</li>
+                    <li><strong>limit</strong>: số phiên gần nhất hiển thị, 5–120 (mặc định 30)</li>
+                </ul>
+            </div>
+        </div>
+        <?php
+    }
+
 
 }
