@@ -1,0 +1,249 @@
+/* =============================================================
+   LCNI Industry Matrix — lcni-industry-matrix.css
+   v5.5.0
+   ============================================================= */
+
+.lcnim-wrap {
+    --lcnim-row-bg:        #ffffff;
+    --lcnim-row-alt-bg:    #f4f6f9;
+    --lcnim-row-height:    36px;
+    --lcnim-row-sep-color: #e2e6ea;
+    --lcnim-row-sep-width: 1px;
+    --lcnim-header-bg:     #1a2332;
+    --lcnim-header-height: 44px;
+    --lcnim-font-size:     13px;
+
+    font-family: 'IBM Plex Sans', 'Be Vietnam Pro', system-ui, sans-serif;
+    font-size: var(--lcnim-font-size);
+    color: #1d2127;
+    background: #fff;
+    border: 1px solid #d8dde6;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 12px rgba(0,0,0,.06);
+    margin: 16px 0;
+}
+
+/* ── Controls bar ───────────────────────────────────────────── */
+.lcnim-controls {
+    display: flex;
+    align-items: flex-end;
+    gap: 14px;
+    padding: 12px 16px;
+    background: #f8f9fb;
+    border-bottom: 1px solid #e2e6ea;
+    flex-wrap: wrap;
+}
+
+.lcnim-label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: #6b7280;
+    margin-bottom: 4px;
+}
+
+/* Field select with live search */
+.lcnim-field-select-wrap {
+    flex: 1 1 220px;
+    min-width: 180px;
+}
+
+.lcnim-select-search {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.lcnim-search-input {
+    width: 100%;
+    height: 32px;
+    padding: 0 8px;
+    border: 1px solid #d0d5dd;
+    border-radius: 5px;
+    font-size: 12px;
+    outline: none;
+    transition: border-color .15s;
+    box-sizing: border-box;
+}
+.lcnim-search-input:focus { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,.12); }
+
+.lcnim-field-select {
+    width: 100%;
+    height: 32px;
+    padding: 0 8px;
+    border: 1px solid #d0d5dd;
+    border-radius: 5px;
+    font-size: 12px;
+    background: #fff;
+    cursor: pointer;
+    outline: none;
+}
+.lcnim-field-select:focus { border-color: #2563eb; }
+
+.lcnim-tf-select,
+.lcnim-limit-input {
+    height: 32px;
+    padding: 0 8px;
+    border: 1px solid #d0d5dd;
+    border-radius: 5px;
+    font-size: 12px;
+    background: #fff;
+    outline: none;
+}
+.lcnim-tf-select  { width: 80px; }
+.lcnim-limit-input { width: 70px; }
+.lcnim-tf-select:focus,
+.lcnim-limit-input:focus { border-color: #2563eb; }
+
+.lcnim-view-btn {
+    height: 32px;
+    padding: 0 18px;
+    background: #1d4ed8;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: background .15s, transform .1s;
+    white-space: nowrap;
+    align-self: flex-end;
+}
+.lcnim-view-btn:hover:not(:disabled)   { background: #1e40af; }
+.lcnim-view-btn:active:not(:disabled)  { transform: scale(.97); }
+.lcnim-view-btn:disabled               { opacity: .55; cursor: not-allowed; }
+
+.lcnim-btn-icon { font-size: 10px; }
+
+/* ── Status bar ─────────────────────────────────────────────── */
+.lcnim-status {
+    min-height: 26px;
+    padding: 4px 16px;
+    font-size: 12px;
+    font-weight: 500;
+    transition: color .2s;
+}
+.lcnim-status--loading { color: #6b7280; }
+.lcnim-status--ok      { color: #16a34a; }
+.lcnim-status--warn    { color: #d97706; }
+.lcnim-status--error   { color: #dc2626; }
+
+/* ── Table container (sticky scroll) ───────────────────────── */
+.lcnim-table-container {
+    overflow-x: auto;
+    overflow-y: auto;
+    max-height: 72vh;
+    position: relative;
+}
+
+.lcnim-table-inner {
+    min-width: 100%;
+}
+
+/* ── Table ──────────────────────────────────────────────────── */
+.lcnim-table {
+    border-collapse: separate;
+    border-spacing: 0;
+    width: 100%;
+    table-layout: auto;
+}
+
+/* Header row */
+.lcnim-thead .lcnim-header-row {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+}
+
+.lcnim-th {
+    height: var(--lcnim-header-height);
+    background: var(--lcnim-header-bg);
+    color: #f1f5f9;
+    font-size: calc(var(--lcnim-font-size) - 1px);
+    font-weight: 600;
+    letter-spacing: .03em;
+    white-space: nowrap;
+    padding: 0 10px;
+    border-right: 1px solid rgba(255,255,255,.08);
+    border-bottom: 2px solid rgba(255,255,255,.12);
+    text-align: right;
+    vertical-align: middle;
+}
+
+.lcnim-th:first-child { text-align: left; }
+
+/* Sticky name column — header */
+.lcnim-th-name {
+    position: sticky;
+    left: 0;
+    z-index: 30;
+    min-width: 148px;
+    max-width: 200px;
+    background: var(--lcnim-header-bg);
+}
+
+/* Body rows */
+.lcnim-row {
+    height: var(--lcnim-row-height);
+    background: var(--lcnim-row-bg);
+    transition: background .1s;
+}
+.lcnim-row:hover { background: #dbeafe !important; }
+
+.lcnim-td {
+    padding: 0 10px;
+    font-size: var(--lcnim-font-size);
+    border-bottom: var(--lcnim-row-sep-width) solid var(--lcnim-row-sep-color);
+    border-right: 1px solid var(--lcnim-row-sep-color);
+    vertical-align: middle;
+    white-space: nowrap;
+    text-align: right;
+}
+.lcnim-td:last-child { border-right: none; }
+
+/* Sticky name column — body */
+.lcnim-td-name {
+    position: sticky;
+    left: 0;
+    z-index: 10;
+    text-align: left;
+    font-weight: 500;
+    min-width: 148px;
+    max-width: 200px;
+    background: inherit;
+    border-right: 2px solid var(--lcnim-row-sep-color);
+    box-shadow: 2px 0 4px rgba(0,0,0,.05);
+}
+
+/* Value cell colors */
+.lcnim-cell--strong-up   { color: #15803d; font-weight: 700; }
+.lcnim-cell--up          { color: #16a34a; }
+.lcnim-cell--neutral     { color: #6b7280; }
+.lcnim-cell--down        { color: #dc2626; }
+.lcnim-cell--strong-down { color: #b91c1c; font-weight: 700; }
+
+/* Empty / placeholder */
+.lcnim-empty-row .lcnim-empty-cell {
+    padding: 28px 20px;
+    text-align: center;
+    color: #9ca3af;
+    font-size: 13px;
+}
+
+/* Scrollbar styling */
+.lcnim-table-container::-webkit-scrollbar        { width: 7px; height: 7px; }
+.lcnim-table-container::-webkit-scrollbar-track  { background: #f1f5f9; }
+.lcnim-table-container::-webkit-scrollbar-thumb  { background: #cbd5e1; border-radius: 4px; }
+.lcnim-table-container::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* Responsive */
+@media (max-width: 600px) {
+    .lcnim-controls { gap: 8px; padding: 10px 10px; }
+    .lcnim-th-name, .lcnim-td-name { min-width: 110px; max-width: 130px; }
+}
