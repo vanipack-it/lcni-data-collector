@@ -62,7 +62,21 @@ class LCNI_Industry_Monitor
             );
         }
 
-        $default_metric = $metrics[0] ?? 'money_flow_share';
+        if (empty($metric_options)) {
+            foreach ((array) $metric_labels as $metric_key => $metric_label) {
+                $metric_key = sanitize_key((string) $metric_key);
+                if ($metric_key === '') {
+                    continue;
+                }
+
+                $metric_options[] = array(
+                    'key' => $metric_key,
+                    'label' => (string) $metric_label,
+                );
+            }
+        }
+
+        $default_metric = $metric_options[0]['key'] ?? 'money_flow_share';
         $nonce = wp_create_nonce('lcni_industry_data_nonce');
 
         wp_localize_script(
@@ -108,6 +122,11 @@ class LCNI_Industry_Monitor
         }
 
         $columns = $this->data->get_event_times($timeframe, $limit, $metric);
+        if (empty($columns)) {
+            $timeframe = $this->data->resolve_timeframe($metric, $timeframe);
+            $columns = $this->data->get_event_times($timeframe, $limit, $metric);
+        }
+
         $rows = $this->data->get_metric_rows($metric, $timeframe, $columns);
 
         $formatted_columns = array_map(array($this->data, 'format_event_time'), $columns);

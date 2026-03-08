@@ -163,6 +163,27 @@ class LCNI_Industry_Data
         return gmdate('d-m-Hi', (int) $timestamp);
     }
 
+
+    public function resolve_timeframe($metric, $preferred = '1D')
+    {
+        $resolved = $this->resolve_metric($metric);
+        if (! $resolved) {
+            return sanitize_text_field($preferred);
+        }
+
+        $preferred = sanitize_text_field($preferred);
+        $table = $this->wpdb->prefix . $resolved['table'];
+
+        $sql = "SELECT timeframe FROM {$table} GROUP BY timeframe ORDER BY (timeframe = %s) DESC, MAX(event_time) DESC LIMIT 1";
+        $selected = $this->wpdb->get_var($this->wpdb->prepare($sql, $preferred));
+
+        if (! is_string($selected) || trim($selected) === '') {
+            return $preferred;
+        }
+
+        return sanitize_text_field($selected);
+    }
+
     /** @return string[] */
     public function get_event_times($timeframe = '1D', $limit = 30, $metric = 'money_flow_share')
     {
