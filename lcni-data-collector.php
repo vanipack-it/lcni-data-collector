@@ -82,6 +82,7 @@ require_once LCNI_PATH . 'includes/Recommend/ShortcodeManager.php';
 require_once LCNI_PATH . 'includes/Recommend/Admin/RecommendAdminPage.php';
 require_once LCNI_PATH . 'includes/Recommend/RecommendModule.php';
 require_once LCNI_PATH . 'includes/class-lcni-industry-shortcodes.php';
+require_once LCNI_PATH . 'includes/class-lcni-industry-matrix-shortcode.php';
 
 function lcni_register_custom_cron_schedules($schedules) {
     if (!isset($schedules['lcni_every_minute'])) {
@@ -263,6 +264,7 @@ new LCNI_Industry_Data_Page();
 new LCNI_Member_Module();
 new LCNI_Recommend_Module();
 new LCNI_Industry_Shortcodes();
+new LCNI_Industry_Matrix_Shortcode();
 LCNI_Update_Manager::init();
 LCNI_OHLC_Latest_Manager::init();
 new LCNI_Rest_API();
