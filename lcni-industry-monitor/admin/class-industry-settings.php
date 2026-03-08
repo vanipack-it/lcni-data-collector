@@ -35,6 +35,8 @@ class LCNI_Industry_Settings
             'row_bg_color' => '#ffffff',
             'row_border_color' => '#e2e2e2',
             'row_border_width' => 1,
+            'table_border_color' => '#d6d6d6',
+            'table_border_width' => 1,
             'row_height' => 40,
             'header_bg_color' => '#f7f7f7',
             'header_height' => 44,
@@ -44,13 +46,14 @@ class LCNI_Industry_Settings
             'gradient_end_color' => '#eef6ff',
             'row_hover_enabled' => 1,
             'industry_filter_url' => home_url('/'),
+            'default_session_limit' => 30,
         );
     }
 
     /** @return array<string,string> */
     public static function get_metric_labels()
     {
-        return array(
+        $labels = array(
             'money_flow_share' => __('Money Flow Share', 'lcni-industry-monitor'),
             'momentum' => __('Momentum', 'lcni-industry-monitor'),
             'relative_strength' => __('Relative Strength', 'lcni-industry-monitor'),
@@ -59,24 +62,43 @@ class LCNI_Industry_Settings
             'industry_return' => __('Industry Return', 'lcni-industry-monitor'),
             'industry_volume' => __('Industry Volume', 'lcni-industry-monitor'),
         );
+
+        return apply_filters('lcni_industry_monitor_metric_labels', $labels);
     }
 
     public function register_hooks()
     {
         add_action('admin_menu', array($this, 'register_menu'));
         add_action('admin_init', array($this, 'register_settings'));
+        add_filter('lcni_industry_monitor_metric_labels', array($this, 'extend_metric_labels_from_data'));
+    }
+
+    /**
+     * @param array<string,string> $labels
+     * @return array<string,string>
+     */
+    public function extend_metric_labels_from_data($labels)
+    {
+        $data = new LCNI_Industry_Data();
+        foreach ($data->get_supported_metrics() as $metric_key) {
+            if (isset($labels[$metric_key])) {
+                continue;
+            }
+            $labels[$metric_key] = ucwords(str_replace('_', ' ', (string) $metric_key));
+        }
+
+        return $labels;
     }
 
     public function register_menu()
     {
-        add_menu_page(
+        add_submenu_page(
+            'lcni-settings',
             __('LCNI Industry Monitor', 'lcni-industry-monitor'),
             __('Industry Monitor', 'lcni-industry-monitor'),
             'manage_options',
             'lcni-industry-monitor',
-            array($this, 'render_page'),
-            'dashicons-chart-bar',
-            58
+            array($this, 'render_page')
         );
     }
 
@@ -105,6 +127,8 @@ class LCNI_Industry_Settings
             'row_bg_color' => sanitize_hex_color($input['row_bg_color'] ?? $defaults['row_bg_color']) ?: $defaults['row_bg_color'],
             'row_border_color' => sanitize_hex_color($input['row_border_color'] ?? $defaults['row_border_color']) ?: $defaults['row_border_color'],
             'row_border_width' => max(0, min(8, absint($input['row_border_width'] ?? $defaults['row_border_width']))),
+            'table_border_color' => sanitize_hex_color($input['table_border_color'] ?? $defaults['table_border_color']) ?: $defaults['table_border_color'],
+            'table_border_width' => max(0, min(8, absint($input['table_border_width'] ?? $defaults['table_border_width']))),
             'row_height' => max(24, min(120, absint($input['row_height'] ?? $defaults['row_height']))),
             'header_bg_color' => sanitize_hex_color($input['header_bg_color'] ?? $defaults['header_bg_color']) ?: $defaults['header_bg_color'],
             'header_height' => max(24, min(120, absint($input['header_height'] ?? $defaults['header_height']))),
@@ -114,6 +138,7 @@ class LCNI_Industry_Settings
             'gradient_end_color' => sanitize_hex_color($input['gradient_end_color'] ?? $defaults['gradient_end_color']) ?: $defaults['gradient_end_color'],
             'row_hover_enabled' => ! empty($input['row_hover_enabled']) ? 1 : 0,
             'industry_filter_url' => esc_url_raw($input['industry_filter_url'] ?? $defaults['industry_filter_url']),
+            'default_session_limit' => max(1, min(200, absint($input['default_session_limit'] ?? $defaults['default_session_limit']))),
         );
     }
 
@@ -147,6 +172,8 @@ class LCNI_Industry_Settings
                     <tr><th><label><?php echo esc_html__('Row background', 'lcni-industry-monitor'); ?></label></th><td><input type="color" name="<?php echo esc_attr(self::OPTION_KEY); ?>[row_bg_color]" value="<?php echo esc_attr($settings['row_bg_color']); ?>" /></td></tr>
                     <tr><th><label><?php echo esc_html__('Row divider color', 'lcni-industry-monitor'); ?></label></th><td><input type="color" name="<?php echo esc_attr(self::OPTION_KEY); ?>[row_border_color]" value="<?php echo esc_attr($settings['row_border_color']); ?>" /></td></tr>
                     <tr><th><label><?php echo esc_html__('Row divider thickness (px)', 'lcni-industry-monitor'); ?></label></th><td><input type="number" min="0" max="8" name="<?php echo esc_attr(self::OPTION_KEY); ?>[row_border_width]" value="<?php echo esc_attr((string) $settings['row_border_width']); ?>" /></td></tr>
+                    <tr><th><label><?php echo esc_html__('Frame border color', 'lcni-industry-monitor'); ?></label></th><td><input type="color" name="<?php echo esc_attr(self::OPTION_KEY); ?>[table_border_color]" value="<?php echo esc_attr($settings['table_border_color']); ?>" /></td></tr>
+                    <tr><th><label><?php echo esc_html__('Frame border thickness (px)', 'lcni-industry-monitor'); ?></label></th><td><input type="number" min="0" max="8" name="<?php echo esc_attr(self::OPTION_KEY); ?>[table_border_width]" value="<?php echo esc_attr((string) $settings['table_border_width']); ?>" /></td></tr>
                     <tr><th><label><?php echo esc_html__('Row height (px)', 'lcni-industry-monitor'); ?></label></th><td><input type="number" min="24" max="120" name="<?php echo esc_attr(self::OPTION_KEY); ?>[row_height]" value="<?php echo esc_attr((string) $settings['row_height']); ?>" /></td></tr>
                     <tr><th><label><?php echo esc_html__('Row font size (px)', 'lcni-industry-monitor'); ?></label></th><td><input type="number" min="10" max="24" name="<?php echo esc_attr(self::OPTION_KEY); ?>[row_font_size]" value="<?php echo esc_attr((string) $settings['row_font_size']); ?>" /></td></tr>
                     <tr><th><label><?php echo esc_html__('Header background', 'lcni-industry-monitor'); ?></label></th><td><input type="color" name="<?php echo esc_attr(self::OPTION_KEY); ?>[header_bg_color]" value="<?php echo esc_attr($settings['header_bg_color']); ?>" /></td></tr>
@@ -165,6 +192,7 @@ class LCNI_Industry_Settings
                     <tr><th><label><?php echo esc_html__('Gradient end color', 'lcni-industry-monitor'); ?></label></th><td><input type="color" name="<?php echo esc_attr(self::OPTION_KEY); ?>[gradient_end_color]" value="<?php echo esc_attr($settings['gradient_end_color']); ?>" /></td></tr>
                     <tr><th><label><?php echo esc_html__('Enable row hover effect', 'lcni-industry-monitor'); ?></label></th><td><label><input type="checkbox" name="<?php echo esc_attr(self::OPTION_KEY); ?>[row_hover_enabled]" value="1" <?php checked(! empty($settings['row_hover_enabled'])); ?> /> <?php echo esc_html__('Enable hover + pointer on row', 'lcni-industry-monitor'); ?></label></td></tr>
                     <tr><th><label><?php echo esc_html__('Industry filter base URL', 'lcni-industry-monitor'); ?></label></th><td><input type="url" class="regular-text" name="<?php echo esc_attr(self::OPTION_KEY); ?>[industry_filter_url]" value="<?php echo esc_attr((string) $settings['industry_filter_url']); ?>" /><p class="description"><?php echo esc_html__('On row click, system appends ?apply_filter=1&name_icb2={Industry}.', 'lcni-industry-monitor'); ?></p></td></tr>
+                    <tr><th><label><?php echo esc_html__('Default sessions to display', 'lcni-industry-monitor'); ?></label></th><td><input type="number" min="1" max="200" name="<?php echo esc_attr(self::OPTION_KEY); ?>[default_session_limit]" value="<?php echo esc_attr((string) $settings['default_session_limit']); ?>" /></td></tr>
                 </table>
 
                 <?php submit_button(); ?>

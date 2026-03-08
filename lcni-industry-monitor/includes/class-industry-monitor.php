@@ -73,6 +73,7 @@ class LCNI_Industry_Monitor
                 'nonce' => $nonce,
                 'defaultTimeframe' => '1D',
                 'defaultMetric' => $default_metric,
+                'defaultSessionLimit' => (int) $settings['default_session_limit'],
                 'filterBaseUrl' => $settings['industry_filter_url'],
                 'rowHoverEnabled' => ! empty($settings['row_hover_enabled']),
                 'gradientMode' => $settings['gradient_mode'],
@@ -102,7 +103,7 @@ class LCNI_Industry_Monitor
 
         $metric = isset($_POST['metric']) ? sanitize_key(wp_unslash($_POST['metric'])) : 'money_flow_share';
         $timeframe = isset($_POST['timeframe']) ? sanitize_text_field(wp_unslash($_POST['timeframe'])) : '1D';
-        $limit = isset($_POST['limit']) ? absint($_POST['limit']) : 30;
+        $limit = isset($_POST['limit']) ? absint($_POST['limit']) : (int) $settings['default_session_limit'];
 
         if (! in_array($metric, $allowed_metrics, true)) {
             wp_send_json_error(array('message' => 'Unsupported metric.'), 400);

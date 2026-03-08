@@ -26,13 +26,13 @@
         return 'rgb(' + r + ',' + g + ',' + b + ')';
     }
 
-    function postData(metric, timeframe) {
+    function postData(metric, timeframe, limit) {
         var form = new FormData();
         form.append('action', 'lcni_industry_data');
         form.append('nonce', LCNIIndustryMonitor.nonce);
         form.append('metric', metric);
         form.append('timeframe', timeframe);
-        form.append('limit', '30');
+        form.append('limit', String(limit));
 
         return fetch(LCNIIndustryMonitor.ajaxUrl, {
             method: 'POST',
@@ -73,6 +73,29 @@
         }
     }
 
+    function filterMetricOptions() {
+        var metricEl = document.getElementById('lcni-industry-metric');
+        var searchEl = document.getElementById('lcni-industry-metric-search');
+        if (!metricEl || !searchEl) {
+            return;
+        }
+
+        var query = String(searchEl.value || '').toLowerCase();
+        var firstVisible = null;
+        Array.prototype.forEach.call(metricEl.options, function (option) {
+            var matched = option.text.toLowerCase().indexOf(query) !== -1;
+            option.hidden = !matched;
+            if (matched && !firstVisible) {
+                firstVisible = option;
+            }
+        });
+
+        if (firstVisible && firstVisible !== metricEl.selectedOptions[0]) {
+            metricEl.value = firstVisible.value;
+            loadData();
+        }
+    }
+
     function renderTable(data) {
         var headerRow = document.getElementById('lcni-industry-header-row');
         var body = document.getElementById('lcni-industry-body');
@@ -80,10 +103,10 @@
             return;
         }
 
-        headerRow.innerHTML = '<th>Industry</th>';
+        headerRow.innerHTML = '<th class="lcni-industry-monitor__sticky-industry">Industry</th>';
         body.innerHTML = '';
 
-        (data.columns || []).forEach(function (eventTime) {
+        (data.columns || []).slice().reverse().forEach(function (eventTime) {
             var th = document.createElement('th');
             th.textContent = String(eventTime);
             headerRow.appendChild(th);
@@ -106,11 +129,11 @@
             industryCell.textContent = industryName;
             tr.appendChild(industryCell);
 
-            (row.values || []).forEach(function (value, colIndex) {
+            (row.values || []).slice().reverse().forEach(function (value, colIndex, rowValues) {
                 var td = document.createElement('td');
                 td.textContent = (value === null || typeof value === 'undefined') ? '-' : String(value);
                 tr.appendChild(td);
-                applyGradient(tr, rowIndex, colIndex, rows.length, (row.values || []).length);
+                applyGradient(tr, rowIndex, colIndex, rows.length, rowValues.length);
             });
 
             tr.addEventListener('click', function () {
@@ -127,11 +150,23 @@
     function loadData() {
         var metricEl = document.getElementById('lcni-industry-metric');
         var timeframeEl = document.getElementById('lcni-industry-timeframe');
-        if (!metricEl || !timeframeEl) {
+        var sessionLimitEl = document.getElementById('lcni-industry-session-limit');
+        if (!metricEl || !timeframeEl || !sessionLimitEl) {
             return;
         }
 
-        postData(metricEl.value, timeframeEl.value)
+        var selected = metricEl.selectedOptions[0];
+        if (!selected || selected.hidden) {
+            return;
+        }
+
+        var limit = parseInt(sessionLimitEl.value, 10);
+        if (isNaN(limit) || limit < 1) {
+            limit = parseInt(LCNIIndustryMonitor.defaultSessionLimit, 10) || 30;
+            sessionLimitEl.value = String(limit);
+        }
+
+        postData(metricEl.value, timeframeEl.value, limit)
             .then(function (payload) {
                 if (!payload || !payload.success) {
                     return;
@@ -146,7 +181,9 @@
     document.addEventListener('DOMContentLoaded', function () {
         var metricEl = document.getElementById('lcni-industry-metric');
         var timeframeEl = document.getElementById('lcni-industry-timeframe');
-        if (!metricEl || !timeframeEl) {
+        var sessionLimitEl = document.getElementById('lcni-industry-session-limit');
+        var metricSearchEl = document.getElementById('lcni-industry-metric-search');
+        if (!metricEl || !timeframeEl || !sessionLimitEl || !metricSearchEl) {
             return;
         }
 
@@ -156,9 +193,14 @@
         if (LCNIIndustryMonitor.defaultTimeframe) {
             timeframeEl.value = LCNIIndustryMonitor.defaultTimeframe;
         }
+        if (LCNIIndustryMonitor.defaultSessionLimit) {
+            sessionLimitEl.value = String(LCNIIndustryMonitor.defaultSessionLimit);
+        }
 
         metricEl.addEventListener('change', loadData);
         timeframeEl.addEventListener('change', loadData);
+        sessionLimitEl.addEventListener('change', loadData);
+        metricSearchEl.addEventListener('input', filterMetricOptions);
         loadData();
     });
 })();
