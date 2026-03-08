@@ -4,6 +4,8 @@
     --lcni-row-bg: #ffffff;
     --lcni-row-border-color: #e2e2e2;
     --lcni-row-border-width: 1px;
+    --lcni-table-border-color: #d6d6d6;
+    --lcni-table-border-width: 1px;
     --lcni-row-height: 40px;
     --lcni-header-bg: #f7f7f7;
     --lcni-header-height: 44px;
@@ -18,14 +20,30 @@
     align-items: center;
 }
 
+.lcni-industry-monitor__metric-picker {
+    display: flex;
+    flex-direction: column;
+    min-width: 260px;
+    gap: 6px;
+}
+
+.lcni-industry-monitor__metric-search,
+.lcni-industry-monitor__metric,
+.lcni-industry-monitor__session-limit,
+.lcni-industry-monitor__timeframe {
+    min-height: 32px;
+}
+
 .lcni-industry-monitor__table-wrap {
-    overflow-x: auto;
+    overflow: auto;
     width: 100%;
-    border: 1px solid #ddd;
+    max-height: 70vh;
+    border: var(--lcni-table-border-width) solid var(--lcni-table-border-color);
 }
 
 .lcni-industry-monitor__table {
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0;
     width: max-content;
     min-width: 100%;
 }
@@ -46,7 +64,7 @@
 .lcni-industry-monitor__table thead th {
     position: sticky;
     top: 0;
-    z-index: 3;
+    z-index: 5;
     background: var(--lcni-header-bg);
     min-height: var(--lcni-header-height);
     height: var(--lcni-header-height);
@@ -56,8 +74,13 @@
 .lcni-industry-monitor__sticky-col {
     position: sticky;
     left: 0;
-    z-index: 4;
+    z-index: 6;
     background: #fafafa;
+    text-align: left;
+}
+
+.lcni-industry-monitor__table thead th:first-child {
+    z-index: 7;
 }
 
 .lcni-industry-monitor__row.is-hoverable {

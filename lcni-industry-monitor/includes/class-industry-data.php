@@ -24,6 +24,7 @@ class LCNI_Industry_Data
     {
         global $wpdb;
         $this->wpdb = $db ?: $wpdb;
+        $this->metric_map = $this->build_metric_map();
     }
 
     /**
@@ -32,6 +33,68 @@ class LCNI_Industry_Data
     public function get_supported_metrics()
     {
         return array_keys($this->metric_map);
+    }
+
+    /**
+     * @return array<string, array<string, string>>
+     */
+    private function build_metric_map()
+    {
+        $map = $this->metric_map;
+        $table_whitelist = array(
+            'lcni_industry_metrics',
+            'lcni_industry_index',
+            'lcni_thong_ke_nganh_icb_2_toan_thi_truong',
+            'lcni_industry_return',
+        );
+
+        foreach ($table_whitelist as $table_name) {
+            $prefixed_table = $this->wpdb->prefix . $table_name;
+            $columns = $this->wpdb->get_results("SHOW COLUMNS FROM {$prefixed_table}", ARRAY_A);
+            if (! is_array($columns)) {
+                continue;
+            }
+
+            foreach ($columns as $column_meta) {
+                $column = isset($column_meta['Field']) ? sanitize_key($column_meta['Field']) : '';
+                $type = isset($column_meta['Type']) ? strtolower((string) $column_meta['Type']) : '';
+                if ($column === '' || isset($map[$column])) {
+                    continue;
+                }
+                if ($this->is_excluded_column($column) || ! $this->is_numeric_type($type)) {
+                    continue;
+                }
+
+                $map[$column] = array(
+                    'table' => $table_name,
+                    'column' => $column,
+                );
+            }
+        }
+
+        return $map;
+    }
+
+    /** @param string $column */
+    private function is_excluded_column($column)
+    {
+        $excluded = array(
+            'id',
+            'id_icb2',
+            'timeframe',
+            'event_time',
+            'created_at',
+            'updated_at',
+            'name_icb2',
+        );
+
+        return in_array($column, $excluded, true);
+    }
+
+    /** @param string $type */
+    private function is_numeric_type($type)
+    {
+        return (bool) preg_match('/(int|decimal|numeric|float|double|real|bigint|smallint|tinyint)/', $type);
     }
 
     /**
@@ -57,6 +120,20 @@ class LCNI_Industry_Data
             return null;
         }
 
+        $raw_string = trim((string) $raw);
+        if (preg_match('/^\d{12}$/', $raw_string) === 1) {
+            $parsed = DateTime::createFromFormat('YmdHi', $raw_string, new DateTimeZone('UTC'));
+            return $parsed ? $parsed->getTimestamp() : null;
+        }
+        if (preg_match('/^\d{14}$/', $raw_string) === 1) {
+            $parsed = DateTime::createFromFormat('YmdHis', $raw_string, new DateTimeZone('UTC'));
+            return $parsed ? $parsed->getTimestamp() : null;
+        }
+        if (preg_match('/^\d{8}$/', $raw_string) === 1) {
+            $parsed = DateTime::createFromFormat('Ymd', $raw_string, new DateTimeZone('UTC'));
+            return $parsed ? $parsed->getTimestamp() : null;
+        }
+
         if (is_numeric($raw)) {
             $value = (int) $raw;
             if ($value > 2000000000000) {
@@ -70,7 +147,7 @@ class LCNI_Industry_Data
             }
         }
 
-        $parsed = strtotime((string) $raw);
+        $parsed = strtotime($raw_string);
         if ($parsed === false) {
             return null;
         }
@@ -84,7 +161,7 @@ class LCNI_Industry_Data
      */
     public function format_event_time($timestamp)
     {
-        return gmdate('Y-m-d H:i', (int) $timestamp);
+        return gmdate('d-m-Y', (int) $timestamp);
     }
 
     /**
@@ -172,7 +249,8 @@ class LCNI_Industry_Data
                 continue;
             }
 
-            $grouped[$industry][$index] = ($metric === 'industry_volume') ? (int) $raw_value : (float) $raw_value;
+            $is_integer = preg_match('/(volume|count|qty|quantity)$/', (string) $metric) === 1;
+            $grouped[$industry][$index] = $is_integer ? (int) $raw_value : (float) $raw_value;
         }
 
         $result = array();
