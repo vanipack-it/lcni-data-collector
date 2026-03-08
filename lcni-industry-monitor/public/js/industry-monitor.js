@@ -1,37 +1,9 @@
 (function () {
-    function hexToRgb(hex) {
-        if (!hex) return null;
-        var normalized = String(hex).replace('#', '');
-        if (normalized.length === 3) {
-            normalized = normalized.split('').map(function (c) { return c + c; }).join('');
-        }
-        if (normalized.length !== 6) return null;
-        var intVal = parseInt(normalized, 16);
-        if (isNaN(intVal)) return null;
-        return {
-            r: (intVal >> 16) & 255,
-            g: (intVal >> 8) & 255,
-            b: intVal & 255
-        };
-    }
-
-    function blendColor(startHex, endHex, ratio) {
-        var start = hexToRgb(startHex);
-        var end = hexToRgb(endHex);
-        if (!start || !end) return '';
-        var clamp = Math.max(0, Math.min(1, ratio));
-        var r = Math.round(start.r + (end.r - start.r) * clamp);
-        var g = Math.round(start.g + (end.g - start.g) * clamp);
-        var b = Math.round(start.b + (end.b - start.b) * clamp);
-        return 'rgb(' + r + ',' + g + ',' + b + ')';
-    }
-
-    function postData(metric, timeframe, limit) {
+    function postData(metric, limit) {
         var form = new FormData();
         form.append('action', 'lcni_industry_data');
         form.append('nonce', LCNIIndustryMonitor.nonce);
         form.append('metric', metric);
-        form.append('timeframe', timeframe);
         form.append('limit', String(limit));
 
         return fetch(LCNIIndustryMonitor.ajaxUrl, {
@@ -56,64 +28,48 @@
         return url.toString();
     }
 
-    function applyGradient(tr, rowIndex, colIndex, totalRows, totalCols) {
-        var mode = LCNIIndustryMonitor.gradientMode || 'none';
-        if (mode === 'none') {
-            return;
-        }
-        var ratio = 0;
-        if (mode === 'row') {
-            ratio = totalRows > 1 ? rowIndex / (totalRows - 1) : 0;
-        } else if (mode === 'column') {
-            ratio = totalCols > 1 ? colIndex / (totalCols - 1) : 0;
-        }
-        var color = blendColor(LCNIIndustryMonitor.gradientStartColor, LCNIIndustryMonitor.gradientEndColor, ratio);
-        if (color) {
-            tr.children[colIndex + 1].style.backgroundColor = color;
-        }
+    function passesRule(value, rule) {
+        if (typeof value !== 'number' || !isFinite(value)) return false;
+        var target = Number(rule.value);
+        if (!isFinite(target)) return false;
+
+        if (rule.operator === '>') return value > target;
+        if (rule.operator === '<') return value < target;
+        return value === target;
     }
 
-    function filterMetricOptions() {
-        var metricEl = document.getElementById('lcni-industry-metric');
-        var searchEl = document.getElementById('lcni-industry-metric-search');
-        if (!metricEl || !searchEl) {
-            return;
-        }
-
-        var query = String(searchEl.value || '').toLowerCase();
-        var firstVisible = null;
-        Array.prototype.forEach.call(metricEl.options, function (option) {
-            var matched = option.text.toLowerCase().indexOf(query) !== -1;
-            option.hidden = !matched;
-            if (matched && !firstVisible) {
-                firstVisible = option;
+    function applyCellRules(td, value, metric) {
+        var rules = Array.isArray(LCNIIndustryMonitor.cellRules) ? LCNIIndustryMonitor.cellRules : [];
+        rules.forEach(function (rule) {
+            if (!rule || rule.field !== metric) return;
+            if (passesRule(value, rule)) {
+                td.style.backgroundColor = String(rule.bg_color || '');
+                td.style.color = String(rule.text_color || '');
             }
         });
-
-        if (firstVisible && firstVisible !== metricEl.selectedOptions[0]) {
-            metricEl.value = firstVisible.value;
-            loadData();
-        }
     }
 
-    function renderTable(data) {
+    function renderTable(data, metric) {
         var headerRow = document.getElementById('lcni-industry-header-row');
         var body = document.getElementById('lcni-industry-body');
-        if (!headerRow || !body) {
-            return;
-        }
+        if (!headerRow || !body) return;
 
-        headerRow.innerHTML = '<th class="lcni-industry-monitor__sticky-industry">Industry</th>';
+        var industryHead = headerRow.querySelector('.lcni-industry-monitor__sticky-industry');
+        headerRow.innerHTML = '';
+        if (industryHead) {
+            headerRow.appendChild(industryHead);
+        }
         body.innerHTML = '';
 
         (data.columns || []).slice().reverse().forEach(function (eventTime) {
             var th = document.createElement('th');
+            th.className = 'lcni-industry-monitor__event-time';
             th.textContent = String(eventTime);
             headerRow.appendChild(th);
         });
 
         var rows = data.rows || [];
-        rows.forEach(function (row, rowIndex) {
+        rows.forEach(function (row) {
             var tr = document.createElement('tr');
             tr.className = 'lcni-industry-monitor__row';
 
@@ -129,17 +85,19 @@
             industryCell.textContent = industryName;
             tr.appendChild(industryCell);
 
-            (row.values || []).slice().reverse().forEach(function (value, colIndex, rowValues) {
+            (row.values || []).slice().reverse().forEach(function (value) {
                 var td = document.createElement('td');
-                td.textContent = (value === null || typeof value === 'undefined') ? '-' : String(value);
+                if (value === null || typeof value === 'undefined') {
+                    td.textContent = '-';
+                } else {
+                    td.textContent = String(value);
+                    applyCellRules(td, Number(value), metric);
+                }
                 tr.appendChild(td);
-                applyGradient(tr, rowIndex, colIndex, rows.length, rowValues.length);
             });
 
             tr.addEventListener('click', function () {
-                if (!industryName) {
-                    return;
-                }
+                if (!industryName) return;
                 window.location.href = buildFilterUrl(industryName);
             });
 
@@ -149,58 +107,73 @@
 
     function loadData() {
         var metricEl = document.getElementById('lcni-industry-metric');
-        var timeframeEl = document.getElementById('lcni-industry-timeframe');
-        var sessionLimitEl = document.getElementById('lcni-industry-session-limit');
-        if (!metricEl || !timeframeEl || !sessionLimitEl) {
-            return;
-        }
+        if (!metricEl || !metricEl.value) return;
 
-        var selected = metricEl.selectedOptions[0];
-        if (!selected || selected.hidden) {
-            return;
-        }
-
-        var limit = parseInt(sessionLimitEl.value, 10);
+        var limit = parseInt(LCNIIndustryMonitor.defaultSessionLimit, 10);
         if (isNaN(limit) || limit < 1) {
-            limit = parseInt(LCNIIndustryMonitor.defaultSessionLimit, 10) || 30;
-            sessionLimitEl.value = String(limit);
+            limit = 30;
         }
 
-        postData(metricEl.value, timeframeEl.value, limit)
+        postData(metricEl.value, limit)
             .then(function (payload) {
-                if (!payload || !payload.success) {
-                    return;
-                }
-                renderTable(payload.data || {});
+                if (!payload || !payload.success) return;
+                renderTable(payload.data || {}, metricEl.value);
             })
             .catch(function () {
                 // no-op
             });
     }
 
-    document.addEventListener('DOMContentLoaded', function () {
+    function setupMetricDropdown() {
+        var dropdown = document.getElementById('lcni-metric-dropdown');
+        var toggle = document.getElementById('lcni-industry-metric-toggle');
+        var menu = document.getElementById('lcni-industry-metric-menu');
+        var search = document.getElementById('lcni-industry-metric-search');
         var metricEl = document.getElementById('lcni-industry-metric');
-        var timeframeEl = document.getElementById('lcni-industry-timeframe');
-        var sessionLimitEl = document.getElementById('lcni-industry-session-limit');
-        var metricSearchEl = document.getElementById('lcni-industry-metric-search');
-        if (!metricEl || !timeframeEl || !sessionLimitEl || !metricSearchEl) {
-            return;
+        var optionsWrap = document.getElementById('lcni-industry-metric-options');
+        if (!dropdown || !toggle || !menu || !search || !metricEl || !optionsWrap) return;
+
+        function selectMetric(value, label) {
+            metricEl.value = value;
+            toggle.textContent = label;
+            menu.hidden = true;
+            loadData();
         }
 
-        if (LCNIIndustryMonitor.defaultMetric) {
-            metricEl.value = LCNIIndustryMonitor.defaultMetric;
-        }
-        if (LCNIIndustryMonitor.defaultTimeframe) {
-            timeframeEl.value = LCNIIndustryMonitor.defaultTimeframe;
-        }
-        if (LCNIIndustryMonitor.defaultSessionLimit) {
-            sessionLimitEl.value = String(LCNIIndustryMonitor.defaultSessionLimit);
-        }
+        toggle.addEventListener('click', function () {
+            menu.hidden = !menu.hidden;
+            if (!menu.hidden) search.focus();
+        });
 
-        metricEl.addEventListener('change', loadData);
-        timeframeEl.addEventListener('change', loadData);
-        sessionLimitEl.addEventListener('change', loadData);
-        metricSearchEl.addEventListener('input', filterMetricOptions);
-        loadData();
+        document.addEventListener('click', function (event) {
+            if (!dropdown.contains(event.target)) {
+                menu.hidden = true;
+            }
+        });
+
+        optionsWrap.addEventListener('click', function (event) {
+            var target = event.target;
+            if (!target.classList.contains('lcni-industry-monitor__metric-option')) return;
+            selectMetric(String(target.dataset.value || ''), target.textContent || '');
+        });
+
+        search.addEventListener('input', function () {
+            var query = String(search.value || '').toLowerCase();
+            optionsWrap.querySelectorAll('.lcni-industry-monitor__metric-option').forEach(function (option) {
+                var matched = option.textContent.toLowerCase().indexOf(query) !== -1;
+                option.hidden = !matched;
+            });
+        });
+
+        var defaultMetric = LCNIIndustryMonitor.defaultMetric;
+        var firstOption = optionsWrap.querySelector('.lcni-industry-monitor__metric-option');
+        var selected = optionsWrap.querySelector('.lcni-industry-monitor__metric-option[data-value="' + defaultMetric + '"]') || firstOption;
+        if (selected) {
+            selectMetric(String(selected.dataset.value || ''), selected.textContent || '');
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        setupMetricDropdown();
     });
 })();
