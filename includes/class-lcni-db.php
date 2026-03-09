@@ -16,6 +16,7 @@ class LCNI_DB {
     const SEED_REBUILD_QUEUE_OPTION = 'lcni_seed_rebuild_queue_v1';
     const SEED_REBUILD_WATERMARK_OPTION = 'lcni_seed_rebuild_watermark_v1';
     const SEED_PIPELINE_LOCK_OPTION = 'lcni_seed_pipeline_lock_v1';
+    const SEED_OPTIMIZATION_WATERMARK_OPTION = 'lcni_seed_optimization_watermark_v1';
     const SCHEMA_ENSURE_LOCK_OPTION = 'lcni_schema_ensure_lock_v1';
     const SCHEMA_ENSURE_LOCK_TTL = 120;
     const DEFAULT_MARKETS = [
@@ -6320,6 +6321,21 @@ class LCNI_DB {
         return false;
     }
 
+    private static function get_ohlc_change_watermark() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $stats = $wpdb->get_row(
+            "SELECT COALESCE(MAX(id), 0) AS max_id, COUNT(*) AS total_rows FROM {$table}",
+            ARRAY_A
+        );
+
+        $max_id = (int) ($stats['max_id'] ?? 0);
+        $total_rows = (int) ($stats['total_rows'] ?? 0);
+
+        return $max_id . ':' . $total_rows;
+    }
+
     public static function optimize_seed_dataset() {
         global $wpdb;
 
@@ -6346,6 +6362,49 @@ class LCNI_DB {
 
             return [
                 'status' => 'skipped_import_running',
+                'retention_limit' => $retention_limit,
+                'eod_min_volume' => $eod_min_volume,
+                'retention_enabled' => $retention_enabled,
+                'volume_filter_enabled' => $volume_filter_enabled,
+                'filtered_rows' => 0,
+                'pruned_rows' => 0,
+            ];
+        }
+
+        $seed_stats = LCNI_SeedRepository::get_dashboard_stats();
+        $seed_in_progress = ((int) ($seed_stats['total'] ?? 0) > 0) && ((int) ($seed_stats['done'] ?? 0) < (int) ($seed_stats['total'] ?? 0));
+        if ($seed_in_progress) {
+            self::log_change(
+                'seed_data_optimized',
+                'Skipped seed optimization while seed tasks are still running.',
+                [
+                    'status' => 'skipped_seed_running',
+                    'retention_limit' => $retention_limit,
+                    'eod_min_volume' => $eod_min_volume,
+                    'retention_enabled' => $retention_enabled,
+                    'volume_filter_enabled' => $volume_filter_enabled,
+                    'seed_total' => (int) ($seed_stats['total'] ?? 0),
+                    'seed_done' => (int) ($seed_stats['done'] ?? 0),
+                    'seed_running' => (int) ($seed_stats['running'] ?? 0),
+                ]
+            );
+
+            return [
+                'status' => 'skipped_seed_running',
+                'retention_limit' => $retention_limit,
+                'eod_min_volume' => $eod_min_volume,
+                'retention_enabled' => $retention_enabled,
+                'volume_filter_enabled' => $volume_filter_enabled,
+                'filtered_rows' => 0,
+                'pruned_rows' => 0,
+            ];
+        }
+
+        $current_watermark = self::get_ohlc_change_watermark();
+        $last_watermark = (string) get_option(self::SEED_OPTIMIZATION_WATERMARK_OPTION, '');
+        if ($last_watermark !== '' && hash_equals($last_watermark, $current_watermark)) {
+            return [
+                'status' => 'skipped_no_ohlc_changes',
                 'retention_limit' => $retention_limit,
                 'eod_min_volume' => $eod_min_volume,
                 'retention_enabled' => $retention_enabled,
@@ -6417,6 +6476,8 @@ class LCNI_DB {
                 $pruned_rows
             )
         );
+
+        update_option(self::SEED_OPTIMIZATION_WATERMARK_OPTION, self::get_ohlc_change_watermark(), false);
 
         return [
             'retention_limit' => $retention_limit,
