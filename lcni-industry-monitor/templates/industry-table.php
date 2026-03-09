@@ -36,7 +36,6 @@ $css_vars = sprintf(
                 <tr id="lcni-industry-header-row">
                     <th class="lcni-industry-monitor__sticky-industry">
                         <div class="lcni-industry-monitor__industry-head">
-                            <span><?php esc_html_e('Industry', 'lcni-industry-monitor'); ?></span>
                             <div class="lcni-industry-monitor__metric-dropdown" id="lcni-metric-dropdown">
                                 <button type="button" class="lcni-industry-monitor__metric-toggle" id="lcni-industry-metric-toggle"><?php esc_html_e('Vui lòng chọn Giá trị thống kê', 'lcni-industry-monitor'); ?></button>
                                 <div class="lcni-industry-monitor__metric-menu" id="lcni-industry-metric-menu" hidden>

@@ -25,6 +25,7 @@
     width: 100%;
     max-height: var(--lcni-table-height);
     border: var(--lcni-table-border-width) solid var(--lcni-table-border-color);
+    box-shadow: none;
 }
 
 .lcni-industry-monitor__table {
@@ -63,15 +64,21 @@
     z-index: 18;
     background: #fafafa;
     text-align: left;
-    width: 1%;
+    width: max-content;
+    min-width: max-content;
 }
 
-.lcni-industry-monitor__sticky-industry {
-    z-index: 30;
+.lcni-industry-monitor__table thead .lcni-industry-monitor__sticky-industry {
+    z-index: 60;
+    top: 0;
+    background: var(--lcni-header-bg);
 }
 
-.lcni-industry-monitor__event-time,
-.lcni-industry-monitor__table td {
+.lcni-industry-monitor__table tbody .lcni-industry-monitor__sticky-col {
+    z-index: 20;
+}
+
+.lcni-industry-monitor__event-time {
     min-width: var(--lcni-event-time-col-width);
 }
 
