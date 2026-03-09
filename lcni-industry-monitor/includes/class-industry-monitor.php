@@ -42,6 +42,14 @@ class LCNI_Industry_Monitor
 
     public function render_shortcode($atts = array())
     {
+        $atts = shortcode_atts(
+            array(
+                'timeframe' => '1D',
+            ),
+            $atts,
+            'lcni_industry_monitor'
+        );
+
         wp_enqueue_style('lcni-industry-monitor');
         wp_enqueue_script('lcni-industry-monitor');
 
@@ -77,6 +85,11 @@ class LCNI_Industry_Monitor
         }
 
         $default_metric = $metric_options[0]['key'] ?? 'money_flow_share';
+        $default_timeframe = strtoupper(trim((string) $atts['timeframe']));
+        if ($default_timeframe === '') {
+            $default_timeframe = '1D';
+        }
+
         $nonce = wp_create_nonce('lcni_industry_data_nonce');
 
         wp_localize_script(
@@ -86,6 +99,7 @@ class LCNI_Industry_Monitor
                 'ajaxUrl' => admin_url('admin-ajax.php'),
                 'nonce' => $nonce,
                 'defaultMetric' => $default_metric,
+                'defaultTimeframe' => $default_timeframe,
                 'defaultSessionLimit' => (int) $settings['default_session_limit'],
                 'filterBaseUrl' => $settings['industry_filter_url'],
                 'rowHoverEnabled' => ! empty($settings['row_hover_enabled']),
@@ -114,7 +128,10 @@ class LCNI_Industry_Monitor
         }
 
         $metric = isset($_POST['metric']) ? sanitize_key(wp_unslash($_POST['metric'])) : 'money_flow_share';
-        $timeframe = '1D';
+        $timeframe = isset($_POST['timeframe']) ? strtoupper(sanitize_text_field(wp_unslash($_POST['timeframe']))) : '1D';
+        if ($timeframe === '') {
+            $timeframe = '1D';
+        }
         $limit = isset($_POST['limit']) ? absint($_POST['limit']) : (int) $settings['default_session_limit'];
 
         if (! in_array($metric, $allowed_metrics, true)) {
