@@ -105,6 +105,7 @@ class LCNI_Industry_Monitor
                 'rowHoverEnabled' => ! empty($settings['row_hover_enabled']),
                 'eventTimeColumnWidth' => (int) $settings['event_time_col_width'],
                 'cellRules' => array_values((array) ($settings['cell_rules'] ?? array())),
+                'rowGradientRules' => array_values((array) ($settings['row_gradient_rules'] ?? array())),
             )
         );
 

@@ -50,6 +50,68 @@
         });
     }
 
+
+    function findRowGradientRule(metric) {
+        var rules = Array.isArray(LCNIIndustryMonitor.rowGradientRules) ? LCNIIndustryMonitor.rowGradientRules : [];
+        for (var i = 0; i < rules.length; i += 1) {
+            if (rules[i] && rules[i].field === metric) {
+                return rules[i];
+            }
+        }
+        return null;
+    }
+
+    function hexToRgb(hex) {
+        var value = String(hex || '').trim().replace('#', '');
+        if (value.length === 3) {
+            value = value.split('').map(function (char) { return char + char; }).join('');
+        }
+        if (!/^[0-9a-fA-F]{6}$/.test(value)) {
+            return null;
+        }
+        return {
+            r: parseInt(value.slice(0, 2), 16),
+            g: parseInt(value.slice(2, 4), 16),
+            b: parseInt(value.slice(4, 6), 16)
+        };
+    }
+
+    function blendColor(start, end, ratio) {
+        return {
+            r: Math.round(start.r + (end.r - start.r) * ratio),
+            g: Math.round(start.g + (end.g - start.g) * ratio),
+            b: Math.round(start.b + (end.b - start.b) * ratio)
+        };
+    }
+
+    function rgbToCss(color) {
+        return 'rgb(' + color.r + ', ' + color.g + ', ' + color.b + ')';
+    }
+
+    function gradientColorForValue(value, min, max, rule) {
+        if (!isFinite(value) || !isFinite(min) || !isFinite(max) || max <= min || !rule) {
+            return '';
+        }
+
+        var start = hexToRgb(rule.start_color);
+        var mid = hexToRgb(rule.mid_color);
+        var end = hexToRgb(rule.end_color);
+        if (!start || !mid || !end) {
+            return '';
+        }
+
+        var normalized = (value - min) / (max - min);
+        var color;
+
+        if (normalized <= 0.5) {
+            color = blendColor(start, mid, normalized / 0.5);
+        } else {
+            color = blendColor(mid, end, (normalized - 0.5) / 0.5);
+        }
+
+        return rgbToCss(color);
+    }
+
     function renderTable(data, metric) {
         var headerRow = document.getElementById('lcni-industry-header-row');
         var body = document.getElementById('lcni-industry-body');
@@ -70,6 +132,8 @@
         });
 
         var rows = data.rows || [];
+        var rowGradientRule = findRowGradientRule(metric);
+
         rows.forEach(function (row) {
             var tr = document.createElement('tr');
             tr.className = 'lcni-industry-monitor__row';
@@ -86,13 +150,27 @@
             industryCell.textContent = industryName;
             tr.appendChild(industryCell);
 
-            (row.values || []).slice().reverse().forEach(function (value) {
+            var orderedValues = (row.values || []).slice().reverse();
+            var numericValues = orderedValues
+                .map(function (value) { return Number(value); })
+                .filter(function (value) { return isFinite(value); });
+            var rowMin = numericValues.length ? Math.min.apply(Math, numericValues) : NaN;
+            var rowMax = numericValues.length ? Math.max.apply(Math, numericValues) : NaN;
+
+            orderedValues.forEach(function (value) {
                 var td = document.createElement('td');
                 if (value === null || typeof value === 'undefined') {
                     td.textContent = '-';
                 } else {
+                    var numericValue = Number(value);
                     td.textContent = String(value);
-                    applyCellRules(td, Number(value), metric);
+
+                    var gradientColor = gradientColorForValue(numericValue, rowMin, rowMax, rowGradientRule);
+                    if (gradientColor) {
+                        td.style.backgroundColor = gradientColor;
+                    }
+
+                    applyCellRules(td, numericValue, metric);
                 }
                 tr.appendChild(td);
             });
