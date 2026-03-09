@@ -7,13 +7,12 @@ $settings = isset($settings) && is_array($settings) ? $settings : LCNI_Industry_
 $metric_options = isset($metric_options) && is_array($metric_options) ? $metric_options : array();
 
 $css_vars = sprintf(
-    '--lcni-row-bg:%1$s;--lcni-row-border-color:%2$s;--lcni-row-border-width:%3$dpx;--lcni-table-border-color:%4$s;--lcni-table-border-width:%5$dpx;--lcni-row-height:%6$dpx;--lcni-header-bg:%7$s;--lcni-header-height:%8$dpx;--lcni-row-font-size:%9$dpx;--lcni-table-height:%10$dvh;--lcni-event-time-col-width:%11$dpx;--lcni-dropdown-height:%12$dpx;--lcni-dropdown-width:%13$dpx;--lcni-dropdown-border-color:%14$s;--lcni-dropdown-border-width:%15$dpx;',
+    '--lcni-row-bg:%1$s;--lcni-row-border-color:%2$s;--lcni-row-border-width:%3$dpx;--lcni-table-border-color:%4$s;--lcni-table-border-width:%5$dpx;--lcni-header-bg:%6$s;--lcni-header-height:%7$dpx;--lcni-row-font-size:%8$dpx;--lcni-table-height:%9$dvh;--lcni-event-time-col-width:%10$dpx;--lcni-dropdown-height:%11$dpx;--lcni-dropdown-width:%12$dpx;--lcni-dropdown-border-color:%13$s;--lcni-dropdown-border-width:%14$dpx;',
     esc_attr($settings['row_bg_color']),
     esc_attr($settings['row_border_color']),
     (int) $settings['row_border_width'],
     esc_attr($settings['table_border_color']),
     (int) $settings['table_border_width'],
-    (int) $settings['row_height'],
     esc_attr($settings['header_bg_color']),
     (int) $settings['header_height'],
     (int) $settings['row_font_size'],

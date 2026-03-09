@@ -6,7 +6,6 @@
     --lcni-row-border-width: 1px;
     --lcni-table-border-color: #d6d6d6;
     --lcni-table-border-width: 1px;
-    --lcni-row-height: 40px;
     --lcni-header-bg: #f7f7f7;
     --lcni-header-height: 44px;
     --lcni-row-font-size: 14px;
@@ -43,8 +42,6 @@
     padding: 8px 10px;
     white-space: nowrap;
     background: var(--lcni-row-bg);
-    min-height: var(--lcni-row-height);
-    height: var(--lcni-row-height);
     font-size: var(--lcni-row-font-size);
 }
 
