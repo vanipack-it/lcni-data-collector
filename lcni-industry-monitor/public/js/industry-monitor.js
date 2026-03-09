@@ -29,6 +29,50 @@
         return url.toString();
     }
 
+    function shouldApplyFormatter() {
+        if (!window.LCNIFormatter) {
+            return false;
+        }
+
+        if (typeof window.LCNIFormatter.shouldApply !== 'function') {
+            return true;
+        }
+
+        return window.LCNIFormatter.shouldApply('industry_monitor');
+    }
+
+    function formatMetricValue(value, metric) {
+        if (!shouldApplyFormatter()) {
+            return String(value);
+        }
+
+        if (typeof window.LCNIFormatter.formatByField === 'function') {
+            return window.LCNIFormatter.formatByField(value, metric);
+        }
+
+        if (typeof window.LCNIFormatter.formatByColumn === 'function') {
+            return window.LCNIFormatter.formatByColumn(value, metric);
+        }
+
+        if (typeof window.LCNIFormatter.format === 'function') {
+            return window.LCNIFormatter.format(value, 'price');
+        }
+
+        return String(value);
+    }
+
+    function formatEventTimeValue(rawValue, fallbackValue) {
+        if (!shouldApplyFormatter()) {
+            return String(fallbackValue || rawValue || '');
+        }
+
+        if (typeof window.LCNIFormatter.formatByField === 'function') {
+            return window.LCNIFormatter.formatByField(rawValue, 'event_time');
+        }
+
+        return String(fallbackValue || rawValue || '');
+    }
+
     function passesRule(value, rule) {
         if (typeof value !== 'number' || !isFinite(value)) return false;
         var target = Number(rule.value);
@@ -49,7 +93,6 @@
             }
         });
     }
-
 
     function findRowGradientRule(metric) {
         var rules = Array.isArray(LCNIIndustryMonitor.rowGradientRules) ? LCNIIndustryMonitor.rowGradientRules : [];
@@ -101,12 +144,13 @@
         }
 
         var normalized = (value - min) / (max - min);
+        var smooth = normalized * normalized * (3 - (2 * normalized));
         var color;
 
-        if (normalized <= 0.5) {
-            color = blendColor(start, mid, normalized / 0.5);
+        if (smooth <= 0.5) {
+            color = blendColor(start, mid, smooth / 0.5);
         } else {
-            color = blendColor(mid, end, (normalized - 0.5) / 0.5);
+            color = blendColor(mid, end, (smooth - 0.5) / 0.5);
         }
 
         return rgbToCss(color);
@@ -124,12 +168,16 @@
         }
         body.innerHTML = '';
 
-        (data.columns || []).slice().reverse().forEach(function (eventTime) {
+        var displayColumns = Array.isArray(data.columns) ? data.columns : [];
+        var rawColumns = Array.isArray(data.rawColumns) ? data.rawColumns : [];
+        var columnCount = Math.max(displayColumns.length, rawColumns.length);
+
+        for (var colIndex = columnCount - 1; colIndex >= 0; colIndex -= 1) {
             var th = document.createElement('th');
             th.className = 'lcni-industry-monitor__event-time';
-            th.textContent = String(eventTime);
+            th.textContent = formatEventTimeValue(rawColumns[colIndex], displayColumns[colIndex]);
             headerRow.appendChild(th);
-        });
+        }
 
         var rows = data.rows || [];
         var rowGradientRule = findRowGradientRule(metric);
@@ -163,7 +211,7 @@
                     td.textContent = '-';
                 } else {
                     var numericValue = Number(value);
-                    td.textContent = String(value);
+                    td.textContent = formatMetricValue(numericValue, metric);
 
                     var gradientColor = gradientColorForValue(numericValue, rowMin, rowMax, rowGradientRule);
                     if (gradientColor) {

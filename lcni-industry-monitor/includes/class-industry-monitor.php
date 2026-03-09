@@ -34,7 +34,7 @@ class LCNI_Industry_Monitor
         wp_register_script(
             'lcni-industry-monitor',
             LCNI_INDUSTRY_MONITOR_URL . 'public/js/industry-monitor.js',
-            array(),
+            array('lcni-main-js'),
             LCNI_INDUSTRY_MONITOR_VERSION,
             true
         );

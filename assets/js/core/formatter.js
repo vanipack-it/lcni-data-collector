@@ -32,6 +32,7 @@
       watchlist: true,
       market_overview: true,
       chart_builder: true,
+      industry_monitor: true,
     },
     date_formats: {
       event_time: "DD-MM-YYYY",

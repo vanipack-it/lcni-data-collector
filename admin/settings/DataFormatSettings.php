@@ -18,6 +18,7 @@ class LCNI_Data_Format_Settings {
         'watchlist',
         'market_overview',
         'chart_builder',
+        'industry_monitor',
     ];
 
     const MODULE_SCOPE_LABELS = [
@@ -28,6 +29,7 @@ class LCNI_Data_Format_Settings {
         'watchlist' => 'Watchlist',
         'market_overview' => 'Market Overview',
         'chart_builder' => 'Chart Builder',
+        'industry_monitor' => 'Industry Monitor',
     ];
 
     const MULTIPLY_100_FIELDS = [
@@ -48,6 +50,16 @@ class LCNI_Data_Format_Settings {
         'pct_so_ma_tren_ma20',
         'pct_so_ma_tren_ma50',
         'pct_so_ma_tren_ma100',
+        'industry_return',
+        'money_flow_share',
+        'momentum',
+        'relative_strength',
+        'breadth',
+        'money_flow_ratio',
+        'industry_trend',
+        'leader_stock_ratio',
+        'updown_ratio',
+        'industry_phase',
     ];
 
     const ALREADY_PERCENT_FIELDS = [
