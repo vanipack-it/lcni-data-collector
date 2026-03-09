@@ -1,10 +1,11 @@
 (function () {
-    function postData(metric, limit) {
+    function postData(metric, limit, timeframe) {
         var form = new FormData();
         form.append('action', 'lcni_industry_data');
         form.append('nonce', LCNIIndustryMonitor.nonce);
         form.append('metric', metric);
         form.append('limit', String(limit));
+        form.append('timeframe', timeframe || '1D');
 
         return fetch(LCNIIndustryMonitor.ajaxUrl, {
             method: 'POST',
@@ -114,7 +115,9 @@
             limit = 30;
         }
 
-        postData(metricEl.value, limit)
+        var timeframe = String(LCNIIndustryMonitor.defaultTimeframe || '1D').toUpperCase();
+
+        postData(metricEl.value, limit, timeframe)
             .then(function (payload) {
                 if (!payload || !payload.success) return;
                 renderTable(payload.data || {}, metricEl.value);
