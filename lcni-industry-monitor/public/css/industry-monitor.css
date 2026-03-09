@@ -10,6 +10,7 @@
     --lcni-header-bg: #f7f7f7;
     --lcni-header-height: 44px;
     --lcni-row-font-size: 14px;
+    --lcni-table-height: 70vh;
     --lcni-event-time-col-width: 140px;
     --lcni-dropdown-height: 36px;
     --lcni-dropdown-width: 280px;
@@ -22,7 +23,7 @@
     overflow-x: auto;
     overflow-y: auto;
     width: 100%;
-    max-height: 70vh;
+    max-height: var(--lcni-table-height);
     border: var(--lcni-table-border-width) solid var(--lcni-table-border-color);
 }
 
@@ -49,7 +50,7 @@
 .lcni-industry-monitor__table thead th {
     position: sticky;
     top: 0;
-    z-index: 15;
+    z-index: 25;
     background: var(--lcni-header-bg);
     min-height: var(--lcni-header-height);
     height: var(--lcni-header-height);
@@ -59,7 +60,7 @@
 .lcni-industry-monitor__sticky-col {
     position: sticky;
     left: 0;
-    z-index: 12;
+    z-index: 18;
     background: #fafafa;
     text-align: left;
     width: 1%;

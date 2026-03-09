@@ -41,6 +41,7 @@ class LCNI_Industry_Settings
             'header_bg_color' => '#f7f7f7',
             'header_height' => 44,
             'row_font_size' => 14,
+            'table_height' => 70,
             'event_time_col_width' => 140,
             'dropdown_height' => 36,
             'dropdown_width' => 280,
@@ -121,7 +122,8 @@ class LCNI_Industry_Settings
         $defaults = self::get_defaults();
         $input = is_array($input) ? $input : array();
 
-        $enabled_metrics = array_values(array_intersect(array_keys(self::get_metric_labels()), (array) ($input['enabled_metrics'] ?? array())));
+        $all_metrics = array_keys(self::get_metric_labels());
+        $enabled_metrics = array_values(array_intersect($all_metrics, (array) ($input['enabled_metrics'] ?? array())));
         if (empty($enabled_metrics)) {
             $enabled_metrics = $defaults['enabled_metrics'];
         }
@@ -137,6 +139,7 @@ class LCNI_Industry_Settings
             'header_bg_color' => sanitize_hex_color($input['header_bg_color'] ?? $defaults['header_bg_color']) ?: $defaults['header_bg_color'],
             'header_height' => max(24, min(120, absint($input['header_height'] ?? $defaults['header_height']))),
             'row_font_size' => max(10, min(24, absint($input['row_font_size'] ?? $defaults['row_font_size']))),
+            'table_height' => max(30, min(95, absint($input['table_height'] ?? $defaults['table_height']))),
             'event_time_col_width' => max(72, min(360, absint($input['event_time_col_width'] ?? $defaults['event_time_col_width']))),
             'dropdown_height' => max(28, min(80, absint($input['dropdown_height'] ?? $defaults['dropdown_height']))),
             'dropdown_width' => max(160, min(520, absint($input['dropdown_width'] ?? $defaults['dropdown_width']))),
@@ -145,8 +148,8 @@ class LCNI_Industry_Settings
             'row_hover_enabled' => ! empty($input['row_hover_enabled']) ? 1 : 0,
             'industry_filter_url' => esc_url_raw($input['industry_filter_url'] ?? $defaults['industry_filter_url']),
             'default_session_limit' => max(1, min(200, absint($input['default_session_limit'] ?? $defaults['default_session_limit']))),
-            'cell_rules' => $this->sanitize_cell_rules($input['cell_rules'] ?? array(), $enabled_metrics),
-            'row_gradient_rules' => $this->sanitize_row_gradient_rules($input['row_gradient_rules'] ?? array(), $enabled_metrics),
+            'cell_rules' => $this->sanitize_cell_rules($input['cell_rules'] ?? array(), $all_metrics),
+            'row_gradient_rules' => $this->sanitize_row_gradient_rules($input['row_gradient_rules'] ?? array(), $all_metrics),
         );
     }
 
@@ -260,6 +263,7 @@ class LCNI_Industry_Settings
                     <tr><th><label><?php echo esc_html__('Frame border thickness (px)', 'lcni-industry-monitor'); ?></label></th><td><input type="number" min="0" max="8" name="<?php echo esc_attr(self::OPTION_KEY); ?>[table_border_width]" value="<?php echo esc_attr((string) $settings['table_border_width']); ?>" /></td></tr>
                     <tr><th><label><?php echo esc_html__('Row height (px)', 'lcni-industry-monitor'); ?></label></th><td><input type="number" min="24" max="120" name="<?php echo esc_attr(self::OPTION_KEY); ?>[row_height]" value="<?php echo esc_attr((string) $settings['row_height']); ?>" /></td></tr>
                     <tr><th><label><?php echo esc_html__('Row font size (px)', 'lcni-industry-monitor'); ?></label></th><td><input type="number" min="10" max="24" name="<?php echo esc_attr(self::OPTION_KEY); ?>[row_font_size]" value="<?php echo esc_attr((string) $settings['row_font_size']); ?>" /></td></tr>
+                    <tr><th><label><?php echo esc_html__('Table height (vh)', 'lcni-industry-monitor'); ?></label></th><td><input type="number" min="30" max="95" name="<?php echo esc_attr(self::OPTION_KEY); ?>[table_height]" value="<?php echo esc_attr((string) $settings['table_height']); ?>" /></td></tr>
                     <tr><th><label><?php echo esc_html__('Header background', 'lcni-industry-monitor'); ?></label></th><td><input type="color" name="<?php echo esc_attr(self::OPTION_KEY); ?>[header_bg_color]" value="<?php echo esc_attr($settings['header_bg_color']); ?>" /></td></tr>
                     <tr><th><label><?php echo esc_html__('Header height (px)', 'lcni-industry-monitor'); ?></label></th><td><input type="number" min="24" max="120" name="<?php echo esc_attr(self::OPTION_KEY); ?>[header_height]" value="<?php echo esc_attr((string) $settings['header_height']); ?>" /></td></tr>
                     <tr><th><label><?php echo esc_html__('Event time column width (px)', 'lcni-industry-monitor'); ?></label></th><td><input type="number" min="72" max="360" name="<?php echo esc_attr(self::OPTION_KEY); ?>[event_time_col_width]" value="<?php echo esc_attr((string) $settings['event_time_col_width']); ?>" /></td></tr>
@@ -332,6 +336,8 @@ class LCNI_Industry_Settings
                 var gradientBody = document.getElementById('lcni-row-gradient-rules-body');
                 var gradientAddBtn = document.getElementById('lcni-add-row-gradient-rule');
                 var gradientTemplate = document.getElementById('lcni-row-gradient-rule-template');
+                var cellRuleIndex = body ? body.querySelectorAll('tr').length : 0;
+                var gradientRuleIndex = gradientBody ? gradientBody.querySelectorAll('tr').length : 0;
 
                 function bindRemoveActions(scope) {
                     if (!scope) {
@@ -348,9 +354,9 @@ class LCNI_Industry_Settings
 
                 if (body && addBtn && template) {
                     addBtn.addEventListener('click', function () {
-                        var index = body.querySelectorAll('tr').length;
-                        var html = template.innerHTML.replace(/__INDEX__/g, String(index));
+                        var html = template.innerHTML.replace(/__INDEX__/g, String(cellRuleIndex));
                         body.insertAdjacentHTML('beforeend', html);
+                        cellRuleIndex += 1;
                         bindRemoveActions(body);
                     });
 
@@ -359,9 +365,9 @@ class LCNI_Industry_Settings
 
                 if (gradientBody && gradientAddBtn && gradientTemplate) {
                     gradientAddBtn.addEventListener('click', function () {
-                        var index = gradientBody.querySelectorAll('tr').length;
-                        var html = gradientTemplate.innerHTML.replace(/__INDEX__/g, String(index));
+                        var html = gradientTemplate.innerHTML.replace(/__INDEX__/g, String(gradientRuleIndex));
                         gradientBody.insertAdjacentHTML('beforeend', html);
+                        gradientRuleIndex += 1;
                         bindRemoveActions(gradientBody);
                     });
 
