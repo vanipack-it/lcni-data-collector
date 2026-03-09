@@ -185,16 +185,28 @@ class LCNI_Industry_Data
     }
 
     /** @return string[] */
-    public function get_event_times($timeframe = '1D', $limit = 30, $metric = 'money_flow_share')
+    public function get_event_times($timeframe = '1D', $limit = 30, $metric = 'money_flow_share', $id_icb2_list = array())
     {
         $timeframe = sanitize_text_field($timeframe);
         $limit = max(1, min(200, absint($limit)));
         $resolved = $this->resolve_metric($metric) ?: $this->resolve_metric('money_flow_share');
 
         $table = $this->wpdb->prefix . $resolved['table'];
-        $sql = "SELECT DISTINCT event_time FROM {$table} WHERE timeframe = %s ORDER BY event_time DESC LIMIT %d";
+        $id_icb2_list = array_values(array_filter(array_map('absint', (array) $id_icb2_list)));
 
-        $prepared = $this->wpdb->prepare($sql, $timeframe, $limit * 4);
+        $sql = "SELECT DISTINCT event_time FROM {$table} WHERE timeframe = %s";
+        $args = array($timeframe);
+
+        if (! empty($id_icb2_list)) {
+            $id_placeholders = implode(', ', array_fill(0, count($id_icb2_list), '%d'));
+            $sql .= " AND id_icb2 IN ({$id_placeholders})";
+            $args = array_merge($args, $id_icb2_list);
+        }
+
+        $sql .= ' ORDER BY event_time DESC LIMIT %d';
+        $args[] = $limit * 4;
+
+        $prepared = $this->wpdb->prepare($sql, $args);
         $rows = (array) $this->wpdb->get_col($prepared);
 
         $normalized = array();
@@ -230,7 +242,7 @@ class LCNI_Industry_Data
      * @param string[]  $event_times
      * @return array<int, array{industry:string, values:array<int, float|int|null>}>
      */
-    public function get_metric_rows($metric, $timeframe, $event_times)
+    public function get_metric_rows($metric, $timeframe, $event_times, $id_icb2_list = array())
     {
         $resolved = $this->resolve_metric($metric);
         if (! $resolved) {
@@ -247,15 +259,24 @@ class LCNI_Industry_Data
 
         $timeframe = sanitize_text_field($timeframe);
         $placeholders = implode(', ', array_fill(0, count($event_times), '%s'));
+        $id_icb2_list = array_values(array_filter(array_map('absint', (array) $id_icb2_list)));
 
         $sql = "SELECT src.id_icb2, icb.name_icb2, src.event_time, src.{$resolved['column']} AS metric_value
                 FROM {$table} src
                 INNER JOIN {$icb_table} icb ON src.id_icb2 = icb.id_icb2
                 WHERE src.timeframe = %s
-                  AND src.event_time IN ({$placeholders})
-                ORDER BY icb.name_icb2 ASC, src.event_time DESC";
+                  AND src.event_time IN ({$placeholders})";
 
         $prepare_args = array_merge(array($timeframe), $event_times);
+
+        if (! empty($id_icb2_list)) {
+            $id_placeholders = implode(', ', array_fill(0, count($id_icb2_list), '%d'));
+            $sql .= " AND src.id_icb2 IN ({$id_placeholders})";
+            $prepare_args = array_merge($prepare_args, $id_icb2_list);
+        }
+
+        $sql .= ' ORDER BY icb.name_icb2 ASC, src.event_time DESC';
+
         $prepared = $this->wpdb->prepare($sql, $prepare_args);
         $rows = $this->wpdb->get_results($prepared, ARRAY_A);
 

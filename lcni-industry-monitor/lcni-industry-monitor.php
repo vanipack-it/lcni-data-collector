@@ -2,7 +2,7 @@
 /**
  * Plugin Name: LCNI Industry Monitor
  * Description: Industry monitor module with shortcode and AJAX data endpoint.
- * Version: 5.5.4
+ * Version: 5.5.6
  * Author: LCNI
  * Text Domain: lcni-industry-monitor
  */
@@ -11,7 +11,7 @@ if (! defined('ABSPATH')) {
     exit;
 }
 
-define('LCNI_INDUSTRY_MONITOR_VERSION', '5.5.4');
+define('LCNI_INDUSTRY_MONITOR_VERSION', '5.5.6');
 define('LCNI_INDUSTRY_MONITOR_FILE', __FILE__);
 define('LCNI_INDUSTRY_MONITOR_PATH', plugin_dir_path(__FILE__));
 define('LCNI_INDUSTRY_MONITOR_URL', plugin_dir_url(__FILE__));
