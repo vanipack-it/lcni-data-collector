@@ -245,13 +245,18 @@ class LCNI_Industry_Data
         $table = $this->wpdb->prefix . $resolved['table'];
         $icb_table = $this->wpdb->prefix . 'lcni_icb2';
 
+        $timeframe = sanitize_text_field($timeframe);
+        $placeholders = implode(', ', array_fill(0, count($event_times), '%s'));
+
         $sql = "SELECT src.id_icb2, icb.name_icb2, src.event_time, src.{$resolved['column']} AS metric_value
                 FROM {$table} src
                 INNER JOIN {$icb_table} icb ON src.id_icb2 = icb.id_icb2
                 WHERE src.timeframe = %s
+                  AND src.event_time IN ({$placeholders})
                 ORDER BY icb.name_icb2 ASC, src.event_time DESC";
 
-        $prepared = $this->wpdb->prepare($sql, sanitize_text_field($timeframe));
+        $prepare_args = array_merge(array($timeframe), $event_times);
+        $prepared = $this->wpdb->prepare($sql, $prepare_args);
         $rows = $this->wpdb->get_results($prepared, ARRAY_A);
 
         $time_index = array_flip($event_times);

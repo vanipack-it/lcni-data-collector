@@ -91,6 +91,7 @@ class LCNI_Industry_Monitor
         }
 
         $nonce = wp_create_nonce('lcni_industry_data_nonce');
+        $default_payload = $this->get_cached_payload($default_metric, $default_timeframe, (int) $settings['default_session_limit']);
 
         wp_localize_script(
             'lcni-industry-monitor',
@@ -106,12 +107,49 @@ class LCNI_Industry_Monitor
                 'eventTimeColumnWidth' => (int) $settings['event_time_col_width'],
                 'cellRules' => array_values((array) ($settings['cell_rules'] ?? array())),
                 'rowGradientRules' => array_values((array) ($settings['row_gradient_rules'] ?? array())),
+                'initialPayload' => $default_payload,
             )
         );
 
         ob_start();
         include LCNI_INDUSTRY_MONITOR_PATH . 'templates/industry-table.php';
         return ob_get_clean();
+    }
+
+
+    /**
+     * @return array{columns:array<int,string>,rawColumns:array<int,string>,rows:array<int,array<string,mixed>>}
+     */
+    private function build_payload($metric, $timeframe, $limit)
+    {
+        $columns = $this->data->get_event_times($timeframe, $limit, $metric);
+        if (empty($columns)) {
+            $timeframe = $this->data->resolve_timeframe($metric, $timeframe);
+            $columns = $this->data->get_event_times($timeframe, $limit, $metric);
+        }
+
+        $rows = $this->data->get_metric_rows($metric, $timeframe, $columns);
+
+        return array(
+            'columns' => array_map(array($this->data, 'format_event_time'), $columns),
+            'rawColumns' => $columns,
+            'rows' => $rows,
+        );
+    }
+
+    /** @return array<string,mixed> */
+    private function get_cached_payload($metric, $timeframe, $limit)
+    {
+        $cache_key = 'lcni_industry_' . md5($metric . '|' . $timeframe . '|' . $limit);
+        $cached = get_transient($cache_key);
+        if (is_array($cached)) {
+            return $cached;
+        }
+
+        $payload = $this->build_payload($metric, $timeframe, $limit);
+        set_transient($cache_key, $payload, 60);
+
+        return $payload;
     }
 
     public function ajax_industry_data()
@@ -139,22 +177,8 @@ class LCNI_Industry_Monitor
             wp_send_json_error(array('message' => 'Unsupported metric.'), 400);
         }
 
-        $columns = $this->data->get_event_times($timeframe, $limit, $metric);
-        if (empty($columns)) {
-            $timeframe = $this->data->resolve_timeframe($metric, $timeframe);
-            $columns = $this->data->get_event_times($timeframe, $limit, $metric);
-        }
+        $payload = $this->get_cached_payload($metric, $timeframe, $limit);
 
-        $rows = $this->data->get_metric_rows($metric, $timeframe, $columns);
-
-        $formatted_columns = array_map(array($this->data, 'format_event_time'), $columns);
-
-        wp_send_json_success(
-            array(
-                'columns' => $formatted_columns,
-                'rawColumns' => $columns,
-                'rows' => $rows,
-            )
-        );
+        wp_send_json_success($payload);
     }
 }

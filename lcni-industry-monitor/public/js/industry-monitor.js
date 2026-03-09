@@ -156,6 +156,31 @@
         return rgbToCss(color);
     }
 
+
+    function adjustTableViewport() {
+        var wrap = document.querySelector('.lcni-industry-monitor__table-wrap');
+        var table = document.querySelector('.lcni-industry-monitor__table');
+        var headerRow = document.getElementById('lcni-industry-header-row');
+        var body = document.getElementById('lcni-industry-body');
+        if (!wrap || !table || !headerRow || !body) return;
+
+        var rows = body.querySelectorAll('tr');
+        if (!rows.length) {
+            wrap.style.maxHeight = 'var(--lcni-table-height)';
+            return;
+        }
+
+        var headerHeight = headerRow.getBoundingClientRect().height;
+        var rowsHeight = 0;
+        var visibleRows = Math.min(20, rows.length);
+        for (var i = 0; i < visibleRows; i += 1) {
+            rowsHeight += rows[i].getBoundingClientRect().height;
+        }
+
+        var borderWidth = parseFloat(getComputedStyle(wrap).borderTopWidth || '0') + parseFloat(getComputedStyle(wrap).borderBottomWidth || '0');
+        wrap.style.maxHeight = Math.ceil(headerHeight + rowsHeight + borderWidth) + 'px';
+    }
+
     function renderTable(data, metric) {
         var headerRow = document.getElementById('lcni-industry-header-row');
         var body = document.getElementById('lcni-industry-body');
@@ -230,6 +255,8 @@
 
             body.appendChild(tr);
         });
+
+        adjustTableViewport();
     }
 
     function loadData() {
@@ -266,6 +293,11 @@
             metricEl.value = value;
             toggle.textContent = label;
             menu.hidden = true;
+            if (LCNIIndustryMonitor.initialPayload && value === String(LCNIIndustryMonitor.defaultMetric || '')) {
+                renderTable(LCNIIndustryMonitor.initialPayload, value);
+                LCNIIndustryMonitor.initialPayload = null;
+                return;
+            }
             loadData();
         }
 
@@ -304,5 +336,6 @@
 
     document.addEventListener('DOMContentLoaded', function () {
         setupMetricDropdown();
+        window.addEventListener('resize', adjustTableViewport);
     });
 })();

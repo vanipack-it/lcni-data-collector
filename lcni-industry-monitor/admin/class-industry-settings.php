@@ -37,7 +37,6 @@ class LCNI_Industry_Settings
             'row_border_width' => 1,
             'table_border_color' => '#d6d6d6',
             'table_border_width' => 1,
-            'row_height' => 40,
             'header_bg_color' => '#f7f7f7',
             'header_height' => 44,
             'row_font_size' => 14,
@@ -135,7 +134,6 @@ class LCNI_Industry_Settings
             'row_border_width' => max(0, min(8, absint($input['row_border_width'] ?? $defaults['row_border_width']))),
             'table_border_color' => sanitize_hex_color($input['table_border_color'] ?? $defaults['table_border_color']) ?: $defaults['table_border_color'],
             'table_border_width' => max(0, min(8, absint($input['table_border_width'] ?? $defaults['table_border_width']))),
-            'row_height' => max(16, min(120, absint($input['row_height'] ?? $defaults['row_height']))),
             'header_bg_color' => sanitize_hex_color($input['header_bg_color'] ?? $defaults['header_bg_color']) ?: $defaults['header_bg_color'],
             'header_height' => max(24, min(120, absint($input['header_height'] ?? $defaults['header_height']))),
             'row_font_size' => max(10, min(24, absint($input['row_font_size'] ?? $defaults['row_font_size']))),
@@ -261,7 +259,6 @@ class LCNI_Industry_Settings
                     <tr><th><label><?php echo esc_html__('Row divider thickness (px)', 'lcni-industry-monitor'); ?></label></th><td><input type="number" min="0" max="8" name="<?php echo esc_attr(self::OPTION_KEY); ?>[row_border_width]" value="<?php echo esc_attr((string) $settings['row_border_width']); ?>" /></td></tr>
                     <tr><th><label><?php echo esc_html__('Frame border color', 'lcni-industry-monitor'); ?></label></th><td><input type="color" name="<?php echo esc_attr(self::OPTION_KEY); ?>[table_border_color]" value="<?php echo esc_attr($settings['table_border_color']); ?>" /></td></tr>
                     <tr><th><label><?php echo esc_html__('Frame border thickness (px)', 'lcni-industry-monitor'); ?></label></th><td><input type="number" min="0" max="8" name="<?php echo esc_attr(self::OPTION_KEY); ?>[table_border_width]" value="<?php echo esc_attr((string) $settings['table_border_width']); ?>" /></td></tr>
-                    <tr><th><label><?php echo esc_html__('Row height (px)', 'lcni-industry-monitor'); ?></label></th><td><input type="number" min="16" max="120" name="<?php echo esc_attr(self::OPTION_KEY); ?>[row_height]" value="<?php echo esc_attr((string) $settings['row_height']); ?>" /></td></tr>
                     <tr><th><label><?php echo esc_html__('Row font size (px)', 'lcni-industry-monitor'); ?></label></th><td><input type="number" min="10" max="24" name="<?php echo esc_attr(self::OPTION_KEY); ?>[row_font_size]" value="<?php echo esc_attr((string) $settings['row_font_size']); ?>" /></td></tr>
                     <tr><th><label><?php echo esc_html__('Table height (vh)', 'lcni-industry-monitor'); ?></label></th><td><input type="number" min="30" max="95" name="<?php echo esc_attr(self::OPTION_KEY); ?>[table_height]" value="<?php echo esc_attr((string) $settings['table_height']); ?>" /></td></tr>
                     <tr><th><label><?php echo esc_html__('Header background', 'lcni-industry-monitor'); ?></label></th><td><input type="color" name="<?php echo esc_attr(self::OPTION_KEY); ?>[header_bg_color]" value="<?php echo esc_attr($settings['header_bg_color']); ?>" /></td></tr>
