@@ -104,6 +104,30 @@ Ví dụ:
 
 ## 6) Member module
 
+## Industry monitor module
+
+### `[lcni_industry_monitor]`
+Shortcode gốc, giữ tương thích ngược.
+
+Ví dụ:
+```text
+[lcni_industry_monitor]
+```
+
+### `[lcni_industry_monitor_compact]`
+Shortcode rút gọn để nhúng bài viết/dashboard.
+
+Thuộc tính hỗ trợ:
+- `id_icb2`: danh sách ID ICB2, phân tách dấu phẩy.
+- `session`: số phiên gần nhất cần hiển thị.
+- `metric`: metric mặc định (tuỳ chọn).
+- `timeframe`: mặc định `1D`.
+
+Ví dụ:
+```text
+[lcni_industry_monitor_compact id_icb2="1,2,3" session="5" metric="industry_return"]
+```
+
 ### `[lcni_member_login]`
 Render form đăng nhập user WordPress mặc định ở frontend.
 

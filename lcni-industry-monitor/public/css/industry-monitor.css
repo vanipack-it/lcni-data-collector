@@ -138,3 +138,16 @@
 .lcni-industry-monitor__row.is-hoverable:hover td {
     filter: brightness(0.96);
 }
+
+.lcni-industry-monitor__full-link-wrap {
+    margin-top: 12px;
+    text-align: right;
+}
+
+.lcni-industry-monitor__full-link {
+    display: inline-block;
+    padding: 6px 10px;
+    border: 1px solid #d0d0d0;
+    border-radius: 6px;
+    text-decoration: none;
+}

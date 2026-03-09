@@ -48,6 +48,7 @@ class LCNI_Industry_Settings
             'dropdown_border_width' => 1,
             'row_hover_enabled' => 1,
             'industry_filter_url' => home_url('/'),
+            'compact_full_table_url' => home_url('/'),
             'default_session_limit' => 30,
             'cell_rules' => array(),
             'row_gradient_rules' => array(),
@@ -66,6 +67,15 @@ class LCNI_Industry_Settings
             'industry_return' => __('Industry Return', 'lcni-industry-monitor'),
             'industry_volume' => __('Industry Volume', 'lcni-industry-monitor'),
         );
+
+        $data = new LCNI_Industry_Data();
+        foreach ($data->get_supported_metrics() as $metric_key) {
+            if (isset($labels[$metric_key])) {
+                continue;
+            }
+
+            $labels[$metric_key] = ucwords(str_replace('_', ' ', (string) $metric_key));
+        }
 
         return apply_filters('lcni_industry_monitor_metric_labels', $labels);
     }
@@ -145,6 +155,7 @@ class LCNI_Industry_Settings
             'dropdown_border_width' => max(0, min(8, absint($input['dropdown_border_width'] ?? $defaults['dropdown_border_width']))),
             'row_hover_enabled' => ! empty($input['row_hover_enabled']) ? 1 : 0,
             'industry_filter_url' => esc_url_raw($input['industry_filter_url'] ?? $defaults['industry_filter_url']),
+            'compact_full_table_url' => esc_url_raw($input['compact_full_table_url'] ?? $defaults['compact_full_table_url']),
             'default_session_limit' => max(1, min(200, absint($input['default_session_limit'] ?? $defaults['default_session_limit']))),
             'cell_rules' => $this->sanitize_cell_rules($input['cell_rules'] ?? array(), $all_metrics),
             'row_gradient_rules' => $this->sanitize_row_gradient_rules($input['row_gradient_rules'] ?? array(), $all_metrics),
@@ -270,6 +281,7 @@ class LCNI_Industry_Settings
                     <tr><th><label><?php echo esc_html__('Dropdown border width (px)', 'lcni-industry-monitor'); ?></label></th><td><input type="number" min="0" max="8" name="<?php echo esc_attr(self::OPTION_KEY); ?>[dropdown_border_width]" value="<?php echo esc_attr((string) $settings['dropdown_border_width']); ?>" /></td></tr>
                     <tr><th><label><?php echo esc_html__('Enable row hover effect', 'lcni-industry-monitor'); ?></label></th><td><label><input type="checkbox" name="<?php echo esc_attr(self::OPTION_KEY); ?>[row_hover_enabled]" value="1" <?php checked(! empty($settings['row_hover_enabled'])); ?> /> <?php echo esc_html__('Enable hover + pointer on row', 'lcni-industry-monitor'); ?></label></td></tr>
                     <tr><th><label><?php echo esc_html__('Industry filter base URL', 'lcni-industry-monitor'); ?></label></th><td><input type="url" class="regular-text" name="<?php echo esc_attr(self::OPTION_KEY); ?>[industry_filter_url]" value="<?php echo esc_attr((string) $settings['industry_filter_url']); ?>" /><p class="description"><?php echo esc_html__('On row click, system appends ?apply_filter=1&name_icb2={Industry}.', 'lcni-industry-monitor'); ?></p></td></tr>
+                    <tr><th><label><?php echo esc_html__('Compact shortcode full table URL', 'lcni-industry-monitor'); ?></label></th><td><input type="url" class="regular-text" name="<?php echo esc_attr(self::OPTION_KEY); ?>[compact_full_table_url]" value="<?php echo esc_attr((string) $settings['compact_full_table_url']); ?>" /><p class="description"><?php echo esc_html__('Used by compact shortcode button to open full industry monitor page.', 'lcni-industry-monitor'); ?></p></td></tr>
                     <tr><th><label><?php echo esc_html__('Default sessions to display', 'lcni-industry-monitor'); ?></label></th><td><input type="number" min="1" max="200" name="<?php echo esc_attr(self::OPTION_KEY); ?>[default_session_limit]" value="<?php echo esc_attr((string) $settings['default_session_limit']); ?>" /></td></tr>
                 </table>
 
