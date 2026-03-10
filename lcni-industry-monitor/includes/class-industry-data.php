@@ -131,6 +131,30 @@ class LCNI_Industry_Data
         return trim((string) $raw);
     }
 
+    /** @param mixed $raw */
+    private function normalize_event_bucket_key($raw, $timeframe)
+    {
+        $key = $this->normalize_event_time_key($raw);
+        if ($key === '') {
+            return '';
+        }
+
+        if (strtoupper((string) $timeframe) !== '1D') {
+            return $key;
+        }
+
+        $timestamp = $this->normalize_event_time($raw);
+        if ($timestamp === null) {
+            if (preg_match('/^\d{8}$/', $key) === 1) {
+                return $key;
+            }
+
+            return $key;
+        }
+
+        return gmdate('Ymd', (int) $timestamp);
+    }
+
     /** @param mixed $event_time_raw */
     public function format_event_time($event_time_raw)
     {
@@ -215,10 +239,25 @@ class LCNI_Industry_Data
             if ($key === '') {
                 continue;
             }
-            if (! isset($normalized[$key])) {
-                $normalized[$key] = array(
+
+            $bucket = $this->normalize_event_bucket_key($raw_time, $timeframe);
+            if ($bucket === '') {
+                continue;
+            }
+
+            $sort = $this->normalize_event_time($raw_time) ?? 0;
+            if (! isset($normalized[$bucket])) {
+                $normalized[$bucket] = array(
                     'key' => $key,
-                    'sort' => $this->normalize_event_time($raw_time) ?? 0,
+                    'sort' => $sort,
+                );
+                continue;
+            }
+
+            if ((int) $sort >= (int) $normalized[$bucket]['sort']) {
+                $normalized[$bucket] = array(
+                    'key' => $key,
+                    'sort' => $sort,
                 );
             }
         }
