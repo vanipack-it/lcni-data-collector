@@ -142,11 +142,8 @@ function lcni_ensure_cron_scheduled() {
         wp_schedule_event(current_time('timestamp') + MINUTE_IN_SECONDS, 'lcni_every_minute', LCNI_SEED_CRON_HOOK);
     }
 
-    if (!wp_next_scheduled(LCNI_SECDEF_DAILY_CRON_HOOK)) {
-        $timezone = wp_timezone();
-        $tomorrow_start = new DateTimeImmutable('tomorrow 08:00:00', $timezone);
-        wp_schedule_event($tomorrow_start->getTimestamp(), 'daily', LCNI_SECDEF_DAILY_CRON_HOOK);
-    }
+    // Disable background secdef sync to avoid repeated cached-sync failures.
+    wp_clear_scheduled_hook(LCNI_SECDEF_DAILY_CRON_HOOK);
 
     LCNI_Recommend_Module::ensure_cron();
 }
@@ -232,7 +229,7 @@ function lcni_run_cron_incremental_sync() {
         return;
     }
 
-    LCNI_DB::collect_all_data(true);
+    LCNI_DB::collect_ohlc_data(true);
 }
 
 function lcni_run_seed_batch() {
@@ -251,7 +248,6 @@ function lcni_run_rule_rebuild_batch() {
 add_filter('cron_schedules', 'lcni_register_custom_cron_schedules');
 add_action(LCNI_CRON_HOOK, 'lcni_run_cron_incremental_sync');
 add_action(LCNI_SEED_CRON_HOOK, 'lcni_run_seed_batch');
-add_action(LCNI_SECDEF_DAILY_CRON_HOOK, 'lcni_run_daily_secdef_sync');
 add_action(LCNI_RULE_REBUILD_CRON_HOOK, 'lcni_run_rule_rebuild_batch');
 add_action('plugins_loaded', 'lcni_ensure_plugin_tables');
 add_action('init', 'lcni_ensure_cron_scheduled');

@@ -6541,6 +6541,7 @@ class LCNI_DB {
 
         $return_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $return_table));
         if ($return_exists === $return_table) {
+            self::cleanup_industry_duplicate_rows($return_table, "CASE WHEN COALESCE(t1.industry_value, 0) > 0 OR COALESCE(t1.industry_return, 0) <> 0 OR COALESCE(t1.stocks_up, 0) > 0 OR COALESCE(t1.total_stocks, 0) > 0 OR COALESCE(t1.breadth, 0) <> 0 THEN 1 ELSE 0 END", "CASE WHEN COALESCE(t2.industry_value, 0) > 0 OR COALESCE(t2.industry_return, 0) <> 0 OR COALESCE(t2.stocks_up, 0) > 0 OR COALESCE(t2.total_stocks, 0) > 0 OR COALESCE(t2.breadth, 0) <> 0 THEN 1 ELSE 0 END");
             self::add_unique_key_if_missing($return_table, 'uniq_event_icb2_timeframe', '(event_time, id_icb2, timeframe)');
             self::add_index_if_missing($return_table, 'idx_timeframe_event', '(timeframe, event_time)');
             self::add_index_if_missing($return_table, 'idx_icb2_event', '(id_icb2, event_time)');
@@ -6548,6 +6549,7 @@ class LCNI_DB {
 
         $index_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $index_table));
         if ($index_exists === $index_table) {
+            self::cleanup_industry_duplicate_rows($index_table, "CASE WHEN COALESCE(t1.industry_index, 0) <> 1000 OR COALESCE(t1.industry_return, 0) <> 0 THEN 1 ELSE 0 END", "CASE WHEN COALESCE(t2.industry_index, 0) <> 1000 OR COALESCE(t2.industry_return, 0) <> 0 THEN 1 ELSE 0 END");
             self::add_unique_key_if_missing($index_table, 'uniq_event_icb2_timeframe', '(event_time, id_icb2, timeframe)');
             self::add_index_if_missing($index_table, 'idx_timeframe_event', '(timeframe, event_time)');
             self::add_index_if_missing($index_table, 'idx_icb2_event', '(id_icb2, event_time)');
@@ -6555,10 +6557,40 @@ class LCNI_DB {
 
         $metrics_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $metrics_table));
         if ($metrics_exists === $metrics_table) {
+            self::cleanup_industry_duplicate_rows($metrics_table, "CASE WHEN COALESCE(t1.return_5d, 0) <> 0 OR COALESCE(t1.return_10d, 0) <> 0 OR COALESCE(t1.return_20d, 0) <> 0 OR COALESCE(t1.momentum, 0) <> 0 OR COALESCE(t1.relative_strength, 0) <> 0 OR COALESCE(t1.industry_score_raw, 0) <> 0 OR COALESCE(t1.money_flow_share, 0) <> 0 OR COALESCE(t1.breadth, 0) <> 0 OR COALESCE(t1.industry_rating_vi, '') <> '' THEN 1 ELSE 0 END", "CASE WHEN COALESCE(t2.return_5d, 0) <> 0 OR COALESCE(t2.return_10d, 0) <> 0 OR COALESCE(t2.return_20d, 0) <> 0 OR COALESCE(t2.momentum, 0) <> 0 OR COALESCE(t2.relative_strength, 0) <> 0 OR COALESCE(t2.industry_score_raw, 0) <> 0 OR COALESCE(t2.money_flow_share, 0) <> 0 OR COALESCE(t2.breadth, 0) <> 0 OR COALESCE(t2.industry_rating_vi, '') <> '' THEN 1 ELSE 0 END");
             self::add_unique_key_if_missing($metrics_table, 'uniq_event_icb2_timeframe', '(event_time, id_icb2, timeframe)');
             self::add_index_if_missing($metrics_table, 'idx_timeframe_event', '(timeframe, event_time)');
             self::add_index_if_missing($metrics_table, 'idx_score', '(industry_score_raw)');
         }
+    }
+
+    private static function cleanup_industry_duplicate_rows($table, $left_score_sql, $right_score_sql) {
+        global $wpdb;
+
+        if ($table === '' || $left_score_sql === '' || $right_score_sql === '') {
+            return;
+        }
+
+        $has_duplicates = (int) $wpdb->get_var("SELECT COUNT(*) FROM (
+            SELECT 1
+            FROM {$table}
+            GROUP BY event_time, id_icb2, timeframe
+            HAVING COUNT(*) > 1
+        ) dup");
+
+        if ($has_duplicates <= 0) {
+            return;
+        }
+
+        $wpdb->query("DELETE t1 FROM {$table} t1
+            INNER JOIN {$table} t2
+                ON t1.event_time = t2.event_time
+                AND t1.id_icb2 = t2.id_icb2
+                AND t1.timeframe = t2.timeframe
+                AND (
+                    ({$left_score_sql}) < ({$right_score_sql})
+                    OR (({$left_score_sql}) = ({$right_score_sql}) AND t1.id < t2.id)
+                )");
     }
 
     private static function ensure_industry_analysis_extended_schema() {
@@ -7075,7 +7107,13 @@ class LCNI_DB {
                 WHERE p2.symbol = o.symbol AND p2.timeframe = o.timeframe AND p2.event_time < o.event_time
             )
             WHERE o.event_time IN ({$event_placeholders}) AND o.timeframe IN ({$timeframe_placeholders})
-            GROUP BY o.event_time, o.timeframe, m.id_icb2";
+            GROUP BY o.event_time, o.timeframe, m.id_icb2
+            ON DUPLICATE KEY UPDATE
+                industry_return = VALUES(industry_return),
+                industry_value = VALUES(industry_value),
+                stocks_up = VALUES(stocks_up),
+                total_stocks = VALUES(total_stocks),
+                breadth = VALUES(breadth)";
         $wpdb->query($wpdb->prepare($insert_return_sql, $where_params));
 
         foreach ($timeframes as $tf) {
@@ -7143,7 +7181,18 @@ class LCNI_DB {
                 FROM {$return_table}
                 GROUP BY event_time, timeframe
             ) market ON market.event_time = r.event_time AND market.timeframe = r.timeframe
-            WHERE r.event_time IN ({$event_placeholders}) AND r.timeframe IN ({$timeframe_placeholders})";
+            WHERE r.event_time IN ({$event_placeholders}) AND r.timeframe IN ({$timeframe_placeholders})
+            ON DUPLICATE KEY UPDATE
+                industry_return = VALUES(industry_return),
+                industry_value = VALUES(industry_value),
+                stocks_up = VALUES(stocks_up),
+                total_stocks = VALUES(total_stocks),
+                return_5d = VALUES(return_5d),
+                return_10d = VALUES(return_10d),
+                return_20d = VALUES(return_20d),
+                money_flow_share = VALUES(money_flow_share),
+                breadth = VALUES(breadth),
+                industry_rating_vi = VALUES(industry_rating_vi)";
         $wpdb->query($wpdb->prepare($insert_metrics_sql, $where_params));
 
         $vnindex_return_20d_sql = "SELECT cur.event_time, cur.timeframe, COALESCE((cur.close_price / NULLIF(prev.close_price, 0)) - 1, 0) AS vnindex_return_20d
