@@ -14,6 +14,9 @@ class LCNI_OHLC_Latest_Manager {
     const LOCK_TRANSIENT = 'lcni_ohlc_latest_snapshot_lock';
 
     public static function init() {
+        if ( class_exists('LCNI_Compute_Control') && ! LCNI_Compute_Control::is_enabled('lcni_compute_ohlc_latest') ) {
+            return;
+        }
         add_action('init', [__CLASS__, 'ensure_infrastructure']);
         add_action('init', [__CLASS__, 'ensure_cron_health']);
         add_action(self::CRON_HOOK, [__CLASS__, 'handle_scheduled_sync']);
