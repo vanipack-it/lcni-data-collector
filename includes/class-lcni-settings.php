@@ -1661,7 +1661,7 @@ class LCNI_Settings {
             $active_tab = 'report';
         }
 
-        if (!in_array($active_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'report'], true)) {
+        if (!in_array($active_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'compute_control', 'report'], true)) {
             $active_tab = 'general';
         }
 
@@ -1693,6 +1693,7 @@ class LCNI_Settings {
                 <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=update_data')); ?>" class="nav-tab <?php echo $active_tab === 'update_data' ? 'nav-tab-active' : ''; ?>">Update Data</a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=rule_settings')); ?>" class="nav-tab <?php echo $active_tab === 'rule_settings' ? 'nav-tab-active' : ''; ?>">Rule Setting</a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=frontend_settings')); ?>" class="nav-tab <?php echo $active_tab === 'frontend_settings' ? 'nav-tab-active' : ''; ?>">Frontend Setting</a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=compute_control')); ?>" class="nav-tab <?php echo $active_tab === 'compute_control' ? 'nav-tab-active' : ''; ?>" style="color:<?php echo $active_tab === 'compute_control' ? '' : '#c0392b'; ?>">⚙ Compute Control</a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=report')); ?>" class="nav-tab <?php echo $active_tab === 'report' ? 'nav-tab-active' : ''; ?>">Report</a>
             </h2>
 
@@ -2162,6 +2163,8 @@ class LCNI_Settings {
                     })();
                 </script>
 
+            <?php elseif ($active_tab === 'compute_control') : ?>
+                <?php LCNI_Compute_Control::render_tab(); ?>
             <?php elseif ($active_tab === 'rule_settings') : ?>
                 <?php $this->render_rule_settings_section($rule_settings, 'lcni-settings'); ?>
             <?php elseif ($active_tab === 'frontend_settings') : ?>
