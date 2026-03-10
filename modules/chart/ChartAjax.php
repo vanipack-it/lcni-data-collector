@@ -46,8 +46,13 @@ class LCNI_Chart_Ajax {
         }
 
         $payload = LCNI_API::get_candles($symbol, '1D', max($limit * 2, 30));
+        $candles = $payload !== false ? $this->normalize_candles($payload) : [];
 
-        if ($payload === false) {
+        if (empty($candles)) {
+            $candles = $this->get_candles_from_database($symbol, $limit);
+        }
+
+        if (empty($candles)) {
             return new WP_Error(
                 'chart_data_unavailable',
                 LCNI_API::get_last_request_error() ?: 'Unable to fetch chart data',
@@ -55,7 +60,6 @@ class LCNI_Chart_Ajax {
             );
         }
 
-        $candles = $this->normalize_candles($payload);
         if ($limit > 0 && count($candles) > $limit) {
             $candles = array_slice($candles, -$limit);
         }
@@ -207,6 +211,41 @@ class LCNI_Chart_Ajax {
                 'rs_1w_by_exchange' => isset($rs1wValues[$i]) && is_numeric($rs1wValues[$i]) ? (float) $rs1wValues[$i] : null,
                 'rs_1m_by_exchange' => isset($rs1mValues[$i]) && is_numeric($rs1mValues[$i]) ? (float) $rs1mValues[$i] : null,
                 'rs_3m_by_exchange' => isset($rs3mValues[$i]) && is_numeric($rs3mValues[$i]) ? (float) $rs3mValues[$i] : null,
+            ];
+        }
+
+        return $candles;
+    }
+
+    private function get_candles_from_database($symbol, $limit) {
+        if (!class_exists('LCNI_Data_StockRepository')) {
+            return [];
+        }
+
+        $repository = new LCNI_Data_StockRepository();
+        $rows = $repository->getCandlesBySymbol($symbol, $limit);
+        if (!is_array($rows) || empty($rows)) {
+            return [];
+        }
+
+        $candles = [];
+        foreach ($rows as $row) {
+            $timestamp = isset($row->event_time) ? absint($row->event_time) : 0;
+            if ($timestamp <= 0) {
+                continue;
+            }
+
+            $candles[] = [
+                'date' => gmdate('Y-m-d', $timestamp),
+                'timestamp' => $timestamp,
+                'open' => isset($row->open_price) ? (float) $row->open_price : 0.0,
+                'high' => isset($row->high_price) ? (float) $row->high_price : 0.0,
+                'low' => isset($row->low_price) ? (float) $row->low_price : 0.0,
+                'close' => isset($row->close_price) ? (float) $row->close_price : 0.0,
+                'volume' => isset($row->volume) ? max(0, (int) $row->volume) : 0,
+                'rs_1w_by_exchange' => isset($row->rs_1w_by_exchange) && is_numeric($row->rs_1w_by_exchange) ? (float) $row->rs_1w_by_exchange : null,
+                'rs_1m_by_exchange' => isset($row->rs_1m_by_exchange) && is_numeric($row->rs_1m_by_exchange) ? (float) $row->rs_1m_by_exchange : null,
+                'rs_3m_by_exchange' => isset($row->rs_3m_by_exchange) && is_numeric($row->rs_3m_by_exchange) ? (float) $row->rs_3m_by_exchange : null,
             ];
         }
 
