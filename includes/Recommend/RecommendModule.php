@@ -30,7 +30,9 @@ class LCNI_Recommend_Module {
             new LCNI_Recommend_Admin_Page($rule_repository, $signal_repository, $performance_calculator, $this->daily_cron_service);
         }
 
-        add_action(DailyCronService::CRON_HOOK, [$this, 'run_daily_cron']);
+        if ( ! class_exists('LCNI_Compute_Control') || LCNI_Compute_Control::is_enabled('lcni_compute_recommend_cron') ) {
+            add_action(DailyCronService::CRON_HOOK, [$this, 'run_daily_cron']);
+        }
     }
 
     public static function activate() {
