@@ -10,6 +10,9 @@ class LCNI_Industry_Metrics_Upgrade {
     const BATCH_SIZE = 500;
 
     public static function init() {
+        if ( class_exists('LCNI_Compute_Control') && ! LCNI_Compute_Control::is_enabled('lcni_compute_industry_metrics') ) {
+            return;
+        }
         add_filter('cron_schedules', [__CLASS__, 'register_cron_schedule']);
         add_action('init', [__CLASS__, 'ensure_cron_scheduled']);
         add_action(self::CRON_HOOK, [__CLASS__, 'handle_cron']);
