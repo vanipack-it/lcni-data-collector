@@ -11,6 +11,9 @@ class LCNI_Update_Manager {
     const CRON_HOOK = 'lcni_runtime_update_cron';
 
     public static function init() {
+        if ( class_exists('LCNI_Compute_Control') && ! LCNI_Compute_Control::is_enabled('lcni_compute_runtime_update') ) {
+            return;
+        }
         add_action(self::CRON_HOOK, [__CLASS__, 'handle_cron']);
         add_action('init', [__CLASS__, 'ensure_cron']);
     }
