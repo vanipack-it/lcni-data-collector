@@ -131,8 +131,15 @@ class ShortcodeManager {
             $filter_panel_button_border_radius
         );
 
+        $button_configs = [
+            'btn_filter_watchlist_login' => LCNI_Button_Style_Config::get_button('btn_filter_watchlist_login'),
+            'btn_filter_watchlist_register' => LCNI_Button_Style_Config::get_button('btn_filter_watchlist_register'),
+            'btn_popup_confirm' => LCNI_Button_Style_Config::get_button('btn_popup_confirm'),
+            'btn_popup_close' => LCNI_Button_Style_Config::get_button('btn_popup_close'),
+        ];
+
         ob_start();
-        echo '<div class="lcni-recommend-signals-table" data-lcni-signals-table data-watchlist-rest-base="' . esc_attr($watchlist_rest_base) . '" data-login-url="' . esc_url($login_url) . '" data-register-url="' . esc_url($register_url) . '" data-is-logged-in="' . (is_user_logged_in() ? '1' : '0') . '" data-rest-nonce="' . esc_attr(wp_create_nonce('wp_rest')) . '" data-watchlist-icon="' . esc_attr($watchlist_button_icon) . '" data-watchlist-active-icon="' . esc_attr($watchlist_button_active_icon) . '" data-filter-apply-icon="' . esc_attr($filter_apply_button_icon) . '" data-filter-clear-icon="' . esc_attr($filter_clear_button_icon) . '" data-filter-apply-label="' . esc_attr($filter_apply_button_label) . '" data-filter-clear-label="' . esc_attr($filter_clear_button_label) . '" style="' . $wrapper_style . '">';
+        echo '<div class="lcni-recommend-signals-table" data-lcni-signals-table data-watchlist-rest-base="' . esc_attr($watchlist_rest_base) . '" data-login-url="' . esc_url($login_url) . '" data-register-url="' . esc_url($register_url) . '" data-is-logged-in="' . (is_user_logged_in() ? '1' : '0') . '" data-rest-nonce="' . esc_attr(wp_create_nonce('wp_rest')) . '" data-watchlist-icon="' . esc_attr($watchlist_button_icon) . '" data-watchlist-active-icon="' . esc_attr($watchlist_button_active_icon) . '" data-filter-apply-icon="' . esc_attr($filter_apply_button_icon) . '" data-filter-clear-icon="' . esc_attr($filter_clear_button_icon) . '" data-filter-apply-label="' . esc_attr($filter_apply_button_label) . '" data-filter-clear-label="' . esc_attr($filter_clear_button_label) . '" data-button-config="' . esc_attr(wp_json_encode($button_configs)) . '" style="' . $wrapper_style . '">';
         echo '<table style="width:100%;border-collapse:separate;border-spacing:0;font-size:' . (int) ($styles['row_font_size'] ?? 14) . 'px;">';
         $head_row_style = 'height:' . (int) ($styles['head_height'] ?? 30) . 'px;background:' . esc_attr((string) ($styles['header_background'] ?? '#ffffff')) . ';color:' . esc_attr((string) ($styles['header_text_color'] ?? '#111827')) . ';';
         echo '<thead><tr style="' . $head_row_style . '">';
@@ -226,6 +233,8 @@ class ShortcodeManager {
   if(window.__lcniSignalsTableInit) return;
   window.__lcniSignalsTableInit = true;
   const esc=(v)=>String(v==null?'':v).replace(/[&<>"']/g,(m)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+  const getButtonConfig=(host,key)=>{try{const cfg=JSON.parse(host.dataset.buttonConfig||'{}');return cfg&&typeof cfg==='object'?(cfg[key]||{}):{}}catch(err){return {}}};
+  const renderButtonContent=(host,key,fallbackLabel)=>{const cfg=getButtonConfig(host,key);const icon=String(cfg.icon_class||'').trim();const label=String((cfg.label_text||'')).trim()||String(fallbackLabel||'');const pos=String(cfg.icon_position||'left')==='right'?'right':'left';const iconHtml=icon?'<i class="'+esc(icon)+'" aria-hidden="true"></i>':'';const textHtml=label?'<span>'+esc(label)+'</span>':'';if(icon&&pos==='right')return textHtml+iconHtml;return iconHtml+textHtml;};
   const toast=(m)=>{const n=document.createElement('div');n.className='lcni-watchlist-toast';n.textContent=m;document.body.appendChild(n);setTimeout(()=>n.remove(),2400)};
   const closeModal=()=>{const n=document.querySelector('.lcni-signals-modal');if(n)n.remove()};
   const showModal=(html)=>{closeModal();const n=document.createElement('div');n.className='lcni-signals-modal';n.innerHTML='<div class="lcni-signals-modal-card">'+html+'</div>';n.addEventListener('click',(e)=>{if(e.target===n||e.target.closest('[data-lcni-close]'))closeModal()});document.body.appendChild(n)};
@@ -235,7 +244,7 @@ class ShortcodeManager {
 
   const openWatchlist=(host,symbol,btn)=>{
     if(host.dataset.isLoggedIn!=='1'){
-      showModal('<h3>Vui lòng đăng nhập hoặc đăng ký để thêm vào watchlist</h3><div class="lcni-signals-modal-actions"><a class="lcni-btn" href="'+esc(host.dataset.loginUrl||'#')+'">Login</a><a class="lcni-btn" href="'+esc(host.dataset.registerUrl||host.dataset.loginUrl||'#')+'">Register</a><button type="button" class="lcni-btn" data-lcni-close>Close</button></div>');
+      showModal('<h3>Vui lòng đăng nhập hoặc đăng ký để thêm vào watchlist</h3><div class="lcni-signals-modal-actions"><a class="lcni-btn lcni-btn-btn_filter_watchlist_login" href="'+esc(host.dataset.loginUrl||'#')+'">'+renderButtonContent(host,'btn_filter_watchlist_login','Login')+'</a><a class="lcni-btn lcni-btn-btn_filter_watchlist_register" href="'+esc(host.dataset.registerUrl||host.dataset.loginUrl||'#')+'">'+renderButtonContent(host,'btn_filter_watchlist_register','Register')+'</a><button type="button" class="lcni-btn lcni-btn-btn_popup_close" data-lcni-close>'+renderButtonContent(host,'btn_popup_close','Close')+'</button></div>');
       return;
     }
 
@@ -244,13 +253,13 @@ class ShortcodeManager {
       const active=Number(data.active_watchlist_id||0);
 
       if(!lists.length){
-        showModal('<h3>Tạo watchlist mới cho '+esc(symbol)+'</h3><form data-lcni-create><input type="text" name="name" placeholder="Tên watchlist" required><div class="lcni-signals-modal-actions"><button class="lcni-btn" type="submit">+ New</button><button class="lcni-btn" type="button" data-lcni-close>Close</button></div></form>');
+        showModal('<h3>Tạo watchlist mới cho '+esc(symbol)+'</h3><form data-lcni-create><input type="text" name="name" placeholder="Tên watchlist" required><div class="lcni-signals-modal-actions"><button class="lcni-btn lcni-btn-btn_popup_confirm" type="submit">'+renderButtonContent(host,'btn_popup_confirm','+ New')+'</button><button class="lcni-btn lcni-btn-btn_popup_close" type="button" data-lcni-close>'+renderButtonContent(host,'btn_popup_close','Close')+'</button></div></form>');
         const form=document.querySelector('[data-lcni-create]');
         if(form) form.addEventListener('submit',(e)=>{e.preventDefault();const name=String((new FormData(form)).get('name')||'').trim();if(!name)return;watchlistApi(host,'/create',{method:'POST',body:{name}}).then((c)=>{const id=Number(c.id||0);if(!id)throw new Error('Không thể tạo watchlist');return watchlistApi(host,'/add-symbol',{method:'POST',body:{symbol,watchlist_id:id}})}).then(()=>{btn.classList.add('is-active');setButtonState(btn);closeModal();toast('Đã thêm mã '+symbol+' vào watchlist')}).catch((err)=>toast((err&&err.message)||'Không thể thêm vào watchlist'));},{once:true});
         return;
       }
 
-      showModal('<h3>Chọn watchlist cho '+esc(symbol)+'</h3><form data-lcni-pick><div class="lcni-filter-watchlist-options">'+lists.map((w)=>'<label><input type="radio" name="watchlist_id" value="'+Number(w.id||0)+'" '+(Number(w.id||0)===active?'checked':'')+'> '+esc(w.name||'')+'</label>').join('')+'</div><div class="lcni-signals-modal-actions"><button class="lcni-btn" type="submit">Confirm</button><button class="lcni-btn" type="button" data-lcni-close>Close</button></div></form>');
+      showModal('<h3>Chọn watchlist cho '+esc(symbol)+'</h3><form data-lcni-pick><div class="lcni-filter-watchlist-options">'+lists.map((w)=>'<label><input type="radio" name="watchlist_id" value="'+Number(w.id||0)+'" '+(Number(w.id||0)===active?'checked':'')+'> '+esc(w.name||'')+'</label>').join('')+'</div><div class="lcni-signals-modal-actions"><button class="lcni-btn lcni-btn-btn_popup_confirm" type="submit">'+renderButtonContent(host,'btn_popup_confirm','Confirm')+'</button><button class="lcni-btn lcni-btn-btn_popup_close" type="button" data-lcni-close>'+renderButtonContent(host,'btn_popup_close','Close')+'</button></div></form>');
       const form=document.querySelector('[data-lcni-pick]');
       if(form) form.addEventListener('submit',(e)=>{e.preventDefault();const sel=form.querySelector('input[name="watchlist_id"]:checked');const id=Number(sel?sel.value:0);if(!id)return;watchlistApi(host,'/add-symbol',{method:'POST',body:{symbol,watchlist_id:id}}).then(()=>{btn.classList.add('is-active');setButtonState(btn);closeModal();toast('Đã thêm mã '+symbol+' vào watchlist')}).catch((err)=>toast((err&&err.message)||'Không thể thêm vào watchlist'));},{once:true});
     }).catch((err)=>toast((err&&err.message)||'Không thể tải watchlist'));
