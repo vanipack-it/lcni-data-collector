@@ -21,6 +21,7 @@ class LCNI_Member_Settings_Page {
     public function register_settings() {
         register_setting('lcni_member_settings', 'lcni_member_login_settings', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_login_settings'], 'default' => []]);
         register_setting('lcni_member_settings', 'lcni_member_register_settings', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_register_settings'], 'default' => []]);
+        register_setting('lcni_member_settings', 'lcni_member_profile_settings', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_profile_settings'], 'default' => []]);
         register_setting('lcni_member_settings', 'lcni_member_quote_settings', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_quote_settings'], 'default' => []]);
 
         if (!empty($_POST['lcni_member_create_package'])) {
@@ -55,6 +56,23 @@ class LCNI_Member_Settings_Page {
         return $sanitized;
     }
 
+    public function sanitize_profile_settings($input) {
+        $sanitized = $this->sanitize_common_settings($input, [], 'lcni_member_profile_bg_image_file', 'lcni_member_profile_settings');
+        $sanitized['label_user_login'] = sanitize_text_field($input['label_user_login'] ?? 'Tên đăng nhập');
+        $sanitized['label_email'] = sanitize_text_field($input['label_email'] ?? 'Email');
+        $sanitized['label_first_name'] = sanitize_text_field($input['label_first_name'] ?? 'Tên');
+        $sanitized['label_last_name'] = sanitize_text_field($input['label_last_name'] ?? 'Họ');
+        $sanitized['label_nickname'] = sanitize_text_field($input['label_nickname'] ?? 'Nickname');
+        $sanitized['label_display_name'] = sanitize_text_field($input['label_display_name'] ?? 'Tên hiển thị công khai');
+        $sanitized['label_pass1'] = sanitize_text_field($input['label_pass1'] ?? 'Mật khẩu mới');
+        $sanitized['label_pass2'] = sanitize_text_field($input['label_pass2'] ?? 'Nhập lại mật khẩu');
+        $sanitized['password_hint'] = sanitize_text_field($input['password_hint'] ?? 'Để trống nếu không đổi mật khẩu.');
+        $sanitized['input_focus_border_color'] = sanitize_hex_color($input['input_focus_border_color'] ?? '#2563eb');
+        $sanitized['input_focus_shadow'] = !empty($input['input_focus_shadow']) ? 1 : 0;
+
+        return $sanitized;
+    }
+
     public function sanitize_quote_settings($input) {
         $input = is_array($input) ? $input : [];
         $current = get_option('lcni_member_quote_settings', []);
@@ -86,11 +104,13 @@ class LCNI_Member_Settings_Page {
         ];
     }
 
-    private function sanitize_common_settings($input, $bool_keys, $background_upload_field) {
+    private function sanitize_common_settings($input, $bool_keys, $background_upload_field, $option_key = '') {
         $input = is_array($input) ? $input : [];
-        $option_key = in_array('remember_me', $bool_keys, true)
-            ? 'lcni_member_login_settings'
-            : 'lcni_member_register_settings';
+        if ($option_key === '') {
+            $option_key = in_array('remember_me', $bool_keys, true)
+                ? 'lcni_member_login_settings'
+                : 'lcni_member_register_settings';
+        }
         $current = get_option($option_key, []);
         if (is_array($current)) {
             $input = wp_parse_args($input, $current);
@@ -169,6 +189,7 @@ class LCNI_Member_Settings_Page {
         $tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'login';
         $login = get_option('lcni_member_login_settings', []);
         $register = get_option('lcni_member_register_settings', []);
+        $profile = get_option('lcni_member_profile_settings', []);
         $quote_settings = get_option('lcni_member_quote_settings', []);
         $packages = $this->service->get_package_options();
         ?>
@@ -177,13 +198,19 @@ class LCNI_Member_Settings_Page {
             <h2 class="nav-tab-wrapper">
                 <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-member-settings&tab=login')); ?>" class="nav-tab <?php echo $tab === 'login' ? 'nav-tab-active' : ''; ?>">Login</a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-member-settings&tab=register')); ?>" class="nav-tab <?php echo $tab === 'register' ? 'nav-tab-active' : ''; ?>">Register</a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-member-settings&tab=profile')); ?>" class="nav-tab <?php echo $tab === 'profile' ? 'nav-tab-active' : ''; ?>">Profile</a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-member-settings&tab=quote')); ?>" class="nav-tab <?php echo $tab === 'quote' ? 'nav-tab-active' : ''; ?>">Quote</a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-member-settings&tab=saas')); ?>" class="nav-tab <?php echo $tab === 'saas' ? 'nav-tab-active' : ''; ?>">Gói SaaS</a>
             </h2>
-            <?php if ($tab === 'login' || $tab === 'register') : ?>
+            <?php if ($tab === 'login' || $tab === 'register' || $tab === 'profile') : ?>
                 <form method="post" action="options.php" enctype="multipart/form-data">
                     <?php settings_fields('lcni_member_settings'); ?>
-                    <?php $key = $tab === 'login' ? 'lcni_member_login_settings' : 'lcni_member_register_settings'; $v = $tab === 'login' ? $login : $register; ?>
+                    <?php
+                    $key = $tab === 'login'
+                        ? 'lcni_member_login_settings'
+                        : ($tab === 'register' ? 'lcni_member_register_settings' : 'lcni_member_profile_settings');
+                    $v = $tab === 'login' ? $login : ($tab === 'register' ? $register : $profile);
+                    ?>
                     <table class="form-table">
                         <tr><th>Font</th><td><input name="<?php echo esc_attr($key); ?>[font]" value="<?php echo esc_attr($v['font'] ?? 'inherit'); ?>" class="regular-text"></td></tr>
                         <tr><th>Text color</th><td><input type="color" name="<?php echo esc_attr($key); ?>[text_color]" value="<?php echo esc_attr($v['text_color'] ?? '#1f2937'); ?>"></td></tr>
@@ -191,7 +218,7 @@ class LCNI_Member_Settings_Page {
                         <tr>
                             <th>Background image</th>
                             <td>
-                                <input type="file" name="<?php echo $tab === 'login' ? 'lcni_member_login_bg_image_file' : 'lcni_member_register_bg_image_file'; ?>" accept="image/*">
+                                <input type="file" name="<?php echo $tab === 'login' ? 'lcni_member_login_bg_image_file' : ($tab === 'register' ? 'lcni_member_register_bg_image_file' : 'lcni_member_profile_bg_image_file'); ?>" accept="image/*">
                                 <input type="hidden" name="<?php echo esc_attr($key); ?>[background_image]" value="<?php echo esc_attr($v['background_image'] ?? ''); ?>">
                                 <?php if (!empty($v['background_image'])) : ?>
                                     <p class="description">Đang dùng: <code><?php echo esc_html($v['background_image']); ?></code></p>
@@ -207,6 +234,8 @@ class LCNI_Member_Settings_Page {
                         <tr><th>Input width</th><td><input type="number" name="<?php echo esc_attr($key); ?>[input_width]" value="<?php echo esc_attr($v['input_width'] ?? 320); ?>"> px</td></tr>
                         <tr><th>Input background</th><td><input type="color" name="<?php echo esc_attr($key); ?>[input_bg]" value="<?php echo esc_attr($v['input_bg'] ?? '#ffffff'); ?>"></td></tr>
                         <tr><th>Input border color</th><td><input type="color" name="<?php echo esc_attr($key); ?>[input_border_color]" value="<?php echo esc_attr($v['input_border_color'] ?? '#d1d5db'); ?>"></td></tr>
+                        <?php if ($tab === 'profile') : ?><tr><th>Input focus border color</th><td><input type="color" name="<?php echo esc_attr($key); ?>[input_focus_border_color]" value="<?php echo esc_attr($v['input_focus_border_color'] ?? '#2563eb'); ?>"></td></tr><?php endif; ?>
+                        <?php if ($tab === 'profile') : ?><tr><th>Input focus shadow</th><td><label><input type="checkbox" name="<?php echo esc_attr($key); ?>[input_focus_shadow]" value="1" <?php checked(!empty($v['input_focus_shadow'])); ?>> Bật</label></td></tr><?php endif; ?>
                         <tr><th>Input text color</th><td><input type="color" name="<?php echo esc_attr($key); ?>[input_text_color]" value="<?php echo esc_attr($v['input_text_color'] ?? '#111827'); ?>"></td></tr>
                         <tr><th>Button height</th><td><input type="number" name="<?php echo esc_attr($key); ?>[button_height]" value="<?php echo esc_attr($v['button_height'] ?? 42); ?>"> px</td></tr>
                         <tr><th>Button width</th><td><input type="number" name="<?php echo esc_attr($key); ?>[button_width]" value="<?php echo esc_attr($v['button_width'] ?? 180); ?>"> px</td></tr>
@@ -239,6 +268,17 @@ class LCNI_Member_Settings_Page {
                         <?php if ($tab === 'register') : ?>
                             <tr><th>Role mặc định</th><td><input name="<?php echo esc_attr($key); ?>[default_role]" value="<?php echo esc_attr($v['default_role'] ?? 'subscriber'); ?>"></td></tr>
                             <tr><th>Auto login</th><td><label><input type="checkbox" name="<?php echo esc_attr($key); ?>[auto_login]" value="1" <?php checked(!empty($v['auto_login'])); ?>> Bật</label></td></tr>
+                        <?php endif; ?>
+                        <?php if ($tab === 'profile') : ?>
+                            <tr><th>Label user login</th><td><input name="<?php echo esc_attr($key); ?>[label_user_login]" value="<?php echo esc_attr($v['label_user_login'] ?? 'Tên đăng nhập'); ?>"></td></tr>
+                            <tr><th>Label email</th><td><input name="<?php echo esc_attr($key); ?>[label_email]" value="<?php echo esc_attr($v['label_email'] ?? 'Email'); ?>"></td></tr>
+                            <tr><th>Label first name</th><td><input name="<?php echo esc_attr($key); ?>[label_first_name]" value="<?php echo esc_attr($v['label_first_name'] ?? 'Tên'); ?>"></td></tr>
+                            <tr><th>Label last name</th><td><input name="<?php echo esc_attr($key); ?>[label_last_name]" value="<?php echo esc_attr($v['label_last_name'] ?? 'Họ'); ?>"></td></tr>
+                            <tr><th>Label nickname</th><td><input name="<?php echo esc_attr($key); ?>[label_nickname]" value="<?php echo esc_attr($v['label_nickname'] ?? 'Nickname'); ?>"></td></tr>
+                            <tr><th>Label display name</th><td><input name="<?php echo esc_attr($key); ?>[label_display_name]" value="<?php echo esc_attr($v['label_display_name'] ?? 'Tên hiển thị công khai'); ?>"></td></tr>
+                            <tr><th>Label new password</th><td><input name="<?php echo esc_attr($key); ?>[label_pass1]" value="<?php echo esc_attr($v['label_pass1'] ?? 'Mật khẩu mới'); ?>"></td></tr>
+                            <tr><th>Label confirm password</th><td><input name="<?php echo esc_attr($key); ?>[label_pass2]" value="<?php echo esc_attr($v['label_pass2'] ?? 'Nhập lại mật khẩu'); ?>"></td></tr>
+                            <tr><th>Password hint</th><td><input class="regular-text" name="<?php echo esc_attr($key); ?>[password_hint]" value="<?php echo esc_attr($v['password_hint'] ?? 'Để trống nếu không đổi mật khẩu.'); ?>"></td></tr>
                         <?php endif; ?>
                     </table>
                     <?php submit_button('Lưu'); ?>
