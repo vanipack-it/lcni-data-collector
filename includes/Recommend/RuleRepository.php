@@ -5,6 +5,7 @@ if (!defined('ABSPATH')) {
 }
 
 class RuleRepository {
+    const ALLOWED_SCAN_TIMES = ['06:00', '09:00', '12:00', '15:00', '18:00'];
     private $wpdb;
     private $table;
     private $log_table;
@@ -491,27 +492,55 @@ class RuleRepository {
 
     private function sanitize_scan_time($value) {
         $value = sanitize_text_field((string) $value);
-        $allowed_scan_times = ['06:00', '09:00', '12:00', '15:00', '18:00'];
-        if (in_array($value, $allowed_scan_times, true)) {
+        if (in_array($value, self::ALLOWED_SCAN_TIMES, true)) {
             return $value;
         }
 
         return '18:00';
     }
 
+    private function sanitize_scan_times($values) {
+        $raw_values = is_array($values) ? $values : explode(',', (string) $values);
+        $sanitized = [];
+
+        foreach ($raw_values as $value) {
+            $scan_time = $this->sanitize_scan_time($value);
+            if (!in_array($scan_time, $sanitized, true)) {
+                $sanitized[] = $scan_time;
+            }
+        }
+
+        sort($sanitized);
+
+        return !empty($sanitized) ? $sanitized : ['18:00'];
+    }
+
+    private function sanitize_max_loss_pct($value) {
+        $max_loss_pct = abs((float) $value);
+        if ($max_loss_pct <= 0) {
+            return 8.0;
+        }
+
+        return min($max_loss_pct, 100.0);
+    }
+
     private function build_payload($data) {
+        $scan_times = $this->sanitize_scan_times($data['scan_times'] ?? ($data['scan_time'] ?? '18:00'));
+
         return [
             'name' => sanitize_text_field((string) ($data['name'] ?? '')),
             'timeframe' => strtoupper(sanitize_text_field((string) ($data['timeframe'] ?? '1D'))),
             'description' => sanitize_textarea_field((string) ($data['description'] ?? '')),
             'entry_conditions' => wp_json_encode($this->normalize_conditions($data['entry_conditions'] ?? [])),
             'initial_sl_pct' => (float) ($data['initial_sl_pct'] ?? 8),
+            'max_loss_pct' => $this->sanitize_max_loss_pct($data['max_loss_pct'] ?? ($data['initial_sl_pct'] ?? 8)),
             'risk_reward' => (float) ($data['risk_reward'] ?? 3),
             'add_at_r' => (float) ($data['add_at_r'] ?? 2),
             'exit_at_r' => (float) ($data['exit_at_r'] ?? 4),
             'max_hold_days' => max(1, (int) ($data['max_hold_days'] ?? 20)),
             'apply_from_date' => $this->sanitize_apply_from_date($data['apply_from_date'] ?? null),
-            'scan_time' => $this->sanitize_scan_time($data['scan_time'] ?? '18:00'),
+            'scan_time' => $scan_times[0],
+            'scan_times' => implode(',', $scan_times),
             'is_active' => !empty($data['is_active']) ? 1 : 0,
         ];
     }

@@ -33,22 +33,33 @@ class DailyCronService {
         $current_time = $now->format('H:i');
 
         foreach ($active_rules as $rule) {
-            $scan_time = sanitize_text_field((string) ($rule['scan_time'] ?? '18:00'));
             $last_scan_at = (int) ($rule['last_scan_at'] ?? 0);
-            $last_scan_date = $last_scan_at > 0 ? wp_date('Y-m-d', $last_scan_at, wp_timezone()) : '';
+            $scan_times = $this->resolve_rule_scan_times($rule);
 
-            if ($current_time < $scan_time || $last_scan_date === $current_date) {
-                continue;
+            foreach ($scan_times as $scan_time) {
+                if ($current_time < $scan_time) {
+                    continue;
+                }
+
+                $slot_timestamp = $this->parse_scan_date($current_date, $scan_time . ':00');
+                if ($slot_timestamp === null) {
+                    continue;
+                }
+
+                if ($last_scan_at >= $slot_timestamp) {
+                    continue;
+                }
+
+                $candidates = $this->scan_rule_candidates($rule, $current_date);
+                $last_scan_at = current_time('timestamp');
+                $this->rule_repository->update_last_scan_at((int) $rule['id'], $last_scan_at);
+                $this->rule_repository->log_rule_change((int) $rule['id'], 'cron_scanned', 'Cron quét rule theo lịch hằng ngày.', [
+                    'scan_time' => $scan_time,
+                    'scan_times' => $scan_times,
+                    'scanned_at' => current_time('mysql'),
+                    'candidate_count' => count($candidates),
+                ]);
             }
-
-            $candidates = $this->scan_rule_candidates($rule, $current_date);
-
-            $this->rule_repository->update_last_scan_at((int) $rule['id'], current_time('timestamp'));
-            $this->rule_repository->log_rule_change((int) $rule['id'], 'cron_scanned', 'Cron quét rule theo lịch hằng ngày.', [
-                'scan_time' => $scan_time,
-                'scanned_at' => current_time('mysql'),
-                'candidate_count' => count($candidates),
-            ]);
         }
 
         $this->performance_calculator->refresh_all();
@@ -176,6 +187,27 @@ class DailyCronService {
         }
 
         return $candidates;
+    }
+
+
+    private function resolve_rule_scan_times($rule) {
+        $scan_times_raw = sanitize_text_field((string) ($rule['scan_times'] ?? ''));
+        if ($scan_times_raw === '') {
+            $scan_times_raw = sanitize_text_field((string) ($rule['scan_time'] ?? '18:00'));
+        }
+
+        $scan_times = array_values(array_unique(array_filter(array_map('sanitize_text_field', explode(',', $scan_times_raw)))));
+        $scan_times = array_values(array_filter($scan_times, static function ($scan_time) {
+            return in_array($scan_time, RuleRepository::ALLOWED_SCAN_TIMES, true);
+        }));
+
+        if (empty($scan_times)) {
+            $scan_times = ['18:00'];
+        }
+
+        sort($scan_times);
+
+        return $scan_times;
     }
 
     private function parse_scan_date($date, $time_suffix) {
