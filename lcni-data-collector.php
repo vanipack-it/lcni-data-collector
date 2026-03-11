@@ -70,6 +70,7 @@ require_once LCNI_PATH . 'includes/Member/SaasRepository.php';
 require_once LCNI_PATH . 'includes/Member/SaasService.php';
 require_once LCNI_PATH . 'includes/Member/MemberSettingsPage.php';
 require_once LCNI_PATH . 'includes/Member/MemberAuthShortcodes.php';
+require_once LCNI_PATH . 'includes/Member/MemberProfileShortcode.php';
 require_once LCNI_PATH . 'includes/Member/PermissionMiddleware.php';
 require_once LCNI_PATH . 'includes/Member/MemberModule.php';
 require_once LCNI_PATH . 'includes/Recommend/RecommendDB.php';

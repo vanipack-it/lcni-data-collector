@@ -144,6 +144,18 @@ Ví dụ:
 [lcni_member_register]
 ```
 
+### `[lcni_member_profile]`
+Render form quản lý profile WordPress ở frontend với giao diện kiểu wp-admin.
+
+- Cho phép user đăng nhập cập nhật email, tên, nickname, display name.
+- Hỗ trợ đổi mật khẩu trực tiếp (nhập mật khẩu mới + xác nhận).
+- Dùng để thay thế trang `/wp-admin/profile.php` mặc định bằng trang nhúng shortcode.
+
+Ví dụ:
+```text
+[lcni_member_profile]
+```
+
 ## 7) Recommend module
 
 ### `[lcni_signals]`
