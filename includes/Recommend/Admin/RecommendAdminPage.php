@@ -149,12 +149,13 @@ class LCNI_Recommend_Admin_Page {
                 'description' => wp_unslash((string) ($_POST['description'] ?? '')),
                 'entry_conditions' => $entry_conditions,
                 'initial_sl_pct' => (float) ($_POST['initial_sl_pct'] ?? 8),
+                'max_loss_pct' => (float) ($_POST['max_loss_pct'] ?? 8),
                 'risk_reward' => (float) ($_POST['risk_reward'] ?? 3),
                 'add_at_r' => (float) ($_POST['add_at_r'] ?? 2),
                 'exit_at_r' => (float) ($_POST['exit_at_r'] ?? 4),
                 'max_hold_days' => (int) ($_POST['max_hold_days'] ?? 20),
                 'apply_from_date' => wp_unslash((string) ($_POST['apply_from_date'] ?? '')),
-                'scan_time' => wp_unslash((string) ($_POST['scan_time'] ?? '18:00')),
+                'scan_times' => isset($_POST['scan_times']) ? (array) wp_unslash($_POST['scan_times']) : [wp_unslash((string) ($_POST['scan_time'] ?? '18:00'))],
                 'is_active' => !empty($_POST['is_active']) ? 1 : 0,
             ]);
 
@@ -185,12 +186,13 @@ class LCNI_Recommend_Admin_Page {
                 'description' => wp_unslash((string) ($_POST['description'] ?? '')),
                 'entry_conditions' => isset($_POST['entry_conditions']) ? wp_unslash((string) $_POST['entry_conditions']) : '{}',
                 'initial_sl_pct' => (float) ($_POST['initial_sl_pct'] ?? 8),
+                'max_loss_pct' => (float) ($_POST['max_loss_pct'] ?? 8),
                 'risk_reward' => (float) ($_POST['risk_reward'] ?? 3),
                 'add_at_r' => (float) ($_POST['add_at_r'] ?? 2),
                 'exit_at_r' => (float) ($_POST['exit_at_r'] ?? 4),
                 'max_hold_days' => (int) ($_POST['max_hold_days'] ?? 20),
                 'apply_from_date' => wp_unslash((string) ($_POST['apply_from_date'] ?? '')),
-                'scan_time' => wp_unslash((string) ($_POST['scan_time'] ?? '18:00')),
+                'scan_times' => isset($_POST['scan_times']) ? (array) wp_unslash($_POST['scan_times']) : [wp_unslash((string) ($_POST['scan_time'] ?? '18:00'))],
                 'is_active' => !empty($_POST['is_active']) ? 1 : 0,
             ]);
 
@@ -375,21 +377,27 @@ class LCNI_Recommend_Admin_Page {
         echo '<p><label>Timeframe<br><input type="text" name="timeframe" value="' . esc_attr((string) ($editing_rule['timeframe'] ?? '1D')) . '" class="small-text" /></label></p>';
         echo '<p><label>Description recommend<br><textarea name="description" rows="3" class="large-text">' . esc_textarea((string) ($editing_rule['description'] ?? '')) . '</textarea></label></p>';
         echo '<div class="lcni-recommend-row"><label>Initial SL % <input type="number" step="0.01" name="initial_sl_pct" value="' . esc_attr((string) ($editing_rule['initial_sl_pct'] ?? '8')) . '" /></label></div>';
+        echo '<div class="lcni-recommend-row"><label>Mức lỗ tối đa % <input type="number" step="0.01" min="0" max="100" name="max_loss_pct" value="' . esc_attr((string) ($editing_rule['max_loss_pct'] ?? ($editing_rule['initial_sl_pct'] ?? '8'))) . '" /></label><p class="description">Nhập dạng phần trăm trực tiếp. Ví dụ: 8 = cắt lỗ khi giảm 8% so với giá entry.</p></div>';
         echo '<div class="lcni-recommend-row"><label>Risk Reward <input type="number" step="0.01" name="risk_reward" value="' . esc_attr((string) ($editing_rule['risk_reward'] ?? '3')) . '" /></label></div>';
         echo '<div class="lcni-recommend-row"><label>Add at R <input type="number" step="0.01" name="add_at_r" value="' . esc_attr((string) ($editing_rule['add_at_r'] ?? '2')) . '" /></label></div>';
         echo '<div class="lcni-recommend-row"><label>Exit at R <input type="number" step="0.01" name="exit_at_r" value="' . esc_attr((string) ($editing_rule['exit_at_r'] ?? '4')) . '" /></label></div>';
         echo '<div class="lcni-recommend-row"><label>Max Hold Days <input type="number" name="max_hold_days" value="' . esc_attr((string) ($editing_rule['max_hold_days'] ?? '20')) . '" /></label></div>';
         echo '<div class="lcni-recommend-row"><label>Ngày áp dụng <input type="date" name="apply_from_date" value="' . esc_attr((string) ($editing_rule['apply_from_date'] ?? '')) . '" /></label></div>';
-        $scan_time_options = ['06:00', '09:00', '12:00', '15:00', '18:00'];
-        $selected_scan_time = (string) ($editing_rule['scan_time'] ?? '18:00');
-        if (!in_array($selected_scan_time, $scan_time_options, true)) {
-            $selected_scan_time = '18:00';
+        $scan_time_options = RuleRepository::ALLOWED_SCAN_TIMES;
+        $selected_scan_times_raw = (string) ($editing_rule['scan_times'] ?? '');
+        if ($selected_scan_times_raw === '') {
+            $selected_scan_times_raw = (string) ($editing_rule['scan_time'] ?? '18:00');
         }
-        echo '<div class="lcni-recommend-row"><label>Lịch quét hàng ngày <select name="scan_time">';
+        $selected_scan_times = array_values(array_unique(array_filter(array_map('sanitize_text_field', explode(',', $selected_scan_times_raw)))));
+        if (empty($selected_scan_times)) {
+            $selected_scan_times = ['18:00'];
+        }
+        echo '<div class="lcni-recommend-row"><label>Lịch quét hàng ngày (chọn nhiều mốc giờ)</label><div style="display:flex;gap:12px;flex-wrap:wrap;">';
         foreach ($scan_time_options as $scan_time_option) {
-            echo '<option value="' . esc_attr($scan_time_option) . '" ' . selected($selected_scan_time, $scan_time_option, false) . '>' . esc_html($scan_time_option) . '</option>';
+            $checked = in_array($scan_time_option, $selected_scan_times, true) ? 'checked' : '';
+            echo '<label><input type="checkbox" name="scan_times[]" value="' . esc_attr($scan_time_option) . '" ' . $checked . ' /> ' . esc_html($scan_time_option) . '</label>';
         }
-        echo '</select></label></div>';
+        echo '</div></div>';
         echo '<p><label><input type="checkbox" name="is_active" value="1" ' . (!array_key_exists('is_active', (array) $editing_rule) || !empty($editing_rule['is_active']) ? 'checked' : '') . ' /> Active</label></p>';
         echo '</div>';
 
@@ -654,6 +662,7 @@ class LCNI_Recommend_Admin_Page {
         echo '<th>Max Hold</th>';
         echo '<th>Ngày áp dụng</th>';
         echo '<th>Giờ quét</th>';
+        echo '<th>Mức lỗ tối đa %</th>';
         echo '<th>Lần quét gần nhất</th>';
         echo '<th>Active</th>';
         echo '<th>Created At</th>';
@@ -676,7 +685,8 @@ class LCNI_Recommend_Admin_Page {
             echo '<td>' . esc_html((string) ($rule['exit_at_r'] ?? '')) . '</td>';
             echo '<td>' . esc_html((string) ($rule['max_hold_days'] ?? '')) . '</td>';
             echo '<td>' . esc_html((string) ($rule['apply_from_date'] ?? '')) . '</td>';
-            echo '<td>' . esc_html((string) ($rule['scan_time'] ?? '')) . '</td>';
+            echo '<td>' . esc_html((string) ($rule['scan_times'] ?? ($rule['scan_time'] ?? '')) ) . '</td>';
+            echo '<td>' . esc_html((string) ($rule['max_loss_pct'] ?? ($rule['initial_sl_pct'] ?? ''))) . '</td>';
             echo '<td>' . esc_html(!empty($rule['last_scan_at']) ? wp_date('Y-m-d H:i:s', (int) $rule['last_scan_at'], wp_timezone()) : '') . '</td>';
             echo '<td>' . (!empty($rule['is_active']) ? '1' : '0') . '</td>';
             echo '<td>' . esc_html((string) ($rule['created_at'] ?? '')) . '</td>';

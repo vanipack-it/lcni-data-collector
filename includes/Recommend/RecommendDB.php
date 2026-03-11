@@ -29,6 +29,8 @@ class LCNI_Recommend_DB {
             max_hold_days INT UNSIGNED NOT NULL DEFAULT 20,
             apply_from_date DATE NULL,
             scan_time VARCHAR(5) NOT NULL DEFAULT '18:00',
+            scan_times VARCHAR(100) NOT NULL DEFAULT '18:00',
+            max_loss_pct DECIMAL(10,4) NOT NULL DEFAULT 8.0000,
             last_scan_at BIGINT UNSIGNED DEFAULT NULL,
             is_active TINYINT(1) NOT NULL DEFAULT 1,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -132,6 +134,19 @@ class LCNI_Recommend_DB {
         $last_scan_exists = $wpdb->get_var("SHOW COLUMNS FROM {$rule_table} LIKE 'last_scan_at'");
         if (!$last_scan_exists) {
             $wpdb->query("ALTER TABLE {$rule_table} ADD COLUMN last_scan_at BIGINT UNSIGNED DEFAULT NULL AFTER scan_time");
+        }
+
+
+        $scan_times_exists = $wpdb->get_var("SHOW COLUMNS FROM {$rule_table} LIKE 'scan_times'");
+        if (!$scan_times_exists) {
+            $wpdb->query("ALTER TABLE {$rule_table} ADD COLUMN scan_times VARCHAR(100) NOT NULL DEFAULT '18:00' AFTER scan_time");
+            $wpdb->query("UPDATE {$rule_table} SET scan_times = scan_time WHERE scan_times = '' OR scan_times IS NULL");
+        }
+
+        $max_loss_exists = $wpdb->get_var("SHOW COLUMNS FROM {$rule_table} LIKE 'max_loss_pct'");
+        if (!$max_loss_exists) {
+            $wpdb->query("ALTER TABLE {$rule_table} ADD COLUMN max_loss_pct DECIMAL(10,4) NOT NULL DEFAULT 8.0000 AFTER initial_sl_pct");
+            $wpdb->query("UPDATE {$rule_table} SET max_loss_pct = initial_sl_pct WHERE max_loss_pct <= 0");
         }
 
         $signal_table = $wpdb->prefix . 'lcni_recommend_signal';
