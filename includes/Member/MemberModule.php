@@ -18,6 +18,7 @@ class LCNI_Member_Module {
 
         new LCNI_Member_Settings_Page($service);
         new LCNI_Member_Auth_Shortcodes($service);
+        new LCNI_Member_Profile_Shortcode($service);
         new LCNI_Member_Permission_Middleware($service);
     }
 }

@@ -16,6 +16,7 @@ class LCNI_Member_Permission_Middleware {
         'lcni_watchlist' => ['module' => 'watchlist', 'capability' => 'view'],
         'lcni_member_login' => ['module' => 'member-login', 'capability' => 'view'],
         'lcni_member_register' => ['module' => 'member-register', 'capability' => 'view'],
+        'lcni_member_profile' => ['module' => 'member-profile', 'capability' => 'view'],
     ];
 
     public function __construct(LCNI_SaaS_Service $service) {
