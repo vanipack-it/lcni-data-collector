@@ -4052,6 +4052,7 @@ private function sanitize_module_title($value, $fallback) {
         $settings = LCNI_Button_Style_Config::get_config();
         $button_keys = LCNI_Button_Style_Config::get_button_keys();
         $table_keys = LCNI_Button_Style_Config::get_table_button_keys();
+        $outside_override_keys = LCNI_Button_Style_Config::get_outside_override_button_keys();
         $shared_all = isset($settings['__shared_all']) && is_array($settings['__shared_all']) ? $settings['__shared_all'] : [];
         $shared_table = isset($settings['__shared_table']) && is_array($settings['__shared_table']) ? $settings['__shared_table'] : [];
         $shared_outside = isset($settings['__shared_outside']) && is_array($settings['__shared_outside']) ? $settings['__shared_outside'] : [];
@@ -4113,8 +4114,16 @@ private function sanitize_module_title($value, $fallback) {
                         </label></p>
                         <p><label>border <input type="text" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][border]" value="<?php echo esc_attr((string) ($button['border'] ?? '0')); ?>"></label></p>
                         <p><label>border_radius <input type="text" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][border_radius]" value="<?php echo esc_attr((string) ($button['border_radius'] ?? '8px')); ?>"></label></p>
+                        <?php if (in_array($button_key, $outside_override_keys, true)) : ?>
+                            <p><label>background_color <input type="color" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][background_color]" value="<?php echo esc_attr((string) ($button['background_color'] ?? '#2563eb')); ?>"></label></p>
+                            <p><label>text_color <input type="color" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][text_color]" value="<?php echo esc_attr((string) ($button['text_color'] ?? '#ffffff')); ?>"></label></p>
+                            <p><label>height <input type="text" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][height]" value="<?php echo esc_attr((string) ($button['height'] ?? '36px')); ?>"></label></p>
+                            <p><label>font_size <input type="text" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][font_size]" value="<?php echo esc_attr((string) ($button['font_size'] ?? '14px')); ?>"></label></p>
+                        <?php endif; ?>
                         <?php if (in_array($button_key, $table_keys, true)) : ?>
                             <p class="description">Kích thước/typography dùng từ nhóm "Trong bảng".</p>
+                        <?php elseif (in_array($button_key, $outside_override_keys, true)) : ?>
+                            <p class="description">Nút Login/Register/Close/Confirm có thể override màu nền, màu chữ, height, font-size riêng.</p>
                         <?php else : ?>
                             <p class="description">Kích thước/typography dùng từ nhóm "Ngoài bảng".</p>
                         <?php endif; ?>

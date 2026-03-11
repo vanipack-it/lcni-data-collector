@@ -50,11 +50,19 @@ class LCNI_Button_Style_Config {
             $defaults = self::get_default_button_entry($button_key);
             $raw = isset($input[$button_key]) && is_array($input[$button_key]) ? $input[$button_key] : [];
             $merged = array_merge($defaults, $raw);
+            $allow_outside_override = in_array($button_key, self::get_outside_override_button_keys(), true);
 
-            $merged['background_color'] = $shared_all['background_color'];
-            $merged['text_color'] = $shared_all['text_color'];
-            $merged['hover_background_color'] = $shared_all['hover_background_color'];
-            $merged['hover_text_color'] = $shared_all['hover_text_color'];
+            if ($allow_outside_override) {
+                $merged['background_color'] = isset($raw['background_color']) ? $merged['background_color'] : $shared_all['background_color'];
+                $merged['text_color'] = isset($raw['text_color']) ? $merged['text_color'] : $shared_all['text_color'];
+                $merged['hover_background_color'] = isset($raw['hover_background_color']) ? $merged['hover_background_color'] : $shared_all['hover_background_color'];
+                $merged['hover_text_color'] = isset($raw['hover_text_color']) ? $merged['hover_text_color'] : $shared_all['hover_text_color'];
+            } else {
+                $merged['background_color'] = $shared_all['background_color'];
+                $merged['text_color'] = $shared_all['text_color'];
+                $merged['hover_background_color'] = $shared_all['hover_background_color'];
+                $merged['hover_text_color'] = $shared_all['hover_text_color'];
+            }
 
             if (in_array($button_key, self::get_table_button_keys(), true)) {
                 $merged['height'] = $shared_table['height'];
@@ -63,9 +71,15 @@ class LCNI_Button_Style_Config {
                 $merged['text_color'] = $shared_table['text_color'];
                 $merged['hover_text_color'] = $shared_table['hover_text_color'];
             } else {
-                $merged['height'] = $shared_outside['height'];
-                $merged['font_size'] = $shared_outside['font_size'];
-                $merged['padding_left_right'] = $shared_outside['padding_left_right'];
+                if ($allow_outside_override) {
+                    $merged['height'] = isset($raw['height']) ? $merged['height'] : $shared_outside['height'];
+                    $merged['font_size'] = isset($raw['font_size']) ? $merged['font_size'] : $shared_outside['font_size'];
+                    $merged['padding_left_right'] = isset($raw['padding_left_right']) ? $merged['padding_left_right'] : $shared_outside['padding_left_right'];
+                } else {
+                    $merged['height'] = $shared_outside['height'];
+                    $merged['font_size'] = $shared_outside['font_size'];
+                    $merged['padding_left_right'] = $shared_outside['padding_left_right'];
+                }
             }
 
             $sanitized[$button_key] = self::sanitize_button_entry($merged);
@@ -76,6 +90,10 @@ class LCNI_Button_Style_Config {
 
     public static function get_table_button_keys() {
         return ['btn_add_filter_row', 'btn_watchlist_remove_symbol', 'btn_watchlist_remove_symbol_row'];
+    }
+
+    public static function get_outside_override_button_keys() {
+        return ['btn_filter_watchlist_login', 'btn_filter_watchlist_register', 'btn_filter_watchlist_close', 'btn_popup_confirm', 'btn_popup_close'];
     }
 
     public static function get_config() {
