@@ -19,6 +19,14 @@ class LCNI_Chart_Ajax {
             'permission_callback' => '__return_true',
         ]);
 
+        register_rest_route('lcni/v1', '/chart/signals', [
+            'methods'             => WP_REST_Server::READABLE,
+            'callback'            => [$this, 'handle_chart_signals'],
+            'permission_callback' => static function () {
+                return is_user_logged_in();
+            },
+        ]);
+
         register_rest_route('lcni/v1', '/stock-chart/settings', [
             [
                 'methods' => WP_REST_Server::READABLE,
@@ -68,6 +76,85 @@ class LCNI_Chart_Ajax {
             'symbol' => $symbol,
             'data' => $candles,
         ]);
+    }
+
+    public function handle_chart_signals(WP_REST_Request $request) {
+        $symbol = strtoupper(sanitize_text_field((string) $request->get_param('symbol')));
+
+        if ($symbol === '' || preg_match('/^[A-Z0-9._-]{1,20}$/', $symbol) !== 1) {
+            return new WP_Error('invalid_symbol', 'Invalid symbol', ['status' => 400]);
+        }
+
+        global $wpdb;
+        $signal_table = $wpdb->prefix . 'lcni_recommend_signal';
+        $rule_table   = $wpdb->prefix . 'lcni_recommend_rule';
+
+        // Kiểm tra bảng tồn tại
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $signal_table)) !== $signal_table) {
+            return rest_ensure_response(['symbol' => $symbol, 'signals' => []]);
+        }
+
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT
+                    s.id,
+                    s.rule_id,
+                    s.entry_time,
+                    s.entry_price,
+                    s.initial_sl,
+                    s.exit_time,
+                    s.exit_price,
+                    s.final_r,
+                    s.r_multiple,
+                    s.holding_days,
+                    s.status,
+                    s.exit_reason,
+                    s.position_state,
+                    r.name        AS rule_name,
+                    r.timeframe   AS rule_timeframe
+                FROM {$signal_table} s
+                LEFT JOIN {$rule_table} r ON r.id = s.rule_id
+                WHERE s.symbol = %s
+                ORDER BY s.entry_time ASC",
+                $symbol
+            ),
+            ARRAY_A
+        );
+
+        if (!is_array($rows)) {
+            $rows = [];
+        }
+
+        $signals = [];
+        foreach ($rows as $row) {
+            $entry_ts = absint($row['entry_time'] ?? 0);
+            if ($entry_ts <= 0) {
+                continue;
+            }
+
+            $entry_date = gmdate('Y-m-d', $entry_ts);
+            $exit_date  = !empty($row['exit_time']) ? gmdate('Y-m-d', absint($row['exit_time'])) : null;
+
+            $signals[] = [
+                'id'            => (int) $row['id'],
+                'rule_id'       => (int) $row['rule_id'],
+                'rule_name'     => sanitize_text_field((string) ($row['rule_name'] ?? '')),
+                'rule_timeframe'=> sanitize_text_field((string) ($row['rule_timeframe'] ?? '1D')),
+                'entry_date'    => $entry_date,
+                'entry_price'   => (float) ($row['entry_price'] ?? 0),
+                'initial_sl'    => (float) ($row['initial_sl'] ?? 0),
+                'exit_date'     => $exit_date,
+                'exit_price'    => $exit_date !== null ? (float) ($row['exit_price'] ?? 0) : null,
+                'exit_reason'   => sanitize_key((string) ($row['exit_reason'] ?? '')),
+                'status'        => sanitize_key((string) ($row['status'] ?? 'open')),
+                'r_multiple'    => (float) ($row['r_multiple'] ?? 0),
+                'final_r'       => $exit_date !== null ? (float) ($row['final_r'] ?? 0) : null,
+                'holding_days'  => (int) ($row['holding_days'] ?? 0),
+                'position_state'=> sanitize_text_field((string) ($row['position_state'] ?? '')),
+            ];
+        }
+
+        return rest_ensure_response(['symbol' => $symbol, 'signals' => $signals]);
     }
 
     public function get_user_settings(WP_REST_Request $request) {
