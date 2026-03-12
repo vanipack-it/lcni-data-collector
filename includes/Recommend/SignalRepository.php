@@ -122,18 +122,19 @@ class SignalRepository {
         );
     }
 
-    public function close_signal($signal_id, $exit_price, $exit_time, $final_r, $holding_days) {
+    public function close_signal($signal_id, $exit_price, $exit_time, $final_r, $holding_days, $exit_reason = '') {
         return $this->wpdb->update(
             $this->table,
             [
-                'status' => 'closed',
-                'exit_price' => (float) $exit_price,
-                'exit_time' => (int) $exit_time,
-                'final_r' => (float) $final_r,
-                'holding_days' => (int) $holding_days,
+                'status'      => 'closed',
+                'exit_price'  => (float) $exit_price,
+                'exit_time'   => (int) $exit_time,
+                'final_r'     => (float) $final_r,
+                'holding_days'=> (int) $holding_days,
+                'exit_reason' => sanitize_key( (string) $exit_reason ),
             ],
             ['id' => (int) $signal_id],
-            ['%s', '%f', '%d', '%f', '%d'],
+            ['%s', '%f', '%d', '%f', '%d', '%s'],
             ['%d']
         );
     }
@@ -168,7 +169,7 @@ class SignalRepository {
             }));
         }
 
-        $selects = ['s.id AS signal__id'];
+        $selects = ['s.id AS signal__id', 's.exit_reason AS signal__exit_reason', 's.entry_time AS signal__entry_time_raw'];
         foreach ($selected_columns as $key) {
             if (!isset($catalog[$key])) {
                 continue;
