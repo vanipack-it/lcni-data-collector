@@ -272,6 +272,45 @@ class DailyCronService {
                     $exit_time           = $should_exit_ts;
                     $capped_holding_days = $max_hold_days;
                 }
+                error_log( sprintf(
+                    '[LCNI DEBUG] MAX_HOLD symbol=%s entry_time=%d latest_time=%d should_exit_ts=%d exit_time=%d | entry_date=%s should_exit_date=%s exit_date=%s',
+                    $signal['symbol'], (int)$signal['entry_time'], $latest_time, $should_exit_ts, $exit_time,
+                    wp_date('Y-m-d', (int)$signal['entry_time'], wp_timezone()),
+                    wp_date('Y-m-d', $should_exit_ts, wp_timezone()),
+                    wp_date('Y-m-d', $exit_time, wp_timezone())
+                ) );
+            } elseif ( $exit_reason === ExitEngine::REASON_STOP_LOSS ) {
+                // Tìm nến đầu tiên chạm SL (close_price <= initial_sl) sau entry_time
+                $first_sl_candle = $this->get_first_candle_below_price(
+                    $signal['symbol'], $rule['timeframe'],
+                    (float) $signal['initial_sl'],
+                    (int) $signal['entry_time']
+                );
+                if ( $first_sl_candle ) {
+                    $exit_time = (int) $first_sl_candle['event_time'];
+                }
+            } elseif ( $exit_reason === ExitEngine::REASON_MAX_LOSS ) {
+                // Tìm nến đầu tiên chạm max_loss_cut sau entry_time
+                $max_loss_pct       = abs( (float) ( $rule['max_loss_pct'] ?? ( $rule['initial_sl_pct'] ?? 8 ) ) );
+                $max_loss_cut_price = $entry_price * ( 1 - $max_loss_pct / 100 );
+                $first_ml_candle    = $this->get_first_candle_below_price(
+                    $signal['symbol'], $rule['timeframe'],
+                    $max_loss_cut_price,
+                    (int) $signal['entry_time']
+                );
+                if ( $first_ml_candle ) {
+                    $exit_time = (int) $first_ml_candle['event_time'];
+                }
+            } elseif ( $exit_reason === ExitEngine::REASON_TAKE_PROFIT ) {
+                // Tìm nến đầu tiên đạt r_multiple >= exit_at_r sau entry_time
+                $first_tp_candle = $this->get_first_candle_take_profit(
+                    $signal['symbol'], $rule['timeframe'],
+                    $entry_price, $initial_sl, (float) $rule['exit_at_r'],
+                    (int) $signal['entry_time']
+                );
+                if ( $first_tp_candle ) {
+                    $exit_time = (int) $first_tp_candle['event_time'];
+                }
             }
 
             // ── Tính final_r chính xác theo exit_reason ───────────────────
@@ -313,5 +352,58 @@ class DailyCronService {
             ),
             ARRAY_A
         );
+    }
+
+    /**
+     * Tìm nến đầu tiên (sau entry_time) có close_price <= threshold_price.
+     * Dùng cho REASON_STOP_LOSS và REASON_MAX_LOSS.
+     */
+    private function get_first_candle_below_price( string $symbol, string $timeframe, float $threshold_price, int $after_time ): ?array {
+        $table = $this->wpdb->prefix . 'lcni_ohlc';
+
+        return $this->wpdb->get_row(
+            $this->wpdb->prepare(
+                "SELECT event_time, close_price FROM {$table}
+                 WHERE symbol = %s AND timeframe = %s
+                   AND event_time > %d
+                   AND close_price <= %f
+                 ORDER BY event_time ASC LIMIT 1",
+                strtoupper( $symbol ),
+                strtoupper( $timeframe ),
+                $after_time,
+                $threshold_price
+            ),
+            ARRAY_A
+        ) ?: null;
+    }
+
+    /**
+     * Tìm nến đầu tiên (sau entry_time) đạt r_multiple >= exit_at_r.
+     * Dùng cho REASON_TAKE_PROFIT.
+     */
+    private function get_first_candle_take_profit( string $symbol, string $timeframe, float $entry_price, float $initial_sl, float $exit_at_r, int $after_time ): ?array {
+        $risk = $entry_price - $initial_sl;
+        if ( abs( $risk ) < 0.0001 ) {
+            return null;
+        }
+
+        // close_price >= entry_price + exit_at_r * risk
+        $tp_price = $entry_price + $exit_at_r * $risk;
+        $table    = $this->wpdb->prefix . 'lcni_ohlc';
+
+        return $this->wpdb->get_row(
+            $this->wpdb->prepare(
+                "SELECT event_time, close_price FROM {$table}
+                 WHERE symbol = %s AND timeframe = %s
+                   AND event_time > %d
+                   AND close_price >= %f
+                 ORDER BY event_time ASC LIMIT 1",
+                strtoupper( $symbol ),
+                strtoupper( $timeframe ),
+                $after_time,
+                $tp_price
+            ),
+            ARRAY_A
+        ) ?: null;
     }
 }
