@@ -239,18 +239,66 @@ class DailyCronService {
                 continue;
             }
 
-            $current_price = (float) $price_snapshot['close_price'];
-            $r_multiple = $this->position_engine->calculate_r_multiple((float) $signal['entry_price'], (float) $signal['initial_sl'], $current_price);
-            $position_state = $this->position_engine->resolve_state($r_multiple, (float) $rule['add_at_r'], (float) $rule['exit_at_r']);
-            $holding_days = max(0, (int) floor(((int) $price_snapshot['event_time'] - (int) $signal['entry_time']) / DAY_IN_SECONDS));
-            $max_hold_days = max(1, (int) ($rule['max_hold_days'] ?? 1));
-            $capped_holding_days = min($holding_days, $max_hold_days);
+            $current_price  = (float) $price_snapshot['close_price'];
+            $latest_time    = (int) $price_snapshot['event_time'];
+            $entry_price    = (float) $signal['entry_price'];
+            $initial_sl     = (float) $signal['initial_sl'];
+            $risk_per_share = max( 0.0001, (float) $signal['risk_per_share'] );
 
-            $this->signal_repository->update_open_signal_metrics((int) $signal['id'], $current_price, $r_multiple, $position_state, $capped_holding_days);
+            $r_multiple     = $this->position_engine->calculate_r_multiple( $entry_price, $initial_sl, $current_price );
+            $position_state = $this->position_engine->resolve_state( $r_multiple, (float) $rule['add_at_r'], (float) $rule['exit_at_r'] );
+            $holding_days   = max( 0, (int) floor( ( $latest_time - (int) $signal['entry_time'] ) / DAY_IN_SECONDS ) );
+            $max_hold_days  = max( 1, (int) ( $rule['max_hold_days'] ?? 1 ) );
+            $capped_holding_days = min( $holding_days, $max_hold_days );
 
-            if ($this->exit_engine->should_exit($signal, $rule, $current_price, $r_multiple, $holding_days)) {
-                $this->signal_repository->close_signal((int) $signal['id'], $current_price, (int) $price_snapshot['event_time'], $r_multiple, $capped_holding_days);
+            $this->signal_repository->update_open_signal_metrics( (int) $signal['id'], $current_price, $r_multiple, $position_state, $capped_holding_days );
+
+            $exit_reason = $this->exit_engine->get_exit_reason( $signal, $rule, $current_price, $r_multiple, $holding_days );
+
+            if ( $exit_reason === '' ) {
+                continue;
             }
+
+            // ── Xác định exit_time chính xác ──────────────────────────────
+            $exit_time = $latest_time;
+
+            if ( $exit_reason === ExitEngine::REASON_MAX_HOLD ) {
+                // Thoát do hết thời gian → exit_time = entry + max_hold_days (không phải ngày cron chạy trễ)
+                $tz             = wp_timezone();
+                $entry_dt       = ( new DateTimeImmutable( '@' . (int) $signal['entry_time'] ) )->setTimezone( $tz );
+                $should_exit_dt = $entry_dt->modify( '+' . $max_hold_days . ' days' );
+                $should_exit_ts = $should_exit_dt->getTimestamp();
+                if ( $should_exit_ts > 0 && $should_exit_ts <= $latest_time ) {
+                    $exit_time           = $should_exit_ts;
+                    $capped_holding_days = $max_hold_days;
+                }
+            }
+
+            // ── Tính final_r chính xác theo exit_reason ───────────────────
+            $final_r = ( $current_price - $entry_price ) / $risk_per_share;
+
+            if ( $exit_reason === ExitEngine::REASON_STOP_LOSS ) {
+                // Giá gap qua SL → cap final_r = -1.0R (tối đa rủi ro đã chấp nhận)
+                $sl_r    = ( $initial_sl - $entry_price ) / $risk_per_share; // thường = -1.0
+                $final_r = max( $final_r, $sl_r );                           // lấy giá trị lớn hơn (ít lỗ hơn)
+            } elseif ( $exit_reason === ExitEngine::REASON_MAX_LOSS ) {
+                // Thoát do max_loss_cut → cap tại đúng max_loss_pct
+                $max_loss_pct   = abs( (float) ( $rule['max_loss_pct'] ?? ( $rule['initial_sl_pct'] ?? 8 ) ) );
+                $max_loss_price = $entry_price * ( 1 - $max_loss_pct / 100 );
+                $max_loss_r     = ( $max_loss_price - $entry_price ) / $risk_per_share;
+                $final_r        = max( $final_r, $max_loss_r );
+            }
+
+            $final_r = round( $final_r, 6 );
+
+            $this->signal_repository->close_signal(
+                (int) $signal['id'],
+                $current_price,
+                $exit_time,
+                $final_r,
+                $capped_holding_days,
+                $exit_reason
+            );
         }
     }
 
