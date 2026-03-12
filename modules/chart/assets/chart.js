@@ -21,6 +21,24 @@
   }, (window.LCNI_CHART_CONFIG && window.LCNI_CHART_CONFIG.default_indicators) || {});
   const instances = new WeakMap();
 
+  // ── Signal config ──────────────────────────────────────────────────
+  const SIGNALS_API_BASE = (window.LCNI_CHART_CONFIG && window.LCNI_CHART_CONFIG.signals_api_base) || '';
+  const REST_NONCE       = (window.LCNI_CHART_CONFIG && window.LCNI_CHART_CONFIG.nonce) || '';
+
+  function fetchSignals(symbol) {
+    if (!SIGNALS_API_BASE || !REST_NONCE) return Promise.resolve([]);
+    const url = new URL(SIGNALS_API_BASE, window.location.origin);
+    url.searchParams.set('symbol', symbol);
+    return fetch(url.toString(), {
+      method: 'GET',
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json', 'X-WP-Nonce': REST_NONCE }
+    })
+      .then((r) => (r.ok ? r.json() : { signals: [] }))
+      .then((payload) => (Array.isArray(payload.signals) ? payload.signals : []))
+      .catch(() => []);
+  }
+
   function formatByType(value, type) {
     if (window.LCNIFormatter && typeof window.LCNIFormatter.format === 'function') {
       return window.LCNIFormatter.format(value, type);
@@ -197,13 +215,115 @@
     try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings)); } catch (_e) { /* noop */ }
   }
 
-  function buildOption(symbol, source, indicators, cache) {
+  // ── Signal markers ─────────────────────────────────────────────────
+  /**
+   * Chuyển signals thành markPoint data cho ECharts.
+   * - B (Buy)  = entry → mũi tên xanh lá, vị trí dưới cây nến entry
+   * - S (Sell) = exit  → mũi tên đỏ,    vị trí trên cây nến exit
+   * Trả về { markPointData: [], markLineData: [] }
+   */
+  function buildSignalMarkers(signals, dateIndex) {
+    const markPointData = [];
+
+    signals.forEach((sig) => {
+      // ── BUY marker ──────────────────────────────────────────────
+      if (sig.entry_date && Object.prototype.hasOwnProperty.call(dateIndex, sig.entry_date)) {
+        const idx = dateIndex[sig.entry_date];
+
+        // Xây tooltip HTML chi tiết
+        let tooltip = `<b style="color:#16a34a">▲ BUY — ${sig.rule_name || 'Rule #' + sig.rule_id}</b><br/>`;
+        tooltip += `Ngày vào: ${sig.entry_date}<br/>`;
+        tooltip += `Giá vào: ${formatByType(sig.entry_price, 'price')}<br/>`;
+        tooltip += `Stop Loss: ${formatByType(sig.initial_sl, 'price')}<br/>`;
+        if (sig.status === 'open') {
+          tooltip += `R hiện tại: ${Number(sig.r_multiple).toFixed(2)}R<br/>`;
+          tooltip += `<span style="color:#16a34a;font-weight:bold">● Đang mở</span>`;
+        }
+
+        markPointData.push({
+          name: 'B',
+          coord: [idx, sig.entry_price],
+          value: 'B',
+          symbolOffset: [0, '120%'],   // đặt dưới cây nến
+          symbol: 'pin',
+          symbolSize: 26,
+          itemStyle: { color: '#16a34a', borderColor: '#fff', borderWidth: 1.5 },
+          label: {
+            show: true,
+            formatter: 'B',
+            color: '#fff',
+            fontSize: 10,
+            fontWeight: 'bold',
+            offset: [0, 1],
+          },
+          tooltip: { formatter: () => tooltip },
+          // lưu raw data để dùng trong custom tooltip formatter
+          _lcni: { type: 'buy', sig },
+        });
+      }
+
+      // ── SELL marker ─────────────────────────────────────────────
+      if (sig.exit_date && Object.prototype.hasOwnProperty.call(dateIndex, sig.exit_date)) {
+        const idx = dateIndex[sig.exit_date];
+
+        const exitPrice = sig.exit_price || 0;
+        const finalR    = sig.final_r !== null ? Number(sig.final_r).toFixed(2) : '–';
+        const exitReasonMap = {
+          sl: 'Stop Loss',
+          tp: 'Take Profit',
+          time: 'Hết thời gian',
+          manual: 'Manual',
+        };
+        const reasonLabel = exitReasonMap[sig.exit_reason] || sig.exit_reason || '–';
+
+        let tooltip = `<b style="color:#dc2626">▼ SELL — ${sig.rule_name || 'Rule #' + sig.rule_id}</b><br/>`;
+        tooltip += `Ngày ra: ${sig.exit_date}<br/>`;
+        tooltip += `Giá ra: ${formatByType(exitPrice, 'price')}<br/>`;
+        tooltip += `Lý do: ${reasonLabel}<br/>`;
+        tooltip += `Final R: <b style="color:${Number(finalR) >= 0 ? '#16a34a' : '#dc2626'}">${finalR}R</b><br/>`;
+        tooltip += `Holding: ${sig.holding_days} ngày`;
+
+        markPointData.push({
+          name: 'S',
+          coord: [idx, exitPrice],
+          value: 'S',
+          symbolOffset: [0, '-120%'],  // đặt trên cây nến
+          symbol: 'pin',
+          symbolSize: 26,
+          itemStyle: { color: '#dc2626', borderColor: '#fff', borderWidth: 1.5 },
+          label: {
+            show: true,
+            formatter: 'S',
+            color: '#fff',
+            fontSize: 10,
+            fontWeight: 'bold',
+            offset: [0, 1],
+          },
+          tooltip: { formatter: () => tooltip },
+          _lcni: { type: 'sell', sig },
+        });
+      }
+    });
+
+    return markPointData;
+  }
+
+  function buildOption(symbol, source, indicators, cache, signals) {
     const dates = source.map((r) => r.date);
     const closes = source.map((r) => r.close);
     const candles = source.map((r) => [r.open, r.close, r.low, r.high]);
     const volumes = source.map((r) => r.volume);
 
-    if (!cache.ma20) cache.ma20 = calculateMA(closes, 20);
+    // Index date → array index để map signals vào đúng nến
+    const dateIndex = {};
+    dates.forEach((d, i) => { dateIndex[d] = i; });
+
+    // Build signal markers (B/S pins)
+    const signalMarkPoints = (Array.isArray(signals) && signals.length)
+      ? buildSignalMarkers(signals, dateIndex)
+      : [];
+
+ cache.ma20 = calculateMA(closes, 20);
     if (!cache.ma50) cache.ma50 = calculateMA(closes, 50);
     if (!cache.ma100) cache.ma100 = calculateMA(closes, 100);
     if (!cache.ma200) cache.ma200 = calculateMA(closes, 200);
@@ -257,7 +377,27 @@
           borderColor: '#16a34a',
           color0: '#dc2626',
           borderColor0: '#dc2626'
-        }
+        },
+        // Signal markers B/S
+        markPoint: signalMarkPoints.length ? {
+          silent: false,
+          animation: false,
+          tooltip: {
+            trigger: 'item',
+            enterable: false,
+            confine: true,
+            backgroundColor: 'rgba(15,23,42,0.92)',
+            borderColor: 'transparent',
+            textStyle: { color: '#f8fafc', fontSize: 12, lineHeight: 18 },
+            formatter: (p) => {
+              if (p.data && typeof p.data.tooltip === 'object' && typeof p.data.tooltip.formatter === 'function') {
+                return p.data.tooltip.formatter(p);
+              }
+              return String(p.name || '');
+            },
+          },
+          data: signalMarkPoints,
+        } : undefined,
       },
       { name: 'Volume', type: 'bar', xAxisIndex: panelIndexes.volume, yAxisIndex: panelIndexes.volume, data: volumes, itemStyle: { color: '#94a3b8' }, barMaxWidth: 10 }
     ];
@@ -347,10 +487,10 @@
     if (!symbol || !apiBase) return;
 
     container.innerHTML = '';
-    const state = { indicators: loadSettings(), cache: {}, rows: [], symbol };
+    const state = { indicators: loadSettings(), cache: {}, rows: [], signals: [], symbol };
     buildControls(container, state, () => {
       if (!state.chart) return;
-      state.chart.setOption(buildOption(state.symbol, state.rows, state.indicators, state.cache), { notMerge: false, lazyUpdate: true });
+      state.chart.setOption(buildOption(state.symbol, state.rows, state.indicators, state.cache, state.signals), { notMerge: false, lazyUpdate: true });
     });
 
     const canvas = document.createElement('div');
@@ -362,11 +502,16 @@
     state.chart = chart;
     instances.set(container, state);
 
-    fetchData(apiBase, symbol, limit).then((result) => {
-      state.rows = result.rows;
-      state.symbol = result.symbol;
+    // Fetch OHLC và signals song song
+    Promise.all([
+      fetchData(apiBase, symbol, limit),
+      fetchSignals(symbol),
+    ]).then(([result, signals]) => {
+      state.rows    = result.rows;
+      state.symbol  = result.symbol;
+      state.signals = signals;
       if (!state.rows.length) throw new Error('No rows');
-      chart.setOption(buildOption(state.symbol, state.rows, state.indicators, state.cache), { notMerge: true, lazyUpdate: true });
+      chart.setOption(buildOption(state.symbol, state.rows, state.indicators, state.cache, state.signals), { notMerge: true, lazyUpdate: true });
     }).catch(() => {
       container.innerHTML = '<div class="lcni-chart-error">No data available</div>';
     });
