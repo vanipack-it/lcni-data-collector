@@ -24,6 +24,7 @@ class LCNI_Chart_Shortcode {
         $sync_version = file_exists($sync_script_path) ? (string) filemtime($sync_script_path) : self::VERSION;
 
         wp_register_script('lcni-stock-sync', LCNI_URL . 'assets/js/lcni-stock-sync.js', [], $sync_version, true);
+        wp_add_inline_script('lcni-stock-sync', 'window.LCNI_REST_NONCE=' . wp_json_encode(is_user_logged_in() ? wp_create_nonce('wp_rest') : '') . ';', 'before');
 
         $chart_script_path = LCNI_PATH . 'modules/chart/assets/chart.js';
         $chart_script_version = file_exists($chart_script_path)

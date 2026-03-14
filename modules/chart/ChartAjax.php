@@ -132,8 +132,9 @@ class LCNI_Chart_Ajax {
                 continue;
             }
 
-            $entry_date = gmdate('Y-m-d', $entry_ts);
-            $exit_date  = !empty($row['exit_time']) ? gmdate('Y-m-d', absint($row['exit_time'])) : null;
+            $tz         = wp_timezone();
+            $entry_date = wp_date('Y-m-d', $entry_ts, $tz);
+            $exit_date  = !empty($row['exit_time']) ? wp_date('Y-m-d', absint($row['exit_time']), $tz) : null;
 
             $signals[] = [
                 'id'            => (int) $row['id'],
