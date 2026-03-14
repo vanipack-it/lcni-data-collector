@@ -25,6 +25,7 @@ class LCNI_Stock_Signals_Shortcodes {
         $sync_version = file_exists($sync_script_path) ? (string) filemtime($sync_script_path) : self::VERSION;
 
         wp_register_script('lcni-stock-sync', LCNI_URL . 'assets/js/lcni-stock-sync.js', [], $sync_version, true);
+        wp_add_inline_script('lcni-stock-sync', 'window.LCNI_REST_NONCE=' . wp_json_encode(is_user_logged_in() ? wp_create_nonce('wp_rest') : '') . ';', 'before');
 
         $script_path = LCNI_PATH . 'assets/js/lcni-stock-signals.js';
         $version = file_exists($script_path) ? (string) filemtime($script_path) : self::VERSION;
@@ -223,6 +224,10 @@ class LCNI_Stock_Signals_Shortcodes {
         $global_labels = get_option('lcni_column_labels', []);
         if (is_array($global_labels)) {
             foreach ($global_labels as $field => $label) {
+                // $label có thể là array nếu option bị lưu sai format
+                if (is_array($label)) {
+                    $label = implode(', ', array_filter(array_map('strval', $label)));
+                }
                 $field_key = sanitize_key((string) $field);
                 $label_text = sanitize_text_field((string) $label);
                 if ($field_key === '' || $label_text === '') {

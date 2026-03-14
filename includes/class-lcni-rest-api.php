@@ -10,22 +10,62 @@ class LCNI_Rest_API {
     private $industry_controller;
 
     public function __construct() {
-        $access_control = new LCNI_AccessControl();
-        $repository = new LCNI_Data_StockRepository();
-        $indicator_service = new LCNI_IndicatorService();
-        $cache = new LCNI_CacheService('lcni_rest_api', 60);
-        $stock_service = new LCNI_StockQueryService($repository, $indicator_service, $access_control, $cache);
-
-        $this->stock_controller = new LCNI_StockController($stock_service, $access_control);
-
-        $industry_repository = new LCNI_IndustryRepository();
-        $industry_service = new LCNI_IndustryAnalysisService($industry_repository);
-        $this->industry_controller = new LCNI_IndustryController($industry_service);
-
+        // Chỉ đăng ký hook — KHÔNG khởi tạo controller ở đây
+        // để tránh fatal error khi class phụ thuộc chưa được load
+        // (vd: user-edit.php, các trang admin không liên quan đến REST API)
         add_action('rest_api_init', [$this, 'register_routes']);
     }
 
+    /**
+     * Khởi tạo controllers lazy — chỉ khi REST API thực sự được gọi.
+     * Nếu class phụ thuộc không tồn tại, log lỗi và return sớm thay vì crash.
+     */
+    private function init_controllers() {
+        if ($this->stock_controller !== null && $this->industry_controller !== null) {
+            return true;
+        }
+
+        $required = [
+            'LCNI_AccessControl',
+            'LCNI_Data_StockRepository',
+            'LCNI_IndicatorService',
+            'LCNI_StockQueryService',
+            'LCNI_IndustryRepository',
+            'LCNI_IndustryAnalysisService',
+        ];
+
+        foreach ($required as $class) {
+            if (!class_exists($class)) {
+                error_log('[LCNI] REST API init skipped: class ' . $class . ' not found.');
+                return false;
+            }
+        }
+
+        try {
+            $access_control    = new LCNI_AccessControl();
+            $repository        = new LCNI_Data_StockRepository();
+            $indicator_service = new LCNI_IndicatorService();
+            $cache             = new LCNI_CacheService('lcni_rest_api', 60);
+            $stock_service     = new LCNI_StockQueryService($repository, $indicator_service, $access_control, $cache);
+
+            $this->stock_controller = new LCNI_StockController($stock_service, $access_control);
+
+            $industry_repository = new LCNI_IndustryRepository();
+            $industry_service    = new LCNI_IndustryAnalysisService($industry_repository);
+            $this->industry_controller = new LCNI_IndustryController($industry_service);
+        } catch (Throwable $e) {
+            error_log('[LCNI] REST API controller init failed: ' . $e->getMessage());
+            return false;
+        }
+
+        return true;
+    }
+
     public function register_routes() {
+        if (!$this->init_controllers()) {
+            return; // class phụ thuộc chưa có — không crash, chỉ bỏ qua
+        }
+
         register_rest_route('lcni/v1', '/dashboard', [
             'methods' => 'GET',
             'callback' => [$this, 'get_dashboard'],
