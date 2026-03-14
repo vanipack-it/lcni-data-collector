@@ -319,10 +319,48 @@
   }
 
 
+
+  function bindTouchScroll(wrap) {
+    if (!wrap || wrap.dataset.touchScrollBound === '1') return;
+    wrap.dataset.touchScrollBound = '1';
+    let startX = 0, startY = 0, startScrollLeft = 0, startScrollTop = 0;
+    let isScrollingX = null; // null = undecided
+
+    wrap.addEventListener('touchstart', (e) => {
+      const t = e.touches[0];
+      startX = t.clientX;
+      startY = t.clientY;
+      startScrollLeft = wrap.scrollLeft;
+      startScrollTop  = wrap.scrollTop;
+      isScrollingX = null;
+    }, { passive: true });
+
+    wrap.addEventListener('touchmove', (e) => {
+      const t = e.touches[0];
+      const dx = startX - t.clientX;
+      const dy = startY - t.clientY;
+
+      if (isScrollingX === null) {
+        isScrollingX = Math.abs(dx) > Math.abs(dy);
+      }
+
+      const canScrollX = wrap.scrollWidth > wrap.clientWidth;
+      const canScrollY = wrap.scrollHeight > wrap.clientHeight;
+
+      if (isScrollingX && canScrollX) {
+        wrap.scrollLeft = startScrollLeft + dx;
+        e.preventDefault(); // ngăn page scroll khi scroll bảng ngang
+      } else if (!isScrollingX && canScrollY) {
+        wrap.scrollTop = startScrollTop + dy;
+      }
+    }, { passive: false });
+  }
+
   function bindHorizontalScrollLock(host) {
     const wrap = host.querySelector('.lcni-watchlist-table-wrap');
     if (!wrap || wrap.dataset.scrollLockBound === '1') return;
     wrap.dataset.scrollLockBound = '1';
+    bindTouchScroll(wrap); // thêm touch scroll
     wrap.addEventListener('wheel', (event) => {
       const speed = Number(wrap.dataset.scrollSpeed || 1) || 1;
       const deltaX = (event.deltaX || 0) + ((event.shiftKey ? event.deltaY : 0) * speed);
