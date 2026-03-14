@@ -139,6 +139,22 @@ class DailyCronService {
         return $created;
     }
 
+    /**
+     * Lấy nến tại hoặc ngay sau một timestamp (dùng để lấy exit_price đúng).
+     */
+    private function find_candle_at_or_after( string $symbol, string $timeframe, int $at_time ): ?array {
+        $table = $this->wpdb->prefix . 'lcni_ohlc';
+        $row   = $this->wpdb->get_row(
+            $this->wpdb->prepare(
+                "SELECT event_time, close_price FROM {$table}
+                 WHERE symbol = %s AND timeframe = %s AND event_time >= %d
+                 ORDER BY event_time ASC LIMIT 1",
+                $symbol, $timeframe, $at_time
+            ), ARRAY_A
+        );
+        return $row ?: null;
+    }
+
     private function resolve_scan_window($rule, $current_date) {
         $tz = wp_timezone();
         $day_start = new DateTimeImmutable($current_date . ' 00:00:00', $tz);
@@ -259,8 +275,9 @@ class DailyCronService {
                 continue;
             }
 
-            // ── Xác định exit_time chính xác ──────────────────────────────
-            $exit_time = $latest_time;
+            // ── Xác định exit_time và exit_price chính xác ───────────────
+            $exit_time  = $latest_time;
+            $exit_price = $current_price; // default: giá cron chạy
 
             if ( $exit_reason === ExitEngine::REASON_MAX_HOLD ) {
                 // Thoát do hết thời gian → exit_time = entry + max_hold_days (không phải ngày cron chạy trễ)
@@ -269,7 +286,12 @@ class DailyCronService {
                 $should_exit_dt = $entry_dt->modify( '+' . $max_hold_days . ' days' );
                 $should_exit_ts = $should_exit_dt->getTimestamp();
                 if ( $should_exit_ts > 0 && $should_exit_ts <= $latest_time ) {
-                    $exit_time           = $should_exit_ts;
+                    $exit_time = $should_exit_ts;
+                    // Lấy close_price của nến tại ngày should_exit_ts
+                    $exit_candle = $this->find_candle_at_or_after( $signal['symbol'], $timeframe, $should_exit_ts );
+                    if ( $exit_candle ) {
+                        $exit_price = (float) $exit_candle['close_price'];
+                    }
                     $capped_holding_days = $max_hold_days;
                 }
                 error_log( sprintf(
@@ -281,13 +303,15 @@ class DailyCronService {
                 ) );
             } elseif ( $exit_reason === ExitEngine::REASON_STOP_LOSS ) {
                 // Tìm nến đầu tiên chạm SL (close_price <= initial_sl) sau entry_time
+                // → dùng close_price của nến đó làm exit_price
                 $first_sl_candle = $this->get_first_candle_below_price(
                     $signal['symbol'], $rule['timeframe'],
                     (float) $signal['initial_sl'],
                     (int) $signal['entry_time']
                 );
                 if ( $first_sl_candle ) {
-                    $exit_time = (int) $first_sl_candle['event_time'];
+                    $exit_time  = (int) $first_sl_candle['event_time'];
+                    $exit_price = (float) $first_sl_candle['close_price'];
                 }
             } elseif ( $exit_reason === ExitEngine::REASON_MAX_LOSS ) {
                 // Tìm nến đầu tiên chạm max_loss_cut sau entry_time
@@ -299,7 +323,8 @@ class DailyCronService {
                     (int) $signal['entry_time']
                 );
                 if ( $first_ml_candle ) {
-                    $exit_time = (int) $first_ml_candle['event_time'];
+                    $exit_time  = (int) $first_ml_candle['event_time'];
+                    $exit_price = (float) $first_ml_candle['close_price'];
                 }
             } elseif ( $exit_reason === ExitEngine::REASON_TAKE_PROFIT ) {
                 // Tìm nến đầu tiên đạt r_multiple >= exit_at_r sau entry_time
@@ -309,12 +334,13 @@ class DailyCronService {
                     (int) $signal['entry_time']
                 );
                 if ( $first_tp_candle ) {
-                    $exit_time = (int) $first_tp_candle['event_time'];
+                    $exit_time  = (int) $first_tp_candle['event_time'];
+                    $exit_price = (float) $first_tp_candle['close_price'];
                 }
             }
 
             // ── Tính final_r chính xác theo exit_reason ───────────────────
-            $final_r = ( $current_price - $entry_price ) / $risk_per_share;
+            $final_r = ( $exit_price - $entry_price ) / $risk_per_share;
 
             if ( $exit_reason === ExitEngine::REASON_STOP_LOSS ) {
                 // Giá gap qua SL → cap final_r = -1.0R (tối đa rủi ro đã chấp nhận)
@@ -332,7 +358,7 @@ class DailyCronService {
 
             $this->signal_repository->close_signal(
                 (int) $signal['id'],
-                $current_price,
+                $exit_price,
                 $exit_time,
                 $final_r,
                 $capped_holding_days,
