@@ -196,7 +196,8 @@
     const endpoint = new URL(apiBase, window.location.origin);
     endpoint.searchParams.set('symbol', symbol);
     endpoint.searchParams.set('limit', String(limit));
-    return fetch(endpoint.toString(), { method: 'GET', credentials: 'same-origin', headers: { Accept: 'application/json' } })
+    const nonce = (window.LCNI_CHART_CONFIG && window.LCNI_CHART_CONFIG.nonce) || window.LCNI_REST_NONCE || '';
+    return fetch(endpoint.toString(), { method: 'GET', credentials: 'same-origin', headers: { Accept: 'application/json', 'X-WP-Nonce': nonce } })
       .then((r) => { if (!r.ok) throw new Error('REST request failed'); return r.json(); })
       .then((payload) => ({ symbol: sanitizeSymbol(payload.symbol) || symbol, rows: normalizeRows(parseApiResponse(payload)) }));
   }
@@ -222,15 +223,16 @@
    * - S (Sell) = exit  → mũi tên đỏ,    vị trí trên cây nến exit
    * Trả về { markPointData: [], markLineData: [] }
    */
-  function buildSignalMarkers(signals, dateIndex) {
+  function buildSignalMarkers(signals, dateIndex, priceIndex) {
     const markPointData = [];
 
     signals.forEach((sig) => {
       // ── BUY marker ──────────────────────────────────────────────
+      // Đặt coord tại giá LOW của cây nến entry → icon nằm dưới đáy nến
       if (sig.entry_date && Object.prototype.hasOwnProperty.call(dateIndex, sig.entry_date)) {
-        const idx = dateIndex[sig.entry_date];
+        const idx      = dateIndex[sig.entry_date];
+        const candleLow = priceIndex[sig.entry_date] ? priceIndex[sig.entry_date].low : sig.entry_price;
 
-        // Xây tooltip HTML chi tiết
         let tooltip = `<b style="color:#16a34a">▲ BUY — ${sig.rule_name || 'Rule #' + sig.rule_id}</b><br/>`;
         tooltip += `Ngày vào: ${sig.entry_date}<br/>`;
         tooltip += `Giá vào: ${formatByType(sig.entry_price, 'price')}<br/>`;
@@ -242,37 +244,43 @@
 
         markPointData.push({
           name: 'B',
-          coord: [idx, sig.entry_price],
+          coord: [idx, candleLow],     // gắn vào đáy cây nến
           value: 'B',
-          symbolOffset: [0, '120%'],   // đặt dưới cây nến
+          symbolOffset: [0, 18],       // đẩy xuống thêm 18px (pixel, không dùng %)
+          symbolRotate: 180,           // lật ngược pin → mũi nhọn chỉ lên trên
           symbol: 'pin',
-          symbolSize: 26,
+          symbolSize: 22,
           itemStyle: { color: '#16a34a', borderColor: '#fff', borderWidth: 1.5 },
           label: {
             show: true,
             formatter: 'B',
             color: '#fff',
-            fontSize: 10,
+            fontSize: 9,
             fontWeight: 'bold',
-            offset: [0, 1],
+            offset: [0, -2],
           },
           tooltip: { formatter: () => tooltip },
-          // lưu raw data để dùng trong custom tooltip formatter
           _lcni: { type: 'buy', sig },
         });
       }
 
       // ── SELL marker ─────────────────────────────────────────────
+      // Đặt coord tại giá HIGH của cây nến exit → icon nằm trên đỉnh nến
       if (sig.exit_date && Object.prototype.hasOwnProperty.call(dateIndex, sig.exit_date)) {
-        const idx = dateIndex[sig.exit_date];
+        const idx       = dateIndex[sig.exit_date];
+        const candleHigh = priceIndex[sig.exit_date] ? priceIndex[sig.exit_date].high : (sig.exit_price || 0);
 
         const exitPrice = sig.exit_price || 0;
         const finalR    = sig.final_r !== null ? Number(sig.final_r).toFixed(2) : '–';
         const exitReasonMap = {
-          sl: 'Stop Loss',
-          tp: 'Take Profit',
-          time: 'Hết thời gian',
-          manual: 'Manual',
+          sl:          'Stop Loss',
+          stop_loss:   'Stop Loss',
+          tp:          'Take Profit',
+          take_profit: 'Take Profit',
+          time:        'Hết thời gian',
+          max_hold:    'Hết thời gian',
+          max_loss:    'Cắt lỗ max',
+          manual:      'Thủ công',
         };
         const reasonLabel = exitReasonMap[sig.exit_reason] || sig.exit_reason || '–';
 
@@ -285,17 +293,17 @@
 
         markPointData.push({
           name: 'S',
-          coord: [idx, exitPrice],
+          coord: [idx, candleHigh],    // gắn vào đỉnh cây nến
           value: 'S',
-          symbolOffset: [0, '-120%'],  // đặt trên cây nến
+          symbolOffset: [0, -18],      // đẩy lên thêm 18px
           symbol: 'pin',
-          symbolSize: 26,
+          symbolSize: 22,
           itemStyle: { color: '#dc2626', borderColor: '#fff', borderWidth: 1.5 },
           label: {
             show: true,
             formatter: 'S',
             color: '#fff',
-            fontSize: 10,
+            fontSize: 9,
             fontWeight: 'bold',
             offset: [0, 1],
           },
@@ -318,9 +326,13 @@
     const dateIndex = {};
     dates.forEach((d, i) => { dateIndex[d] = i; });
 
+    // Index date → { low, high } để đặt icon B/S ra ngoài thân nến
+    const priceIndex = {};
+    source.forEach((r) => { priceIndex[r.date] = { low: r.low, high: r.high }; });
+
     // Build signal markers (B/S pins)
     const signalMarkPoints = (Array.isArray(signals) && signals.length)
-      ? buildSignalMarkers(signals, dateIndex)
+      ? buildSignalMarkers(signals, dateIndex, priceIndex)
       : [];
 
  cache.ma20 = calculateMA(closes, 20);
