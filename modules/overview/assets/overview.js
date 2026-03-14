@@ -171,7 +171,7 @@
 
   const loadSettings = async (settingsApi, fallbackFields) => {
     try {
-      const response = await fetch(settingsApi, { credentials: "same-origin" });
+      const response = await fetch(settingsApi, { credentials: "same-origin", headers: window.LCNI_REST_NONCE ? { "X-WP-Nonce": window.LCNI_REST_NONCE } : {} });
       if (!response.ok) return fallbackFields;
       const payload = await response.json();
       const data = unwrapPayload(payload);
@@ -182,10 +182,11 @@
   };
 
   const saveSettings = async (settingsApi, fields) => {
+    const _nonce = window.LCNI_REST_NONCE || "";
     await fetch(settingsApi, {
       method: "POST",
       credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
+      headers: Object.assign({ "Content-Type": "application/json" }, _nonce ? { "X-WP-Nonce": _nonce } : {}),
       body: JSON.stringify({ fields })
     });
   };
@@ -245,7 +246,7 @@
       }
 
       try {
-        const response = await fetch(`${apiBase}?symbol=${encodeURIComponent(symbol)}`, { credentials: "same-origin" });
+        const response = await fetch(`${apiBase}?symbol=${encodeURIComponent(symbol)}`, { credentials: "same-origin", headers: window.LCNI_REST_NONCE ? { "X-WP-Nonce": window.LCNI_REST_NONCE } : {} });
         if (!response.ok) {
           throw new Error("request_failed");
         }
