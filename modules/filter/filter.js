@@ -47,6 +47,7 @@
   }
 
   const sessionKey = cfg.tableSettingsStorageKey || 'lcni_filter_visible_columns_v1';
+  const filterStateKey = (cfg.tableSettingsStorageKey || 'lcni_filter_visible_columns_v1').replace('visible_columns', 'last_applied_filters');
   const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
 
 
@@ -160,6 +161,18 @@
     } catch (e) { return defaultColumns; }
   }
   function saveVisibleColumns(cols) { try { sessionStorage.setItem(sessionKey, JSON.stringify(cols)); } catch (e) {} }
+
+  function saveFilterState(filters) {
+    try { sessionStorage.setItem(filterStateKey, JSON.stringify(Array.isArray(filters) ? filters : [])); } catch (e) {}
+  }
+  function loadFilterState() {
+    try {
+      const raw = sessionStorage.getItem(filterStateKey);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) && parsed.length ? parsed : null;
+    } catch (e) { return null; }
+  }
 
 
 
@@ -759,6 +772,7 @@
         host.querySelectorAll(`[data-text-check="${item.column}"]`).forEach((input) => { input.checked = false; });
       }
     });
+    saveFilterState([]);
     syncAllNumberRanges(host, 'input');
     updateCriteriaSelectionState(host);
   }
@@ -892,9 +906,14 @@
 
     try {
       await load(host);
+      saveFilterState(state.filters);
       state.panelHidden = true;
       const panel = host.querySelector('[data-filter-panel]');
       if (panel) panel.classList.add('is-collapsed');
+      // Mobile: thu panel, bảng tự về vị trí cũ
+      if (isMobileViewport()) {
+        updateTableScrollOffset(host, true);
+      }
     } catch (error) {
       showToast((error && error.message) || 'Không thể áp dụng bộ lọc. Vui lòng thử lại.');
     } finally {
@@ -913,6 +932,33 @@
     if (!tbody || !state.tableLoaded) return;
     const payload = await api({ mode: 'refresh', page: state.page, limit: state.limit, filters: state.filters, visible_columns: state.visibleColumns });
     renderTbody(host, payload || {});
+  }
+
+
+  function updateTableScrollOffset(host, panelHidden) {
+    if (!isMobileViewport()) return;
+    const tableScroll = host.querySelector('.lcni-table-scroll');
+    if (!tableScroll) return;
+
+    // Đo bottom của toolbar fixed (điểm thấp nhất của nút Bộ lọc)
+    const toolbar = host.querySelector('.lcni-filter-toolbar');
+    const toolbarBottom = toolbar ? toolbar.getBoundingClientRect().bottom : 50;
+
+    if (panelHidden) {
+      // Bảng margin-top = toolbar bottom + 1px, header sticky top:0 sẽ đúng
+      tableScroll.style.marginTop = (toolbarBottom + 1) + 'px';
+    } else {
+      // Bảng margin-top = panel height + 1px
+      const panel = host.querySelector('[data-filter-panel]');
+      if (panel) {
+        requestAnimationFrame(() => {
+          const ph = panel.getBoundingClientRect().height;
+          tableScroll.style.marginTop = (ph + 1) + 'px';
+        });
+      } else {
+        tableScroll.style.marginTop = (toolbarBottom + 1) + 'px';
+      }
+    }
   }
 
 
@@ -936,15 +982,21 @@
   function bind(host) {
     host.addEventListener('click', async (event) => {
       if (event.target.closest('[data-filter-hide]')) {
+        // Chỉ thu panel, không ẩn cả module
         state.panelHidden = true;
         const panel = host.querySelector('[data-filter-panel]');
         if (panel) panel.classList.add('is-collapsed');
+        if (isMobileViewport()) updateTableScrollOffset(host, true);
         return;
       }
       if (event.target.closest('[data-filter-toggle]')) {
         state.panelHidden = !state.panelHidden;
         const panel = host.querySelector('[data-filter-panel]');
         if (panel) panel.classList.toggle('is-collapsed', state.panelHidden);
+        // Mobile: điều chỉnh table-scroll padding để không bị che bởi panel
+        if (isMobileViewport()) {
+          updateTableScrollOffset(host, state.panelHidden);
+        }
         return;
       }
       if (event.target.closest('[data-criteria-tab]')) {
@@ -1229,8 +1281,15 @@
       bind(host);
       syncAllNumberRanges(host, 'input');
       updateCriteriaSelectionState(host);
+      // Mobile: set initial padding-top sau khi DOM render xong
+      if (isMobileViewport()) {
+        requestAnimationFrame(() => {
+          updateTableScrollOffset(host, state.panelHidden);
+        });
+      }
 
       let initialConfig = null;
+      const cachedFilters = loadFilterState();
       if (state.selectedSavedFilterId > 0) {
         const payload = await savedFilterApi('/load?id=' + encodeURIComponent(state.selectedSavedFilterId), { method: 'GET' });
         initialConfig = payload.config || null;
@@ -1241,6 +1300,10 @@
 
       if (initialConfig) {
         applySavedFilterConfig(host, initialConfig);
+      }
+
+      if (cachedFilters && !initialConfig) {
+        applySavedFilterConfig(host, { filters: cachedFilters });
       }
 
       const autoConfig = getAutoFilterConfigFromQuery();
