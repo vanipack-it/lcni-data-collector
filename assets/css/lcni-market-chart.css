@@ -1,1 +1,230 @@
+/* ===================================================
+   lcni-market-chart.css
+   Biểu đồ lịch sử biến động thị trường
+   =================================================== */
 
+.lcni-market-chart-wrap {
+    --mc-bg:          #0d1520;
+    --mc-surface:     #111e2e;
+    --mc-border:      #1e2f42;
+    --mc-text:        #b0bec5;
+    --mc-text-strong: #e0e7ef;
+    --mc-accent:      #f5a623;
+    --mc-btn-bg:      #1a2840;
+    --mc-btn-active:  #1f3a5c;
+    --mc-radius:      10px;
+    --mc-font:        'Inter', 'Segoe UI', system-ui, sans-serif;
+
+    font-family: var(--mc-font);
+    background:  var(--mc-bg);
+    border:      1px solid var(--mc-border);
+    border-radius: var(--mc-radius);
+    padding:     16px;
+    box-sizing:  border-box;
+    color:       var(--mc-text);
+    position:    relative;
+}
+
+/* Light theme */
+.lcni-market-chart-wrap[data-theme="light"] {
+    --mc-bg:          #f8fafc;
+    --mc-surface:     #ffffff;
+    --mc-border:      #e2e8f0;
+    --mc-text:        #64748b;
+    --mc-text-strong: #1e293b;
+    --mc-btn-bg:      #f1f5f9;
+    --mc-btn-active:  #dbeafe;
+    --mc-radius:      10px;
+}
+
+/* ── Title ── */
+.lcni-mc-title {
+    font-size:   15px;
+    font-weight: 700;
+    color:       var(--mc-text-strong);
+    margin-bottom: 12px;
+    letter-spacing: 0.3px;
+}
+
+/* ── Controls ── */
+.lcni-mc-controls {
+    display:      flex;
+    align-items:  center;
+    gap:          10px;
+    flex-wrap:    wrap;
+    margin-bottom: 12px;
+}
+
+/* Timeframe tabs */
+.lcni-mc-tabs {
+    display:       flex;
+    background:    var(--mc-btn-bg);
+    border-radius: 8px;
+    padding:       3px;
+    gap:           2px;
+}
+
+.lcni-mc-tab {
+    padding:       4px 14px;
+    font-size:     12px;
+    font-weight:   600;
+    border:        none;
+    background:    transparent;
+    color:         var(--mc-text);
+    border-radius: 6px;
+    cursor:        pointer;
+    transition:    background 0.15s, color 0.15s;
+    white-space:   nowrap;
+}
+
+.lcni-mc-tab:hover { color: var(--mc-text-strong); }
+
+.lcni-mc-tab.active {
+    background: var(--mc-btn-active);
+    color:      var(--mc-text-strong);
+}
+
+/* Series toggle buttons */
+.lcni-mc-series-btns {
+    display:  flex;
+    gap:      5px;
+    flex-wrap: wrap;
+}
+
+.lcni-mc-series-btn {
+    padding:       3px 11px;
+    font-size:     11px;
+    font-weight:   500;
+    border:        1px solid var(--mc-border);
+    background:    var(--mc-btn-bg);
+    color:         var(--mc-text);
+    border-radius: 20px;
+    cursor:        pointer;
+    transition:    all 0.15s;
+    white-space:   nowrap;
+}
+
+.lcni-mc-series-btn:hover { border-color: var(--mc-accent); color: var(--mc-text-strong); }
+
+.lcni-mc-series-btn.active {
+    border-color: var(--mc-accent);
+    color:        var(--mc-text-strong);
+    background:   var(--mc-btn-active);
+}
+
+/* Days select */
+.lcni-mc-days-select { margin-left: auto; }
+
+.lcni-mc-days {
+    padding:        4px 10px;
+    font-size:      12px;
+    font-family:    var(--mc-font);
+    background:     var(--mc-btn-bg);
+    border:         1px solid var(--mc-border);
+    color:          var(--mc-text-strong);
+    border-radius:  7px;
+    cursor:         pointer;
+    outline:        none;
+    appearance:     none;
+    -webkit-appearance: none;
+    padding-right:  24px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2390a4ae'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+}
+
+.lcni-mc-days:focus { border-color: var(--mc-accent); }
+
+/* ── Chart area ── */
+.lcni-mc-chart-area {
+    position:      relative;
+    width:         100%;
+    min-height:    200px;
+    border-radius: 8px;
+    overflow:      hidden;
+}
+
+.lcni-mc-echarts {
+    transition: opacity 0.3s;
+}
+
+/* Loader */
+.lcni-mc-loader {
+    position:       absolute;
+    inset:          0;
+    display:        flex;
+    align-items:    center;
+    justify-content: center;
+    gap:            7px;
+    z-index:        5;
+    pointer-events: none;
+}
+
+.lcni-mc-loader span {
+    width:            8px;
+    height:           8px;
+    border-radius:    50%;
+    background:       var(--mc-accent);
+    animation:        lcniMcPulse 1.1s ease-in-out infinite;
+}
+
+.lcni-mc-loader span:nth-child(2) { animation-delay: 0.18s; }
+.lcni-mc-loader span:nth-child(3) { animation-delay: 0.36s; }
+
+@keyframes lcniMcPulse {
+    0%, 80%, 100% { opacity: 0.2; transform: scale(0.7); }
+    40%           { opacity: 1;   transform: scale(1); }
+}
+
+/* Error */
+.lcni-mc-error {
+    position:        absolute;
+    inset:           0;
+    display:         flex;
+    align-items:     center;
+    justify-content: center;
+    text-align:      center;
+    padding:         24px;
+    font-size:       13px;
+    color:           #ef9a9a;
+    background:      var(--mc-surface);
+    border-radius:   8px;
+    z-index:         4;
+}
+
+/* ── Legend ── */
+.lcni-mc-legend {
+    display:     flex;
+    gap:         14px;
+    flex-wrap:   wrap;
+    margin-top:  10px;
+    padding-top: 10px;
+    border-top:  1px solid var(--mc-border);
+}
+
+.lcni-mc-leg-item {
+    display:     flex;
+    align-items: center;
+    gap:         6px;
+    font-size:   11px;
+    color:       var(--mc-text);
+    cursor:      pointer;
+    transition:  opacity 0.15s;
+    user-select: none;
+}
+
+.lcni-mc-leg-item i {
+    display:       inline-block;
+    width:         20px;
+    height:        3px;
+    border-radius: 2px;
+    flex-shrink:   0;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+    .lcni-mc-controls { gap: 7px; }
+    .lcni-mc-days-select { margin-left: 0; width: 100%; }
+    .lcni-mc-days { width: 100%; }
+    .lcni-market-chart-wrap { padding: 12px; }
+}
