@@ -47,6 +47,7 @@
   }
 
   const sessionKey = cfg.tableSettingsStorageKey || 'lcni_filter_visible_columns_v1';
+  const filterStateKey = (cfg.tableSettingsStorageKey || 'lcni_filter_visible_columns_v1').replace('visible_columns', 'last_applied_filters');
   const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
 
 
@@ -160,6 +161,18 @@
     } catch (e) { return defaultColumns; }
   }
   function saveVisibleColumns(cols) { try { sessionStorage.setItem(sessionKey, JSON.stringify(cols)); } catch (e) {} }
+
+  function saveFilterState(filters) {
+    try { sessionStorage.setItem(filterStateKey, JSON.stringify(Array.isArray(filters) ? filters : [])); } catch (e) {}
+  }
+  function loadFilterState() {
+    try {
+      const raw = sessionStorage.getItem(filterStateKey);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) && parsed.length ? parsed : null;
+    } catch (e) { return null; }
+  }
 
 
 
@@ -759,6 +772,7 @@
         host.querySelectorAll(`[data-text-check="${item.column}"]`).forEach((input) => { input.checked = false; });
       }
     });
+    saveFilterState([]);
     syncAllNumberRanges(host, 'input');
     updateCriteriaSelectionState(host);
   }
@@ -892,6 +906,7 @@
 
     try {
       await load(host);
+      saveFilterState(state.filters);
       state.panelHidden = true;
       const panel = host.querySelector('[data-filter-panel]');
       if (panel) panel.classList.add('is-collapsed');
@@ -1231,6 +1246,7 @@
       updateCriteriaSelectionState(host);
 
       let initialConfig = null;
+      const cachedFilters = loadFilterState();
       if (state.selectedSavedFilterId > 0) {
         const payload = await savedFilterApi('/load?id=' + encodeURIComponent(state.selectedSavedFilterId), { method: 'GET' });
         initialConfig = payload.config || null;
@@ -1241,6 +1257,10 @@
 
       if (initialConfig) {
         applySavedFilterConfig(host, initialConfig);
+      }
+
+      if (cachedFilters && !initialConfig) {
+        applySavedFilterConfig(host, { filters: cachedFilters });
       }
 
       const autoConfig = getAutoFilterConfigFromQuery();
