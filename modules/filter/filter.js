@@ -788,6 +788,7 @@
     applyDefaultFilterConfig(host);
     if (state.filters.length) applySavedFilterConfig(host, { filters: state.filters });
     renderFilterSummary(host);
+    requestAnimationFrame(() => requestAnimationFrame(() => applyStickyColumnOffsets(host)));
   }
 
 
@@ -895,6 +896,7 @@
     state.total = Number(payload.total || state.total || 0);
     state.lastAppliedTotal = state.total;
     updateApplyButtonLabel(host);
+    requestAnimationFrame(() => requestAnimationFrame(() => applyStickyColumnOffsets(host)));
   }
 
   async function load(host) {
@@ -993,7 +995,58 @@
   }
 
 
-  function bindHorizontalScrollLock(host) {
+  /**
+   * Set left offset cho từng cột sticky (chỉ cần khi sticky_column_count > 1).
+   * position:sticky tự lo việc bám cạnh trái — JS chỉ set đúng left offset
+   * để các cột sticky xếp lần lượt thay vì chồng lên nhau tại left:0.
+   */
+  function applyStickyColumnOffsets(host) {
+    const table = host.querySelector('.lcni-table');
+    if (!table) return;
+    const headerRow = table.querySelector('thead tr');
+    if (!headerRow) return;
+    const stickyThs = Array.from(headerRow.querySelectorAll('th.is-sticky-col'));
+    if (!stickyThs.length) return;
+
+    // Reset để đo offsetWidth chính xác
+    stickyThs.forEach(th => { th.style.left = ''; });
+
+    // Nếu table chưa có kích thước (hidden/not-rendered), dùng ResizeObserver retry
+    if (!table.offsetWidth) {
+      if (typeof ResizeObserver !== 'undefined' && !table._stickyRO) {
+        table._stickyRO = new ResizeObserver(() => {
+          if (table.offsetWidth) {
+            table._stickyRO.disconnect();
+            table._stickyRO = null;
+            applyStickyColumnOffsets(host);
+          }
+        });
+        table._stickyRO.observe(table);
+      }
+      return;
+    }
+
+    // Tính left lũy kế và gán
+    let acc = 0;
+    const offsets = stickyThs.map(th => {
+      const off = acc;
+      acc += th.offsetWidth;
+      return off;
+    });
+
+    stickyThs.forEach((th, i) => {
+      th.style.left = offsets[i] + 'px';
+    });
+
+    // Gán cho tbody
+    table.querySelectorAll('tbody tr').forEach(tr => {
+      tr.querySelectorAll('td.is-sticky-col').forEach((td, i) => {
+        if (i < offsets.length) td.style.left = offsets[i] + 'px';
+      });
+    });
+  }
+
+    function bindHorizontalScrollLock(host) {
     const wrap = host.querySelector('.lcni-table-scroll');
     if (!wrap || wrap.dataset.scrollLockBound === '1') return;
     wrap.dataset.scrollLockBound = '1';
