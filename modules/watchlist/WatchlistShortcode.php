@@ -33,7 +33,7 @@ class LCNI_WatchlistShortcode {
         $css_version = file_exists($css) ? (string) filemtime($css) : self::VERSION;
 
         wp_register_script('lcni-watchlist', LCNI_URL . 'modules/watchlist/assets/js/watchlist.js', ['lcni-main-js'], $version, true);
-        wp_register_style('lcni-watchlist', LCNI_URL . 'modules/watchlist/assets/css/watchlist.css', [], $css_version);
+        wp_register_style('lcni-watchlist', LCNI_URL . 'modules/watchlist/assets/css/watchlist.css', ['lcni-ui-table'], $css_version);
     }
 
     public function render_watchlist() {
