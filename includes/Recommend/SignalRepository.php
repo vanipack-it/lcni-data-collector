@@ -5,6 +5,17 @@ if (!defined('ABSPATH')) {
 }
 
 class SignalRepository {
+
+    /** @var RuleFollowNotifier|null — injected after construction if available */
+    private $notifier = null;
+
+    /**
+     * Inject notifier. Called by RecommendModule after all deps are wired.
+     */
+    public function set_notifier( RuleFollowNotifier $notifier ): void {
+        $this->notifier = $notifier;
+    }
+
     private $wpdb;
     private $table;
     private $symbols_table;
@@ -95,8 +106,16 @@ class SignalRepository {
         }
 
         $this->wpdb->insert($this->table, $data);
+        $signal_id = (int) $this->wpdb->insert_id;
 
-        return (int) $this->wpdb->insert_id;
+        // Fire email notification to rule followers
+        if ( $signal_id > 0 && $this->notifier !== null ) {
+            $this->notifier->on_new_signal(
+                $signal_id, $rule, $symbol, $entry_price, $entry_time
+            );
+        }
+
+        return $signal_id;
     }
 
     public function prune_invalid_signals() {

@@ -16,6 +16,20 @@ class LCNI_Recommend_Module {
         $exit_engine = new ExitEngine();
         $performance_calculator = new PerformanceCalculator($wpdb);
 
+        // ── Rule Follow: follow rule + email notification ─────────────────────
+        $follow_repo     = new RuleFollowRepository( $wpdb );
+        $follow_notifier = new RuleFollowNotifier( $follow_repo, $rule_repository );
+        $signal_repository->set_notifier( $follow_notifier );
+
+        // Shortcode [lcni_rule_follow]
+        new RuleFollowShortcode( $follow_repo );
+
+        // REST /lcni/v1/recommend/rules/*
+        add_action( 'rest_api_init', static function() use ( $follow_repo ) {
+            ( new RuleFollowRestController( $follow_repo ) )->register_routes();
+        } );
+        // ─────────────────────────────────────────────────────────────────────
+
         $this->daily_cron_service = new DailyCronService(
             $rule_repository,
             $signal_repository,

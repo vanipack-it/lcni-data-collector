@@ -110,7 +110,7 @@ class RuleRepository {
     public function decode_conditions($rule) {
         $decoded = json_decode((string) ($rule['entry_conditions'] ?? '{}'), true);
 
-        if (is_array($decoded) && !isset($decoded['rules']) && array_is_list($decoded)) {
+        if (is_array($decoded) && !isset($decoded['rules']) && (array_values($decoded) === $decoded)) {
             $normalized_rules = [];
             foreach ($decoded as $item) {
                 if (!is_array($item) || !isset($item['rules']) || !is_array($item['rules'])) {
@@ -165,6 +165,7 @@ class RuleRepository {
             'lcni_industry_metrics'         => 'im',
             'lcni_thong_ke_thi_truong'      => 'tk',
             'lcni_thong_ke_nganh_icb_2'     => 'tn',
+            'lcni_market_context_latest'    => 'mc',
         ];
 
         // Đánh dấu những alias nào thực sự được dùng trong conditions
@@ -434,6 +435,7 @@ class RuleRepository {
         $need_im = isset($required_aliases['im']);
         $need_tk = isset($required_aliases['tk']);
         $need_tn = isset($required_aliases['tn']);
+        $need_mc = isset($required_aliases['mc']);
 
         // Nếu cần ir/im/tn nhưng chưa có m → bắt buộc join m
         if ($need_ir || $need_im || $need_tn) {
@@ -495,6 +497,11 @@ class RuleRepository {
                 . " AND tn.icb_level2 = i.name_icb2"
                 . " AND tn.event_time = o.event_time"
                 . " AND tn.timeframe = o.timeframe";
+        }
+
+        if ($need_mc) {
+            $mc_table = $this->wpdb->prefix . 'lcni_market_context_latest';
+            $joins[]  = "LEFT JOIN {$mc_table} mc ON mc.timeframe = o.timeframe";
         }
 
         $join_sql = !empty($joins) ? "\n                " . implode("\n                ", $joins) : '';
@@ -582,7 +589,7 @@ class RuleRepository {
 
         $normalized = [];
 
-        if (!isset($raw['rules']) && array_is_list($raw)) {
+        if (!isset($raw['rules']) && (array_values($raw) === $raw)) {
             $flattened_rules = [];
             foreach ($raw as $item) {
                 if (!is_array($item) || !isset($item['rules']) || !is_array($item['rules'])) {

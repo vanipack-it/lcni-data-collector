@@ -66,6 +66,20 @@ class LCNI_Recommend_DB {
             KEY status (status)
         ) {$charset_collate};");
 
+        // ── Rule Follow table ─────────────────────────────────────────────────
+        $follow_table = $wpdb->prefix . 'lcni_recommend_rule_follow';
+        dbDelta("CREATE TABLE {$follow_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            user_id BIGINT UNSIGNED NOT NULL,
+            rule_id BIGINT UNSIGNED NOT NULL,
+            notify_email TINYINT(1) NOT NULL DEFAULT 1,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY uniq_user_rule (user_id, rule_id),
+            KEY user_id (user_id),
+            KEY rule_id (rule_id)
+        ) {$charset_collate};");
+
         $log_table = $wpdb->prefix . 'lcni_recommend_rule_log';
 
 
@@ -109,6 +123,7 @@ class LCNI_Recommend_DB {
             $wpdb->prefix . 'lcni_recommend_signal',
             $wpdb->prefix . 'lcni_recommend_performance',
             $wpdb->prefix . 'lcni_recommend_rule_log',
+            $wpdb->prefix . 'lcni_recommend_rule_follow',
         ];
 
         foreach ($tables as $table) {

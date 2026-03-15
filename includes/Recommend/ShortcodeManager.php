@@ -109,13 +109,12 @@ class ShortcodeManager {
         $filter_panel_button_border = sanitize_text_field((string) ($styles['filter_panel_button_border'] ?? '1px solid #9ca3af'));
         $filter_panel_button_border_radius = (int) ($styles['filter_panel_button_border_radius'] ?? 6);
         $table_max_height = (int) ($styles['table_max_height'] ?? 560);
-        $wrapper_style = sprintf('font-family:%s;color:%s;background:%s;border:%s;border-radius:%dpx;overflow:auto;max-width:100%%;max-height:%dpx;position:relative;isolation:isolate;-webkit-overflow-scrolling:touch;--lcni-signals-filter-btn-color:%s;--lcni-signals-filter-btn-bg:%s;--lcni-signals-watchlist-btn-color:%s;--lcni-signals-watchlist-btn-active-color:%s;--lcni-signals-filter-btn-height:%dpx;--lcni-signals-filter-btn-font-size:%dpx;--lcni-signals-watchlist-btn-height:%dpx;--lcni-signals-watchlist-btn-font-size:%dpx;--lcni-signals-panel-btn-height:%dpx;--lcni-signals-panel-btn-font-size:%dpx;--lcni-signals-apply-btn-bg:%s;--lcni-signals-apply-btn-color:%s;--lcni-signals-apply-btn-hover-bg:%s;--lcni-signals-clear-btn-bg:%s;--lcni-signals-clear-btn-color:%s;--lcni-signals-clear-btn-hover-bg:%s;--lcni-signals-panel-btn-border:%s;--lcni-signals-panel-btn-radius:%dpx;',
+        $wrapper_style = sprintf('font-family:%s;color:%s;background:%s;border:%s;border-radius:%dpx;overflow:visible;max-width:100%%;position:relative;isolation:isolate;--lcni-signals-filter-btn-color:%s;--lcni-signals-filter-btn-bg:%s;--lcni-signals-watchlist-btn-color:%s;--lcni-signals-watchlist-btn-active-color:%s;--lcni-signals-filter-btn-height:%dpx;--lcni-signals-filter-btn-font-size:%dpx;--lcni-signals-watchlist-btn-height:%dpx;--lcni-signals-watchlist-btn-font-size:%dpx;--lcni-signals-panel-btn-height:%dpx;--lcni-signals-panel-btn-font-size:%dpx;--lcni-signals-apply-btn-bg:%s;--lcni-signals-apply-btn-color:%s;--lcni-signals-apply-btn-hover-bg:%s;--lcni-signals-clear-btn-bg:%s;--lcni-signals-clear-btn-color:%s;--lcni-signals-clear-btn-hover-bg:%s;--lcni-signals-panel-btn-border:%s;--lcni-signals-panel-btn-radius:%dpx;',
             esc_attr((string) ($styles['font'] ?? 'inherit')),
             esc_attr((string) ($styles['text_color'] ?? '#111827')),
             esc_attr((string) ($styles['background'] ?? '#ffffff')),
             esc_attr((string) ($styles['border'] ?? '1px solid #e5e7eb')),
             (int) ($styles['border_radius'] ?? 8),
-            $table_max_height,
             esc_attr($filter_button_color),
             esc_attr($filter_button_background),
             esc_attr($watchlist_button_color),
@@ -145,7 +144,10 @@ class ShortcodeManager {
 
         ob_start();
         echo '<div class="lcni-recommend-signals-table" data-lcni-signals-table data-watchlist-rest-base="' . esc_attr($watchlist_rest_base) . '" data-login-url="' . esc_url($login_url) . '" data-register-url="' . esc_url($register_url) . '" data-is-logged-in="' . (is_user_logged_in() ? '1' : '0') . '" data-rest-nonce="' . esc_attr(wp_create_nonce('wp_rest')) . '" data-watchlist-icon="' . esc_attr($watchlist_button_icon) . '" data-watchlist-active-icon="' . esc_attr($watchlist_button_active_icon) . '" data-filter-apply-icon="' . esc_attr($filter_apply_button_icon) . '" data-filter-clear-icon="' . esc_attr($filter_clear_button_icon) . '" data-filter-apply-label="' . esc_attr($filter_apply_button_label) . '" data-filter-clear-label="' . esc_attr($filter_clear_button_label) . '" data-button-config="' . esc_attr(wp_json_encode($button_configs)) . '" style="' . $wrapper_style . '">';
-        echo '<table style="width:100%;border-collapse:separate;border-spacing:0;font-size:' . (int) ($styles['row_font_size'] ?? 14) . 'px;">';
+        // lcni-table-wrapper: scroll container cho sticky header + sticky column + mobile scroll
+        $table_wrapper_style = 'width:100%;overflow-x:auto;overflow-y:auto;max-height:' . $table_max_height . 'px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;position:relative;';
+        echo '<div class="lcni-table-wrapper" style="' . $table_wrapper_style . '">';
+        echo '<table class="lcni-table" style="width:100%;border-collapse:separate;border-spacing:0;font-size:' . (int) ($styles['row_font_size'] ?? 14) . 'px;">';
         $head_row_style = 'height:' . (int) ($styles['head_height'] ?? 30) . 'px;background:' . esc_attr((string) ($styles['header_background'] ?? '#ffffff')) . ';color:' . esc_attr((string) ($styles['header_text_color'] ?? '#111827')) . ';';
         echo '<thead><tr style="' . $head_row_style . '">';
         foreach ($columns as $column) {
@@ -164,7 +166,7 @@ class ShortcodeManager {
         foreach ($rows as $row) {
             $row_symbol = strtoupper(sanitize_text_field((string) ($row['signal__symbol'] ?? '')));
             $row_url = $this->build_stock_detail_url($stock_detail_base_url, $row_symbol);
-            echo '<tr data-lcni-row-symbol="' . esc_attr($row_symbol) . '" data-lcni-row-url="' . esc_url($row_url) . '" style="background:' . esc_attr($value_background) . ';color:' . esc_attr($value_text_color) . ';" onmouseover="this.style.background=\'' . esc_attr($row_hover_background) . '\'" onmouseout="this.style.background=\'' . esc_attr($value_background) . '\'">';
+            echo '<tr class="lcni-signal-row" data-lcni-row-symbol="' . esc_attr($row_symbol) . '" data-lcni-row-url="' . esc_url($row_url) . '" style="background:' . esc_attr($value_background) . ';color:' . esc_attr($value_text_color) . ';">';
             foreach ($columns as $column) {
                 $value = isset($row[$column]) ? $row[$column] : '';
                 $raw_value = $value;
@@ -179,7 +181,7 @@ class ShortcodeManager {
                 }
                 if ($sticky_column === $column) {
                     $cell_bg = $cell_style['background'] !== '' ? (string) $cell_style['background'] : $value_background;
-                    $cell_style_attr .= 'position:sticky;left:0;z-index:3;background:' . esc_attr($cell_bg) . ';';
+                    $cell_style_attr .= 'position:sticky;left:0;z-index:15;background:' . esc_attr($cell_bg) . ';';
                 }
 
                 if ($column === 'signal__symbol') {
@@ -200,7 +202,7 @@ class ShortcodeManager {
             echo '</tr>';
         }
 
-        echo '</tbody></table></div>';
+        echo '</tbody></table></div></div>';  // close table, lcni-table-wrapper, lcni-recommend-signals-table
         echo $this->render_signals_table_assets();
 
         return ob_get_clean();
@@ -325,10 +327,12 @@ class ShortcodeManager {
 
     if(!e.target.closest('.lcni-signals-filter-pop')) closeAllPopups();
 
-    const row=e.target.closest('.lcni-recommend-signals-table tbody tr');
-    if(!row||e.target.closest('a,button,i,svg,[role=button]')) return;
-    const url=row.getAttribute('data-lcni-row-url')||'';
-    if(url) window.location.href=url;
+    // Row click: only navigate when clicking directly on the symbol link <a>
+    // Price cells (signal__entry_price, signal__current_price, signal__exit_price)
+    // are handled by LCNITransactionController's delegated click listener.
+    // Other row areas do nothing (no full-row navigation).
+    const symbolLink=e.target.closest('td[data-lcni-field="signal__symbol"] a');
+    if(symbolLink) return; // let <a href> navigate naturally — no need to intercept
   });
 })();
 </script>
@@ -605,7 +609,7 @@ HTML;
         $rows = $this->performance_calculator->list_performance((int) $atts['rule_id']);
 
         ob_start();
-        echo '<table><thead><tr><th>Rule</th><th>Total</th><th>Win</th><th>Lose</th><th>Winrate</th><th>Avg R</th><th>Expectancy</th><th>Max R</th><th>Min R</th></tr></thead><tbody>';
+        echo '<div class="lcni-table-wrapper"><table class="lcni-table" style="width:100%;"><thead><tr><th>Rule</th><th>Total</th><th>Win</th><th>Lose</th><th>Winrate</th><th>Avg R</th><th>Expectancy</th><th>Max R</th><th>Min R</th></tr></thead><tbody>';
         foreach ($rows as $row) {
             echo '<tr>';
             echo '<td>' . esc_html((string) ($row['rule_name'] ?: ('Rule #' . $row['rule_id']))) . '</td>';
@@ -619,7 +623,7 @@ HTML;
             echo '<td>' . esc_html(number_format((float) $row['min_r'], 2)) . '</td>';
             echo '</tr>';
         }
-        echo '</tbody></table>';
+        echo '</tbody></table></div>'; // close table + lcni-table-wrapper
 
         return ob_get_clean();
     }
