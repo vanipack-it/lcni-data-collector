@@ -2,7 +2,7 @@
 /*
 Plugin Name: LCNI Data Collector
 Description: LCNI Market Data Engine: lấy nến, lưu DB, cron auto update
-Version: 5.5.60
+Version: 5.5.92
 */
 
 if (!defined('ABSPATH')) {
@@ -97,6 +97,10 @@ require_once LCNI_PATH . 'includes/Recommend/PerformanceCalculator.php';
 require_once LCNI_PATH . 'includes/Recommend/DailyCronService.php';
 require_once LCNI_PATH . 'includes/Recommend/ShortcodeManager.php';
 require_once LCNI_PATH . 'includes/Recommend/Admin/RecommendAdminPage.php';
+require_once LCNI_PATH . 'includes/Recommend/RuleFollowRepository.php';
+require_once LCNI_PATH . 'includes/Recommend/RuleFollowNotifier.php';
+require_once LCNI_PATH . 'includes/Recommend/RuleFollowRestController.php';
+require_once LCNI_PATH . 'includes/Recommend/RuleFollowShortcode.php';
 require_once LCNI_PATH . 'includes/Recommend/RecommendModule.php';
 // DNSE Trading Module — Giai đoạn 1
 require_once LCNI_PATH . 'modules/dnse-trading/DnseTradingRepository.php';
@@ -247,6 +251,17 @@ function lcni_register_frontend_core_assets() {
         'lcni-main-js',
         'LCNI_FORMAT_CONFIG',
         $settings
+    );
+
+    // ── Global Table UI System ────────────────────────────────
+    // Enqueue sớm (priority 1) để mọi module CSS override đúng thứ tự.
+    $ui_table_path = LCNI_PATH . 'assets/css/lcni-ui-table.css';
+    $ui_table_ver  = file_exists($ui_table_path) ? (string) filemtime($ui_table_path) : '1.0.0';
+    wp_enqueue_style(
+        'lcni-ui-table',
+        LCNI_URL . 'assets/css/lcni-ui-table.css',
+        [],
+        $ui_table_ver
     );
 }
 
