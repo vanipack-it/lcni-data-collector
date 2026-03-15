@@ -149,6 +149,8 @@ class LCNI_DB {
             self::normalize_ohlc_numeric_columns();
             self::sync_symbol_market_icb_mapping();
             self::sync_symbol_tongquan_with_symbols();
+        } catch ( Throwable $e ) {
+            error_log( '[LCNI] ensure_tables_exist failed: ' . $e->getMessage() );
         } finally {
             self::release_schema_ensure_lock();
         }
@@ -202,6 +204,18 @@ class LCNI_DB {
         self::ensure_ohlc_indexes();
         self::ensure_ohlc_latest_snapshot_infrastructure();
         self::ensure_chart_builder_schema();
+
+        // Backfill market_context history + latest lần đầu (chỉ chạy 1 lần qua migration flag)
+        if ( get_option( 'lcni_market_context_backfilled_v1' ) !== 'yes' ) {
+            if ( class_exists( 'LCNI_MarketDashboardRepository' ) ) {
+                LCNI_MarketDashboardRepository::ensure_context_table();
+                $repo = new LCNI_MarketDashboardRepository();
+                foreach ( [ '1D', '1W', '1M' ] as $tf ) {
+                    $repo->backfill_history( $tf, 200 );
+                }
+                update_option( 'lcni_market_context_backfilled_v1', 'yes' );
+            }
+        }
     }
 
     public static function create_tables() {
@@ -724,6 +738,24 @@ class LCNI_DB {
     public static function ensure_ohlc_latest_snapshot_infrastructure($enabled = null, $interval_minutes = null) {
         global $wpdb;
 
+        // Suppress $wpdb errors so any MySQL permission issue (e.g. missing SUPER
+        // privilege for SET GLOBAL / CREATE PROCEDURE / CREATE EVENT) does not
+        // bubble up as a PHP fatal error and crash unrelated admin pages like
+        // wp-admin/user-edit.php.
+        $wpdb->hide_errors();
+
+        try {
+            self::_do_ensure_ohlc_latest_snapshot_infrastructure($enabled, $interval_minutes);
+        } catch ( Throwable $e ) {
+            error_log( '[LCNI] ensure_ohlc_latest_snapshot_infrastructure failed: ' . $e->getMessage() );
+        }
+
+        $wpdb->show_errors();
+    }
+
+    private static function _do_ensure_ohlc_latest_snapshot_infrastructure($enabled = null, $interval_minutes = null) {
+        global $wpdb;
+
         $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
         $latest_table = $wpdb->prefix . 'lcni_ohlc_latest';
         $event_name = $wpdb->prefix . 'ev_sync_ohlc_latest';
@@ -864,7 +896,7 @@ class LCNI_DB {
         if ($ohlc_count > 0 && $latest_count === 0) {
             self::perform_refresh_ohlc_latest_snapshot();
         }
-    }
+    } // end _do_ensure_ohlc_latest_snapshot_infrastructure
 
 
     public static function get_mysql_event_scheduler_status() {
@@ -1877,6 +1909,9 @@ class LCNI_DB {
         self::reindex_market_statistics_tables();
         self::log_change('backfill_market_statistics_incremental', sprintf('Incremental rebuild done for %d event_times x %d timeframes.', count($event_times), count($timeframes)));
 
+        // Sync market_context history + latest sau khi tính xong market statistics
+        self::sync_market_context_after_rebuild( $event_times, $timeframes );
+
         return count($event_times) * count($timeframes);
     }
 
@@ -1934,6 +1969,49 @@ class LCNI_DB {
             ) calc ON calc.id = target.id
             SET target.icb2_thi_truong_index = calc.computed_index"
         );
+    }
+
+    /**
+     * Sau khi rebuild market statistics xong, tính và ghi snapshot vào
+     * wp_lcni_market_context (history) và wp_lcni_market_context_latest.
+     *
+     * @param array $event_times Danh sách event_time vừa rebuild
+     * @param array $timeframes  Danh sách timeframe vừa rebuild
+     */
+    private static function sync_market_context_after_rebuild( array $event_times, array $timeframes ): void {
+        if ( empty( $event_times ) || empty( $timeframes ) ) {
+            return;
+        }
+
+        // Đảm bảo class MarketDashboardRepository đã được load
+        if ( ! class_exists( 'LCNI_MarketDashboardRepository' ) ) {
+            $path = __DIR__ . '/MarketDashboard/MarketDashboardRepository.php';
+            if ( file_exists( $path ) ) {
+                require_once $path;
+            } else {
+                return;
+            }
+        }
+
+        // Đảm bảo 2 bảng tồn tại
+        LCNI_MarketDashboardRepository::ensure_context_table();
+
+        $repo = new LCNI_MarketDashboardRepository();
+
+        foreach ( $timeframes as $tf ) {
+            $tf = strtoupper( (string) $tf );
+            if ( ! in_array( $tf, [ '1D', '1W', '1M' ], true ) ) {
+                continue;
+            }
+            foreach ( $event_times as $et ) {
+                $et = (int) $et;
+                if ( $et <= 0 ) {
+                    continue;
+                }
+                // Force recalculate + save (bỏ qua cache)
+                $repo->get_snapshot( $tf, $et, false );
+            }
+        }
     }
 
     public static function process_rule_rebuild_batch($batch_size = self::RULE_REBUILD_BATCH_SIZE) {

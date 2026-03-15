@@ -57,41 +57,55 @@ class LCNI_Industry_Metrics_Upgrade {
     public static function add_missing_columns() {
         global $wpdb;
 
-        $table_name = $wpdb->prefix . 'lcni_industry_metrics';
+        try {
+            $wpdb->hide_errors();
 
-        self::ensure_index_exists($table_name, 'idx_industry_time', 'event_time,timeframe,id_icb2');
-        self::ensure_index_exists($table_name, 'idx_score', 'industry_score_raw');
+            $table_name = $wpdb->prefix . 'lcni_industry_metrics';
 
-        if (!self::column_exists($table_name, 'industry_rank')) {
-            $sql = "ALTER TABLE {$table_name} ADD COLUMN industry_rank INT DEFAULT 0 AFTER industry_score_raw";
-            $wpdb->query($sql);
-            if (!empty($wpdb->last_error)) {
-                error_log('[LCNI] Failed adding column industry_rank: ' . $wpdb->last_error);
+            // Check table exists before attempting ALTER TABLE operations
+            $table_exists = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table_name ) );
+            if ( $table_exists !== $table_name ) {
+                return;
             }
-        }
 
-        if (!self::column_exists($table_name, 'momentum_delta')) {
-            $sql = "ALTER TABLE {$table_name} ADD COLUMN momentum_delta DECIMAL(16,8) DEFAULT 0 AFTER momentum";
-            $wpdb->query($sql);
-            if (!empty($wpdb->last_error)) {
-                error_log('[LCNI] Failed adding column momentum_delta: ' . $wpdb->last_error);
-            }
-        }
+            self::ensure_index_exists($table_name, 'idx_industry_time', 'event_time,timeframe,id_icb2');
+            self::ensure_index_exists($table_name, 'idx_score', 'industry_score_raw');
 
-        if (!self::column_exists($table_name, 'trend_state_vi')) {
-            $sql = "ALTER TABLE {$table_name} ADD COLUMN trend_state_vi VARCHAR(50) DEFAULT 'Trung tính' AFTER industry_rank";
-            $wpdb->query($sql);
-            if (!empty($wpdb->last_error)) {
-                error_log('[LCNI] Failed adding column trend_state_vi: ' . $wpdb->last_error);
+            if (!self::column_exists($table_name, 'industry_rank')) {
+                $sql = "ALTER TABLE {$table_name} ADD COLUMN industry_rank INT DEFAULT 0 AFTER industry_score_raw";
+                $wpdb->query($sql);
+                if (!empty($wpdb->last_error)) {
+                    error_log('[LCNI] Failed adding column industry_rank: ' . $wpdb->last_error);
+                }
             }
-        }
 
-        if (!self::index_exists($table_name, 'uniq_event_industry_tf')) {
-            $sql = "ALTER TABLE {$table_name} ADD UNIQUE KEY uniq_event_industry_tf (event_time,timeframe,id_icb2)";
-            $wpdb->query($sql);
-            if (!empty($wpdb->last_error)) {
-                error_log('[LCNI] Failed adding unique key uniq_event_industry_tf: ' . $wpdb->last_error);
+            if (!self::column_exists($table_name, 'momentum_delta')) {
+                $sql = "ALTER TABLE {$table_name} ADD COLUMN momentum_delta DECIMAL(16,8) DEFAULT 0 AFTER momentum";
+                $wpdb->query($sql);
+                if (!empty($wpdb->last_error)) {
+                    error_log('[LCNI] Failed adding column momentum_delta: ' . $wpdb->last_error);
+                }
             }
+
+            if (!self::column_exists($table_name, 'trend_state_vi')) {
+                $sql = "ALTER TABLE {$table_name} ADD COLUMN trend_state_vi VARCHAR(50) DEFAULT 'Trung tính' AFTER industry_rank";
+                $wpdb->query($sql);
+                if (!empty($wpdb->last_error)) {
+                    error_log('[LCNI] Failed adding column trend_state_vi: ' . $wpdb->last_error);
+                }
+            }
+
+            if (!self::index_exists($table_name, 'uniq_event_industry_tf')) {
+                $sql = "ALTER TABLE {$table_name} ADD UNIQUE KEY uniq_event_industry_tf (event_time,timeframe,id_icb2)";
+                $wpdb->query($sql);
+                if (!empty($wpdb->last_error)) {
+                    error_log('[LCNI] Failed adding unique key uniq_event_industry_tf: ' . $wpdb->last_error);
+                }
+            }
+        } catch ( Throwable $e ) {
+            error_log( '[LCNI] add_missing_columns failed: ' . $e->getMessage() );
+        } finally {
+            $wpdb->show_errors();
         }
     }
 

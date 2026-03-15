@@ -36,6 +36,8 @@ class LCNI_Compute_Control {
         'lcni_compute_ohlc_latest'       => 'OHLC Latest Snapshot (sync bảng ohlc_latest)',
         'lcni_compute_industry_metrics'  => 'Industry Metrics (tính toán thống kê ngành)',
         'lcni_compute_recommend_cron'    => 'Recommend Daily Cron (engine gợi ý mua/bán)',
+        'lcni_compute_market_context'    => 'Market Context Sync (tính snapshot thị trường sau mỗi phiên)',
+        'lcni_compute_market_backfill'   => 'Market Context Backfill (backfill lịch sử market context)',
     ];
 
     // Mô tả bổ sung cho mỗi nhóm
@@ -47,6 +49,8 @@ class LCNI_Compute_Control {
         'lcni_compute_ohlc_latest'       => 'Hook: <code>lcni_ohlc_latest_snapshot_cron</code>. Tắt nếu snapshot đã được Python push trực tiếp.',
         'lcni_compute_industry_metrics'  => 'Hook: <code>lcni_compute_industry_metrics_extra</code>. Tắt nếu metrics ngành không cần realtime.',
         'lcni_compute_recommend_cron'    => 'Hook: <code>lcni_recommend_daily_cron</code>. Tắt nếu engine recommend không dùng.',
+        'lcni_compute_market_context'    => 'Hook: <code>lcni_market_context_sync_cron</code>. Tắt nếu không dùng Market Dashboard.',
+        'lcni_compute_market_backfill'   => 'Hook: <code>lcni_market_context_backfill_cron</code>. Tắt sau khi đã backfill xong lịch sử.',
     ];
 
     // Nhóm nào mặc định BẬT
@@ -58,6 +62,8 @@ class LCNI_Compute_Control {
         'lcni_compute_ohlc_latest'       => true,
         'lcni_compute_industry_metrics'  => true,
         'lcni_compute_recommend_cron'    => true,
+        'lcni_compute_market_context'    => true,
+        'lcni_compute_market_backfill'   => false,
     ];
 
     // ─── API ────────────────────────────────────────────────────────────────
@@ -123,6 +129,8 @@ class LCNI_Compute_Control {
                                                 : 'lcni_ohlc_latest_snapshot_cron',
             'lcni_compute_industry_metrics' => 'lcni_compute_industry_metrics_extra',
             'lcni_compute_recommend_cron'   => 'lcni_recommend_daily_cron',
+            'lcni_compute_market_context'   => 'lcni_market_context_sync_cron',
+            'lcni_compute_market_backfill'  => 'lcni_market_context_backfill_cron',
         ];
 
         foreach ( $map as $group => $hook ) {
