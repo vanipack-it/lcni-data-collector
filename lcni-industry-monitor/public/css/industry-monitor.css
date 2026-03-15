@@ -25,6 +25,14 @@
     max-height: var(--lcni-table-height);
     border: var(--lcni-table-border-width) solid var(--lcni-table-border-color);
     box-shadow: none;
+    /* Override lcni-table-wrapper max-height với giá trị từ CSS variable admin */
+    --lcni-table-wrapper-max-height: var(--lcni-table-height);
+}
+
+/* Khi .lcni-table-wrapper xuất hiện cùng .lcni-industry-monitor__table-wrap,
+   dùng max-height từ CSS variable của industry monitor */
+.lcni-industry-monitor__table-wrap.lcni-table-wrapper {
+    max-height: var(--lcni-table-height);
 }
 
 .lcni-industry-monitor__table {
