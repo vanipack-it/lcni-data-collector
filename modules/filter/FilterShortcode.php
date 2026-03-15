@@ -28,7 +28,7 @@ class LCNI_FilterShortcode {
         $css_version = file_exists($css) ? (string) filemtime($css) : self::VERSION;
 
         wp_register_script('lcni-filter', LCNI_URL . 'modules/filter/filter.js', ['lcni-main-js', 'lcni-watchlist'], $version, true);
-        wp_register_style('lcni-filter', LCNI_URL . 'modules/filter/filter.css', [], $css_version);
+        wp_register_style('lcni-filter', LCNI_URL . 'modules/filter/filter.css', ['lcni-ui-table'], $css_version);
     }
 
     public function conditionally_enqueue_assets() {

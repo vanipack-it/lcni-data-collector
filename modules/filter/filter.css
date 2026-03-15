@@ -1,5 +1,5 @@
 .lcni-app .lcni-stock-filter,
-.lcni-filter-wrapper { display:block; }
+.lcni-filter-wrapper { display:block; overflow:visible; height:auto; }
 
 .lcni-app .lcni-stock-filter .lcni-filter-toolbar { display:flex; justify-content:flex-end; gap:8px; margin-bottom:0; }
 .lcni-app .lcni-stock-filter .lcni-filter-panel,
@@ -43,12 +43,13 @@
 .lcni-app .lcni-stock-filter .lcni-column-option span { flex:1; }
 .lcni-app .lcni-stock-filter .lcni-table-scroll { max-height:calc(100vh - 180px); overflow:auto; overscroll-behavior:contain; overscroll-behavior-x:contain; scrollbar-gutter:stable; }
 .lcni-app .lcni-stock-filter .lcni-table { width:100%; border-collapse:separate; border-spacing:0; }
-.lcni-app .lcni-stock-filter .lcni-table th { font-weight:400; position:sticky; top:0; z-index:3; background:var(--lcni-table-header-bg,#f3f4f6); color:var(--lcni-table-header-color,#111827); font-size:var(--lcni-table-header-size,12px); border-bottom:var(--lcni-row-divider-width,1px) solid var(--lcni-row-divider-color,#e5e7eb); height:var(--lcni-table-header-height,42px); white-space:nowrap; padding-left:5px; padding-right:5px; }
+.lcni-app .lcni-stock-filter .lcni-table th { font-weight:400; position:sticky; top:0; z-index:20; background:var(--lcni-table-header-bg,#f3f4f6); color:var(--lcni-table-header-color,#111827); font-size:var(--lcni-table-header-size,12px); border-bottom:var(--lcni-row-divider-width,1px) solid var(--lcni-row-divider-color,#e5e7eb); height:var(--lcni-table-header-height,42px); white-space:nowrap; padding-left:5px; padding-right:5px; }
 .lcni-app .lcni-stock-filter .lcni-table td { background:var(--lcni-table-value-bg,#fff); color:var(--lcni-table-value-color,#111827); font-size:var(--lcni-table-value-size,13px); border-bottom:var(--lcni-row-divider-width,1px) solid var(--lcni-row-divider-color,#e5e7eb); white-space:nowrap; word-break:keep-all; height:var(--lcni-table-row-height,36px); padding-left:5px; padding-right:5px; }
 .lcni-app .lcni-stock-filter .lcni-table tr:hover td { background:var(--lcni-row-hover-bg,#eef2ff); }
 .lcni-app .lcni-stock-filter .lcni-table tbody tr { cursor:pointer; }
-.lcni-app .lcni-stock-filter .lcni-table .is-sticky-col { position:sticky; left:0; z-index:2; background:var(--lcni-table-value-bg,#fff); }
-.lcni-app .lcni-stock-filter .lcni-table th.is-sticky-col { z-index:4; background:var(--lcni-table-header-bg,#f3f4f6); }
+/* z-index match watchlist standard: sticky col=15 (below header=20), header+col=25 */
+.lcni-app .lcni-stock-filter .lcni-table .is-sticky-col { position:sticky; left:0; z-index:15; background:var(--lcni-table-value-bg,#fff); box-shadow:2px 0 4px -1px rgba(0,0,0,0.07); }
+.lcni-app .lcni-stock-filter .lcni-table th.is-sticky-col { z-index:25; background:var(--lcni-table-header-bg,#f3f4f6); }
 
 
 .lcni-app .lcni-stock-filter .lcni-filter-summary { font-size:12px; color:#374151; }
@@ -66,13 +67,18 @@
 
 @media (max-width: 767px) {
 
-  /* ── Layout tổng thể: overflow:hidden để sticky hoạt động đúng ── */
+  /* ── Layout tổng thể: overflow:clip để sticky hoạt động đúng ──
+   * overflow:clip (Safari ≥16) giữ visual clipping nhưng KHÔNG tạo
+   * scroll context → sticky header + sticky col hoạt động trên Safari.
+   * Safari <16 fallback: clip không được hỗ trợ → graceful degrade về hidden.
+   * Chrome/Firefox: clip hoạt động đúng từ version 90+.
+   * ── */
   .lcni-app .lcni-stock-filter {
     display: flex;
     flex-direction: column;
     height: 100svh;
     min-height: 100svh;
-    overflow: hidden;
+    overflow: clip;          /* Safari fix: clip thay hidden — không phá sticky */
   }
 
   /* ── Toolbar: fixed góc phải, không cuộn theo bảng ── */
@@ -103,13 +109,13 @@
   }
   .lcni-app .lcni-stock-filter .lcni-filter-summary-desktop { display: none; }
 
-  /* ── Panel: fixed bám đỉnh, chiều cao cố định 65svh ── */
+  /* ── Panel: fixed bám đỉnh, chiều cao cố định 90svh ── */
   .lcni-app .lcni-stock-filter .lcni-filter-panel,
   .lcni-app .lcni-stock-filter .lcni-column-pop {
     position: fixed;
     left: 0; right: 0;
     top: env(safe-area-inset-top, 0px);
-    height: 65svh;
+    height: 90svh;
     overflow: hidden;
     z-index: 100;
     border-radius: 0 0 14px 14px;
@@ -263,23 +269,23 @@
     position: -webkit-sticky;
     position: sticky;
     top: 0;
-    z-index: 3;
+    z-index: 20;   /* match watchlist: header=20 */
     background: var(--lcni-table-header-bg, #f3f4f6);
   }
 
-  /* ── Sticky columns: position:sticky + JS set left chính xác ──
-   * Hoạt động vì: scroll container = .lcni-table-scroll (overflow:auto)
-   * JS chỉ cần set left đúng theo scrollLeft để ô bám đúng vị trí. ── */
+  /* ── Sticky columns: CSS position:sticky — left được JS gán đúng 1 lần ──
+   * Scroll container = .lcni-table-scroll (overflow:auto)
+   * JS applyStickyColumnOffsets() chỉ set left=offset tĩnh, CSS tự handle scroll. ── */
   .lcni-app .lcni-stock-filter .lcni-table .is-sticky-col {
     position: -webkit-sticky !important;
     position: sticky !important;
     left: 0;
-    z-index: 2;
+    z-index: 15;   /* match watchlist: sticky col=15, below header=20 */
     background: var(--lcni-table-value-bg, #fff);
     box-shadow: 2px 0 4px -1px rgba(0,0,0,0.07);
   }
   .lcni-app .lcni-stock-filter .lcni-table th.is-sticky-col {
-    z-index: 5 !important;
+    z-index: 25 !important;   /* match watchlist: header+col=25, highest */
     background: var(--lcni-table-header-bg, #f3f4f6);
     box-shadow: 2px 0 4px -1px rgba(0,0,0,0.1);
   }
@@ -296,7 +302,7 @@
 
   /* ── Override: ngăn theme/plugin cha phá sticky ── */
   .lcni-app { overflow: visible !important; }
-  .lcni-app .lcni-stock-filter { overflow: hidden !important; }
+  .lcni-app .lcni-stock-filter { overflow: clip !important; }  /* Safari fix: clip ≠ scroll context */
   /* table-scroll là scroll container duy nhất — sticky bám vào đây */
   .lcni-app .lcni-stock-filter .lcni-table-scroll {
     overflow-x: auto !important;
@@ -314,3 +320,38 @@
 .lcni-app .lcni-stock-filter .lcni-table .lcni-cell-text { text-align:left; }
 
 .lcni-filter-cell-hint{position:fixed;z-index:10001;padding:4px 8px;border-radius:6px;background:rgba(17,24,39,.92);color:#fff;font-size:11px;pointer-events:none;transform:translate(12px,-14px);max-width:220px;line-height:1.35;}
+
+/* ================================================================
+   FILTER MOBILE FIX v3 — Chip wrap layout (thay thế v2)
+   Buttons hiển thị dạng chip: width=auto, wrap tự động sang dòng mới.
+   ================================================================ */
+@media (max-width: 767px) {
+
+  /* Actions bar: flex-wrap thay vì column → chip layout */
+  .lcni-app .lcni-stock-filter .lcni-filter-panel-actions {
+    flex-direction: row   !important;
+    flex-wrap:      wrap  !important;
+    align-items:    center !important;
+    gap:            6px   !important;
+  }
+
+  /* Select dropdowns: chiếm đủ rộng (1 dòng riêng) nhưng không full-width */
+  .lcni-app .lcni-stock-filter .lcni-filter-panel-actions select {
+    flex:      1 1 120px !important;
+    width:     auto      !important;
+    max-width: 100%      !important;
+    min-width: 0         !important;
+    box-sizing: border-box;
+  }
+
+  /* Buttons: chip style — width=auto, fit content */
+  .lcni-app .lcni-stock-filter .lcni-filter-panel-actions .lcni-btn {
+    flex:           0 0 auto  !important;
+    width:          auto      !important;
+    max-width:      none      !important;
+    white-space:    nowrap    !important;
+    padding:        7px 10px  !important;
+    font-size:      12px      !important;
+    justify-content: center;
+  }
+}
