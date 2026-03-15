@@ -1,0 +1,456 @@
+/* ================================================================
+   lcni-add-tx-widget.css
+   Style cho: Modal, Inline Form, Floating Button
+   ================================================================ */
+
+/* ── CSS Custom Properties ────────────────────────────────────── */
+:root {
+  --atx-primary:       #2563eb;
+  --atx-primary-dark:  #1d4ed8;
+  --atx-danger:        #dc2626;
+  --atx-success:       #16a34a;
+  --atx-border:        #e5e7eb;
+  --atx-bg:            #ffffff;
+  --atx-bg-subtle:     #f9fafb;
+  --atx-text:          #111827;
+  --atx-text-muted:    #6b7280;
+  --atx-radius:        10px;
+  --atx-shadow:        0 20px 60px rgba(0,0,0,.18), 0 4px 16px rgba(0,0,0,.1);
+  --atx-z-overlay:     100000;
+  --atx-z-modal:       100001;
+  --atx-z-float:       99999;
+  --atx-z-toast:       100002;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   OVERLAY
+══════════════════════════════════════════════════════════════ */
+.lcni-atx-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0);
+  z-index: var(--atx-z-overlay);
+  pointer-events: none;
+  transition: background 0.2s ease;
+}
+.lcni-atx-overlay--visible {
+  background: rgba(17,24,39,.5);
+  pointer-events: auto;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   MODAL
+══════════════════════════════════════════════════════════════ */
+.lcni-atx-modal {
+  position: fixed;
+  inset: 0;
+  z-index: var(--atx-z-modal);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.lcni-atx-modal-box {
+  background: var(--atx-bg);
+  border-radius: var(--atx-radius);
+  box-shadow: var(--atx-shadow);
+  width: 100%;
+  max-width: 520px;
+  max-height: 90svh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: lcni-atx-modal-in 0.18s ease;
+}
+
+@keyframes lcni-atx-modal-in {
+  from { opacity: 0; transform: translateY(-12px) scale(.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Header */
+.lcni-atx-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--atx-border);
+  flex-shrink: 0;
+}
+.lcni-atx-modal-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--atx-text);
+}
+.lcni-atx-close {
+  background: none;
+  border: none;
+  font-size: 16px;
+  color: var(--atx-text-muted);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  line-height: 1;
+  transition: background .15s;
+}
+.lcni-atx-close:hover { background: #f3f4f6; color: var(--atx-text); }
+
+/* Body */
+.lcni-atx-modal-body {
+  padding: 16px 20px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Footer */
+.lcni-atx-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--atx-border);
+  flex-shrink: 0;
+  background: var(--atx-bg-subtle);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   FORM ELEMENTS (shared modal + inline)
+══════════════════════════════════════════════════════════════ */
+.lcni-atx-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.lcni-atx-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lcni-atx-full { grid-column: 1 / -1; }
+
+.lcni-atx-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--atx-text-muted);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.lcni-atx-req { color: var(--atx-danger); margin-left: 2px; }
+.lcni-atx-hint {
+  font-size: 10px;
+  color: var(--atx-text-muted);
+  font-weight: 400;
+  margin-left: 4px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.lcni-atx-input,
+.lcni-atx-select {
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--atx-border);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--atx-text);
+  background: var(--atx-bg);
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+  width: 100%;
+  box-sizing: border-box;
+}
+.lcni-atx-input:focus,
+.lcni-atx-select:focus {
+  border-color: var(--atx-primary);
+  box-shadow: 0 0 0 3px rgba(37,99,235,.12);
+}
+
+.lcni-atx-symbol-input {
+  font-weight: 700;
+  font-family: monospace;
+  font-size: 14px;
+  letter-spacing: .04em;
+}
+
+.lcni-atx-total-preview {
+  height: 36px;
+  display: flex;
+  align-items: center;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--atx-text-muted);
+}
+
+.lcni-atx-error {
+  background: rgba(220,38,38,.06);
+  border: 1px solid rgba(220,38,38,.25);
+  color: var(--atx-danger);
+  font-size: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+
+/* ── Buttons ────────────────────────────────────────────────── */
+.lcni-atx-btn {
+  height: 36px;
+  padding: 0 18px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background .15s, opacity .15s;
+  white-space: nowrap;
+}
+.lcni-atx-btn:disabled { opacity: .55; cursor: default; }
+
+.lcni-atx-btn-primary {
+  background: var(--atx-primary);
+  color: #fff;
+}
+.lcni-atx-btn-primary:hover:not(:disabled) { background: var(--atx-primary-dark); }
+
+.lcni-atx-btn-ghost {
+  background: transparent;
+  color: var(--atx-text-muted);
+  border: 1px solid var(--atx-border);
+}
+.lcni-atx-btn-ghost:hover:not(:disabled) { background: var(--atx-bg-subtle); }
+
+/* ══════════════════════════════════════════════════════════════
+   INLINE FORM (shortcode nhúng vào page)
+══════════════════════════════════════════════════════════════ */
+.lcni-atx-inline {
+  background: var(--atx-bg);
+  border: 1px solid var(--atx-border);
+  border-radius: var(--atx-radius);
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  overflow: hidden;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.lcni-atx-inline-header {
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid var(--atx-border);
+  background: var(--atx-bg-subtle);
+}
+.lcni-atx-inline-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--atx-text);
+}
+
+.lcni-atx-inline-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.lcni-atx-inline-row {
+  display: grid;
+  gap: 12px;
+}
+.lcni-atx-inline-row--3 { grid-template-columns: 1.4fr 1fr 1fr; }
+.lcni-atx-inline-row--4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+
+/* Ghi chú chiếm 2 cột */
+.lcni-atx-inline-span2 { grid-column: span 2; }
+
+.lcni-atx-inline-total-group .lcni-atx-total-preview {
+  font-size: 16px;
+}
+
+.lcni-atx-inline-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+.lcni-atx-inline-error {
+  flex: 1;
+  margin: 0;
+}
+.lcni-atx-inline-save {
+  height: 38px;
+  padding: 0 24px;
+  font-size: 14px;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   FLOATING BUTTON
+══════════════════════════════════════════════════════════════ */
+.lcni-atx-float {
+  position: fixed;
+  top: 50%;
+  z-index: var(--atx-z-float);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--atx-primary);
+  color: #fff;
+  border-radius: 999px;
+  height: 44px;
+  padding: 0 16px 0 12px;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(37,99,235,.35);
+  transition: transform .2s ease, box-shadow .2s, padding .2s, width .2s;
+  user-select: none;
+  overflow: hidden;
+  white-space: nowrap;
+  max-width: 160px;
+}
+
+/* Cạnh phải */
+.lcni-atx-float--right {
+  right: 0;
+  border-radius: 999px 0 0 999px;
+  padding-right: 12px;
+  transform: translateX(0);
+}
+/* Cạnh trái */
+.lcni-atx-float--left {
+  left: 0;
+  border-radius: 0 999px 999px 0;
+  padding-left: 12px;
+  transform: translateX(0);
+}
+
+/* Collapsed: thu nhỏ còn icon */
+.lcni-atx-float--collapsed.lcni-atx-float--right {
+  transform: translateX(calc(100% - 44px));
+}
+.lcni-atx-float--collapsed.lcni-atx-float--left {
+  transform: translateX(calc(-100% + 44px));
+}
+
+.lcni-atx-float:hover {
+  box-shadow: 0 6px 24px rgba(37,99,235,.45);
+  transform: translateX(0) !important;
+}
+.lcni-atx-float:active { transform: scale(.97) !important; }
+
+.lcni-atx-float-icon { font-size: 20px; flex-shrink: 0; }
+.lcni-atx-float-label {
+  font-size: 13px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   TOAST
+══════════════════════════════════════════════════════════════ */
+.lcni-atx-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: var(--atx-z-toast);
+  padding: 12px 18px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  box-shadow: 0 4px 20px rgba(0,0,0,.2);
+  transform: translateY(16px);
+  opacity: 0;
+  transition: opacity .25s, transform .25s;
+  pointer-events: none;
+  max-width: 320px;
+}
+.lcni-atx-toast--show {
+  opacity: 1;
+  transform: translateY(0);
+}
+.lcni-atx-toast--success { background: var(--atx-success); }
+.lcni-atx-toast--error   { background: var(--atx-danger);  }
+
+/* ══════════════════════════════════════════════════════════════
+   DOUBLE-CLICK HINT — pulse animation trên cell giá
+══════════════════════════════════════════════════════════════ */
+[data-cell-field="close_price"],
+[data-cell-field="close"],
+[data-cell-field="price"],
+[data-cell-field="reference_price"],
+[data-cell-field="current_price"] {
+  cursor: pointer;
+  position: relative;
+}
+[data-cell-field="close_price"]:hover::after,
+[data-cell-field="close"]:hover::after,
+[data-cell-field="price"]:hover::after,
+[data-cell-field="reference_price"]:hover::after,
+[data-cell-field="current_price"]:hover::after {
+  content: '↗ Thêm GD';
+  position: absolute;
+  top: -22px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(37,99,235,.9);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   RESPONSIVE — MOBILE
+══════════════════════════════════════════════════════════════ */
+@media (max-width: 600px) {
+
+  /* Modal */
+  .lcni-atx-modal { padding: 8px; align-items: flex-end; }
+  .lcni-atx-modal-box {
+    max-width: none;
+    width: 100%;
+    border-radius: 16px 16px 0 0;
+    max-height: 92svh;
+    animation: lcni-atx-modal-in-mobile 0.2s ease;
+  }
+  @keyframes lcni-atx-modal-in-mobile {
+    from { transform: translateY(30px); opacity: 0; }
+    to   { transform: translateY(0); opacity: 1; }
+  }
+  .lcni-atx-modal-body { padding: 14px 16px; gap: 10px; }
+  .lcni-atx-modal-footer { padding: 10px 16px; }
+
+  /* Form: 1 cột trên mobile */
+  .lcni-atx-form-row {
+    grid-template-columns: 1fr;
+  }
+
+  /* Inline form */
+  .lcni-atx-inline-row--3,
+  .lcni-atx-inline-row--4 {
+    grid-template-columns: 1fr;
+  }
+  .lcni-atx-inline-span2 { grid-column: span 1; }
+  .lcni-atx-inline-body  { padding: 12px; }
+
+  /* Float button: chỉ show icon */
+  .lcni-atx-float { max-width: 44px; }
+  .lcni-atx-float-label { display: none; }
+  .lcni-atx-float--right,
+  .lcni-atx-float--left  { transform: translateX(0) !important; padding: 0 12px; }
+  .lcni-atx-float:hover  { max-width: 160px; }
+  .lcni-atx-float:hover .lcni-atx-float-label { display: block; }
+
+  /* Toast */
+  .lcni-atx-toast { bottom: 16px; right: 16px; left: 16px; max-width: none; text-align: center; }
+}
