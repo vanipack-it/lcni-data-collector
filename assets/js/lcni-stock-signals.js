@@ -189,7 +189,7 @@ document.addEventListener("DOMContentLoaded", () => {
   };
   const loadSettings = async (settingsApi, fallbackFields) => {
     try {
-      const response = await fetch(settingsApi, { credentials: "same-origin" });
+      const response = await fetch(settingsApi, { credentials: "same-origin", headers: window.LCNI_REST_NONCE ? { "X-WP-Nonce": window.LCNI_REST_NONCE } : {} });
       if (!response.ok) {
         return fallbackFields;
       }
@@ -203,10 +203,11 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   const saveSettings = async (settingsApi, fields) => {
+    const _nonce = window.LCNI_REST_NONCE || "";
     await fetch(settingsApi, {
       method: "POST",
       credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
+      headers: Object.assign({ "Content-Type": "application/json" }, _nonce ? { "X-WP-Nonce": _nonce } : {}),
       body: JSON.stringify({ fields }),
     });
   };
@@ -385,11 +386,12 @@ document.addEventListener("DOMContentLoaded", () => {
         header.appendChild(settingBtn);
 
         const grid = document.createElement("div");
-        grid.style.display = "flex";
-        grid.style.flexWrap = "wrap";
+        grid.style.display = "grid";
+        grid.style.gridTemplateColumns = "repeat(auto-fill, minmax(140px, 1fr))";
         grid.style.alignItems = "stretch";
         grid.style.gap = "8px";
         grid.style.marginTop = "8px";
+        grid.style.width = "100%";
 
         selectedFields.forEach((key) => {
           const clickUrl = buildFilterUrl(filterPageUrl, filterFields, key, payload[key]);

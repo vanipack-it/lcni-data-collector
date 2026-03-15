@@ -20,7 +20,9 @@
       return lcniCache[cacheKey];
     }
 
-    lcniCache[cacheKey] = fetch(url, { credentials: 'same-origin', signal }).then(async (response) => {
+    const nonce = window.LCNI_REST_NONCE || '';
+    const headers = nonce ? { 'X-WP-Nonce': nonce } : {};
+    lcniCache[cacheKey] = fetch(url, { credentials: 'same-origin', signal, headers }).then(async (response) => {
       if (!response.ok) {
         throw new Error('Request failed');
       }
