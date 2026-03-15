@@ -2,7 +2,7 @@
 /*
 Plugin Name: LCNI Data Collector
 Description: LCNI Market Data Engine: lấy nến, lưu DB, cron auto update
-Version: 5.5.0
+Version: 5.5.60
 */
 
 if (!defined('ABSPATH')) {
@@ -71,8 +71,23 @@ require_once LCNI_PATH . 'includes/Member/SaasService.php';
 require_once LCNI_PATH . 'includes/Member/MemberSettingsPage.php';
 require_once LCNI_PATH . 'includes/Member/MemberAuthShortcodes.php';
 require_once LCNI_PATH . 'includes/Member/MemberProfileShortcode.php';
+require_once LCNI_PATH . 'includes/Member/MemberPackageShortcode.php';
 require_once LCNI_PATH . 'includes/Member/PermissionMiddleware.php';
+require_once LCNI_PATH . 'includes/Member/MemberAdminUserFields.php';
+require_once LCNI_PATH . 'includes/Member/MemberPricingShortcode.php';
+require_once LCNI_PATH . 'includes/Member/GoogleOAuthHandler.php';
 require_once LCNI_PATH . 'includes/Member/MemberModule.php';
+require_once LCNI_PATH . 'modules/portfolio/PortfolioRepository.php';
+require_once LCNI_PATH . 'modules/portfolio/PortfolioService.php';
+require_once LCNI_PATH . 'modules/portfolio/PortfolioController.php';
+require_once LCNI_PATH . 'modules/portfolio/PortfolioShortcode.php';
+require_once LCNI_PATH . 'modules/portfolio/PortfolioAdminPage.php';
+require_once LCNI_PATH . 'modules/portfolio/class-lcni-portfolio-module.php';
+require_once LCNI_PATH . 'modules/heatmap/HeatmapAjax.php';
+require_once LCNI_PATH . 'modules/heatmap/HeatmapShortcode.php';
+require_once LCNI_PATH . 'modules/heatmap/HeatmapAdmin.php';
+require_once LCNI_PATH . 'modules/heatmap/class-lcni-heatmap-module.php';
+require_once LCNI_PATH . 'modules/theme-integration/ThemeIntegrationModule.php';
 require_once LCNI_PATH . 'includes/Recommend/RecommendDB.php';
 require_once LCNI_PATH . 'includes/Recommend/RuleRepository.php';
 require_once LCNI_PATH . 'includes/Recommend/SignalRepository.php';
@@ -83,6 +98,23 @@ require_once LCNI_PATH . 'includes/Recommend/DailyCronService.php';
 require_once LCNI_PATH . 'includes/Recommend/ShortcodeManager.php';
 require_once LCNI_PATH . 'includes/Recommend/Admin/RecommendAdminPage.php';
 require_once LCNI_PATH . 'includes/Recommend/RecommendModule.php';
+// DNSE Trading Module — Giai đoạn 1
+require_once LCNI_PATH . 'modules/dnse-trading/DnseTradingRepository.php';
+require_once LCNI_PATH . 'modules/dnse-trading/DnseTradingApiClient.php';
+require_once LCNI_PATH . 'modules/dnse-trading/DnseTradingService.php';
+require_once LCNI_PATH . 'modules/dnse-trading/DnseTradingRestController.php';
+require_once LCNI_PATH . 'modules/dnse-trading/DnseTradingShortcode.php';
+require_once LCNI_PATH . 'modules/dnse-trading/DnseOrderService.php';
+require_once LCNI_PATH . 'modules/dnse-trading/DnseOrderRestController.php';
+require_once LCNI_PATH . 'modules/dnse-trading/DnseTradingAdminPage.php';  // ← thêm dòng này
+require_once LCNI_PATH . 'modules/dnse-trading/class-lcni-dnse-trading-module.php';
+new LCNI_DnseTrading_Module();
+require_once LCNI_PATH . 'includes/MarketDashboard/MarketDashboardRepository.php';
+require_once LCNI_PATH . 'includes/MarketDashboard/MarketDashboardRestController.php';
+require_once LCNI_PATH . 'includes/MarketDashboard/MarketDashboardShortcode.php';
+require_once LCNI_PATH . 'includes/MarketDashboard/MarketChartShortcode.php';
+new LCNI_MarketDashboardShortcode();
+new LCNI_MarketChartShortcode();
 require_once LCNI_PATH . 'includes/class-lcni-industry-shortcodes.php';
 require_once LCNI_PATH . 'lcni-industry-monitor/includes/class-industry-data.php';
 require_once LCNI_PATH . 'lcni-industry-monitor/includes/class-industry-monitor.php';
@@ -116,6 +148,7 @@ function lcni_activate_plugin() {
     LCNI_DB::create_tables();
     LCNI_DB::run_pending_migrations();
     LCNI_Member_Module::activate();
+    LCNI_Portfolio_Module::activate();
     LCNI_Recommend_Module::activate();
     lcni_ensure_cron_scheduled();
     (new LCNI_Stock_Detail_Router())->register_rewrite_rule();
@@ -154,25 +187,44 @@ function lcni_ensure_cron_scheduled() {
     if ( LCNI_Compute_Control::is_enabled('lcni_compute_recommend_cron') ) {
         LCNI_Recommend_Module::ensure_cron();
     }
+
+    // Market Context Sync: chạy sau mỗi phiên để cập nhật snapshot thị trường
+    if ( LCNI_Compute_Control::is_enabled('lcni_compute_market_context') ) {
+        if ( ! wp_next_scheduled( 'lcni_market_context_sync_cron' ) ) {
+            wp_schedule_event( current_time('timestamp') + MINUTE_IN_SECONDS * 5, 'hourly', 'lcni_market_context_sync_cron' );
+        }
+    }
+
+    // Market Context Backfill: chạy 1 lần, tắt sau khi done
+    if ( LCNI_Compute_Control::is_enabled('lcni_compute_market_backfill') ) {
+        if ( ! wp_next_scheduled( 'lcni_market_context_backfill_cron' ) ) {
+            wp_schedule_event( current_time('timestamp') + MINUTE_IN_SECONDS, 'lcni_every_minute', 'lcni_market_context_backfill_cron' );
+        }
+    }
 }
 
 
 function lcni_enqueue_stock_detail_assets() {
-    if (!is_page_template('page-stock-detail.php')) {
-        return;
+    // Enqueue assets đầy đủ chỉ khi dùng page template riêng
+    if (is_page_template('page-stock-detail.php')) {
+        wp_enqueue_script('lcni-stock-overview');
+        wp_enqueue_style('lcni-stock-overview');
+        wp_enqueue_script('lcni-chart');
+        wp_enqueue_style('lcni-chart-ui');
+        wp_enqueue_script('lcni-stock-signals');
+        wp_enqueue_style('lcni-stock-signals');
     }
 
-    $symbol = lcni_get_current_symbol();
-    $localized_symbol = wp_json_encode($symbol !== '' ? $symbol : null);
-
-    wp_enqueue_script('lcni-stock-overview');
-    wp_enqueue_style('lcni-stock-overview');
-    wp_enqueue_script('lcni-chart');
-    wp_enqueue_style('lcni-chart-ui');
-    wp_enqueue_script('lcni-stock-signals');
-    wp_enqueue_style('lcni-stock-signals');
-
-    wp_add_inline_script('lcni-stock-sync', 'window.LCNI_CURRENT_SYMBOL = ' . $localized_symbol . ';', 'before');
+    // Set LCNI_CURRENT_SYMBOL cho mọi trang có lcni-stock-sync đã được enqueue
+    // (shortcode _query cần JS đọc được symbol từ URL query param qua window.LCNI_CURRENT_SYMBOL)
+    add_action('wp_footer', function () {
+        if (!wp_script_is('lcni-stock-sync', 'enqueued') && !wp_script_is('lcni-stock-sync', 'done')) {
+            return;
+        }
+        $symbol = lcni_get_current_symbol();
+        $localized_symbol = wp_json_encode($symbol !== '' ? $symbol : null);
+        echo '<script>if(typeof window.LCNI_CURRENT_SYMBOL==="undefined"||!window.LCNI_CURRENT_SYMBOL){window.LCNI_CURRENT_SYMBOL=' . $localized_symbol . ';}</script>';
+    }, 5);
 }
 
 function lcni_register_frontend_core_assets() {
@@ -270,6 +322,42 @@ if ( LCNI_Compute_Control::is_enabled('lcni_compute_rule_rebuild') ) {
 
 add_action('plugins_loaded', 'lcni_ensure_plugin_tables');
 add_action('init', 'lcni_ensure_cron_scheduled');
+
+// Market Context cron handlers
+add_action( 'lcni_market_context_sync_cron', function () {
+    if ( ! LCNI_Compute_Control::is_enabled( 'lcni_compute_market_context' ) ) {
+        return;
+    }
+    if ( ! class_exists( 'LCNI_MarketDashboardRepository' ) ) {
+        return;
+    }
+    $repo = new LCNI_MarketDashboardRepository();
+    foreach ( [ '1D', '1W', '1M' ] as $tf ) {
+        $repo->get_snapshot( $tf, 0, false ); // force recalculate latest
+    }
+} );
+
+add_action( 'lcni_market_context_backfill_cron', function () {
+    if ( ! LCNI_Compute_Control::is_enabled( 'lcni_compute_market_backfill' ) ) {
+        wp_clear_scheduled_hook( 'lcni_market_context_backfill_cron' );
+        return;
+    }
+    if ( ! class_exists( 'LCNI_MarketDashboardRepository' ) ) {
+        return;
+    }
+    $repo  = new LCNI_MarketDashboardRepository();
+    $saved = 0;
+    foreach ( [ '1D', '1W', '1M' ] as $tf ) {
+        $saved += $repo->backfill_history( $tf, 200 );
+    }
+    // Tắt cron sau khi backfill xong (không còn phiên thiếu)
+    if ( $saved === 0 ) {
+        LCNI_Compute_Control::save_settings(
+            array_merge( LCNI_Compute_Control::get_settings(), [ 'lcni_compute_market_backfill' => false ] )
+        );
+        wp_clear_scheduled_hook( 'lcni_market_context_backfill_cron' );
+    }
+} );
 add_action('wp_enqueue_scripts', 'lcni_register_frontend_core_assets', 1);
 add_action('wp_enqueue_scripts', 'lcni_enqueue_stock_detail_assets', 20);
 
@@ -285,12 +373,24 @@ new LCNI_Stock_Signals_Shortcodes();
 new LCNI_Stock_Detail_Router();
 new LCNI_Watchlist_Module();
 new LCNI_Filter_Module();
+new LCNI_Heatmap_Module();
 new LCNI_Chart_Builder_Shortcode();
 new LCNI_Update_Data_Page();
 new LCNI_Industry_Data_Page();
 new LCNI_Member_Module();
+new LCNI_Portfolio_Module();
 new LCNI_Recommend_Module();
 new LCNI_Industry_Shortcodes();
+
+// Theme integration — chỉ kích hoạt khi Stock Dashboard Theme đang active
+$lcni_active_theme = get_stylesheet();
+if ( $lcni_active_theme === 'stock-dashboard-theme' || get_template() === 'stock-dashboard-theme' ) {
+    // Lấy service từ MemberModule đã khởi tạo ở trên
+    // ThemeIntegrationModule cần SaasService — khởi tạo riêng (repo đã có migration xong)
+    $lcni_theme_repo    = new LCNI_SaaS_Repository();
+    $lcni_theme_service = new LCNI_SaaS_Service( $lcni_theme_repo );
+    new LCNI_Theme_Integration_Module( $lcni_theme_service );
+}
 
 $lcni_industry_monitor = new LCNI_Industry_Monitor(new LCNI_Industry_Data());
 $lcni_industry_monitor->register_hooks();
