@@ -992,6 +992,38 @@
         event.preventDefault();
       }
     }, { passive: false });
+
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let startScrollLeft = 0;
+    let lockHorizontal = false;
+
+    wrap.addEventListener('touchstart', (event) => {
+      if (!event.touches || event.touches.length !== 1) return;
+      const touch = event.touches[0];
+      touchStartX = touch.clientX;
+      touchStartY = touch.clientY;
+      startScrollLeft = wrap.scrollLeft;
+      lockHorizontal = false;
+    }, { passive: true });
+
+    wrap.addEventListener('touchmove', (event) => {
+      if (!event.touches || event.touches.length !== 1) return;
+      const touch = event.touches[0];
+      const deltaX = touch.clientX - touchStartX;
+      const deltaY = touch.clientY - touchStartY;
+
+      if (!lockHorizontal) {
+        if (Math.abs(deltaX) < 6) return;
+        if (Math.abs(deltaX) <= Math.abs(deltaY)) return;
+        lockHorizontal = true;
+      }
+
+      const maxLeft = Math.max(0, wrap.scrollWidth - wrap.clientWidth);
+      const nextLeft = Math.max(0, Math.min(maxLeft, startScrollLeft - deltaX));
+      wrap.scrollLeft = nextLeft;
+      event.preventDefault();
+    }, { passive: false });
   }
 
   function bind(host) {
