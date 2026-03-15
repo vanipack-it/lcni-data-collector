@@ -257,9 +257,18 @@
     border-collapse: separate !important;
     border-spacing: 0;
     position: static;
-    /* KHÔNG width:100% — để table mở rộng theo content tạo scroll ngang */
-    width: auto;
+    /* Bắt buộc giữ bề ngang theo content để luôn có thể kéo ngang khi nhiều cột */
+    width: max-content;
     min-width: 100%;
+    table-layout: auto;
+  }
+  .lcni-app .lcni-stock-filter .lcni-table th,
+  .lcni-app .lcni-stock-filter .lcni-table td {
+    min-width: 92px;
+  }
+  .lcni-app .lcni-stock-filter .lcni-table th.is-sticky-col,
+  .lcni-app .lcni-stock-filter .lcni-table td.is-sticky-col {
+    min-width: 110px;
   }
   .lcni-app .lcni-stock-filter .lcni-table th {
     position: -webkit-sticky;
