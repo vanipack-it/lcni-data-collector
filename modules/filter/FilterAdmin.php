@@ -61,6 +61,7 @@ class LCNI_FilterAdmin {
             'table_row_divider_color' => sanitize_hex_color((string) ($input['table_row_divider_color'] ?? '')) ?: '',
             'table_row_divider_width' => is_numeric($input['table_row_divider_width'] ?? '') ? max(0, min(6, (int) $input['table_row_divider_width'])) : '',
             'sticky_column_count' => is_numeric($input['sticky_column_count'] ?? '') ? max(0, min(5, (int) $input['sticky_column_count'])) : 1,
+            'sticky_column' => sanitize_key((string) ($input['sticky_column'] ?? 'symbol')),
             'sticky_header_rows' => is_numeric($input['sticky_header_rows'] ?? '') ? max(0, min(2, (int) $input['sticky_header_rows'])) : 1,
             'table_header_row_height' => is_numeric($input['table_header_row_height'] ?? '') ? max(28, min(80, (int) $input['table_header_row_height'])) : 42,
             'table_scroll_speed' => is_numeric($input['table_scroll_speed'] ?? '') ? max(1, min(5, (int) $input['table_scroll_speed'])) : 1,
@@ -227,6 +228,7 @@ class LCNI_FilterAdmin {
                     <p><label>Row divider color <input type="color" name="lcni_filter_style_config[table_row_divider_color]" value="<?php echo esc_attr((string) ($style['table_row_divider_color'] ?? '#e5e7eb')); ?>"></label></p>
                     <p><label>Row divider width <input type="number" name="lcni_filter_style_config[table_row_divider_width]" value="<?php echo esc_attr((string) ($style['table_row_divider_width'] ?? 1)); ?>"></label></p>
                     <p><label>Sticky column count <input type="number" name="lcni_filter_style_config[sticky_column_count]" value="<?php echo esc_attr((string) ($style['sticky_column_count'] ?? 1)); ?>"></label></p>
+                    <p><label>Sticky column key (vd: symbol) <input type="text" name="lcni_filter_style_config[sticky_column]" value="<?php echo esc_attr((string) ($style['sticky_column'] ?? 'symbol')); ?>"></label></p>
                     <p><label>Sticky header rows <input type="number" name="lcni_filter_style_config[sticky_header_rows]" value="<?php echo esc_attr((string) ($style['sticky_header_rows'] ?? 1)); ?>"></label></p>
                     <p><label>Table header row height <input type="number" name="lcni_filter_style_config[table_header_row_height]" value="<?php echo esc_attr((string) ($style['table_header_row_height'] ?? 42)); ?>"></label></p>
                     <p><label>Table horizontal scroll speed <input type="number" min="1" max="5" name="lcni_filter_style_config[table_scroll_speed]" value="<?php echo esc_attr((string) ($style['table_scroll_speed'] ?? 1)); ?>"></label></p>
