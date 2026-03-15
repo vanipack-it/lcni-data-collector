@@ -298,6 +298,7 @@ class LCNI_Recommend_Admin_Page {
         echo '<a href="' . esc_url(admin_url('admin.php?page=lcni-recommend&tab=rule-list')) . '" class="nav-tab ' . ($tab === 'rule-list' ? 'nav-tab-active' : '') . '">Danh sách Rule</a>';
         echo '<a href="' . esc_url(admin_url('admin.php?page=lcni-recommend&tab=signals')) . '" class="nav-tab ' . ($tab === 'signals' ? 'nav-tab-active' : '') . '">Signals</a>';
         echo '<a href="' . esc_url(admin_url('admin.php?page=lcni-recommend&tab=performance')) . '" class="nav-tab ' . ($tab === 'performance' ? 'nav-tab-active' : '') . '">Performance</a>';
+        echo '<a href="' . esc_url(admin_url('admin.php?page=lcni-recommend&tab=market-context')) . '" class="nav-tab ' . ($tab === 'market-context' ? 'nav-tab-active' : '') . '">Market Context</a>';
         echo '<a href="' . esc_url(admin_url('admin.php?page=lcni-recommend&tab=logs')) . '" class="nav-tab ' . ($tab === 'logs' ? 'nav-tab-active' : '') . '">Logs</a>';
         echo '</h2>';
 
@@ -336,6 +337,8 @@ class LCNI_Recommend_Admin_Page {
             $this->render_signals_tab();
         } elseif ($tab === 'performance') {
             $this->render_performance_tab();
+        } elseif ($tab === 'market-context') {
+            $this->render_market_context_tab();
         } else {
             $this->render_logs_tab();
         }
@@ -361,6 +364,7 @@ class LCNI_Recommend_Admin_Page {
             $wpdb->prefix . 'lcni_thong_ke_thi_truong' => $wpdb->prefix . 'lcni_thong_ke_thi_truong',
             $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2' => $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2',
             $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2_toan_thi_truong' => $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2_toan_thi_truong',
+            $wpdb->prefix . 'lcni_market_context_latest' => $wpdb->prefix . 'lcni_market_context_latest',
         ];
     }
 
@@ -1093,5 +1097,93 @@ class LCNI_Recommend_Admin_Page {
 
         $points = $this->performance_calculator->get_equity_curve( $rule_id );
         wp_send_json_success( [ 'points' => $points ] );
+    }
+
+    private function render_market_context_tab(): void {
+        global $wpdb;
+
+        // Xử lý POST backfill
+        if (
+            isset( $_POST['lcni_mc_action'] )
+            && $_POST['lcni_mc_action'] === 'backfill'
+            && check_admin_referer( 'lcni_mc_backfill' )
+            && current_user_can( 'manage_options' )
+        ) {
+            $tf    = strtoupper( sanitize_text_field( (string) ( $_POST['timeframe'] ?? '1D' ) ) );
+            $tf    = in_array( $tf, [ '1D', '1W', '1M' ], true ) ? $tf : '1D';
+            $limit = max( 1, min( 500, (int) ( $_POST['limit'] ?? 200 ) ) );
+            $repo  = new LCNI_MarketDashboardRepository();
+            $saved = $repo->backfill_history( $tf, $limit );
+            wp_safe_redirect( admin_url(
+                'admin.php?page=lcni-recommend&tab=market-context&backfilled=1&bf_count=' . $saved . '&bf_tf=' . urlencode( $tf )
+            ) );
+            exit;
+        }
+
+        // Thông báo kết quả
+        if ( isset( $_GET['backfilled'] ) ) {
+            $cnt = (int) ( $_GET['bf_count'] ?? 0 );
+            $tf  = sanitize_text_field( (string) ( $_GET['bf_tf'] ?? '' ) );
+            echo '<div class="notice notice-success is-dismissible"><p>Backfill xong: <strong>' . esc_html( (string) $cnt ) . '</strong> snapshot cho timeframe <strong>' . esc_html( $tf ) . '</strong>.</p></div>';
+        }
+
+        $history_tbl = $wpdb->prefix . 'lcni_market_context';
+        $latest_tbl  = $wpdb->prefix . 'lcni_market_context_latest';
+        $history_ok  = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $history_tbl ) ) === $history_tbl;
+        $latest_ok   = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $latest_tbl ) ) === $latest_tbl;
+
+        echo '<div style="max-width:860px;margin-top:16px">';
+        echo '<h2>Market Context — Lịch sử & Backfill</h2>';
+        echo '<p>Bảng <code>' . esc_html( $history_tbl ) . '</code> lưu n phiên lịch sử. '
+           . 'Bảng <code>' . esc_html( $latest_tbl ) . '</code> lưu 1 row per timeframe cho Rule engine JOIN.</p>';
+
+        // Thống kê
+        echo '<table class="wp-list-table widefat fixed striped" style="margin-bottom:18px"><thead><tr>'
+           . '<th>Timeframe</th><th>Phiên nguồn</th><th>History đã lưu</th><th>Còn thiếu</th><th>Latest snapshot</th>'
+           . '</tr></thead><tbody>';
+
+        foreach ( [ '1D', '1W', '1M' ] as $tf ) {
+            $src = (int) $wpdb->get_var( $wpdb->prepare(
+                "SELECT COUNT(DISTINCT event_time) FROM {$wpdb->prefix}lcni_thong_ke_thi_truong WHERE timeframe = %s", $tf
+            ) );
+            $hist = $history_ok ? (int) $wpdb->get_var( $wpdb->prepare(
+                "SELECT COUNT(*) FROM {$history_tbl} WHERE timeframe = %s", $tf
+            ) ) : 0;
+            $missing = max( 0, $src - $hist );
+            $lat_et  = $latest_ok ? (int) $wpdb->get_var( $wpdb->prepare(
+                "SELECT event_time FROM {$latest_tbl} WHERE timeframe = %s", $tf
+            ) ) : 0;
+            $miss_html = $missing > 0
+                ? '<span style="color:#d63638;font-weight:bold">' . $missing . '</span>'
+                : '<span style="color:#00a32a">0 ✓</span>';
+            echo '<tr><td><strong>' . esc_html( $tf ) . '</strong></td><td>' . $src . '</td><td>' . $hist . '</td>'
+               . '<td>' . $miss_html . '</td>'
+               . '<td>' . ( $lat_et > 0 ? esc_html( date( 'd/m/Y', $lat_et ) ) : '—' ) . '</td></tr>';
+        }
+        echo '</tbody></table>';
+
+        // Form backfill
+        echo '<div style="background:#fff;border:1px solid #c3c4c7;padding:16px;border-radius:4px;margin-bottom:18px">';
+        echo '<h3 style="margin-top:0">Backfill lịch sử</h3>';
+        echo '<form method="post">';
+        wp_nonce_field( 'lcni_mc_backfill' );
+        echo '<input type="hidden" name="lcni_mc_action" value="backfill">';
+        echo '<p><label>Timeframe: <select name="timeframe">';
+        foreach ( [ '1D', '1W', '1M' ] as $opt ) {
+            echo '<option value="' . esc_attr( $opt ) . '">' . esc_html( $opt ) . '</option>';
+        }
+        echo '</select></label> &nbsp; ';
+        echo '<label>Số phiên tối đa: <input type="number" name="limit" value="200" min="1" max="500" style="width:70px"></label>';
+        echo ' &nbsp; <button type="submit" class="button button-primary">Chạy Backfill</button></p>';
+        echo '</form></div>';
+
+        // Hướng dẫn
+        echo '<div style="background:#f0f6fc;border-left:4px solid #2271b1;padding:12px 16px;border-radius:2px">';
+        echo '<strong>Dùng trong Rule Builder:</strong> chọn field từ bảng <code>' . esc_html( $latest_tbl ) . '</code>. Ví dụ:<br>';
+        echo '<code>' . esc_html( $latest_tbl ) . '.market_bias = "Tích cực"</code><br>';
+        echo '<code>' . esc_html( $latest_tbl ) . '.market_composite_score >= 55</code><br>';
+        echo '<code>' . esc_html( $latest_tbl ) . '.breadth_pct_above_ma50 >= 50</code>';
+        echo '</div>';
+        echo '</div>';
     }
 }
