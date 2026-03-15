@@ -1,0 +1,30 @@
+/* ============================================================
+   LCNI Chart Builder — Responsive height
+   --lcni-chart-h trên desktop = 420px (default trong inline style)
+   Media query override cho tablet/mobile
+   ============================================================ */
+
+.lcni-chart-builder {
+    width: 100%;
+    box-sizing: border-box;
+    /* min-height đảm bảo chart không bị collapse hoàn toàn */
+    min-height: 200px;
+}
+
+@media (max-width: 900px) {
+    .lcni-chart-builder {
+        --lcni-chart-h: 360px;
+    }
+}
+
+@media (max-width: 600px) {
+    .lcni-chart-builder {
+        --lcni-chart-h: 280px;
+    }
+}
+
+@media (max-width: 400px) {
+    .lcni-chart-builder {
+        --lcni-chart-h: 240px;
+    }
+}
