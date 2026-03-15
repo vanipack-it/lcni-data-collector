@@ -721,10 +721,24 @@
   function getStickyColumnCount(style, columns) {
     const configured = Number((style || {}).sticky_column_count || 1);
     const normalized = Number.isFinite(configured) ? Math.max(0, Math.trunc(configured)) : 1;
+    const stickyColumn = String((style || {}).sticky_column || '').trim();
+    const stickyIndex = Array.isArray(columns) ? columns.indexOf(stickyColumn) : -1;
+    const withNamedSticky = stickyIndex >= 0 ? Math.max(normalized, stickyIndex + 1) : normalized;
     if (isMobileViewport() && Array.isArray(columns) && columns.includes('symbol')) {
-      return Math.max(1, normalized);
+      return Math.max(1, withNamedSticky);
     }
-    return normalized;
+    return withNamedSticky;
+  }
+
+  function enforceTableScrollableWidth(host, columns, stickyCount) {
+    const wrap = host.querySelector('.lcni-table-scroll');
+    const table = host.querySelector('.lcni-table');
+    if (!wrap || !table) return;
+
+    const safeCount = Math.max(1, Number(columns && columns.length) || 1);
+    const stickyCols = Math.max(0, Number(stickyCount) || 0);
+    const minWidth = (stickyCols * 110) + (Math.max(0, safeCount - stickyCols) * 92);
+    table.style.minWidth = `${Math.max(minWidth, wrap.clientWidth)}px`;
   }
 
   function renderStatic(host) {
@@ -765,6 +779,7 @@
     const templateLabel = esc(style.template_filter_label || 'LCNi Filter Template');
 
     host.innerHTML = `<div class="lcni-filter-toolbar"><button type="button" class="lcni-btn lcni-btn-btn_filter_open" data-filter-toggle>${renderButtonContent('btn_filter_open', 'Filter')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_setting" data-column-toggle-btn>${renderButtonContent('btn_filter_setting', '')}</button></div><div class="lcni-filter-summary lcni-filter-summary-mobile" data-filter-result-summary></div><div class="lcni-filter-panel ${state.panelHidden ? 'is-collapsed' : ''}" data-filter-panel><div class="lcni-filter-panel-body">${renderCriteriaPanel()}</div><div class="lcni-filter-panel-actions"><label class="lcni-saved-filter-label">${savedFilterLabel}</label><select data-saved-filter-select class="lcni-select-saved-filter"><option value="">${savedFilterLabel}</option>${(state.savedFilters || []).map((f) => `<option value="${Number(f.id || 0)}" ${Number(f.id || 0) === selectedId ? 'selected' : ''}>${esc(f.filter_name || '')}</option>`).join('')}</select><label class="lcni-saved-filter-label">${templateLabel}</label><select data-template-filter-select class="lcni-select-template-filter"><option value="">${templateLabel}</option>${(state.adminTemplates || []).map((f) => `<option value="${Number(f.id || 0)}" ${Number(f.id || 0) === selectedTemplateId ? 'selected' : ''}>${esc(f.filter_name || '')}</option>`).join('')}</select><button type="button" class="lcni-btn lcni-btn-btn_filter_reload" data-reload-filter>${renderButtonContent('btn_filter_reload', 'Reload')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_save" data-save-current-filter>${renderButtonContent('btn_filter_save', 'Save')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_delete" data-delete-current-filter>${renderButtonContent('btn_filter_delete', 'Delete')}</button><button type="button" class="lcni-btn lcni-btn-btn_set_default_filter" data-set-default-filter>${renderButtonContent('btn_set_default_filter', 'Set Default')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_clear" data-clear-filter>${renderButtonContent('btn_filter_clear', 'Clear')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_apply" data-apply-filter>${renderButtonContent('btn_filter_apply', 'Apply Filter', getApplyLabel())}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_add_watchlist_bulk" data-add-filter-result-watchlist>${renderButtonContent('btn_filter_add_watchlist_bulk', 'Thêm vào Watchlist')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_export_excel" data-export-filter-excel>${renderButtonContent('btn_filter_export_excel', 'Xuất Excel')}</button>${hideBtn}</div></div><div class="lcni-column-pop" data-column-pop ${state.columnPanelOpen ? '' : 'hidden'}></div><div class="lcni-table-scroll"><table class="lcni-table"><thead><tr>${columns.map((c, idx) => `<th data-sort-key="${esc(c)}" class="${idx < stickyCount ? 'is-sticky-col' : ''} ${isNumericValue((state.dataset[0] || {})[c]) ? 'lcni-cell-number' : 'lcni-cell-text'}">${esc(labels[c] || c)} <span data-sort-icon>${state.sortKey === c ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</span></th>`).join('')}</tr></thead><tbody><tr><td colspan="${columns.length}" class="lcni-cell-text">Nhấn Apply Filter để tải dữ liệu.</td></tr></tbody></table></div>`;
+    enforceTableScrollableWidth(host, columns, stickyCount);
 
     const selectable = settings.table_columns || columns;
     host.querySelector('[data-column-pop]').innerHTML = `${renderColumnPositionItems(selectable, labels)}<button type="button" class="lcni-btn lcni-btn-btn_save_filter" data-save-columns>${renderButtonContent('btn_save_filter', 'Save')}</button>`;
@@ -810,6 +825,7 @@
       } else {
         return;
       }
+      enforceTableScrollableWidth(host, columns, stickyCount);
     }
     window.clearTimeout(host._lcniCountTimer);
     host._lcniCountTimer = window.setTimeout(() => {
@@ -1009,6 +1025,7 @@
 
     wrap.addEventListener('touchmove', (event) => {
       if (!event.touches || event.touches.length !== 1) return;
+      if (wrap.scrollWidth <= wrap.clientWidth) return;
       const touch = event.touches[0];
       const deltaX = touch.clientX - touchStartX;
       const deltaY = touch.clientY - touchStartY;
@@ -1021,6 +1038,7 @@
 
       const maxLeft = Math.max(0, wrap.scrollWidth - wrap.clientWidth);
       const nextLeft = Math.max(0, Math.min(maxLeft, startScrollLeft - deltaX));
+      if (nextLeft === wrap.scrollLeft) return;
       wrap.scrollLeft = nextLeft;
       event.preventDefault();
     }, { passive: false });

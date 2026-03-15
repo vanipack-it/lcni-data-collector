@@ -93,6 +93,7 @@ class LCNI_FilterTable {
                 'table_row_divider_color' => sanitize_hex_color((string) ($style['table_row_divider_color'] ?? '#e5e7eb')) ?: '#e5e7eb',
                 'table_row_divider_width' => max(0, min(6, (int) ($style['table_row_divider_width'] ?? 1))),
                 'sticky_column_count' => max(0, min(5, (int) ($style['sticky_column_count'] ?? 1))),
+                'sticky_column' => sanitize_key((string) ($style['sticky_column'] ?? 'symbol')),
                 'sticky_header_rows' => max(0, min(2, (int) ($style['sticky_header_rows'] ?? 1))),
                 'table_header_row_height' => max(28, min(80, (int) ($style['table_header_row_height'] ?? 42))),
                 'row_hover_background' => sanitize_hex_color((string) ($style['row_hover_background'] ?? '#eef2ff')) ?: '#eef2ff',
