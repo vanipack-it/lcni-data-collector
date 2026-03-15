@@ -118,7 +118,7 @@
     position: fixed;
     left: 0; right: 0;
     top: env(safe-area-inset-top, 0px);
-    height: 65svh;
+    height: 90svh;
     overflow: hidden;
     z-index: 100;
     border-radius: 0 0 14px 14px;
