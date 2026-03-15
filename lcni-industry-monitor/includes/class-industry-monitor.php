@@ -36,7 +36,7 @@ class LCNI_Industry_Monitor
         wp_register_style(
             'lcni-industry-monitor',
             LCNI_INDUSTRY_MONITOR_URL . 'public/css/industry-monitor.css',
-            array(),
+            array('lcni-ui-table'),   // lcni-ui-table load trước, industry-monitor override sau
             LCNI_INDUSTRY_MONITOR_VERSION
         );
 
