@@ -1,1 +1,113 @@
+/* lcni-dnse-order.css — Giai đoạn 2 */
 
+/* ── Modal ─────────────────────────────────────────────────────── */
+.lcni-modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.6);
+    z-index: 99998;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+
+.lcni-modal-box {
+    background: #161b22;
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 14px;
+    width: 100%;
+    max-width: 460px;
+    overflow: hidden;
+    box-shadow: 0 24px 60px rgba(0,0,0,.5);
+}
+
+.lcni-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px 14px;
+    border-bottom: 1px solid rgba(255,255,255,.06);
+}
+
+.lcni-modal-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #e6edf3;
+}
+
+.lcni-modal-close {
+    background: transparent;
+    border: none;
+    color: #6b7280;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+.lcni-modal-close:hover { color: #e6edf3; }
+
+.lcni-modal-body {
+    padding: 16px 20px;
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+.lcni-modal-footer {
+    padding: 12px 20px 16px;
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    border-top: 1px solid rgba(255,255,255,.06);
+}
+
+/* ── Modal Table ──────────────────────────────────────────────── */
+.lcni-modal-table {
+    width: 100%;
+    font-size: 13px;
+    border-collapse: collapse;
+    margin-bottom: 14px;
+}
+.lcni-modal-table td {
+    padding: 7px 4px;
+    border-bottom: 1px solid rgba(255,255,255,.04);
+    color: #c9d1d9;
+}
+.lcni-modal-table td:first-child {
+    color: #6b7280;
+    width: 38%;
+}
+.lcni-modal-table td:last-child {
+    text-align: right;
+}
+
+.lcni-modal-warning {
+    background: rgba(232,184,75,.1);
+    border: 1px solid rgba(232,184,75,.25);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 12px;
+    color: #fbbf24;
+    line-height: 1.6;
+}
+
+/* ── Order form inputs ────────────────────────────────────────── */
+.lcni-order-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* ── Small button variant ─────────────────────────────────────── */
+.lcni-dnse-btn--sm {
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+}
+.lcni-dnse-btn--sm:disabled {
+    opacity: .5;
+    cursor: default;
+}
