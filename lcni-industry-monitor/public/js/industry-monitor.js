@@ -139,21 +139,35 @@
 
         function renderTable(data, metric) {
             if (!headerRow || !body) return;
-            var industryHead = headerRow.querySelector('.lcni-industry-monitor__sticky-industry');
-            headerRow.innerHTML = '';
-            if (industryHead) headerRow.appendChild(industryHead);
-            body.innerHTML = '';
 
             var displayColumns = Array.isArray(data.columns) ? data.columns : [];
             var rawColumns = Array.isArray(data.rawColumns) ? data.rawColumns : [];
             var columnCount = Math.max(displayColumns.length, rawColumns.length);
 
-            for (var colIndex = columnCount - 1; colIndex >= 0; colIndex -= 1) {
-                var th = document.createElement('th');
-                th.className = 'lcni-industry-monitor__event-time';
-                th.textContent = formatEventTimeValue(rawColumns[colIndex], displayColumns[colIndex]);
-                headerRow.appendChild(th);
+            // ── Rebuild header ONLY when column count or metric changes ──────
+            // Tránh reset header mỗi lần fetch → giữ sticky top + scroll position
+            var prevColumnCount = Number(headerRow.getAttribute('data-col-count') || -1);
+            var prevMetric = headerRow.getAttribute('data-metric') || '';
+
+            if (columnCount !== prevColumnCount || metric !== prevMetric) {
+                var industryHead = headerRow.querySelector('.lcni-industry-monitor__sticky-industry');
+                headerRow.innerHTML = '';
+                if (industryHead) headerRow.appendChild(industryHead);
+
+                for (var colIndex = columnCount - 1; colIndex >= 0; colIndex -= 1) {
+                    var th = document.createElement('th');
+                    th.className = 'lcni-industry-monitor__event-time';
+                    th.textContent = formatEventTimeValue(rawColumns[colIndex], displayColumns[colIndex]);
+                    headerRow.appendChild(th);
+                }
+
+                headerRow.setAttribute('data-col-count', String(columnCount));
+                headerRow.setAttribute('data-metric', metric);
             }
+
+            // ── Always reset only tbody rows ─────────────────────────────────
+            // KHÔNG reset header → sticky top được giữ nguyên
+            body.innerHTML = '';
 
             var rows = data.rows || [];
             var rowGradientRule = findRowGradientRule(metric);
