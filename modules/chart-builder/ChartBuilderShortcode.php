@@ -20,6 +20,7 @@ class LCNI_Chart_Builder_Shortcode {
     public function register_assets() {
         wp_register_script('lcni-echarts', LCNI_URL . 'assets/vendor/echarts.min.js', [], self::VERSION, true);
         wp_register_script('lcni-chart-builder', LCNI_URL . 'modules/chart-builder/assets/chart-builder.js', ['lcni-echarts', 'lcni-main-js'], self::VERSION, true);
+        wp_register_style('lcni-chart-builder', LCNI_URL . 'modules/chart-builder/assets/chart-builder.css', [], self::VERSION);
     }
 
     public function render_shortcode($atts) {
@@ -40,9 +41,10 @@ class LCNI_Chart_Builder_Shortcode {
         $payload = LCNI_Chart_Builder_Service::build_shortcode_payload($chart);
 
         wp_enqueue_script('lcni-chart-builder');
+        wp_enqueue_style('lcni-chart-builder');
 
         return sprintf(
-            '<div class="lcni-chart-builder" data-lcni-chart-builder="%1$s" data-sync-group="%2$s" style="width:100%%;height:420px;"></div>',
+            '<div class="lcni-chart-builder" data-lcni-chart-builder="%1$s" data-sync-group="%2$s" style="width:100%%;height:var(--lcni-chart-h,420px);"></div>',
             esc_attr(wp_json_encode($payload)),
             esc_attr(sanitize_key((string) $atts['sync_group']))
         );
