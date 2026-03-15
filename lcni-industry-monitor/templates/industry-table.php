@@ -32,8 +32,8 @@ $css_vars = sprintf(
     data-row-hover-enabled="<?php echo ! empty($settings['row_hover_enabled']) ? '1' : '0'; ?>"
     style="<?php echo esc_attr($css_vars); ?>"
 >
-    <div class="lcni-industry-monitor__table-wrap">
-        <table class="lcni-industry-monitor__table">
+    <div class="lcni-industry-monitor__table-wrap lcni-table-wrapper">
+        <table class="lcni-industry-monitor__table lcni-table">
             <thead>
                 <tr class="lcni-industry-header-row">
                     <th class="lcni-industry-monitor__sticky-industry">
