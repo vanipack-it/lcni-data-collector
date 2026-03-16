@@ -42,7 +42,7 @@
 .lcni-app .lcni-stock-filter .lcni-column-option { display:flex; align-items:center; gap:8px; border:1px solid #e5e7eb; border-radius:8px; padding:6px 8px; background:#fff; }
 .lcni-app .lcni-stock-filter .lcni-column-option span { flex:1; }
 .lcni-app .lcni-stock-filter .lcni-table-scroll { max-height:calc(100vh - 180px); overflow:auto; overscroll-behavior:contain; overscroll-behavior-x:contain; scrollbar-gutter:stable; }
-.lcni-app .lcni-stock-filter .lcni-table { width:100%; border-collapse:separate; border-spacing:0; }
+.lcni-app .lcni-stock-filter .lcni-table { width:max-content; min-width:100%; border-collapse:separate; border-spacing:0; }
 .lcni-app .lcni-stock-filter .lcni-table th { font-weight:400; position:sticky; top:0; z-index:20; background:var(--lcni-table-header-bg,#f3f4f6); color:var(--lcni-table-header-color,#111827); font-size:var(--lcni-table-header-size,12px); border-bottom:var(--lcni-row-divider-width,1px) solid var(--lcni-row-divider-color,#e5e7eb); height:var(--lcni-table-header-height,42px); white-space:nowrap; padding-left:5px; padding-right:5px; }
 .lcni-app .lcni-stock-filter .lcni-table td { background:var(--lcni-table-value-bg,#fff); color:var(--lcni-table-value-color,#111827); font-size:var(--lcni-table-value-size,13px); border-bottom:var(--lcni-row-divider-width,1px) solid var(--lcni-row-divider-color,#e5e7eb); white-space:nowrap; word-break:keep-all; height:var(--lcni-table-row-height,36px); padding-left:5px; padding-right:5px; }
 .lcni-app .lcni-stock-filter .lcni-table tr:hover td { background:var(--lcni-row-hover-bg,#eef2ff); }
