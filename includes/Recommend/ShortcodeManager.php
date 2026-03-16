@@ -159,7 +159,7 @@ class ShortcodeManager {
             if ($sticky_column === $column) {
                 $th_style .= 'position:sticky;left:0;z-index:' . ($sticky_header_enabled ? '25' : '5') . ';';
             }
-            echo '<th style="' . $th_style . '" data-lcni-field="' . esc_attr($column) . '"><span>' . esc_html($label) . '</span><button type="button" class="lcni-signals-filter-btn" data-lcni-filter-btn aria-label="Lọc nhanh"><i class="' . esc_attr($filter_button_icon) . '" aria-hidden="true"></i></button></th>';
+            echo '<th class="' . ($sticky_column === $column ? 'lcni-sticky-col' : '') . '" style="' . $th_style . '" data-lcni-field="' . esc_attr($column) . '"><span>' . esc_html($label) . '</span><button type="button" class="lcni-signals-filter-btn" data-lcni-filter-btn aria-label="Lọc nhanh"><i class="' . esc_attr($filter_button_icon) . '" aria-hidden="true"></i></button></th>';
         }
         echo '</tr></thead><tbody>';
 
@@ -190,14 +190,14 @@ class ShortcodeManager {
                     $watchlist_btn = '<button type="button" class="lcni-signals-watchlist-btn" data-lcni-watchlist-add data-symbol="' . esc_attr($symbol) . '" aria-label="Thêm vào watchlist"><i class="' . esc_attr($watchlist_button_icon) . '" aria-hidden="true"></i></button>';
                     if ($detail_url !== '') {
                         $value = '<a href="' . esc_url($detail_url) . '">' . esc_html((string) $value) . '</a>';
-                        echo '<td data-lcni-field="' . esc_attr($column) . '" data-lcni-value="' . esc_attr((string) $raw_value) . '" style="' . $cell_style_attr . '"><span class="lcni-signals-symbol-cell">' . $value . $watchlist_btn . '</span></td>';
+                        echo '<td class="' . ($sticky_column === $column ? 'lcni-sticky-col' : '') . '" data-lcni-field="' . esc_attr($column) . '" data-lcni-value="' . esc_attr((string) $raw_value) . '" style="' . $cell_style_attr . '"><span class="lcni-signals-symbol-cell">' . $value . $watchlist_btn . '</span></td>';
                         continue;
                     }
-                    echo '<td data-lcni-field="' . esc_attr($column) . '" data-lcni-value="' . esc_attr((string) $raw_value) . '" style="' . $cell_style_attr . '"><span class="lcni-signals-symbol-cell">' . esc_html((string) $value) . $watchlist_btn . '</span></td>';
+                    echo '<td class="' . ($sticky_column === $column ? 'lcni-sticky-col' : '') . '" data-lcni-field="' . esc_attr($column) . '" data-lcni-value="' . esc_attr((string) $raw_value) . '" style="' . $cell_style_attr . '"><span class="lcni-signals-symbol-cell">' . esc_html((string) $value) . $watchlist_btn . '</span></td>';
                     continue;
                 }
 
-                echo '<td data-lcni-field="' . esc_attr($column) . '" data-lcni-value="' . esc_attr((string) $raw_value) . '" style="' . $cell_style_attr . '">' . esc_html((string) $value) . '</td>';
+                echo '<td class="' . ($sticky_column === $column ? 'lcni-sticky-col' : '') . '" data-lcni-field="' . esc_attr($column) . '" data-lcni-value="' . esc_attr((string) $raw_value) . '" style="' . $cell_style_attr . '">' . esc_html((string) $value) . '</td>';
             }
             echo '</tr>';
         }

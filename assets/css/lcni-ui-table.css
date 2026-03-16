@@ -635,3 +635,53 @@ td[data-lcni-field="signal__symbol"] a:hover {
 }
 /* ══════════════════════════════════════════════════════════════ */
 /* ================================================================ */
+
+
+/* ================================================================
+   STICKY SYSTEM HOTFIX (cross-browser: Safari/Chrome mobile/overflow nests)
+   ================================================================ */
+.lcni-table-wrapper {
+    position: relative;
+    width: 100%;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch;
+}
+
+.lcni-table {
+    border-collapse: separate !important;
+    min-width: 100%;
+    width: max-content;
+}
+
+.lcni-sticky-col {
+    position: -webkit-sticky !important;
+    position: sticky !important;
+    left: 0;
+    z-index: 5;
+    background: #fff;
+    box-shadow: 2px 0 4px rgba(0,0,0,0.05);
+}
+
+.lcni-table thead th.lcni-sticky-col {
+    z-index: 6;
+}
+
+.lcni-stock-filter,
+.dashboard-card,
+.panel,
+.widget,
+.lcni-recommend-signals-table,
+.lcni-watchlist,
+.lcni-pf-section,
+.lcni-pf-main {
+    overflow-x: visible !important;
+}
+
+.dashboard-card,
+.panel,
+.widget,
+.lcni-pf-section,
+.lcni-pf-main {
+    min-width: 0;
+}

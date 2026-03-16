@@ -298,8 +298,8 @@
 
   function resolveStickyColumnClass(stickyColumn, column, index) {
     if (!stickyColumn) return '';
-    if (stickyColumn === column) return 'is-sticky-col';
-    if (stickyColumn === 'first' && index === 0) return 'is-sticky-col';
+    if (stickyColumn === column) return 'is-sticky-col lcni-sticky-col';
+    if (stickyColumn === 'first' && index === 0) return 'is-sticky-col lcni-sticky-col';
     return '';
   }
 

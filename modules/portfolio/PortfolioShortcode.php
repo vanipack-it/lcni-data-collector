@@ -183,7 +183,7 @@ class LCNI_Portfolio_Shortcode {
                         <table class="lcni-pf-table lcni-table" id="lcni-pf-holdings-table">
                             <thead>
                                 <tr>
-                                    <th>Mã CP</th>
+                                    <th class="lcni-sticky-col">Mã CP</th>
                                     <th>Khối lượng</th>
                                     <th>Giá vốn TB</th>
                                     <th>Giá hiện tại</th>
@@ -234,7 +234,7 @@ class LCNI_Portfolio_Shortcode {
                     <table class="lcni-pf-table lcni-table" id="lcni-pf-tx-table">
                         <thead>
                             <tr>
-                                <th>Ngày</th>
+                                <th class="lcni-sticky-col">Ngày</th>
                                 <th>Mã CP</th>
                                 <th>Loại</th>
                                 <th>Khối lượng</th>
