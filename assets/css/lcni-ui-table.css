@@ -715,3 +715,63 @@ td[data-lcni-field="signal__symbol"] a:hover {
     -webkit-overflow-scrolling: touch;
     position: relative;
 }
+
+/* ================================================================
+   SAFARI STICKY ROOT-CAUSE FIXES
+   - Neutralize transform/filter chains inside table wrappers
+   - Keep horizontal scroll ownership on .lcni-table-wrapper
+   ================================================================ */
+
+/* 1) Safari sticky + transform bug: neutralize inside table scope only */
+.lcni-table-wrapper,
+.lcni-table-wrapper * {
+    transform: none !important;
+    filter: none !important;
+    backdrop-filter: none !important;
+    perspective: none !important;
+    will-change: auto !important;
+}
+
+/* 2) Prevent parent containers from becoming horizontal scroll containers */
+.lcni-stock-filter,
+.dashboard-card,
+.panel,
+.widget,
+.lcni-container,
+.lcni-section {
+    overflow-x: visible !important;
+}
+
+/* 3) Flex container safety for table overflow */
+.dashboard-card,
+.panel,
+.widget {
+    min-width: 0;
+}
+
+/* 4) Table width contract for horizontal scrolling */
+.lcni-table {
+    width: max-content !important;
+    min-width: 100% !important;
+}
+
+/* 5) Wrapper is the scroll container */
+.lcni-table-wrapper {
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    position: relative;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* 6) Sticky column consistency */
+.lcni-sticky-col {
+    position: -webkit-sticky !important;
+    position: sticky !important;
+    left: 0;
+    background: #fff;
+    z-index: 5;
+}
+
+thead th.lcni-sticky-col {
+    z-index: 6;
+}
