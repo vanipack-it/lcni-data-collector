@@ -78,7 +78,8 @@
     flex-direction: column;
     height: 100svh;
     min-height: 100svh;
-    overflow: clip;          /* Safari fix: clip thay hidden — không phá sticky */
+    overflow-x: visible;     /* scroll ngang phải thuộc về .lcni-table-scroll/.lcni-table-wrapper */
+    overflow-y: clip;        /* giữ clipping dọc như thiết kế mobile hiện tại */
   }
 
   /* ── Toolbar: fixed góc phải, không cuộn theo bảng ── */
@@ -302,7 +303,10 @@
 
   /* ── Override: ngăn theme/plugin cha phá sticky ── */
   .lcni-app { overflow: visible !important; }
-  .lcni-app .lcni-stock-filter { overflow: clip !important; }  /* Safari fix: clip ≠ scroll context */
+  .lcni-app .lcni-stock-filter {
+    overflow-x: visible !important;
+    overflow-y: clip !important;
+  }
   /* table-scroll là scroll container duy nhất — sticky bám vào đây */
   .lcni-app .lcni-stock-filter .lcni-table-scroll {
     overflow-x: auto !important;
