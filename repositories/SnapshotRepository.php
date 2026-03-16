@@ -214,7 +214,7 @@ class SnapshotRepository {
     private function buildFilterWhereClause(array $filters, array &$params): string {
         $map = $this->getColumnMap();
         $clauses = [];
-        $allowed_operators = ['=', '>', '<', '>=', '<=', 'between', 'contains', 'in'];
+        $allowed_operators = ['=', '!=', '>', '<', '>=', '<=', 'between', 'contains', 'not_contains', 'in'];
 
         foreach ($filters as $filter) {
             if (!is_array($filter)) {
@@ -238,13 +238,16 @@ class SnapshotRepository {
                 $clauses[] = "{$field} BETWEEN %s AND %s";
                 $params[] = sanitize_text_field((string) $range[0]);
                 $params[] = sanitize_text_field((string) $range[1]);
-            } elseif ($operator === 'contains') {
+            } elseif ($operator === 'contains' || $operator === 'not_contains') {
                 $needle = sanitize_text_field((string) $value);
                 if ($needle === '') {
                     continue;
                 }
-                $clauses[] = "{$field} LIKE %s";
-                $params[] = '%' . $this->wpdb->esc_like($needle) . '%';
+                $like = '%' . $this->wpdb->esc_like($needle) . '%';
+                $clauses[] = $operator === 'not_contains'
+                    ? "({$field} NOT LIKE %s OR {$field} IS NULL)"
+                    : "{$field} LIKE %s";
+                $params[] = $like;
             } elseif ($operator === 'in') {
                 $items = is_array($value) ? array_filter(array_map('sanitize_text_field', $value)) : [];
                 if (empty($items)) {
@@ -257,11 +260,15 @@ class SnapshotRepository {
                 }
             } else {
                 $compare = sanitize_text_field((string) $value);
-                if ($compare === '') {
+                if ($compare === '' && $operator === '!=') {
+                    // != '' means the column must be non-empty
+                    $clauses[] = "({$field} IS NOT NULL AND {$field} <> '')";
+                } elseif ($compare === '') {
                     continue;
+                } else {
+                    $clauses[] = "{$field} {$operator} %s";
+                    $params[] = $compare;
                 }
-                $clauses[] = "{$field} {$operator} %s";
-                $params[] = $compare;
             }
         }
 
