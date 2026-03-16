@@ -884,7 +884,7 @@
 
     const headerRow = table.querySelector('thead tr');
     if (!headerRow) return;
-    const stickyThs = Array.from(headerRow.querySelectorAll('th.is-sticky-col'));
+    const stickyThs = Array.from(headerRow.querySelectorAll('th.is-sticky-col, th.lcni-sticky-col'));
     if (!stickyThs.length) return;
 
     // Đo offset tích lũy: reset inline left trước để offsetWidth chính xác
@@ -904,7 +904,7 @@
 
     // Gán left cho toàn bộ TD sticky trong tbody
     table.querySelectorAll('tbody tr').forEach(tr => {
-      tr.querySelectorAll('td.is-sticky-col').forEach((td, i) => {
+      tr.querySelectorAll('td.is-sticky-col, td.lcni-sticky-col').forEach((td, i) => {
         if (i < colOffsets.length) td.style.left = colOffsets[i] + 'px';
       });
     });

@@ -1005,7 +1005,7 @@
     if (!table) return;
     const headerRow = table.querySelector('thead tr');
     if (!headerRow) return;
-    const stickyThs = Array.from(headerRow.querySelectorAll('th.is-sticky-col'));
+    const stickyThs = Array.from(headerRow.querySelectorAll('th.is-sticky-col, th.lcni-sticky-col'));
     if (!stickyThs.length) return;
 
     // Reset để đo offsetWidth chính xác
@@ -1040,7 +1040,7 @@
 
     // Gán cho tbody
     table.querySelectorAll('tbody tr').forEach(tr => {
-      tr.querySelectorAll('td.is-sticky-col').forEach((td, i) => {
+      tr.querySelectorAll('td.is-sticky-col, td.lcni-sticky-col').forEach((td, i) => {
         if (i < offsets.length) td.style.left = offsets[i] + 'px';
       });
     });
