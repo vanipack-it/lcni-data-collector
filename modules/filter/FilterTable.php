@@ -304,7 +304,7 @@ class LCNI_FilterTable {
             $html .= '<tr data-symbol="' . esc_attr($symbol) . '">';
 
             foreach ($columns as $index => $column) {
-                $sticky = $index === 0 ? ' class="is-sticky-col"' : '';
+                $sticky = $index === 0 ? ' class="is-sticky-col lcni-sticky-col"' : '';
 
                 if ($column === 'symbol') {
                     $html .= '<td' . $sticky . '><span>' . esc_html($symbol) . '</span> '

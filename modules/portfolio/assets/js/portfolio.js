@@ -303,7 +303,7 @@
         active.forEach(h => {
             tbody.append(`
                 <tr>
-                    <td><span class="lcni-pf-symbol">${h.symbol}</span></td>
+                    <td class="lcni-sticky-col"><span class="lcni-pf-symbol">${h.symbol}</span></td>
                     <td>${fmtQty(h.quantity)}</td>
                     <td>${fmtVnd(h.avg_cost)}</td>
                     <td>${h.current_price > 0 ? fmtVnd(h.current_price) : '<span style="color:#9ca3af">—</span>'}</td>
@@ -430,7 +430,7 @@
             const total = parseFloat(tx.quantity) * priceVnd;
             tbody.append(`
                 <tr>
-                    <td>${tx.trade_date}</td>
+                    <td class="lcni-sticky-col">${tx.trade_date}</td>
                     <td><span class="lcni-pf-symbol">${tx.symbol}</span></td>
                     <td>${typeLabel(tx.type)}</td>
                     <td>${fmtQty(tx.quantity)}</td>
