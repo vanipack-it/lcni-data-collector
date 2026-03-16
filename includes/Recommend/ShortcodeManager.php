@@ -147,7 +147,7 @@ class ShortcodeManager {
         // lcni-table-wrapper: scroll container cho sticky header + sticky column + mobile scroll
         $table_wrapper_style = 'width:100%;overflow-x:auto;overflow-y:auto;max-height:' . $table_max_height . 'px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;position:relative;';
         echo '<div class="lcni-table-wrapper" style="' . $table_wrapper_style . '">';
-        echo '<table class="lcni-table" style="width:100%;border-collapse:separate;border-spacing:0;font-size:' . (int) ($styles['row_font_size'] ?? 14) . 'px;">';
+        echo '<table class="lcni-table signal-table" style="width:100%;border-collapse:separate;border-spacing:0;font-size:' . (int) ($styles['row_font_size'] ?? 14) . 'px;">';
         $head_row_style = 'height:' . (int) ($styles['head_height'] ?? 30) . 'px;background:' . esc_attr((string) ($styles['header_background'] ?? '#ffffff')) . ';color:' . esc_attr((string) ($styles['header_text_color'] ?? '#111827')) . ';';
         echo '<thead><tr style="' . $head_row_style . '">';
         foreach ($columns as $column) {
