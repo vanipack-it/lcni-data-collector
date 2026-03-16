@@ -685,3 +685,33 @@ td[data-lcni-field="signal__symbol"] a:hover {
 .lcni-pf-main {
     min-width: 0;
 }
+
+/* Permanent sticky safety net: keep horizontal scrolling ownership on .lcni-table-wrapper */
+.lcni-stock-filter,
+.dashboard-card,
+.panel,
+.widget {
+    overflow-x: visible !important;
+}
+
+/* Flex containers that wrap tables must be shrinkable for sticky + horizontal scroll to work */
+.dashboard-card,
+.panel,
+.widget,
+.lcni-stock-filter {
+    min-width: 0;
+}
+
+/* Table width contract for sticky columns across Safari/Firefox/Chromium */
+.lcni-table {
+    width: max-content;
+    min-width: 100%;
+}
+
+/* Scroll container contract (do not move horizontal overflow to ancestors) */
+.lcni-table-wrapper {
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch;
+    position: relative;
+}
