@@ -35,8 +35,8 @@
 .lcni-watchlist-col-item { font-size:var(--lcni-watchlist-label-font-size); display:flex; align-items:center; gap:6px; padding:4px 6px; border:1px dashed transparent; border-radius:6px; }
 .lcni-watchlist-col-item span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .lcni-watchlist-col-item.is-dragging { opacity:.5; border-color:#9ca3af; }
-.lcni-watchlist-table-wrap { position:relative; overflow:auto; overscroll-behavior:contain; overscroll-behavior-x:contain; max-height:calc(100vh - 180px); }
-.lcni-watchlist-table { width:100%; min-width:680px; border-collapse:collapse; table-layout:auto; }
+.lcni-watchlist-table-wrap { position:relative; overflow:auto; overscroll-behavior:contain; overscroll-behavior-x:contain; max-height:calc(100vh - 180px); -webkit-overflow-scrolling:touch; touch-action:pan-x pan-y; }
+.lcni-watchlist-table { width:100%; min-width:680px; border-collapse:separate; border-spacing:0; table-layout:auto; }
 .lcni-watchlist-table th, .lcni-watchlist-table td { border:0; border-bottom:var(--lcni-watchlist-row-divider-width) solid var(--lcni-watchlist-row-divider-color); padding:8px; white-space:nowrap; word-break:keep-all; }
 .lcni-watchlist-table th { font-size:var(--lcni-watchlist-label-font-size); background:var(--lcni-watchlist-header-bg); color:var(--lcni-watchlist-header-color); height:var(--lcni-watchlist-head-height); font-weight:400; }
 .lcni-watchlist-table td { font-size:var(--lcni-watchlist-row-font-size); background:var(--lcni-watchlist-value-bg); color:var(--lcni-watchlist-value-color); }
@@ -55,23 +55,87 @@
 .lcni-watchlist-add-form input { min-width:180px; padding:6px 10px; }
 .lcni-watchlist-add.is-active { background:#ef4444 !important; color:#fff !important; }
 @media (max-width: 767px) {
-  .lcni-watchlist-controls { min-width:280px; width:min(92vw, 360px); }
-  .lcni-watchlist-table { min-width:560px; }
-}
+  /* Watchlist full width container */
+  .lcni-watchlist {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
 
-@media (max-width: 767px) {
-  .lcni-watchlist-header{align-items:flex-start;}
-  .lcni-watchlist-list-controls{width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
-  .lcni-watchlist-list-controls select,.lcni-watchlist-symbol-input{width:100%;min-width:0;}
+  .lcni-watchlist-header { align-items: flex-start; gap: 6px; }
 
-  .lcni-watchlist-list-controls{grid-template-columns:1fr;}
-  .lcni-watchlist-action-buttons{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;width:100%;overflow:visible;padding-bottom:0;}
-  .lcni-watchlist-action-buttons > .lcni-btn{width:100%;justify-content:center;min-width:0;}
-  .lcni-watchlist-action-buttons .lcni-btn-btn_watchlist_setting{padding-left:0;padding-right:0;}
-  .lcni-watchlist-action-buttons .lcni-btn span{display:none;}
-  .lcni-watchlist-dropdown{align-self:flex-start;}
-  .lcni-watchlist-controls{position:fixed;top:12px;right:12px;left:12px;max-width:none;width:auto;max-height:80vh;overflow:auto;z-index:9999;}
-  .lcni-watchlist-table-wrap{max-height:calc(100vh - 220px);}
+  .lcni-watchlist-list-controls {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .lcni-watchlist-list-controls select,
+  .lcni-watchlist-symbol-input { width: 100%; min-width: 0; }
+
+  .lcni-watchlist-action-buttons {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    width: 100%;
+  }
+  .lcni-watchlist-action-buttons > .lcni-btn { width: 100%; justify-content: center; min-width: 0; }
+  .lcni-watchlist-action-buttons .lcni-btn-btn_watchlist_setting { padding-left: 0; padding-right: 0; }
+  .lcni-watchlist-action-buttons .lcni-btn span { display: none; }
+
+  .lcni-watchlist-dropdown { align-self: flex-start; }
+
+  /* Settings panel: fixed bottom sheet */
+  .lcni-watchlist-controls {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    top: auto;
+    max-width: none;
+    width: 100%;
+    max-height: 85svh;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    z-index: 9999;
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -4px 24px rgba(0,0,0,.18);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .lcni-watchlist-controls::before {
+    content: '';
+    display: block;
+    width: 40px; height: 4px;
+    background: #d1d5db;
+    border-radius: 2px;
+    margin: 8px auto 4px;
+  }
+
+  /* Table scroll: full height, touch-friendly */
+  .lcni-watchlist-table-wrap {
+    max-height: calc(100svh - 200px);
+    overflow: auto;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x pan-y;
+    overscroll-behavior: contain;
+  }
+
+  .lcni-watchlist-table { min-width: 560px; }
+
+  /* Sticky header on mobile */
+  .lcni-watchlist-table.has-sticky-header thead th {
+    position: sticky !important;
+    top: 0;
+    z-index: 20;
+  }
+  .lcni-watchlist-table.has-sticky-header thead .is-sticky-col {
+    z-index: 25;
+  }
+  /* Sticky first column on mobile */
+  .lcni-watchlist-table .is-sticky-col {
+    position: sticky;
+    left: 0;
+    z-index: 3;
+  }
 }
 
 .lcni-watchlist-table .lcni-cell-number { text-align:right; }
@@ -82,3 +146,161 @@
 .lcni-watchlist-modal-card input[type="text"]{width:100%;height:36px;padding:0 10px;margin:0 0 10px;border:1px solid #d1d5db;border-radius:8px;}
 .lcni-filter-watchlist-options{display:grid;gap:8px;max-height:220px;overflow:auto;margin-bottom:12px;}
 .lcni-filter-modal-actions{display:flex;gap:8px;justify-content:flex-end;}
+
+/* ── Mobile CSS variable overrides ───────────────────────────
+   Override fixed-width variables so dropdown + input fill 100%
+   on small screens without breaking desktop layout.
+   ─────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .lcni-watchlist {
+    --lcni-watchlist-dropdown-width: 100%;
+    --lcni-watchlist-input-width:    100%;
+  }
+
+  /* Ensure header stacks vertically and controls stretch full width */
+  .lcni-watchlist-header {
+    flex-direction: column;
+    align-items:    stretch;
+    gap:            10px;
+  }
+
+  .lcni-watchlist-list-controls {
+    display:        flex;
+    flex-direction: column;   /* stack dọc: dropdown → input → buttons */
+    width:          100%;
+    gap:            10px;
+  }
+
+  /* Force select + input to fill container even with inline width */
+  .lcni-watchlist-list-controls select,
+  .lcni-watchlist-list-controls input,
+  .lcni-watchlist-symbol-input {
+    width:     100% !important;
+    max-width: 100% !important;
+    min-width: 0;
+  }
+
+  /* Action buttons: spread evenly across full width */
+  .lcni-watchlist-action-buttons {
+    width:           100%;
+    display:         flex;
+    justify-content: space-between;
+    gap:             8px;
+    flex-wrap:       wrap;
+  }
+}
+
+/* ================================================================
+   WATCHLIST MOBILE FIX v3 — 2-row layout
+   Row 1: [dropdown][input] side by side (full width shared)
+   Row 2: [Add][New][Delete][Settings] equal-width chips
+   ================================================================ */
+@media (max-width: 768px) {
+
+  /* ── CSS variable override ── */
+  .lcni-watchlist {
+    --lcni-watchlist-dropdown-width: 100%;
+    --lcni-watchlist-input-width:    100%;
+    max-width:   100vw;
+    box-sizing:  border-box;
+    overflow-x:  hidden;
+  }
+
+  /* ── Header: column so list-controls và dropdown stack dọc ── */
+  .lcni-watchlist-header {
+    display:        flex   !important;
+    flex-direction: column !important;
+    align-items:    stretch !important;
+    gap:            8px    !important;
+    flex-wrap:      nowrap !important;
+  }
+
+  /* ── List-controls: Row 1 + Row 2 stack dọc ── */
+  .lcni-watchlist-list-controls {
+    display:        flex    !important;
+    flex-direction: column  !important;
+    align-items:    stretch !important;
+    width:          100%    !important;
+    gap:            8px     !important;
+  }
+
+  /* ── ROW 1: select + input side by side ── */
+  /* select và input là anh em trực tiếp trong .lcni-watchlist-list-controls */
+  .lcni-watchlist-list-controls > select {
+    flex:        1 1 40%   !important;
+    width:       auto      !important;
+    min-width:   0         !important;
+    max-width:   100%      !important;
+    box-sizing:  border-box;
+    /* Cùng hàng với input bằng cách tạo sub-row */
+    order: 1;
+  }
+
+  .lcni-watchlist-list-controls > .lcni-watchlist-symbol-input,
+  .lcni-watchlist-list-controls > input[type="text"] {
+    flex:       2 1 55%   !important;
+    width:      auto      !important;
+    min-width:  0         !important;
+    max-width:  100%      !important;
+    box-sizing: border-box;
+    order: 2;
+  }
+
+  /* ── Sub-row trick: wrap select + input vào 1 hàng ngang ── */
+  /* Dùng pseudo-grid: list-controls là flex-column, nhưng ta tạo inner-row */
+  .lcni-watchlist-list-controls {
+    /* Override: dùng flex-row để select + input cùng hàng */
+    flex-direction: row     !important;
+    flex-wrap:      wrap    !important;
+  }
+
+  /* ROW 1: select chiếm 38%, input chiếm 62% */
+  .lcni-watchlist-list-controls > select {
+    flex:  0 0 38% !important;
+    width: 38%     !important;
+  }
+
+  .lcni-watchlist-list-controls > .lcni-watchlist-symbol-input,
+  .lcni-watchlist-list-controls > input[type="text"] {
+    flex:  0 0 calc(62% - 8px) !important;
+    width: calc(62% - 8px)     !important;
+  }
+
+  /* ROW 2: action-buttons chiếm full width, bên dưới select+input */
+  .lcni-watchlist-action-buttons {
+    flex:            0 0 100% !important;
+    width:           100%     !important;
+    display:         flex     !important;
+    flex-wrap:       nowrap   !important;
+    gap:             6px      !important;
+    justify-content: stretch  !important;
+    order:           3;
+  }
+
+  /* Mỗi button chiếm equal share */
+  .lcni-watchlist-action-buttons > .lcni-btn {
+    flex:           1 1 0      !important;
+    min-width:      0          !important;
+    max-width:      100%       !important;
+    white-space:    nowrap     !important;
+    padding:        8px 4px    !important;
+    font-size:      12px       !important;
+    text-align:     center     !important;
+    justify-content: center    !important;
+    overflow:       hidden;
+    text-overflow:  ellipsis;
+  }
+
+  /* Add-form input: full width nếu có */
+  .lcni-watchlist-add-form {
+    display:   flex    !important;
+    width:     100%    !important;
+    gap:       6px;
+    flex:      0 0 100% !important;
+  }
+  .lcni-watchlist-add-form input {
+    flex:      1 1 0 !important;
+    min-width: 0     !important;
+    width:     100%  !important;
+  }
+}
