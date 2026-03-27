@@ -40,6 +40,8 @@ class LCNI_Member_Permission_Middleware {
         'lcni_performance_v2'           => ['module' => 'recommend-performance', 'capability' => 'view'],
         'lcni_equity_curve'             => ['module' => 'recommend-equity',      'capability' => 'view'],
         'lcni_signal'                   => ['module' => 'recommend-signals',     'capability' => 'view'],
+        'lcni_rule_follow'              => ['module' => 'recommend-follow',      'capability' => 'view'],
+        'lcni_user_rule'                => ['module' => 'user-rule',             'capability' => 'view'],
         // Heatmap
         'lcni_heatmap'                  => ['module' => 'heatmap',          'capability' => 'view'],
 
@@ -100,6 +102,7 @@ class LCNI_Member_Permission_Middleware {
             '/lcni/v1/market-dashboard'=> [ 'market-dashboard','view',   'Bạn không có quyền xem Market Dashboard.' ],
             '/lcni/v1/market-chart'    => [ 'market-chart',    'view',   'Bạn không có quyền xem Market Chart.' ],
             '/lcni/v1/dnse'            => [ 'dnse-trading',   'view',   'Bạn không có quyền dùng DNSE Trading.' ],
+            '/lcni/v1/user-rules'      => [ 'user-rule',      'view',   'Bạn không có quyền sử dụng Auto Apply Rule.' ],
         ];
 
         // Kiểm tra riêng endpoint đặt lệnh: cần capability 'trade'
@@ -232,7 +235,20 @@ class LCNI_Member_Permission_Middleware {
                         } elseif ( $state === 'expired' ) {
                             echo 'Gói dịch vụ đã hết hạn';
                         } else {
+                            // Lấy tên gói có module này để hiển thị cụ thể
+                        $required_pkgs = $this->service->get_packages_for_module( $module_key );
+                        if ( ! empty( $required_pkgs ) ) {
+                            $pkg_names = array_map( static function( $p ) {
+                                return ! empty( $p['badge_label'] ) ? $p['badge_label'] : $p['package_name'];
+                            }, $required_pkgs );
+                            // Lấy màu gói đầu tiên làm accent
+                            $first_color = $required_pkgs[0]['color'] ?? '#2563eb';
+                            echo 'Cần nâng cấp lên <span style="color:' . esc_attr( $first_color ) . ';font-weight:700">'
+                                . esc_html( implode( ' / ', $pkg_names ) )
+                                . '</span>';
+                        } else {
                             echo 'Nội dung dành cho gói cao hơn';
+                        }
                         }
                         ?>
                     </div>
@@ -242,7 +258,21 @@ class LCNI_Member_Permission_Middleware {
                         <?php elseif ( $state === 'expired' ) : ?>
                             Gói của bạn đã hết hạn. Gia hạn để tiếp tục dùng <strong><?php echo esc_html( $module_name ); ?></strong>.
                         <?php else : ?>
-                            <strong><?php echo esc_html( $module_name ); ?></strong> không nằm trong gói hiện tại của bạn.
+                            <?php
+                            // Lấy tên gói user đang dùng
+                            $current_pkg_name = '';
+                            if ( $pkg_info && ! empty( $pkg_info['package_name'] ) ) {
+                                $current_pkg_name = ! empty( $pkg_info['badge_label'] )
+                                    ? $pkg_info['badge_label']
+                                    : $pkg_info['package_name'];
+                            }
+                            ?>
+                            <strong><?php echo esc_html( $module_name ); ?></strong>
+                            <?php if ( $current_pkg_name !== '' ) : ?>
+                                không có trong gói <strong><?php echo esc_html( $current_pkg_name ); ?></strong> của bạn.
+                            <?php else : ?>
+                                không nằm trong gói hiện tại của bạn.
+                            <?php endif; ?>
                         <?php endif; ?>
                     </div>
                     <div class="lcni-denied-actions">

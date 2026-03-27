@@ -92,50 +92,99 @@ class LCNI_Member_Auth_Shortcodes {
         }
         echo '</div>'; // end button row
 
-        // ── Nút Google One Tap (bên trong form-box) ───────────────
-        $google_client_id = get_option( 'lcni_google_client_id', '' );
-        if ( $google_client_id !== '' ) {
-            $g_nonce    = wp_create_nonce( 'lcni_google_auth_nonce' );
+        // ── Nút đăng nhập thứ 3 (Google + DNSE) ───────────────────
+        $google_client_id  = get_option( 'lcni_google_client_id', '' );
+        $has_google        = $google_client_id !== '';
+        $has_dnse          = LCNI_Dnse_Login_Handler::is_enabled();
+
+        if ( $has_google || $has_dnse ) {
+            $g_nonce    = $has_google ? wp_create_nonce( 'lcni_google_auth_nonce' ) : '';
             $g_redirect = $redirect_to !== '' ? $redirect_to : ( ! empty( $settings['redirect_url'] ) ? $settings['redirect_url'] : home_url( '/' ) );
 
-            echo '<div id="lcni-google-signin-wrap" style="width:100%;display:flex;flex-direction:column;align-items:center;gap:8px;">';
-            echo '<div style="display:flex;align-items:center;gap:8px;width:100%;">';
-            echo '<hr style="flex:1;border:none;border-top:1px solid #e5e7eb;margin:0;">';
-            echo '<span style="font-size:12px;color:#6b7280;white-space:nowrap;">hoặc</span>';
-            echo '<hr style="flex:1;border:none;border-top:1px solid #e5e7eb;margin:0;">';
-            echo '</div>';
-
-            // Google Identity Services — bật One Tap tự động khi Chrome có sẵn tài khoản
-            echo '<div id="g_id_onload"'
-                . ' data-client_id="' . esc_attr( $google_client_id ) . '"'
-                . ' data-callback="lcniGoogleCallback"'
-                . ' data-auto_prompt="true"'
-                . ' data-itp_support="true"'
-                . ' data-cancel_on_tap_outside="false"'
-                . ' data-nonce="' . esc_attr( $g_nonce ) . '">'
+            // Divider dùng chung
+            echo '<div style="display:flex;align-items:center;gap:8px;width:100%;margin-top:4px;">'
+                . '<hr style="flex:1;border:none;border-top:1px solid #e5e7eb;margin:0;">'
+                . '<span style="font-size:12px;color:#6b7280;white-space:nowrap;">hoặc</span>'
+                . '<hr style="flex:1;border:none;border-top:1px solid #e5e7eb;margin:0;">'
                 . '</div>';
 
-            echo '<div class="g_id_signin"'
-                . ' data-type="standard"'
-                . ' data-shape="rectangular"'
-                . ' data-theme="outline"'
-                . ' data-text="signin_with"'
-                . ' data-locale="vi"'
-                . ' data-size="large"'
-                . ' data-width="320">'
-                . '</div>';
+            // Hàng nút — flex row, mỗi nút 50% (hoặc 100% nếu chỉ có 1)
+            $btn_style_base = 'flex:1;padding:10px 6px;border:1px solid #d1d5db;border-radius:6px;'
+                . 'background:#fff;cursor:pointer;font-size:13px;color:#374151;'
+                . 'display:flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;';
 
-            echo '<input type="hidden" id="lcni_google_redirect" value="' . esc_url( $g_redirect ) . '">';
-            echo '</div>'; // end lcni-google-signin-wrap
+            echo '<div style="display:flex;gap:8px;width:100%;margin-top:8px;">';
 
-            wp_enqueue_script( 'lcni-google-gis', 'https://accounts.google.com/gsi/client', [], null, true );
-            wp_enqueue_script( 'lcni-google-auth', LCNI_URL . 'assets/js/lcni-google-auth.js', [ 'lcni-google-gis' ], '1.0.1', true );
-            wp_localize_script( 'lcni-google-auth', 'lcniGoogleAuth', [
-                'ajax_url' => admin_url( 'admin-ajax.php' ),
-                'nonce'    => $g_nonce,
-            ] );
+            // Nút Google
+            if ( $has_google ) {
+                // Hidden div cho GIS SDK render — ẩn, dùng JS click
+                echo '<div id="g_id_onload"'
+                    . ' data-client_id="' . esc_attr( $google_client_id ) . '"'
+                    . ' data-callback="lcniGoogleCallback"'
+                    . ' data-auto_prompt="true"'
+                    . ' data-itp_support="true"'
+                    . ' data-cancel_on_tap_outside="false"'
+                    . ' data-nonce="' . esc_attr( $g_nonce ) . '">'
+                    . '</div>';
+                // Render nút GIS chuẩn nhưng ẩn (dùng để trigger One Tap SDK)
+                echo '<div class="g_id_signin" style="display:none;"'
+                    . ' data-type="standard" data-shape="rectangular" data-theme="outline"'
+                    . ' data-text="signin_with" data-locale="vi" data-size="large" data-width="1">'
+                    . '</div>';
+                echo '<input type="hidden" id="lcni_google_redirect" value="' . esc_url( $g_redirect ) . '">';
+
+                // Nút custom — click sẽ trigger Google prompt qua JS
+                echo '<button type="button" id="lcni-google-custom-btn" style="' . esc_attr( $btn_style_base ) . '">'
+                    . '<svg width="16" height="16" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.08 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-3.59-13.46-8.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/><path fill="none" d="M0 0h48v48H0z"/></svg>'
+                    . 'Google'
+                    . '</button>';
+
+                wp_enqueue_script( 'lcni-google-gis', 'https://accounts.google.com/gsi/client', [], null, true );
+                wp_enqueue_script( 'lcni-google-auth', LCNI_URL . 'assets/js/lcni-google-auth.js', [ 'lcni-google-gis' ], '1.0.2', true );
+                wp_localize_script( 'lcni-google-auth', 'lcniGoogleAuth', [
+                    'ajax_url'       => admin_url( 'admin-ajax.php' ),
+                    'nonce'          => $g_nonce,
+                    'custom_btn_id'  => 'lcni-google-custom-btn', // JS sẽ bind click → google.accounts.id.prompt()
+                ] );
+            }
+
+            // Nút DNSE
+            if ( $has_dnse ) {
+                $dnse_cfg = LCNI_Dnse_Login_Handler::get_js_config( $redirect_to );
+
+                echo '<button type="button" id="lcni-dnse-login-toggle" style="' . esc_attr( $btn_style_base ) . '">'
+                    . '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
+                    . '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>'
+                    . '</svg>'
+                    . 'DNSE'
+                    . '</button>';
+
+                // Form DNSE (ẩn mặc định, hiện khi click nút)
+                echo '</div>'; // end hàng nút — đóng trước form
+                echo '<div id="lcni-dnse-login-form" style="display:none;margin-top:10px;padding:14px;'
+                    . 'border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb;">';
+                echo '<p style="margin:0 0 8px;font-size:12px;color:#6b7280;">'
+                    . 'Nhập tài khoản DNSE. Mật khẩu không lưu lại, chỉ xác thực 1 lần.</p>';
+                echo '<input type="text" id="lcni-dnse-login-user" placeholder="Số tài khoản DNSE (vd: 064C958993)"'
+                    . ' style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;'
+                    . 'margin-bottom:8px;font-size:14px;box-sizing:border-box;">';
+                echo '<input type="password" id="lcni-dnse-login-pass" placeholder="Mật khẩu EntradeX"'
+                    . ' style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;'
+                    . 'margin-bottom:10px;font-size:14px;box-sizing:border-box;">';
+                echo '<button type="button" id="lcni-dnse-login-btn"'
+                    . ' style="width:100%;padding:10px;background:#1d4ed8;color:#fff;border:none;'
+                    . 'border-radius:6px;cursor:pointer;font-size:14px;font-weight:500;">'
+                    . 'Đăng nhập với DNSE</button>';
+                echo '<p id="lcni-dnse-login-error" style="margin:8px 0 0;font-size:12px;color:#b91c1c;display:none;"></p>';
+                echo '</div>'; // end lcni-dnse-login-form
+
+                wp_enqueue_script( 'lcni-dnse-login', LCNI_URL . 'assets/js/lcni-dnse-login.js', [], '1.0.0', true );
+                wp_localize_script( 'lcni-dnse-login', 'lcniDnseLogin', $dnse_cfg );
+            } else {
+                echo '</div>'; // end hàng nút khi chỉ có Google
+            }
         }
-        // ── /Nút Google One Tap ────────────────────────────────────
+        // ── /Nút đăng nhập thứ 3 ──────────────────────────────────
 
         echo '</div>'; // end form-box
         echo '</form>';

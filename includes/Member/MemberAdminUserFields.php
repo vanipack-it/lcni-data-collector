@@ -264,6 +264,29 @@ class LCNI_Member_Admin_User_Fields {
         } catch ( \Throwable $e ) {
             $this->log_error( 'auto_assign', $user_id, $e );
         }
+
+        // Gửi email chào mừng đăng ký thành công
+        $this->send_welcome_email( $user_id );
+    }
+
+    /**
+     * Gửi email chào mừng sau khi đăng ký tài khoản.
+     * Dùng LCNINotificationManager nếu có, fallback về wp_mail đơn giản.
+     */
+    private function send_welcome_email( int $user_id ): void {
+        $user = get_userdata( $user_id );
+        if ( ! $user || ! is_email( $user->user_email ) ) return;
+
+        // Bỏ qua nếu user do admin tạo (có HTTP_REFERER chứa user-new.php)
+        $referer = isset( $_SERVER['HTTP_REFERER'] ) ? (string) $_SERVER['HTTP_REFERER'] : '';
+        if ( strpos( $referer, 'user-new.php' ) !== false ) return;
+
+        if ( class_exists( 'LCNINotificationManager' ) ) {
+            LCNINotificationManager::send( 'register_success', $user->user_email, [
+                'user_name'  => $user->display_name ?: $user->user_login,
+                'user_email' => $user->user_email,
+            ] );
+        }
     }
 
     // =========================================================

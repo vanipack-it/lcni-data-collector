@@ -304,9 +304,23 @@ LCNI_JS;
 
         // Save central URLs
         if (!empty($_POST['lcni_member_save_central_urls'])) {
-            update_option('lcni_central_login_url',    esc_url_raw(wp_unslash($_POST['lcni_central_login_url']    ?? '')));
-            update_option('lcni_central_register_url', esc_url_raw(wp_unslash($_POST['lcni_central_register_url'] ?? '')));
-            update_option('lcni_saas_upgrade_url',     esc_url_raw(wp_unslash($_POST['lcni_saas_upgrade_url']     ?? '')));
+            update_option('lcni_central_login_url',         esc_url_raw(wp_unslash($_POST['lcni_central_login_url']         ?? '')));
+            update_option('lcni_central_register_url',      esc_url_raw(wp_unslash($_POST['lcni_central_register_url']      ?? '')));
+            update_option('lcni_saas_upgrade_url',          esc_url_raw(wp_unslash($_POST['lcni_saas_upgrade_url']          ?? '')));
+            update_option('lcni_upgrade_request_page_url',  esc_url_raw(wp_unslash($_POST['lcni_upgrade_request_page_url']  ?? '')));
+
+        if ( ! empty($_POST['_lcni_save_pricing']) ) {
+            $pt = [
+                'title'               => sanitize_text_field(wp_unslash($_POST['pt_title']        ?? '')),
+                'subtitle'            => sanitize_text_field(wp_unslash($_POST['pt_subtitle']     ?? '')),
+                'highlight'           => sanitize_key(wp_unslash($_POST['pt_highlight']           ?? '')),
+                'button_text'         => sanitize_text_field(wp_unslash($_POST['pt_button_text']  ?? '')),
+                'highlight_btn_text'  => sanitize_text_field(wp_unslash($_POST['pt_hi_btn_text']  ?? '')),
+                'login_hint_text'     => sanitize_text_field(wp_unslash($_POST['pt_login_hint']   ?? '')),
+                'show_login_link'     => ! empty($_POST['pt_show_login_link']) ? 'yes' : 'no',
+            ];
+            update_option('lcni_pricing_table_settings', $pt);
+        }
             wp_safe_redirect(add_query_arg('saas_tab', 'packages', $redirect_base));
             exit;
         }
@@ -386,7 +400,10 @@ LCNI_JS;
     // =================== Sanitizers ===================
 
     public function sanitize_login_settings($input) {
-        return $this->sanitize_common_settings($input, ['remember_me'], 'lcni_member_login_bg_image_file');
+        $sanitized = $this->sanitize_common_settings($input, ['remember_me'], 'lcni_member_login_bg_image_file');
+        // DNSE login toggle
+        $sanitized['dnse_login_enabled'] = ! empty( $input['dnse_login_enabled'] ) ? 1 : 0;
+        return $sanitized;
     }
 
     public function sanitize_register_settings($input) {
@@ -493,7 +510,9 @@ LCNI_JS;
                     'profile'  => '👤 Profile',
                     'quote'    => '💬 Quote',
                     'saas'     => '🎁 Gói SaaS',
+                    'pricing'  => '💰 Pricing Table',
                     'google'   => '🔵 Google Login',
+                    'upgrades' => '📋 Yêu cầu nâng cấp',
                 ] as $slug => $label): ?>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-member-settings&tab=' . $slug)); ?>"
                    class="nav-tab <?php echo $tab === $slug ? 'nav-tab-active' : ''; ?>">
@@ -504,10 +523,14 @@ LCNI_JS;
 
             <?php if ($tab === 'saas'): ?>
                 <?php $this->render_saas_tab($packages); ?>
+            <?php elseif ($tab === 'pricing'): ?>
+                <?php $this->render_pricing_tab(); ?>
             <?php elseif ($tab === 'quote'): ?>
                 <?php $this->render_quote_tab(); ?>
             <?php elseif ($tab === 'google'): ?>
                 <?php $this->render_google_tab(); ?>
+            <?php elseif ($tab === 'upgrades'): ?>
+                <?php $this->render_upgrades_tab(); ?>
             <?php else: ?>
                 <?php $this->render_form_tab($tab); ?>
             <?php endif; ?>
@@ -563,6 +586,13 @@ LCNI_JS;
                                value="<?php echo esc_attr(get_option('lcni_saas_upgrade_url', '')); ?>"
                                placeholder="https://...">
                         <p style="font-size:11px;color:#9ca3af;margin:4px 0 0;">Hiển thị nút Nâng cấp / Gia hạn khi user thiếu quyền</p>
+                    </div>
+                    <div class="lcni-field">
+                        <label>📋 URL trang Form Nâng cấp <code>[lcni_upgrade_request]</code></label>
+                        <input type="text" name="lcni_upgrade_request_page_url"
+                               value="<?php echo esc_attr(get_option('lcni_upgrade_request_page_url', '')); ?>"
+                               placeholder="https://...">
+                        <p style="font-size:11px;color:#9ca3af;margin:4px 0 0;">Khi user click gói trả phí trong Pricing Table sẽ chuyển đến trang này kèm <code>?to_package_id=X</code></p>
                     </div>
                 </div>
                 <button class="lcni-btn lcni-btn-primary" style="margin-top:8px;" type="submit">💾 Lưu URL</button>
@@ -961,7 +991,7 @@ LCNI_JS;
                                 $last_group = $module_group;
                         ?>
                         <tr>
-                            <td colspan="5" style="background:#f8fafc;padding:6px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;border-top:2px solid #e2e8f0;">
+                            <td colspan="6" style="background:#f8fafc;padding:6px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;border-top:2px solid #e2e8f0;">
                                 <?php echo esc_html($module_group); ?>
                             </td>
                         </tr>
@@ -1080,13 +1110,40 @@ LCNI_JS;
         <?php
     }
 
+    // =================== Upgrade Requests Tab ===================
+
+    private function render_upgrades_tab() {
+        global $lcni_upgrade_request_admin_page;
+        if ( $lcni_upgrade_request_admin_page ) {
+            $lcni_upgrade_request_admin_page->render_broker_settings();
+            $lcni_upgrade_request_admin_page->render_payment_settings();
+            $lcni_upgrade_request_admin_page->render();
+        }
+    }
+
     // =================== Google OAuth Tab ===================
 
     private function render_google_tab() {
-        $client_id = get_option( 'lcni_google_client_id', '' );
+        $client_id          = get_option( 'lcni_google_client_id', '' );
+        $login_settings     = get_option( 'lcni_member_login_settings', [] );
+        $dnse_login_enabled = ! empty( $login_settings['dnse_login_enabled'] ) ? 1 : 0;
         ?>
         <form method="post" action="options.php">
             <?php settings_fields( 'lcni_member_settings' ); ?>
+            <?php
+            // Bảo toàn toàn bộ lcni_member_login_settings khi save Google tab
+            // (nếu không có hidden fields, WP sẽ ghi đè với giá trị rỗng)
+            foreach ( $login_settings as $k => $v ) {
+                if ( $k === 'dnse_login_enabled' ) continue; // xử lý riêng bên dưới
+                if ( is_scalar( $v ) ) {
+                    echo '<input type="hidden" name="lcni_member_login_settings[' . esc_attr( $k ) . ']" value="' . esc_attr( $v ) . '">';
+                }
+            }
+            // dnse_login_enabled — chỉ gửi khi = 1 (checkbox behavior)
+            if ( $dnse_login_enabled ) {
+                echo '<input type="hidden" name="lcni_member_login_settings[dnse_login_enabled]" value="1">';
+            }
+            ?>
             <div class="lcni-saas-grid" style="grid-template-columns:1fr 1fr;">
 
                 <div class="lcni-saas-card">
@@ -1288,6 +1345,14 @@ LCNI_JS;
                         <?php wp_dropdown_pages(['name' => $key.'[register_page_id]', 'selected' => absint($v['register_page_id'] ?? 0), 'show_option_none' => '-- Chọn trang --', 'option_none_value' => '0']); ?>
                     </div>
                     <div class="lcni-field"><label>Remember me</label><label><input type="checkbox" name="<?php echo esc_attr($key); ?>[remember_me]" value="1" <?php checked(!empty($v['remember_me'])); ?>> Hiển thị "Ghi nhớ đăng nhập"</label></div>
+                    <div class="lcni-field">
+                        <label>Đăng nhập bằng DNSE</label>
+                        <label>
+                            <input type="checkbox" name="<?php echo esc_attr($key); ?>[dnse_login_enabled]" value="1" <?php checked(!empty($v['dnse_login_enabled'])); ?>>
+                            Bật nút "Đăng nhập bằng tài khoản DNSE" trên form login
+                        </label>
+                        <p style="font-size:12px;color:#6b7280;margin:4px 0 0;">Chỉ hiện khi tài khoản DNSE đã được liên kết trước đó trong tab Kết nối.</p>
+                    </div>
                     <?php endif; ?>
                     <?php if ($tab === 'register'): ?>
                     <div class="lcni-field"><label>Role mặc định</label><input type="text" name="<?php echo esc_attr($key); ?>[default_role]" value="<?php echo esc_attr($v['default_role'] ?? 'subscriber'); ?>"></div>
@@ -1300,4 +1365,110 @@ LCNI_JS;
         </form>
         <?php
     }
+    // =================== Pricing Table Tab ===================
+
+    private function render_pricing_tab() {
+        $packages = $this->service->get_packages();
+        $pt = wp_parse_args( get_option('lcni_pricing_table_settings', []), [
+            'title'              => 'Chọn gói phù hợp với bạn',
+            'subtitle'           => 'Truy cập dữ liệu thị trường chứng khoán chuyên sâu',
+            'highlight'          => '',
+            'button_text'        => 'Bắt đầu ngay',
+            'highlight_btn_text' => 'Dùng thử miễn phí',
+            'login_hint_text'    => 'Đã có tài khoản? Đăng nhập tại đây',
+            'show_login_link'    => 'yes',
+        ]);
+        ?>
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+            <?php wp_nonce_field('lcni_member_saas_action'); ?>
+            <input type="hidden" name="action" value="lcni_saas">
+            <input type="hidden" name="_lcni_save_pricing" value="1">
+
+            <div class="lcni-saas-card">
+                <h3><span class="dashicons dashicons-tickets-alt"></span> Cấu hình Pricing Table</h3>
+                <p style="font-size:13px;color:#6b7280;margin:0 0 16px;">
+                    Dùng shortcode đơn giản: <code>[lcni_pricing_table]</code><br>
+                    Các nội dung bên dưới sẽ được áp dụng tự động.
+                </p>
+
+                <table class="form-table">
+                    <tr>
+                        <th><label>Tiêu đề chính</label></th>
+                        <td>
+                            <input type="text" name="pt_title" class="regular-text"
+                                   value="<?php echo esc_attr($pt['title']); ?>"
+                                   placeholder="Chọn gói phù hợp với bạn">
+                            <p class="description">Hiển thị to phía trên bảng so sánh.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><label>Mô tả phụ</label></th>
+                        <td>
+                            <input type="text" name="pt_subtitle" class="regular-text"
+                                   value="<?php echo esc_attr($pt['subtitle']); ?>"
+                                   placeholder="Truy cập dữ liệu thị trường...">
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><label>Gói nổi bật (Highlight)</label></th>
+                        <td>
+                            <select name="pt_highlight" style="min-width:200px;">
+                                <option value="">— Tự động (gói giữa) —</option>
+                                <?php foreach ($packages as $pkg): ?>
+                                <option value="<?php echo esc_attr($pkg['package_key']); ?>"
+                                    <?php selected($pt['highlight'], $pkg['package_key']); ?>>
+                                    <?php echo esc_html($pkg['package_name']); ?>
+                                    (<?php echo esc_html($pkg['package_key']); ?>)
+                                </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <p class="description">Gói được viền vàng và có badge "Phổ biến nhất".</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><label>Nút CTA (gói thường)</label></th>
+                        <td>
+                            <input type="text" name="pt_button_text" class="regular-text"
+                                   value="<?php echo esc_attr($pt['button_text']); ?>"
+                                   placeholder="Bắt đầu ngay">
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><label>Nút CTA (gói nổi bật)</label></th>
+                        <td>
+                            <input type="text" name="pt_hi_btn_text" class="regular-text"
+                                   value="<?php echo esc_attr($pt['highlight_btn_text']); ?>"
+                                   placeholder="Dùng thử miễn phí">
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><label>Chữ link đăng nhập</label></th>
+                        <td>
+                            <input type="text" name="pt_login_hint" class="regular-text"
+                                   value="<?php echo esc_attr($pt['login_hint_text']); ?>"
+                                   placeholder="Đã có tài khoản? Đăng nhập tại đây">
+                            <label style="display:flex;align-items:center;gap:6px;margin-top:8px;cursor:pointer;">
+                                <input type="checkbox" name="pt_show_login_link" value="1"
+                                       <?php checked($pt['show_login_link'], 'yes'); ?>>
+                                Hiển thị link đăng nhập phía dưới bảng
+                            </label>
+                        </td>
+                    </tr>
+                </table>
+
+                <p class="submit"><button type="submit" class="button button-primary">💾 Lưu cài đặt Pricing</button></p>
+            </div>
+
+            <div class="lcni-saas-card" style="margin-top:20px;background:#f0f9ff;border-color:#bae6fd;">
+                <h4 style="margin:0 0 10px;color:#0369a1;">📋 Cách dùng shortcode</h4>
+                <pre style="background:#fff;padding:12px;border-radius:6px;font-size:13px;overflow-x:auto;"><code>[lcni_pricing_table]</code></pre>
+                <p style="font-size:13px;color:#0369a1;margin:8px 0 0;">
+                    Shortcode không cần tham số — toàn bộ nội dung lấy từ trang này.<br>
+                    Vẫn hỗ trợ override inline nếu cần: <code>[lcni_pricing_table title="..." highlight="..."]</code>
+                </p>
+            </div>
+        </form>
+        <?php
+    }
+
 }

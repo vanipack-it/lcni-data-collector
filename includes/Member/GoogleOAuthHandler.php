@@ -200,6 +200,14 @@ class LCNI_Google_OAuth_Handler {
          */
         do_action( 'lcni_google_user_created', $user_id, $email, $google_id );
 
+        // Gửi email chào mừng đăng ký Google
+        if ( class_exists( 'LCNINotificationManager' ) ) {
+            LCNINotificationManager::send( 'register_success', $email, [
+                'user_name'  => $name ?: $username,
+                'user_email' => $email,
+            ] );
+        }
+
         return get_user_by( 'id', $user_id );
     }
 

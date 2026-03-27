@@ -44,6 +44,8 @@ class LCNI_SaaS_Service {
         'recommend-signals'     => ['label' => 'Recommend: Tín hiệu',       'group' => 'Recommend', 'caps' => ['view', 'export']],
         'recommend-performance' => ['label' => 'Recommend: Hiệu suất',      'group' => 'Recommend', 'caps' => ['view', 'export']],
         'recommend-equity'      => ['label' => 'Recommend: Equity Curve',   'group' => 'Recommend', 'caps' => ['view']],
+        'recommend-follow'      => ['label' => 'Recommend: Theo dõi Rule',  'group' => 'Recommend', 'caps' => ['view']],
+        'user-rule'             => ['label' => 'Auto Apply Rule / Paper Trading', 'group' => 'Recommend', 'caps' => ['view']],
 
         // ── Heatmap ─────────────────────────────────────────────
         'heatmap'          => ['label' => 'Heatmap thị trường',      'group' => 'Thị trường',  'caps' => ['view']],
@@ -163,6 +165,8 @@ class LCNI_SaaS_Service {
 
     public function assign_package($user_id, $role_slug, $package_id, $expires_at = null, $note = '') {
         $this->repo->assign_package((int) $user_id, sanitize_key($role_slug), (int) $package_id, $expires_at, $note);
+        // Fire event để Dispatcher ghi inbox admin
+        do_action( 'lcni_package_assigned', (int) $user_id, (int) $package_id, $expires_at );
     }
 
     public function revoke_package($user_id, $role_slug) {
@@ -201,6 +205,41 @@ class LCNI_SaaS_Service {
             'is_expired'   => $expired,
             'permissions'  => $permissions,
         ];
+    }
+
+    /**
+     * Lấy danh sách gói SaaS có quyền view module_key.
+     * Dùng để hiển thị tên gói cụ thể trong block "Nâng cấp gói".
+     *
+     * @param string $module_key  VD: 'recommend-follow'
+     * @return array  [['package_name'=>..., 'color'=>..., 'badge_label'=>...], ...]
+     */
+    public function get_packages_for_module( string $module_key ): array {
+        global $wpdb;
+
+        $pkg_table  = $wpdb->prefix . 'lcni_saas_packages';
+        $perm_table = $wpdb->prefix . 'lcni_saas_permissions';
+
+        // Kiểm tra bảng tồn tại
+        if ( $wpdb->get_var( "SHOW TABLES LIKE '{$perm_table}'" ) !== $perm_table ) {
+            return [];
+        }
+
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT DISTINCT p.id, p.package_name, p.color, p.badge_label, p.badge_icon
+                 FROM {$pkg_table} p
+                 INNER JOIN {$perm_table} pm ON pm.package_id = p.id
+                 WHERE pm.module_key = %s
+                   AND pm.can_view = 1
+                   AND p.is_active = 1
+                 ORDER BY p.id ASC",
+                $module_key
+            ),
+            ARRAY_A
+        ) ?: [];
+
+        return $rows;
     }
 
     public function can($module_key, $capability, $user_id = 0) {
