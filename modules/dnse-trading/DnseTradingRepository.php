@@ -60,6 +60,8 @@ class LCNI_DnseTradingRepository {
             jwt_expires_at BIGINT UNSIGNED NOT NULL DEFAULT 0,
             trading_token_enc TEXT DEFAULT NULL,
             trading_expires_at BIGINT UNSIGNED NOT NULL DEFAULT 0,
+            password_enc TEXT DEFAULT NULL,
+            permissions VARCHAR(200) NOT NULL DEFAULT '',
             sub_accounts_json LONGTEXT DEFAULT NULL,
             connected_at DATETIME DEFAULT NULL,
             last_sync_at DATETIME DEFAULT NULL,
@@ -234,7 +236,29 @@ class LCNI_DnseTradingRepository {
         ], ['user_id' => $user_id] ) !== false;
     }
 
-    public function is_jwt_valid( int $user_id ): bool {
+    /**
+     * Lấy user_id của tất cả users có JWT còn hạn
+     * (để cron kiểm tra auto-renew qua Gmail).
+     *
+     * @return int[]
+     */
+    public function get_users_with_valid_jwt(): array {
+        // Lấy TẤT CẢ users đã kết nối DNSE — bao gồm cả user có JWT hết hạn
+        // nhưng có password lưu (cần auto re-login).
+        // Trước đây chỉ lấy jwt_expires_at > now → bỏ sót user cần re-login nhất.
+        $rows = $this->wpdb->get_col(
+            $this->wpdb->prepare(
+                "SELECT user_id FROM {$this->tbl_credentials}
+                 WHERE (jwt_expires_at > %d OR password_enc IS NOT NULL)
+                 ORDER BY trading_expires_at ASC
+                 LIMIT 100",
+                time()
+            )
+        );
+        return array_map( 'intval', $rows ?: [] );
+    }
+
+        public function is_jwt_valid( int $user_id ): bool {
         $row = $this->wpdb->get_row(
             $this->wpdb->prepare(
                 "SELECT jwt_expires_at FROM {$this->tbl_credentials} WHERE user_id = %d",
@@ -399,6 +423,91 @@ class LCNI_DnseTradingRepository {
     }
 
     // =========================================================================
+    // PERMISSIONS — user cho phép hệ thống làm gì với credentials
+    // =========================================================================
+
+    /**
+     * Các quyền hợp lệ:
+     *   perm_sync        — đọc dữ liệu (balance, positions, orders) về DB
+     *   perm_auto_renew  — tự động re-login + gia hạn trading token mỗi 8h
+     *   perm_trade       — cho phép đặt/hủy lệnh từ plugin
+     */
+    const VALID_PERMISSIONS = [ 'perm_sync', 'perm_auto_renew', 'perm_trade' ];
+
+    public function save_permissions( int $user_id, array $permissions ): void {
+        $clean = array_values( array_intersect( $permissions, self::VALID_PERMISSIONS ) );
+        global $wpdb;
+        $wpdb->update(
+            $this->tbl_credentials,
+            [ 'permissions' => implode( ',', $clean ) ],
+            [ 'user_id' => $user_id ]
+        );
+    }
+
+    public function get_permissions( int $user_id ): array {
+        global $wpdb;
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT permissions FROM {$this->tbl_credentials} WHERE user_id = %d",
+                $user_id
+            ),
+            ARRAY_A
+        );
+        if ( empty( $row['permissions'] ) ) return [];
+        return array_filter( explode( ',', $row['permissions'] ) );
+    }
+
+    public function has_permission( int $user_id, string $permission ): bool {
+        return in_array( $permission, $this->get_permissions( $user_id ), true );
+    }
+
+    // =========================================================================
+    // PASSWORD — lưu encrypted để auto re-login khi JWT hết hạn
+    // =========================================================================
+
+    /**
+     * Lưu password DNSE (AES-256 encrypted) vào DB.
+     * Gọi trong connect() sau khi login thành công.
+     */
+    public function save_password( int $user_id, string $password ): void {
+        if ( $password === '' ) return;
+        global $wpdb;
+        $wpdb->update(
+            $this->tbl_credentials,
+            [ 'password_enc' => $this->encrypt( $password ) ],
+            [ 'user_id' => $user_id ]
+        );
+    }
+
+    /**
+     * Lấy password đã decrypt. Trả về '' nếu chưa lưu hoặc lỗi decrypt.
+     */
+    public function get_password( int $user_id ): string {
+        global $wpdb;
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT password_enc FROM {$this->tbl_credentials} WHERE user_id = %d",
+                $user_id
+            ),
+            ARRAY_A
+        );
+        if ( empty( $row['password_enc'] ) ) return '';
+        return $this->decrypt( (string) $row['password_enc'] );
+    }
+
+    /**
+     * Xoá password khỏi DB (gọi khi user disconnect).
+     */
+    public function delete_password( int $user_id ): void {
+        global $wpdb;
+        $wpdb->update(
+            $this->tbl_credentials,
+            [ 'password_enc' => null ],
+            [ 'user_id' => $user_id ]
+        );
+    }
+
+    // =========================================================================
     // ENCRYPTION — dùng AUTH_KEY của WordPress làm secret
     // =========================================================================
 
@@ -406,7 +515,7 @@ class LCNI_DnseTradingRepository {
         return defined( 'AUTH_KEY' ) ? AUTH_KEY : wp_salt( 'auth' );
     }
 
-    private function encrypt( string $plaintext ): string|false {
+    private function encrypt( string $plaintext ) {
         if ( $plaintext === '' ) return '';
         $secret = $this->get_secret();
         $key    = hash( 'sha256', $secret, true );

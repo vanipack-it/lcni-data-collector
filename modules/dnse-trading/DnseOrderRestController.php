@@ -50,6 +50,12 @@ class LCNI_DnseOrderRestController {
             ],
         ] );
 
+        // WP REST API gọi sanitize_callback với 3 tham số: ($value, $request, $param_key)
+        // floatval() và intval() chỉ nhận 1 tham số → PHP 8 ném ArgumentCountError.
+        // Dùng closure để wrap: fn($v) => floatval($v)
+        $to_float = static function ( $v ) { return (float) $v; };
+        $to_int   = static function ( $v ) { return (int) $v; };
+
         register_rest_route( $ns, '/dnse/order', [
             'methods'             => WP_REST_Server::CREATABLE,
             'callback'            => [ $this, 'place_order' ],
@@ -59,11 +65,11 @@ class LCNI_DnseOrderRestController {
                 'symbol'          => [ 'required' => true, 'sanitize_callback' => 'sanitize_text_field' ],
                 'side'            => [ 'required' => true, 'sanitize_callback' => 'sanitize_key' ],
                 'order_type'      => [ 'default'  => 'LO', 'sanitize_callback' => 'sanitize_text_field' ],
-                'price'           => [ 'required' => true, 'sanitize_callback' => 'floatval' ],
-                'quantity'        => [ 'required' => true, 'sanitize_callback' => 'absint' ],
-                'loan_package_id' => [ 'default'  => 0,    'sanitize_callback' => 'absint' ],
+                'price'           => [ 'required' => false, 'default' => 0, 'sanitize_callback' => $to_float ],
+                'quantity'        => [ 'required' => true, 'sanitize_callback' => $to_int ],
+                'loan_package_id' => [ 'default'  => 0,    'sanitize_callback' => $to_int ],
                 'account_type'    => [ 'default'  => 'spot', 'sanitize_callback' => 'sanitize_key' ],
-                'signal_id'       => [ 'default'  => 0,    'sanitize_callback' => 'absint' ],
+                'signal_id'       => [ 'default'  => 0,    'sanitize_callback' => $to_int ],
             ],
         ] );
 
@@ -75,7 +81,7 @@ class LCNI_DnseOrderRestController {
                 'account_no'   => [ 'required' => true,  'sanitize_callback' => 'sanitize_text_field' ],
                 'account_type' => [ 'default'  => 'spot', 'sanitize_callback' => 'sanitize_key' ],
                 'symbol'       => [ 'default'  => '',    'sanitize_callback' => 'sanitize_text_field' ],
-                'price'        => [ 'default'  => 0,     'sanitize_callback' => 'floatval' ],
+                'price'        => [ 'default'  => 0,     'sanitize_callback' => $to_float ],
             ],
         ] );
 
@@ -120,16 +126,25 @@ class LCNI_DnseOrderRestController {
     public function place_order( WP_REST_Request $req ): WP_REST_Response {
         $user_id = get_current_user_id();
 
-        $result = $this->order_service->place_order( $user_id, [
-            'account_no'      => $req->get_param( 'account_no' ),
-            'symbol'          => $req->get_param( 'symbol' ),
-            'side'            => $req->get_param( 'side' ),
-            'order_type'      => $req->get_param( 'order_type' ),
-            'price'           => $req->get_param( 'price' ),
-            'quantity'        => $req->get_param( 'quantity' ),
-            'loan_package_id' => $req->get_param( 'loan_package_id' ),
-            'account_type'    => $req->get_param( 'account_type' ),
-        ] );
+        try {
+            $result = $this->order_service->place_order( $user_id, [
+                'account_no'      => $req->get_param( 'account_no' ),
+                'symbol'          => $req->get_param( 'symbol' ),
+                'side'            => $req->get_param( 'side' ),
+                'order_type'      => $req->get_param( 'order_type' ),
+                'price'           => $req->get_param( 'price' ),
+                'quantity'        => $req->get_param( 'quantity' ),
+                'loan_package_id' => $req->get_param( 'loan_package_id' ),
+                'account_type'    => $req->get_param( 'account_type' ),
+            ] );
+        } catch ( \Throwable $e ) {
+            error_log( '[LCNI DNSE] place_order handler exception: ' . $e->getMessage() );
+            return rest_ensure_response( [
+                'success' => false,
+                'error'   => 'Lỗi hệ thống khi đặt lệnh: ' . $e->getMessage(),
+                'code'    => 'dnse_fatal',
+            ] );
+        }
 
         if ( is_wp_error( $result ) ) return $this->error( $result );
 
@@ -170,14 +185,14 @@ class LCNI_DnseOrderRestController {
     }
 
     private function ok( array $data ): WP_REST_Response {
-        return new WP_REST_Response( array_merge( [ 'success' => true ], $data ), 200 );
+        return rest_ensure_response( array_merge( [ 'success' => true ], $data ) );
     }
 
     private function error( WP_Error $err ): WP_REST_Response {
-        return new WP_REST_Response( [
+        return rest_ensure_response( [
             'success' => false,
+            'error'   => $err->get_error_message(),
             'code'    => $err->get_error_code(),
-            'message' => $err->get_error_message(),
-        ], 400 );
+        ] );
     }
 }

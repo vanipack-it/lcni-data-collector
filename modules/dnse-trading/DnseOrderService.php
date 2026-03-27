@@ -45,6 +45,13 @@ class LCNI_DnseOrderService {
      * @return array|WP_Error  ['order_id' => string, 'message' => string]
      */
     public function place_order( int $user_id, array $order_params ) {
+        // Kiểm tra quyền đặt lệnh
+        if ( ! $this->repo->has_permission( $user_id, 'perm_trade' ) ) {
+            return new WP_Error( 'dnse_permission_denied',
+                'Bạn chưa cấp quyền đặt lệnh cho hệ thống. Vui lòng kết nối lại và chọn quyền "Đặt/hủy lệnh".'
+            );
+        }
+
         // Validate trading token
         if ( ! $this->repo->is_trading_token_valid( $user_id ) ) {
             return new WP_Error( 'dnse_trading_expired',
@@ -77,14 +84,23 @@ class LCNI_DnseOrderService {
         if ( ! in_array( $side, [ 'buy', 'sell' ], true ) ) {
             return new WP_Error( 'dnse_order_invalid', 'Side phải là buy hoặc sell.' );
         }
-        if ( ! in_array( $order_type, [ 'LO', 'MP', 'ATO', 'ATC' ], true ) ) {
+        // PM = Periodic Matching (phiên chiều), cũng là market order
+        $market_types = [ 'MP', 'MTL', 'ATO', 'ATC', 'MOK', 'MAK', 'PM' ];
+
+        if ( ! in_array( $order_type, [ 'LO', 'MP', 'MTL', 'ATO', 'ATC', 'MOK', 'MAK', 'PM' ], true ) ) {
             return new WP_Error( 'dnse_order_invalid', 'Loại lệnh không hợp lệ.' );
         }
         if ( $quantity <= 0 ) {
             return new WP_Error( 'dnse_order_invalid', 'Khối lượng phải lớn hơn 0.' );
         }
-        if ( $order_type === 'LO' && $price <= 0 ) {
+        // Market orders (MP/ATO/ATC/PM): price must be null — skip price validation
+        $is_market = in_array( $order_type, $market_types, true );
+        if ( ! $is_market && $price <= 0 ) {
             return new WP_Error( 'dnse_order_invalid', 'Giá lệnh LO phải lớn hơn 0.' );
+        }
+        // Force price = 0 for market orders so API client will unset it
+        if ( $is_market ) {
+            $price = 0;
         }
 
         // Admin limit check
@@ -104,19 +120,31 @@ class LCNI_DnseOrderService {
             );
         }
 
-        // Call DNSE API
-        $result = $this->api->place_order(
-            $jwt, $trading_token,
-            $account_no, $symbol, $side, $order_type,
-            $price, $quantity, $loan_package_id
-        );
+        // Call DNSE API — wrapped in try/catch to prevent PHP fatal errors
+        try {
+            $result = $this->api->place_order(
+                $jwt, $trading_token,
+                $account_no, $symbol, $side, $order_type,
+                $price, $quantity, $loan_package_id
+            );
+        } catch ( \Throwable $e ) {
+            error_log( '[LCNI DNSE] place_order exception: ' . $e->getMessage() );
+            return new WP_Error( 'dnse_api_exception',
+                'Lỗi kết nối DNSE API: ' . $e->getMessage()
+            );
+        }
 
         if ( is_wp_error( $result ) ) return $result;
 
-        $order_id = (string) ( $result['orderId'] ?? $result['id'] ?? '' );
+        $order_id = (string) ( $result['id'] ?? $result['orderId'] ?? '' );
 
-        // Lưu vào DB
-        $this->repo->upsert_orders( $user_id, $account_no, $account_type, [ $result ] );
+        // Lưu vào DB — also wrapped to prevent DB errors killing the response
+        try {
+            $this->repo->upsert_orders( $user_id, $account_no, $account_type, [ $result ] );
+        } catch ( \Throwable $e ) {
+            error_log( '[LCNI DNSE] upsert_orders exception: ' . $e->getMessage() );
+            // Non-fatal: order was placed, just log the DB error
+        }
 
         // Log
         error_log( sprintf(
@@ -141,6 +169,12 @@ class LCNI_DnseOrderService {
      * Hủy lệnh.
      */
     public function cancel_order( int $user_id, string $dnse_order_id, string $account_no, string $account_type = 'spot' ) {
+        if ( ! $this->repo->has_permission( $user_id, 'perm_trade' ) ) {
+            return new WP_Error( 'dnse_permission_denied',
+                'Bạn chưa cấp quyền đặt/hủy lệnh cho hệ thống.'
+            );
+        }
+
         if ( ! $this->repo->is_trading_token_valid( $user_id ) ) {
             return new WP_Error( 'dnse_trading_expired', 'Trading token đã hết hạn.' );
         }

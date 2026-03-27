@@ -305,25 +305,11 @@ class LCNI_DnseTradingApiClient {
     // =========================================================================
 
     private function get( string $endpoint, string $jwt = '', array $extra_headers = [] ) {
-        $res = $this->request( 'GET', self::BASE_URL . $endpoint, null, $jwt, $extra_headers );
-        // Fallback sang BASE_URL_ORDER nếu endpoint không tồn tại trên services.entrade.com.vn
-        if ( is_wp_error( $res ) && strpos( $res->get_error_message(), '[404]' ) !== false ) {
-            // Đổi path: /dnse-order-service/X → /order-service/X
-            $new_path = preg_replace( '#^/dnse-order-service/#', '/order-service/', $endpoint );
-            $res2 = $this->request( 'GET', self::BASE_URL_ORDER . $new_path, null, $jwt, $extra_headers );
-            if ( ! is_wp_error( $res2 ) ) return $res2;
-        }
-        return $res;
+        return $this->request( 'GET', self::BASE_URL . $endpoint, null, $jwt, $extra_headers );
     }
 
     private function post( string $endpoint, array $body = [], string $jwt = '', array $extra_headers = [] ) {
-        $res = $this->request( 'POST', self::BASE_URL . $endpoint, $body, $jwt, $extra_headers );
-        if ( is_wp_error( $res ) && strpos( $res->get_error_message(), '[404]' ) !== false ) {
-            $new_path = preg_replace( '#^/dnse-order-service/#', '/order-service/', $endpoint );
-            $res2 = $this->request( 'POST', self::BASE_URL_ORDER . $new_path, $body, $jwt, $extra_headers );
-            if ( ! is_wp_error( $res2 ) ) return $res2;
-        }
-        return $res;
+        return $this->request( 'POST', self::BASE_URL . $endpoint, $body, $jwt, $extra_headers );
     }
 
     /**
