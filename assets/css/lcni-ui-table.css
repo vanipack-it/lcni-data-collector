@@ -1,777 +1,200 @@
 /* ================================================================
-   lcni-ui-table.css  — Global Table UI System
-   Áp dụng cho mọi module: filter, watchlist, portfolio, industry,
-   dnse-trading, market-dashboard.
+   lcni-ui-table.css  — Global Table UI System  v3.0
+   ================================================================
+   CSS custom properties injected into :root by LCNI_Table_Config
+   (class-lcni-table-config.php) via wp_head priority 5.
 
-   Quy tắc:
-   • .lcni-table-wrapper  = scroll container, KHÔNG được overflow:hidden
-   • .lcni-table          = base table class, thêm vào bên cạnh class riêng
-   • border-collapse:separate bắt buộc để sticky background không bị
-     xuyên thấu khi scroll
+   ALL modules (filter, watchlist, signal, portfolio, dnse...)
+   read the same --lcni-table-* tokens. No per-module overrides.
+
+   Sticky rules:
+     • border-collapse:separate required (collapse = transparent bg)
+     • .lcni-table-wrapper = ONLY scroll container
+     • sticky header: has-sticky-header class on <table>
+     • sticky col:    is-sticky-col   class on th/td (index 0)
    ================================================================ */
 
-/* ── Scroll container ────────────────────────────────────────── */
-.lcni-table-wrapper {
-    position:        relative;
-    overflow:        auto !important;  /* !important ngăn theme override thành hidden */
-    max-height:      70vh;
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior: contain;
-    scroll-behavior: smooth;
-    scrollbar-gutter: stable;
+/* ── Scroll container ─────────────────────────────────────────── */
+/* overflow:auto (cả X lẫn Y) → tạo scroll context 2D đúng chuẩn
+   • Sticky header/col bám vào container này (top:0, left:0)
+   • max-height giới hạn chiều cao → scroll dọc nằm trong container
+   • Không leak scroll ra ngoài trang                              */
+.lcni-table-wrapper,
+.lcni-table-scroll {
+    position:                   relative;
+    width:                      100%;
+    overflow:                   auto;
+    max-height:                 var(--lcni-table-max-height, 70vh);
+    /* KHÔNG dùng -webkit-overflow-scrolling:touch — tạo isolated GPU layer
+       trên iOS Safari → position:sticky bị nuốt vào layer, sticky col mất.
+       Dùng 'auto' để browser tự xử lý momentum scroll hiện đại.          */
+    -webkit-overflow-scrolling: auto;
+    overscroll-behavior:        contain;
+    scroll-behavior:            smooth;
+    scrollbar-gutter:           stable;
+    /* KHÔNG dùng isolation:isolate — tạo stacking context mới, phá sticky */
 }
 
-/* ── Base table ──────────────────────────────────────────────── */
+/* ── Base table ───────────────────────────────────────────────── */
 .lcni-table {
     width:           100%;
-    min-width:       720px;            /* baseline: 720px per spec */
-    border-collapse: separate;         /* bắt buộc cho sticky + background */
+    min-width:       720px;
+    border-collapse: separate !important;
     border-spacing:  0;
     table-layout:    auto;
 }
 
-/* ── Sticky header ───────────────────────────────────────────── */
-.lcni-table thead th {
-    position:   -webkit-sticky;   /* Safari iOS requires prefix */
+/* ── Header cells ─────────────────────────────────────────────── */
+.lcni-table th {
+    background:    var(--lcni-table-header-bg);
+    color:         var(--lcni-table-header-color);
+    font-size:     var(--lcni-table-header-size);
+    height:        var(--lcni-table-header-height);
+    font-weight:   500;
+    padding:       0 8px;
+    white-space:   nowrap;
+    text-align:    left;
+    box-sizing:    border-box;
+    border-bottom: var(--lcni-row-divider-width) solid var(--lcni-row-divider-color);
+}
+
+/* ── Data cells ───────────────────────────────────────────────── */
+.lcni-table td {
+    background:    var(--lcni-table-value-bg);
+    color:         var(--lcni-table-value-color);
+    font-size:     var(--lcni-table-value-size);
+    height:        var(--lcni-table-row-height);
+    padding:       0 8px;
+    white-space:   nowrap;
+    box-sizing:    border-box;
+    border-bottom: var(--lcni-row-divider-width) solid var(--lcni-row-divider-color);
+}
+
+/* ── Row hover ────────────────────────────────────────────────── */
+.lcni-table tbody tr:hover td,
+.lcni-table tbody tr:hover th,
+.lcni-signal-row:hover td,
+.lcni-signal-row:hover th {
+    background: var(--lcni-row-hover-bg) !important;
+}
+
+/* ── Sticky header (opt-in: has-sticky-header on <table>) ─────── */
+.lcni-table.has-sticky-header thead th {
+    position:   -webkit-sticky;
     position:   sticky;
     top:        0;
     z-index:    20;
-    background: var(--lcni-table-header-bg, #f3f4f6);
-    /* Giữ đường kẻ dưới header khi sticky */
-    box-shadow: inset 0 -1px 0 var(--lcni-row-divider-color, #e5e7eb);
-    /* KHÔNG dùng will-change:transform — Safari bug: freezes sticky position */
+    background: var(--lcni-table-header-bg);
+    box-shadow: inset 0 -1px 0 var(--lcni-row-divider-color);
 }
 
-/* ── Sticky first column (Symbol) ───────────────────────────── */
-.lcni-table th:first-child,
-.lcni-table td:first-child {
-    position:   -webkit-sticky;   /* Safari iOS requires prefix */
-    position:   sticky;
+/* ── Sticky column (opt-in: is-sticky-col on th/td) ──────────── */
+.lcni-table .is-sticky-col {
+    position:   -webkit-sticky !important;
+    position:   sticky !important;
     left:       0;
     z-index:    15;
-    background: var(--lcni-table-value-bg, #ffffff);
-    box-shadow: 2px 0 4px -1px rgba(0, 0, 0, 0.06);
+    background: var(--lcni-table-value-bg);
+    box-shadow: 2px 0 4px -1px rgba(0,0,0,0.06);
+}
+.lcni-table th.is-sticky-col {
+    z-index:    25;
+    background: var(--lcni-table-header-bg);
+    box-shadow: 2px 0 4px -1px rgba(0,0,0,0.08),
+                inset 0 -1px 0 var(--lcni-row-divider-color);
+}
+/* When header+col intersect: z-index 25 wins over both 20 and 15 */
+.lcni-table.has-sticky-header thead th.is-sticky-col {
+    z-index: 30;
+}
+.lcni-table tbody tr:hover .is-sticky-col,
+.lcni-signal-row:hover .is-sticky-col {
+    background: var(--lcni-row-hover-bg) !important;
 }
 
-/* ── Intersection: header + first column ────────────────────── */
-.lcni-table thead th:first-child {
-    z-index:    30;
-    background: var(--lcni-table-header-bg, #f3f4f6);
-    box-shadow: 2px 0 4px -1px rgba(0, 0, 0, 0.08),
-                inset 0 -1px 0 var(--lcni-row-divider-color, #e5e7eb);
+/* ── Dark variant ─────────────────────────────────────────────── */
+.lcni-table--dark {
+    --lcni-table-header-bg:    #161b22;
+    --lcni-table-header-color: #c9d1d9;
+    --lcni-table-value-bg:     #0d1117;
+    --lcni-table-value-color:  #c9d1d9;
+    --lcni-row-divider-color:  rgba(255,255,255,0.06);
+    --lcni-row-hover-bg:       rgba(255,255,255,0.04);
 }
 
-/* ── Hover: giữ background sticky col ───────────────────────── */
-.lcni-table tbody tr:hover td:first-child,
-.lcni-table tbody tr:hover th:first-child {
-    background: var(--lcni-row-hover-bg, #eef2ff);
+/* ── Number / text alignment ──────────────────────────────────── */
+.lcni-table .lcni-cell-number { text-align: right; }
+.lcni-table .lcni-cell-text   { text-align: left;  }
+
+/* ── Signal row ───────────────────────────────────────────────── */
+.lcni-signal-row { cursor: default; }
+
+td[data-lcni-field="signal__symbol"] a,
+td[data-lcni-field="symbol"] a {
+    cursor: pointer; text-decoration: none; font-weight: 600; color: inherit;
 }
+td[data-lcni-field="signal__symbol"] a:hover,
+td[data-lcni-field="symbol"] a:hover { text-decoration: underline; color: #2563eb; }
 
-/* ── Dark theme variant (dùng cho DNSE, Market Dashboard) ───── */
-.lcni-table--dark thead th {
-    background: var(--lcni-table-header-bg, #161b22);
-    box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.06);
-}
-.lcni-table--dark th:first-child,
-.lcni-table--dark td:first-child {
-    background: var(--lcni-table-value-bg, #0d1117);
-    box-shadow: 2px 0 4px -1px rgba(0, 0, 0, 0.3);
-}
-.lcni-table--dark thead th:first-child {
-    background: var(--lcni-table-header-bg, #161b22);
-    box-shadow: 2px 0 4px -1px rgba(0, 0, 0, 0.3),
-                inset 0 -1px 0 rgba(255, 255, 255, 0.06);
-}
-.lcni-table--dark tbody tr:hover td:first-child,
-.lcni-table--dark tbody tr:hover th:first-child {
-    background: rgba(255, 255, 255, 0.04);
-}
-
-/* ── Z-index stacking summary ────────────────────────────────
-   thead th              = 20   (header row sticky top)
-   td/th:first-child     = 15   (first col sticky left)
-   thead th:first-child  = 30   (intersection: highest)
-   ────────────────────────────────────────────────────────── */
-
-/* ── Mobile: min-width để bảng scroll ngang thay vì bị vỡ ──── */
-@media (max-width: 768px) {
-
-    .lcni-table-wrapper {
-        max-height:   60vh;
-        overflow-x:   auto !important;
-        overflow-y:   auto !important;
-    }
-
-    .lcni-table {
-        min-width: 720px;  /* per spec */
-        width:     max-content;
-    }
-}
-
-@media (max-width: 480px) {
-    .lcni-table {
-        min-width: 560px;
-    }
-}
-
-/* ── Chart container responsive ─────────────────────────────── */
-.lcni-chart-container {
-    width:  100%;
-    height: 60vh;
-    min-height: 260px;
-    box-sizing: border-box;
-}
-
-@media (max-width: 768px) {
-    .lcni-chart-container {
-        height: 50vh;
-    }
-}
-
-@media (max-width: 480px) {
-    .lcni-chart-container {
-        height: 45vh;
-    }
-}
-
-/* ── Dashboard grid mobile ───────────────────────────────────── */
-@media (max-width: 768px) {
-    .lcni-dashboard-grid {
-        grid-template-columns: 1fr !important;
-    }
-}
-
-/* ── Filter form mobile ──────────────────────────────────────── */
-@media (max-width: 768px) {
-    .lcni-filter-form {
-        display:        flex;
-        flex-direction: column;
-        gap:            10px;
-    }
-    .lcni-filter-form select,
-    .lcni-filter-form button {
-        width: 100%;
-    }
-}
-
-/* ── Container overflow:hidden safety fix ───────────────────────
-   Một số container dùng overflow:hidden để border-radius không bị
-   cắt, nhưng điều này có thể gây sticky fail trên Safari/iOS.
-   :has() selector an toàn (progressive enhancement) — browser cũ
-   không support thì bỏ qua, không gây lỗi.
-   ─────────────────────────────────────────────────────────────── */
-
-/* DNSE widget: border-radius đẹp nhưng phá sticky nếu overflow:hidden */
-.lcni-dnse-widget:has(.lcni-table-wrapper) {
-    overflow: visible;
-    /* Thay bằng clip để giữ border-radius mà không phá sticky */
-    overflow: clip;
-}
-
-/* Generic: bất kỳ container nào có overflow:hidden và chứa table-wrapper */
-.lcni-dashboard-card:has(.lcni-table-wrapper),
-.lcni-widget:has(.lcni-table-wrapper),
-.lcni-panel:has(.lcni-table-wrapper),
-.lcni-card:has(.lcni-table-wrapper) {
-    overflow: visible;
-}
-
-/* Fallback cho browser không hỗ trợ :has() — đảm bảo wrapper luôn scroll */
-.lcni-table-wrapper {
-    overflow: auto !important;
-    /* clip-path thay overflow:hidden để giữ visual rounding */
-    isolation: isolate;
-}
-
-/* ── Filter container mobile — column stack ─────────────────────
-   .lcni-filter-container là wrapper ngoài của filter controls.
-   Nếu theme hoặc module dùng class này, nó cũng stack dọc trên mobile.
-   ─────────────────────────────────────────────────────────────── */
-@media (max-width: 768px) {
-    .lcni-filter-container {
-        display:        flex;
-        flex-direction: column;
-        gap:            10px;
-    }
-
-    .lcni-filter-container select,
-    .lcni-filter-container button,
-    .lcni-filter-container input {
-        width:     100%;
-        max-width: 100%;
-    }
-}
-
-/* ================================================================
-   STICKY COLUMN RELIABILITY FIX
-   Fix cross-browser sticky: -webkit-sticky prefix + opaque bg
-   ================================================================ */
-
-/* ── -webkit-sticky prefix cho Safari iOS ───────────────────── */
-.lcni-table th:first-child,
-.lcni-table td:first-child {
-    position: -webkit-sticky;
-    position: sticky;
-}
-
-.lcni-table thead th {
-    position: -webkit-sticky;
-    position: sticky;
-}
-
-/* ── Signal table: sticky col via inline style cần bg opaque ───
-   ShortcodeManager gán sticky bằng inline style. Khi row có
-   color rule, background có thể transparent → nội dung row sau
-   hiện xuyên thấu khi scroll. Force opaque fallback.
-   ─────────────────────────────────────────────────────────────── */
-.lcni-table-wrapper .lcni-table td[style*="position:sticky"],
-.lcni-table-wrapper .lcni-table th[style*="position:sticky"] {
-    /* Đảm bảo background luôn opaque, không xuyên thấu */
-    isolation: isolate;
-}
-
-
-/* ── Sticky column box-shadow separator ─────────────────────── */
-/* Viền dọc sau cột sticky để phân biệt nội dung đang cuộn */
-.lcni-table td:first-child,
-.lcni-table th:first-child {
-    box-shadow: 2px 0 5px -2px rgba(0, 0, 0, 0.08);
-}
-
-.lcni-table--dark td:first-child,
-.lcni-table--dark th:first-child {
-    box-shadow: 2px 0 5px -2px rgba(0, 0, 0, 0.35);
-}
-
-/* ── Filter: .lcni-table-scroll cũng cần -webkit prefix ─────── */
-/* filter dùng .lcni-table-scroll thay vì .lcni-table-wrapper */
-.lcni-table-scroll {
-    overflow:                  auto;
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior:       contain;
-}
-
-/* ── Sticky cột đầu trong .lcni-table-scroll (filter) ─────────
-   filter dùng .is-sticky-col thay vì :first-child
-   Đảm bảo -webkit-sticky applied
-   ─────────────────────────────────────────────────────────────── */
-.lcni-table .is-sticky-col {
-    position: -webkit-sticky !important;
-    position: sticky          !important;
-}
-
-/* ── ResizeObserver fallback: đảm bảo sticky recalc khi resize ─
-   Khi thay đổi orientation (portrait ↔ landscape) browser cần
-   re-evaluate sticky. Force repaint nhẹ qua transition.
-   ─────────────────────────────────────────────────────────────── */
-.lcni-table-wrapper,
-.lcni-table-scroll {
-    /* contain:layout isolates scroll context, giúp sticky reliable */
-    /* Chỉ dùng trên wrapper, không dùng trên table */
-}
-
-
-@media (max-width: 375px) {
-    /* iPhone SE / nhỏ nhất */
-    .lcni-table {
-        min-width: 640px;
-    }
-}
-
-/* ================================================================
-   SAFARI STICKY FIX BLOCK
-   Fixes cho Safari iOS + macOS sticky column/header không hoạt động.
-   ================================================================ */
-
-/* ── FIX: overflow:hidden trên ancestor phá sticky Safari ───────
-   Safari WebKit bug: overflow:hidden tạo "clipping context" giới hạn
-   sticky bounds, khác với Chrome (chỉ clip visually).
-   Dùng overflow:clip thay overflow:hidden để:
-   • Giữ visual clipping (border-radius vẫn đẹp)
-   • KHÔNG tạo scroll context → sticky hoạt động đúng
-   overflow:clip không được support ở Safari < 16 → graceful degradation
-   ─────────────────────────────────────────────────────────────── */
-
-/* Filter: .lcni-stock-filter dùng overflow:hidden ở @767px mobile */
-@media (max-width: 767px) {
-    .lcni-app .lcni-stock-filter {
-        overflow: clip !important;      /* Safari ≥16: clip thay hidden */
-    }
-}
-
-/* ── FIX: Outer signal table container — không được là scroll context ──
-   PHP ShortcodeManager.php đã được sửa:
-   - overflow:visible (không còn overflow:auto) trên .lcni-recommend-signals-table
-   - max-height + overflow:auto chuyển về .lcni-table-wrapper (inner wrapper)
-   CSS dưới đây là safety net cho trường hợp inline style bị override bởi theme.
-   ─────────────────────────────────────────────────────────────── */
-.lcni-recommend-signals-table {
-    overflow: visible !important;      /* KHÔNG được là scroll container */
-    max-height: none   !important;     /* .lcni-table-wrapper tự quản lý height */
-}
-
-/* .lcni-table-wrapper là scroll container duy nhất — max-height qua inline style từ PHP */
-.lcni-recommend-signals-table > .lcni-table-wrapper {
-    overflow-x: auto !important;
-    overflow-y: auto !important;
-    -webkit-overflow-scrolling: touch;
-}
-
-/* ── FIX: Scroll container chính xác cho Safari ─────────────────
-   Safari sticky yêu cầu scroll container là nearest scrollable ancestor.
-   Đảm bảo chỉ .lcni-table-wrapper là scrollable.
-   ─────────────────────────────────────────────────────────────── */
-.lcni-table-wrapper {
-    width:                     100%;
-    overflow-x:                auto   !important;
-    overflow-y:                auto   !important;
-    -webkit-overflow-scrolling: touch; /* momentum scroll Safari iOS */
-    position:                  relative;
-    /* KHÔNG dùng transform hay will-change trên wrapper */
-}
-
-/* ── FIX: filter .lcni-table-scroll (thay vì .lcni-table-wrapper) ─
-   Filter module dùng .lcni-table-scroll làm scroll container
-   Cần có đầy đủ Safari fixes
-   ─────────────────────────────────────────────────────────────── */
-.lcni-table-scroll {
-    -webkit-overflow-scrolling: touch;
-    overflow-x: auto;
-    overflow-y: auto;
-}
-
-/* ── FIX: xóa transform khỏi tất cả ancestor của table-wrapper ───
-   Bất kỳ ancestor nào có transform sẽ phá sticky trên Safari.
-   Rule này tắt transform chỉ khi container chứa table-wrapper.
-   ─────────────────────────────────────────────────────────────── */
-.lcni-table-wrapper,
-.lcni-table-scroll {
-    /* Isolate stacking context mà không tạo transform */
-    isolation: isolate;
-    /* KHÔNG được có: transform, perspective, filter, backdrop-filter */
-}
-
-/* ── FIX: .lcni-pv2-card overflow:hidden phá sticky performance table ─ */
-.lcni-pv2-card:has(.lcni-table-wrapper) {
-    overflow: clip;                    /* giữ border-radius, không phá sticky */
-}
-
-/* ── DEBUG HELPER: viền đỏ mỏng trên sticky col khi sticky bị miss ──
-   Bỏ comment để debug trên Safari:
-.lcni-table td:first-child::after {
-    content: '';
-    position: absolute;
-    right: 0; top: 0; bottom: 0;
-    width: 2px;
-    background: rgba(255,0,0,.2);
-}
-── */
-
-/* ── Ensure .is-sticky-col cũng có -webkit-sticky prefix ───────── */
-.lcni-table .is-sticky-col {
-    position: -webkit-sticky !important;
-    position: sticky          !important;
-}
-
-/* ================================================================
-   SCROLL CONTAINER HIERARCHY FIX
-   Đảm bảo sticky column hoạt động trên Chrome mobile + Safari mobile.
-
-   Rule: chỉ .lcni-table-wrapper (và .lcni-table-scroll cho filter)
-   được là scroll container. Tất cả parent layout containers phải
-   KHÔNG có overflow:auto / overflow:hidden / overflow:scroll.
-
-   Reference: https://developer.mozilla.org/en-US/docs/Web/CSS/position#sticky
-   "A stickily positioned element is treated as relatively positioned
-    until it crosses a specified threshold, at which point it is
-    treated as fixed until it reaches the boundary of its
-    nearest scrolling ancestor."
-   → nearest scrolling ancestor PHẢI là .lcni-table-wrapper.
-   ================================================================ */
-
-/* ── Step 3: Remove scrolling from ALL parent layout containers ──
-   Các container này dùng border-radius hoặc flex layout nhưng
-   KHÔNG ĐƯỢC là scroll context.
-   Dùng overflow:clip để giữ visual rounding mà không tạo scroll context.
-   overflow:clip (Chrome 90+, Safari 16+, FF 81+) — không phải overflow:hidden.
-   ─────────────────────────────────────────────────────────────── */
-
-/* Generic containers — class names thường dùng bởi theme/plugin */
-.dashboard-card,
-.panel {
-    overflow: visible !important;
-}
-
-/* Plugin-specific containers */
-.lcni-stock-filter,
-.lcni-filter-wrapper,
-.lcni-signal-panel,
-.lcni-recommend-signals-table {
-    overflow: visible !important;
-    max-height: none  !important;
-}
-
-/* Khi các container này chứa .lcni-table-wrapper thì chắc chắn không scroll */
-.dashboard-card:has(.lcni-table-wrapper),
-.panel:has(.lcni-table-wrapper),
-.lcni-stock-filter:has(.lcni-table-scroll),
-.lcni-signal-panel:has(.lcni-table-wrapper),
-.lcni-recommend-signals-table:has(.lcni-table-wrapper) {
-    overflow: visible !important;
-    max-height: none  !important;
-}
-
-/* ── Step 3b: Mobile — keep flex layout but remove scroll context ──
-   .lcni-stock-filter trên mobile dùng flex + height:100svh.
-   overflow:clip giữ visual clipping NHƯNG không tạo scroll context
-   → sticky vẫn hoạt động trên Safari 16+ và Chrome 90+.
-   ─────────────────────────────────────────────────────────────── */
-@media (max-width: 767px) {
-    .lcni-app .lcni-stock-filter {
-        /* Flex layout giữ nguyên — chỉ reset overflow */
-        overflow-x: clip   !important;   /* no horizontal scroll context */
-        overflow-y: clip   !important;   /* no vertical scroll context */
-    }
-
-    /* .lcni-signal-panel nếu có trên mobile */
-    .lcni-signal-panel {
-        overflow: clip !important;
-        max-height: none !important;
-    }
-}
-
-/* ── Step 4: Guarantee min-width so horizontal scroll can occur ──
-   Nếu table không rộng hơn viewport, scroll sẽ không xảy ra và
-   sticky:left sẽ không có tác dụng hiển thị.
-   ─────────────────────────────────────────────────────────────── */
-.lcni-table {
-    min-width: 720px;   /* baseline; overridden per-module if needed */
-}
-
-@media (max-width: 480px) {
-    .lcni-table {
-        min-width: 560px;  /* nhỏ hơn 1 chút trên màn hình rất nhỏ */
-    }
-}
-
-/* ── Step 5: Confirm sticky column rules — explicit, no ambiguity ──
-   Các rule này đã tồn tại trong file nhưng khai báo lại ở đây
-   để override bất kỳ theme rule nào có thể đặt position:static.
-   ─────────────────────────────────────────────────────────────── */
-
-/* Sticky header */
-.lcni-table-wrapper .lcni-table thead th,
-.lcni-table-scroll  .lcni-table thead th {
-    position: -webkit-sticky;
-    position: sticky;
-    top:       0;
-    z-index:   20;
-    background: var(--lcni-table-header-bg, #f3f4f6);
-}
-
-/* Sticky first column (tables using :first-child pattern) */
-.lcni-table-wrapper .lcni-table th:first-child,
-.lcni-table-wrapper .lcni-table td:first-child {
-    position: -webkit-sticky;
-    position: sticky;
-    left:       0;
-    z-index:    15;
-    background: var(--lcni-table-value-bg, #ffffff);
-}
-
-/* Header + first-column intersection */
-.lcni-table-wrapper .lcni-table thead th:first-child {
-    z-index:    30;
-    background: var(--lcni-table-header-bg, #f3f4f6);
-}
-
-/* Sticky column via .is-sticky-col class (filter module pattern) */
-.lcni-table-scroll .lcni-table .is-sticky-col,
-.lcni-table-wrapper .lcni-table .is-sticky-col {
-    position: -webkit-sticky !important;
-    position: sticky          !important;
-    z-index:  15;
-    background: var(--lcni-table-value-bg, #ffffff);
-}
-.lcni-table-scroll .lcni-table th.is-sticky-col,
-.lcni-table-wrapper .lcni-table th.is-sticky-col {
-    z-index:    25 !important;
-    background: var(--lcni-table-header-bg, #f3f4f6);
-}
-
-/* ── Step 6: Enforce border-collapse:separate (required for sticky bg) ──
-   border-collapse:collapse makes sticky background transparent on scroll.
-   ─────────────────────────────────────────────────────────────── */
-.lcni-table-wrapper .lcni-table,
-.lcni-table-scroll  .lcni-table {
-    border-collapse: separate !important;
-    border-spacing:  0;
-}
-
-/* ── Step 2 (confirm): table-wrapper is the ONLY scroll container ──
-   Scoped under both wrapper variants used across modules.
-   ─────────────────────────────────────────────────────────────── */
-.lcni-table-wrapper {
-    position:                   relative;
-    width:                      100%;
-    overflow-x:                 auto !important;
-    overflow-y:                 auto !important;
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior:        contain;
-    /* No transform, no will-change, no perspective — all break sticky */
-    isolation:                  isolate;
-}
-
-.lcni-table-scroll {
-    position:                   relative;
-    width:                      100%;
-    overflow-x:                 auto !important;
-    overflow-y:                 auto !important;
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior:        contain;
-    isolation:                  isolate;
-}
-
-/* ── Signal table: outer container reset (belt + suspenders) ────
-   ShortcodeManager.php đã fix overflow:visible trong inline style,
-   nhưng CSS này là safety net nếu theme override inline style.
-   ─────────────────────────────────────────────────────────────── */
-.lcni-recommend-signals-table {
-    overflow:   visible !important;
-    max-height: none    !important;
-    height:     auto    !important;
-}
-
-.lcni-recommend-signals-table > .lcni-table-wrapper {
-    /* max-height set via inline style from PHP (configurable per shortcode) */
-    overflow-x: auto !important;
-    overflow-y: auto !important;
-    -webkit-overflow-scrolling: touch;
-}
-
-/* ══════════════════════════════════════════════════════════════
-   PRICE CELL — Clickable trading shortcut
-   Applied to td[data-cell-field] cells whose field matches
-   PRICE_FIELDS in LCNITransactionController (close_price, close,
-   price, reference_price, match_price, current_price, gia, tc).
-
-   The .lcni-price-cell class is added dynamically by the controller
-   CSS rules below also apply to cells via attribute selectors so
-   tables need NO code changes to opt in.
-══════════════════════════════════════════════════════════════ */
-
-/* STEP 1 — Visual affordance: price cells look clickable */
+/* ── Price cell interactive ───────────────────────────────────── */
 td[data-cell-field="close_price"],
 td[data-cell-field="close"],
 td[data-cell-field="price"],
-td[data-cell-field="reference_price"],
-td[data-cell-field="match_price"],
 td[data-cell-field="current_price"],
-td[data-cell-field="gia"],
-td[data-cell-field="tc"],
-.lcni-price-cell {
-    cursor:             pointer;
-    user-select:        none;
-    transition:         background 0.12s ease;
-    position:           relative;
-}
+.lcni-price-cell { cursor: pointer; user-select: none; transition: background 0.12s; }
 
-/* Hover: subtle blue tint signals the cell is interactive */
 td[data-cell-field="close_price"]:hover,
 td[data-cell-field="close"]:hover,
 td[data-cell-field="price"]:hover,
-td[data-cell-field="reference_price"]:hover,
-td[data-cell-field="match_price"]:hover,
 td[data-cell-field="current_price"]:hover,
-td[data-cell-field="gia"]:hover,
-td[data-cell-field="tc"]:hover,
 .lcni-price-cell:hover {
-    background:         rgba(37, 99, 235, 0.07) !important;
-    text-decoration:    underline dotted rgba(37, 99, 235, 0.5);
+    background: rgba(37,99,235,0.07) !important;
+    text-decoration: underline dotted rgba(37,99,235,0.5);
+}
+.lcni-price-click, td.lcni-price-click {
+    background: #ffe9a8 !important; transition: background 0.05s;
 }
 
-/* STEP 6 — Flash highlight on click (added/removed by JS in 300ms) */
-.lcni-price-click,
-td.lcni-price-click {
-    background:         #ffe9a8 !important;
-    transition:         background 0.05s ease;
+/* ── Prevent parents from stealing scroll context ─────────────── */
+/* overflow:clip chặn nội dung tràn ra ngoài mà KHÔNG tạo scroll context mới
+   → sticky header/col vẫn hoạt động đúng, scroll ngang bị giữ trong .lcni-table-wrapper
+   KHÔNG áp cho .lcni-stock-filter — module filter tự quản lý overflow qua .lcni-table-scroll */
+.lcni-filter-wrapper,.lcni-signal-panel,
+.lcni-recommend-signals-table,.dashboard-card,.panel,.widget,
+.lcni-pf-section,.lcni-pf-main,.lcni-dnse-widget {
+    overflow-x: clip !important; max-height: none !important;
 }
-/* ══════════════════════════════════════════════════════════════ */
-
-/* ══════════════════════════════════════════════════════════════
-   SIGNAL TABLE ROW — hover / price cell cursor
-   • .lcni-signal-row: hover highlight chỉ trên row, không dùng
-     inline onmouseover nữa — tránh conflict với price-cell click.
-   • Price cells (entry / current / exit) đã có cursor:pointer từ
-     block "PRICE CELL" phía trên.
-══════════════════════════════════════════════════════════════ */
-
-/* Row hover: subtle tint, không ảnh hưởng price cell styles */
-.lcni-signal-row {
-    cursor:             default;
-    transition:         background 0.1s;
-}
-.lcni-signal-row:hover {
-    background:         var(--lcni-row-hover-bg, #f3f4f6) !important;
-}
-/* Sticky first col cần giữ background khi hover */
-.lcni-signal-row:hover td:first-child {
-    background:         var(--lcni-row-hover-bg, #f3f4f6) !important;
+.lcni-recommend-signals-table:has(.lcni-table-wrapper),
+.dashboard-card:has(.lcni-table-wrapper),
+.panel:has(.lcni-table-wrapper),
+.lcni-dnse-widget:has(.lcni-table-wrapper) {
+    overflow: clip;
 }
 
-/* Symbol cell: con trỏ pointer chỉ trên link, không trên toàn cell */
-td[data-lcni-field="signal__symbol"] {
-    cursor: default;
-}
-td[data-lcni-field="signal__symbol"] a {
-    cursor:          pointer;
-    text-decoration: none;
-    font-weight:     600;
-    color:           inherit;
-}
-td[data-lcni-field="signal__symbol"] a:hover {
-    text-decoration: underline;
-    color:           #2563eb;
-}
-/* ══════════════════════════════════════════════════════════════ */
-/* ================================================================ */
+/* ── Chart container ──────────────────────────────────────────── */
+.lcni-chart-container { width:100%; height:60vh; min-height:260px; box-sizing:border-box; }
 
+/* ── Mobile ───────────────────────────────────────────────────── */
+@media (max-width:768px) {
+    .lcni-table { min-width:720px; width:max-content; }
+    .lcni-chart-container { height:50vh; }
+    .lcni-dashboard-grid  { grid-template-columns:1fr !important; }
+    .lcni-app .lcni-stock-filter { overflow:visible !important; }
+    .lcni-filter-form,.lcni-filter-container { display:flex; flex-direction:column; gap:10px; }
+    .lcni-filter-form select,.lcni-filter-form button,
+    .lcni-filter-container select,.lcni-filter-container button,
+    .lcni-filter-container input { width:100%; max-width:100%; }
 
-/* ================================================================
-   STICKY SYSTEM HOTFIX (cross-browser: Safari/Chrome mobile/overflow nests)
-   ================================================================ */
-.lcni-table-wrapper {
-    position: relative;
-    width: 100%;
-    overflow-x: auto !important;
-    overflow-y: hidden !important;
-    -webkit-overflow-scrolling: touch;
+    /* Mobile guard: neutralize transform/contain từ Elementor/WP wrappers
+       Chỉ reset trên chính scroll container, không reset cha (gây layout shift) */
+    .lcni-table-wrapper,
+    .lcni-table-scroll {
+        -webkit-overflow-scrolling: auto !important;
+        transform:   none !important;
+        contain:     none !important;
+        will-change: auto !important;
+        isolation:   auto !important;
+    }
 }
-
-.lcni-table {
-    border-collapse: separate !important;
-    min-width: 100%;
-    width: max-content;
-}
-
-.lcni-sticky-col {
-    position: -webkit-sticky !important;
-    position: sticky !important;
-    left: 0;
-    z-index: 5;
-    background: #fff;
-    box-shadow: 2px 0 4px rgba(0,0,0,0.05);
-}
-
-.lcni-table thead th.lcni-sticky-col {
-    z-index: 6;
-}
-
-.lcni-stock-filter,
-.dashboard-card,
-.panel,
-.widget,
-.lcni-recommend-signals-table,
-.lcni-watchlist,
-.lcni-pf-section,
-.lcni-pf-main {
-    overflow-x: visible !important;
-}
-
-.dashboard-card,
-.panel,
-.widget,
-.lcni-pf-section,
-.lcni-pf-main {
-    min-width: 0;
-}
-
-/* Permanent sticky safety net: keep horizontal scrolling ownership on .lcni-table-wrapper */
-.lcni-stock-filter,
-.dashboard-card,
-.panel,
-.widget {
-    overflow-x: visible !important;
-}
-
-/* Flex containers that wrap tables must be shrinkable for sticky + horizontal scroll to work */
-.dashboard-card,
-.panel,
-.widget,
-.lcni-stock-filter {
-    min-width: 0;
-}
-
-/* Table width contract for sticky columns across Safari/Firefox/Chromium */
-.lcni-table {
-    width: max-content;
-    min-width: 100%;
-}
-
-/* Scroll container contract (do not move horizontal overflow to ancestors) */
-.lcni-table-wrapper {
-    overflow-x: auto !important;
-    overflow-y: hidden !important;
-    -webkit-overflow-scrolling: touch;
-    position: relative;
-}
-
-/* ================================================================
-   SAFARI STICKY ROOT-CAUSE FIXES
-   - Neutralize transform/filter chains inside table wrappers
-   - Keep horizontal scroll ownership on .lcni-table-wrapper
-   ================================================================ */
-
-/* 1) Safari sticky + transform bug: neutralize inside table scope only */
-.lcni-table-wrapper,
-.lcni-table-wrapper * {
-    transform: none !important;
-    filter: none !important;
-    backdrop-filter: none !important;
-    perspective: none !important;
-    will-change: auto !important;
-}
-
-/* 2) Prevent parent containers from becoming horizontal scroll containers */
-.lcni-stock-filter,
-.dashboard-card,
-.panel,
-.widget,
-.lcni-container,
-.lcni-section {
-    overflow-x: visible !important;
-}
-
-/* 3) Flex container safety for table overflow */
-.dashboard-card,
-.panel,
-.widget {
-    min-width: 0;
-}
-
-/* 4) Table width contract for horizontal scrolling */
-.lcni-table {
-    width: max-content !important;
-    min-width: 100% !important;
-}
-
-/* 5) Wrapper is the scroll container */
-.lcni-table-wrapper {
-    overflow-x: auto !important;
-    overflow-y: hidden !important;
-    position: relative;
-    -webkit-overflow-scrolling: touch;
-}
-
-/* 6) Sticky column consistency */
-.lcni-sticky-col {
-    position: -webkit-sticky !important;
-    position: sticky !important;
-    left: 0;
-    background: #fff;
-    z-index: 5;
-}
-
-thead th.lcni-sticky-col {
-    z-index: 6;
-}
+@media (max-width:480px) { .lcni-table { min-width:560px; } .lcni-chart-container { height:45vh; } }
+@media (max-width:375px) { .lcni-table { min-width:640px; } }

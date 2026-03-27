@@ -1,0 +1,394 @@
+/* ============================================================
+   lcni-screenshot.css  v1.1
+   ============================================================ */
+
+/* ── FAB ── */
+.lcni-ss-fab {
+    position: fixed;
+    z-index: 99990;
+    width: 48px; height: 48px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 55%, #3b82f6 100%);
+    color: #fff;
+    box-shadow: 0 4px 16px rgba(37,99,235,.45), 0 1px 4px rgba(0,0,0,.18);
+    transition: transform .18s cubic-bezier(.34,1.56,.64,1), box-shadow .18s;
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
+}
+.lcni-ss-fab:hover  { transform: scale(1.12); box-shadow: 0 6px 24px rgba(37,99,235,.55); }
+.lcni-ss-fab:active { transform: scale(.94); }
+
+.lcni-ss-fab[data-pos="bottom-right"] { bottom: 24px; right: 24px; }
+.lcni-ss-fab[data-pos="bottom-left"]  { bottom: 24px; left:  24px; }
+.lcni-ss-fab[data-pos="top-right"]    { top:    80px; right: 24px; }
+.lcni-ss-fab[data-pos="top-left"]     { top:    80px; left:  24px; }
+.lcni-ss-fab[data-pos="center"]       { bottom: 24px; left: 50%; transform: translateX(-50%); }
+
+/* ── Mode picker ── */
+.lcni-ss-mode-picker {
+    position: fixed;
+    z-index: 99991;
+    background: #1e293b;
+    border: 1px solid rgba(255,255,255,.1);
+    border-radius: 12px;
+    padding: 8px;
+    min-width: 174px;
+    box-shadow: 0 8px 32px rgba(0,0,0,.38);
+    animation: lcniSsFade .14s ease;
+}
+.lcni-ss-mode-title {
+    font-size: 11px; font-weight: 700;
+    color: #94a3b8;
+    text-transform: uppercase; letter-spacing: .06em;
+    padding: 4px 10px 8px;
+    border-bottom: 1px solid rgba(255,255,255,.07);
+    margin-bottom: 5px;
+}
+.lcni-ss-mode-btn {
+    display: flex; align-items: center; gap: 10px;
+    width: 100%; padding: 9px 12px;
+    border: none; background: transparent;
+    color: #e2e8f0; font-size: 13px; font-weight: 500;
+    cursor: pointer; border-radius: 7px;
+    transition: background .1s;
+}
+.lcni-ss-mode-btn:hover { background: rgba(255,255,255,.09); }
+.lcni-ss-mode-icon { font-size: 18px; }
+
+/* ── Region select overlay ── */
+.lcni-ss-region-overlay {
+    position: fixed; inset: 0;
+    z-index: 99992;
+    background: rgba(0,0,0,.32);
+    cursor: crosshair;
+    user-select: none;
+}
+.lcni-ss-region-hint {
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,.72); color: #fff;
+    font-size: 13px; padding: 7px 18px;
+    border-radius: 20px; pointer-events: none;
+    white-space: nowrap;
+}
+/* 4 mask divs tạo vùng tối xung quanh selection */
+.lcni-ss-mask {
+    position: fixed;
+    background: rgba(0,0,0,.48);
+    pointer-events: none;
+}
+
+.lcni-ss-region-sel {
+    position: fixed; display: none;
+    border: 2px solid #3b82f6;
+    outline: 1px solid rgba(255,255,255,.4);
+    pointer-events: none;
+    /* Góc cắt sáng để thấy rõ vùng chọn */
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.15);
+}
+
+/* Kích thước label hiển thị W×H */
+.lcni-ss-region-sel::after {
+    content: attr(data-size);
+    position: absolute;
+    bottom: -24px; left: 0;
+    background: #3b82f6;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 4px;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+/* ── Editor Modal ── */
+.lcni-ss-editor-modal {
+    position: fixed; inset: 0;
+    z-index: 99993;
+    background: rgba(0,0,0,.75);
+    display: flex; align-items: center; justify-content: center;
+    padding: 12px;
+    animation: lcniSsFade .16s ease;
+}
+.lcni-ss-editor-inner {
+    background: #0f172a;
+    border: 1px solid rgba(255,255,255,.1);
+    border-radius: 16px;
+    display: flex; flex-direction: column;
+    max-width: 92vw; max-height: 96vh;
+    overflow: hidden;
+    box-shadow: 0 24px 64px rgba(0,0,0,.65);
+    min-width: 320px;
+}
+
+/* Top bar */
+.lcni-ss-editor-topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 11px 16px;
+    border-bottom: 1px solid rgba(255,255,255,.07);
+    flex-shrink: 0;
+}
+.lcni-ss-editor-logo { font-size: 14px; font-weight: 700; color: #e2e8f0; }
+.lcni-ss-ed-close {
+    width: 28px; height: 28px;
+    background: rgba(255,255,255,.07); border: none;
+    color: #94a3b8; font-size: 14px; border-radius: 50%;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    transition: background .12s, color .12s;
+}
+.lcni-ss-ed-close:hover { background: rgba(239,68,68,.25); color: #f87171; }
+
+/* Tools */
+.lcni-ss-editor-tools {
+    display: flex; align-items: center; gap: 4px;
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(255,255,255,.06);
+    flex-shrink: 0; flex-wrap: wrap;
+}
+.lcni-ss-tool {
+    width: 32px; height: 32px;
+    border-radius: 7px; border: 1px solid transparent;
+    background: transparent; color: #94a3b8;
+    font-size: 13px; font-weight: 700;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .1s, color .1s, border-color .1s;
+}
+.lcni-ss-tool:hover { background: rgba(255,255,255,.08); color: #e2e8f0; }
+.lcni-ss-tool.active {
+    background: rgba(59,130,246,.22);
+    border-color: rgba(59,130,246,.45);
+    color: #93c5fd;
+}
+.lcni-ss-tool-sep { width: 1px; height: 22px; background: rgba(255,255,255,.1); margin: 0 3px; }
+.lcni-ss-color-pick {
+    width: 32px; height: 32px;
+    border: 2px solid rgba(255,255,255,.15); border-radius: 7px;
+    padding: 2px; background: none; cursor: pointer;
+}
+.lcni-ss-size-pick { width: 68px; accent-color: #3b82f6; }
+
+/* Emoji picker */
+.lcni-ss-emoji-picker {
+    display: none;
+    flex-wrap: wrap; gap: 3px;
+    padding: 7px 12px;
+    background: rgba(255,255,255,.03);
+    border-bottom: 1px solid rgba(255,255,255,.06);
+    flex-shrink: 0;
+}
+.lcni-ss-emoji-btn {
+    font-size: 20px;
+    background: none; border: 1px solid transparent;
+    border-radius: 6px; cursor: pointer;
+    padding: 3px 5px; line-height: 1;
+    transition: background .1s;
+}
+.lcni-ss-emoji-btn:hover { background: rgba(255,255,255,.1); }
+
+/* Canvas area */
+.lcni-ss-editor-canvas-wrap {
+    flex: 1 1 auto; min-height: 0;
+    overflow: auto;
+    display: flex; align-items: center; justify-content: center;
+    padding: 16px;
+    background: #070d1a;
+}
+
+/* Stack: 2 canvas chồng nhau, dùng position relative + absolute cho overlay */
+.lcni-ss-canvas-stack {
+    position: relative;
+    flex-shrink: 0;
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 0 0 1px rgba(255,255,255,.08);
+}
+#lcni-ed-canvas {
+    display: block;
+    max-width: 100%;
+}
+#lcni-ed-overlay {
+    position: absolute;
+    top: 0; left: 0;
+    cursor: crosshair;
+    background: transparent;
+}
+
+/* Bottom bar */
+.lcni-ss-editor-bottombar {
+    display: flex; gap: 8px; align-items: center;
+    padding: 11px 16px;
+    border-top: 1px solid rgba(255,255,255,.07);
+    flex-shrink: 0; flex-wrap: wrap;
+}
+.lcni-ss-action-btn {
+    height: 34px; padding: 0 14px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.06);
+    color: #cbd5e1; font-size: 12px; font-weight: 600;
+    cursor: pointer; white-space: nowrap;
+    transition: background .1s, border-color .1s, color .1s;
+}
+.lcni-ss-action-btn:hover { background: rgba(255,255,255,.11); color: #e2e8f0; }
+.lcni-ss-action-btn.primary {
+    background: linear-gradient(135deg, #1d4ed8, #2563eb);
+    border-color: transparent; color: #fff;
+    box-shadow: 0 2px 8px rgba(37,99,235,.4);
+}
+.lcni-ss-action-btn.primary:hover { background: linear-gradient(135deg,#1e40af,#1d4ed8); }
+.lcni-ss-action-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+/* Floating text input khi tool text */
+.lcni-ss-text-input {
+    position: fixed;
+    z-index: 999999;
+    background: transparent;
+    border: none;
+    border-bottom: 2px dashed rgba(255,255,255,.55);
+    outline: none;
+    font-family: "DM Sans", system-ui, sans-serif;
+    font-weight: 700;
+    min-width: 60px;
+    caret-color: #fff;
+    text-shadow: 1px 1px 3px rgba(0,0,0,.75);
+}
+
+/* Toast */
+.lcni-ss-toast {
+    position: fixed;
+    bottom: 84px; left: 50%;
+    transform: translateX(-50%) translateY(12px);
+    z-index: 9999999;
+    background: #1e293b;
+    color: #e2e8f0;
+    font-size: 13px; font-weight: 600;
+    padding: 9px 20px;
+    border-radius: 24px;
+    box-shadow: 0 4px 20px rgba(0,0,0,.35);
+    border: 1px solid rgba(255,255,255,.1);
+    opacity: 0; pointer-events: none;
+    transition: opacity .18s, transform .18s;
+    white-space: nowrap;
+    max-width: 90vw;
+}
+.lcni-ss-toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+/* Animation */
+@keyframes lcniSsFade {
+    from { opacity: 0; transform: scale(.96); }
+    to   { opacity: 1; transform: scale(1); }
+}
+
+/* Ẩn FAB trên mobile — chỉ hiện trên desktop */
+@media (max-width: 768px) {
+    .lcni-ss-fab { display: none !important; }
+}
+
+/* Mobile */
+@media (max-width: 600px) {
+    .lcni-ss-editor-inner { min-width: 0; border-radius: 10px; max-height: 100vh; }
+    .lcni-ss-editor-bottombar { gap: 5px; padding: 8px 10px; }
+    .lcni-ss-action-btn { padding: 0 10px; font-size: 11px; height: 30px; }
+    .lcni-ss-editor-tools { gap: 2px; padding: 6px 8px; }
+    .lcni-ss-tool { width: 28px; height: 28px; font-size: 11px; }
+    .lcni-ss-size-pick { width: 52px; }
+    .lcni-ss-editor-canvas-wrap { padding: 8px; }
+}
+
+/* ── Watermark drag elements ──────────────────────────────── */
+.lcni-wm-drag-el {
+    position: absolute;
+    cursor: move;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+    transition: outline .12s;
+}
+.lcni-wm-drag-el:hover {
+    outline: 1.5px dashed rgba(59,130,246,.7);
+    outline-offset: 3px;
+    border-radius: 3px;
+}
+.lcni-wm-drag-el:active {
+    outline: 1.5px solid rgba(59,130,246,.9);
+    outline-offset: 3px;
+}
+
+/* Label hướng dẫn khi hover */
+.lcni-wm-drag-el::before {
+    content: '⠿ kéo';
+    position: absolute;
+    top: -18px; left: 0;
+    font-size: 10px;
+    font-weight: 600;
+    color: #93c5fd;
+    background: rgba(15,23,42,.85);
+    padding: 1px 5px;
+    border-radius: 3px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .15s;
+}
+.lcni-wm-drag-el:hover::before { opacity: 1; }
+
+#lcni-wm-logo-drag img {
+    display: block;
+    pointer-events: none;
+    max-width: 100%;
+}
+
+/* ── Frame border panel ───────────────────────────────────── */
+.lcni-ss-frame-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 14px;
+    background: rgba(255,255,255,.03);
+    border-bottom: 1px solid rgba(255,255,255,.07);
+    flex-shrink: 0;
+    animation: lcniSsFade .14s ease;
+}
+.lcni-ss-fp-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.lcni-ss-fp-row label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #94a3b8;
+    white-space: nowrap;
+}
+.lcni-ss-fp-row input[type="color"] {
+    width: 28px; height: 26px;
+    border: 1px solid rgba(255,255,255,.15);
+    border-radius: 5px;
+    padding: 2px;
+    background: none;
+    cursor: pointer;
+}
+.lcni-ss-fp-row input[type="range"] {
+    accent-color: #3b82f6;
+}
+.lcni-ss-fp-row input[type="checkbox"] {
+    width: 14px; height: 14px;
+    accent-color: #3b82f6;
+    cursor: pointer;
+}
+.lcni-ss-fp-sep {
+    width: 1px; height: 20px;
+    background: rgba(255,255,255,.1);
+    margin: 0 4px;
+    flex-shrink: 0;
+}
