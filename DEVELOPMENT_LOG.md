@@ -1,3 +1,6 @@
+##Version: 26.3.21.1
+- Thêm Module Marketing
+Chia sẽ lên facebook -> Auto nâng cấp gói
 ## 2026-03-05 13:10 (v5.4.7)
 - Nâng version plugin lên `5.4.7`.
 - `LCNi Recommend -> Tạo Rule -> Điều kiện kích hoạt`: chuyển cơ chế kết hợp điều kiện từ một lựa chọn global (`AND`/`OR` cho toàn bộ rule) sang lựa chọn theo từng dòng, cho phép trộn `AND` và `OR` linh hoạt giữa các row.
