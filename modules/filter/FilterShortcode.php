@@ -27,7 +27,7 @@ class LCNI_FilterShortcode {
         $version = file_exists($js) ? (string) filemtime($js) : self::VERSION;
         $css_version = file_exists($css) ? (string) filemtime($css) : self::VERSION;
 
-        wp_register_script('lcni-filter', LCNI_URL . 'modules/filter/filter.js', ['lcni-main-js', 'lcni-watchlist'], $version, true);
+        wp_register_script('lcni-filter', LCNI_URL . 'modules/filter/filter.js', ['lcni-main-js', 'lcni-watchlist', 'lcni-table-engine'], $version, true);
         wp_register_style('lcni-filter', LCNI_URL . 'modules/filter/filter.css', ['lcni-ui-table'], $css_version);
     }
 
@@ -82,6 +82,7 @@ class LCNI_FilterShortcode {
             'tableSettingsStorageKey' => 'lcni_filter_visible_columns_v1_' . $storage_key_suffix,
             'defaultFilterValues' => $settings['default_filter_values'] ?? [],
             'buttonConfig' => LCNI_Button_Style_Config::get_config(),
+            'globalTableConfig' => class_exists('LCNI_Table_Config') ? LCNI_Table_Config::get_config() : [],
         ]);
     }
 
@@ -96,50 +97,7 @@ class LCNI_FilterShortcode {
             return '';
         }
 
-        $rules = [];
-        $map = [
-            'text_color' => 'color',
-            'background_color' => 'background-color',
-            'border_color' => 'border-color',
-        ];
-        foreach ($map as $key => $prop) {
-            $value = sanitize_hex_color((string) ($style[$key] ?? ''));
-            if ($value) {
-                $rules[] = $prop . ':' . $value;
-            }
-        }
-
-        foreach (['border_width' => 'border-width', 'border_radius' => 'border-radius', 'header_label_font_size' => 'font-size'] as $key => $prop) {
-            $raw = isset($style[$key]) ? trim((string) $style[$key]) : '';
-            if ($raw !== '' && preg_match('/^\d+(\.\d+)?$/', $raw)) {
-                $rules[] = $prop . ':' . $raw . 'px';
-            }
-        }
-
-        $row_font_size = isset($style['row_font_size']) ? trim((string) $style['row_font_size']) : '';
-        $header_row_height = isset($style['table_header_row_height']) ? trim((string) $style['table_header_row_height']) : '';
-        $header_height_rule = '';
-        if ($header_row_height !== '' && preg_match('/^\d+(\.\d+)?$/', $header_row_height)) {
-            $header_height_rule = 'height:' . $header_row_height . 'px;';
-        }
-        $row_rule = '';
-        if ($row_font_size !== '' && preg_match('/^\d+(\.\d+)?$/', $row_font_size)) {
-            $row_rule = 'font-size:' . $row_font_size . 'px;';
-        }
-
-        $css = '';
-        if (!empty($rules)) {
-            $css .= '.lcni-filter-module .lcni-table th,.lcni-filter-module .lcni-table td{' . implode(';', $rules) . ';}' . "\n";
-            $css .= '.lcni-filter-module .lcni-filter-panel,.lcni-filter-module .lcni-column-pop{' . implode(';', $rules) . ';}' . "\n";
-        }
-        if ($row_rule !== '') {
-            $css .= '.lcni-filter-module .lcni-table td{' . $row_rule . "}\n";
-        }
-        if ($header_height_rule !== '') {
-            $css .= '.lcni-filter-module .lcni-table th{' . $header_height_rule . "}\n";
-        }
-
-        return $css;
+        return '';
     }
 
     private function should_enqueue_assets() {

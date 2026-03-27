@@ -1,5 +1,9 @@
 (function () {
   const cfg = window.lcniFilterConfig || {};
+  // Global sticky config — single source of truth từ Admin → Bảng dữ liệu
+  const _gtc = cfg.globalTableConfig || {};
+  const _stickyHeader  = _gtc.table_sticky_header  !== false && _gtc.table_sticky_header  !== 0;
+  const _stickyFirstCol = _gtc.table_sticky_first_column !== false && _gtc.table_sticky_first_column !== 0;
   window.lcniData = window.lcniData || {};
   if (!window.lcniData.stockDetailUrl && cfg.stockDetailUrl) window.lcniData.stockDetailUrl = cfg.stockDetailUrl;
 
@@ -162,12 +166,6 @@
   }
   function saveVisibleColumns(cols) { try { sessionStorage.setItem(sessionKey, JSON.stringify(cols)); } catch (e) {} }
 
-  function ensureSymbolFirst(columns) {
-    const list = Array.isArray(columns) ? columns.map((item) => String(item || '').trim()).filter(Boolean) : [];
-    const withoutSymbol = list.filter((column) => column !== 'symbol');
-    return ['symbol', ...withoutSymbol];
-  }
-
   function saveFilterState(filters) {
     try { sessionStorage.setItem(filterStateKey, JSON.stringify(Array.isArray(filters) ? filters : [])); } catch (e) {}
   }
@@ -264,7 +262,8 @@
 
   function collectVisibleColumns(host) {
     const selected = Array.from(host.querySelectorAll('[data-visible-col]:checked')).map((node) => node.value);
-    return ensureSymbolFirst(selected);
+    if (!selected.includes('symbol')) selected.unshift('symbol');
+    return selected;
   }
 
   function showToast(message) {
@@ -718,35 +717,11 @@
     return `<div class="lcni-filter-criteria-grid"><div class="lcni-filter-criteria-tabs">${state.criteria.map((item) => `<button type="button" class="lcni-filter-tab ${item.column === active ? 'is-active' : ''}" data-criteria-tab="${esc(item.column)}"><span class="lcni-filter-tab-check" data-criteria-check="${esc(item.column)}">\u2713</span><span>${esc(item.label)}</span></button>`).join('')}</div><div class="lcni-filter-criteria-values">${state.criteria.map((item) => `<div class="lcni-filter-value-panel ${item.column === active ? 'is-active' : ''}" data-criteria-content="${esc(item.column)}"><strong>${esc(item.label)}</strong>${criteriaControlHtml(item)}</div>`).join('')}<div class="lcni-filter-summary lcni-filter-summary-desktop" data-filter-result-summary></div></div></div>`;
   }
 
-  function getStickyColumnCount(style, columns) {
-    const configured = Number((style || {}).sticky_column_count || 1);
-    const normalized = Number.isFinite(configured) ? Math.max(0, Math.trunc(configured)) : 1;
-    const stickyColumn = String((style || {}).sticky_column || '').trim();
-    const stickyIndex = Array.isArray(columns) ? columns.indexOf(stickyColumn) : -1;
-    const withNamedSticky = stickyIndex >= 0 ? Math.max(normalized, stickyIndex + 1) : normalized;
-    if (isMobileViewport() && Array.isArray(columns) && columns.includes('symbol')) {
-      return Math.max(1, withNamedSticky);
-    }
-    return withNamedSticky;
-  }
-
-  function enforceTableScrollableWidth(host, columns, stickyCount) {
-    const wrap = host.querySelector('.lcni-table-scroll');
-    const table = host.querySelector('.lcni-table');
-    if (!wrap || !table) return;
-
-    const safeCount = Math.max(1, Number(columns && columns.length) || 1);
-    const stickyCols = Math.max(0, Number(stickyCount) || 0);
-    const minWidth = (stickyCols * 110) + (Math.max(0, safeCount - stickyCols) * 92);
-    table.style.minWidth = `${Math.max(minWidth, wrap.clientWidth)}px`;
-  }
-
   function renderStatic(host) {
     const settings = cfg.settings || {};
     const style = settings.style || {};
     const labels = settings.column_labels || {};
     const columns = state.visibleColumns;
-    const stickyCount = getStickyColumnCount(style, columns);
     const selectedId = Number(state.selectedSavedFilterId || 0);
     const selectedTemplateId = Number(state.selectedTemplateId || 0);
 
@@ -754,32 +729,20 @@
     host.style.setProperty('--lcni-panel-value-size', `${Number(style.panel_value_font_size || 13)}px`);
     host.style.setProperty('--lcni-panel-label-color', String(style.panel_label_color || '#111827'));
     host.style.setProperty('--lcni-panel-value-color', String(style.panel_value_color || '#374151'));
-    host.style.setProperty('--lcni-table-header-size', `${Number(style.table_header_font_size || 12)}px`);
-    host.style.setProperty('--lcni-table-header-color', String(style.table_header_text_color || '#111827'));
-    host.style.setProperty('--lcni-table-header-bg', String(style.table_header_background || '#f3f4f6'));
-    host.style.setProperty('--lcni-table-value-size', `${Number(style.table_value_font_size || 13)}px`);
-    host.style.setProperty('--lcni-table-value-color', String(style.table_value_text_color || '#111827'));
-    host.style.setProperty('--lcni-table-value-bg', String(style.table_value_background || '#ffffff'));
-    host.style.setProperty('--lcni-row-divider-color', String(style.table_row_divider_color || '#e5e7eb'));
-    host.style.setProperty('--lcni-row-divider-width', `${Number(style.table_row_divider_width || 1)}px`);
-    host.style.setProperty('--lcni-row-hover-bg', String(style.row_hover_background || '#eef2ff'));
     host.style.setProperty('--lcni-saved-filter-bg', String(style.saved_filter_dropdown_bg || '#ffffff'));
     host.style.setProperty('--lcni-saved-filter-color', String(style.saved_filter_dropdown_text || '#111827'));
     host.style.setProperty('--lcni-saved-filter-border', String(style.saved_filter_dropdown_border || '#d1d5db'));
     host.style.setProperty('--lcni-template-filter-bg', String(style.template_filter_dropdown_bg || '#ffffff'));
     host.style.setProperty('--lcni-template-filter-color', String(style.template_filter_dropdown_text || '#111827'));
     host.style.setProperty('--lcni-template-filter-border', String(style.template_filter_dropdown_border || '#d1d5db'));
-    host.style.setProperty('--lcni-table-header-height', `${Number(style.table_header_row_height || 42)}px`);
-    host.style.setProperty('--lcni-table-row-height', `${Number(style.row_height || 36)}px`);
-    host.style.setProperty('--lcni-table-scroll-speed', String(Number(style.table_scroll_speed || 1)));
-    host.classList.toggle('lcni-disable-sticky-header', Number(style.sticky_header_rows || 1) < 1);
+    // FIX: dùng ?? thay || để phân biệt 0 (tắt sticky) với undefined (default=1)
+    host.classList.toggle('lcni-disable-sticky-header', !_stickyHeader);
 
     const hideBtn = style.enable_hide_button ? `<button type="button" class="lcni-btn lcni-btn-btn_filter_hide lcni-filter-hide-btn" data-filter-hide>${renderButtonContent('btn_filter_hide', 'Ẩn')}</button>` : '';
     const savedFilterLabel = esc(style.saved_filter_label || 'Saved Filter');
     const templateLabel = esc(style.template_filter_label || 'LCNi Filter Template');
 
-    host.innerHTML = `<div class="lcni-filter-toolbar"><button type="button" class="lcni-btn lcni-btn-btn_filter_open" data-filter-toggle>${renderButtonContent('btn_filter_open', 'Filter')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_setting" data-column-toggle-btn>${renderButtonContent('btn_filter_setting', '')}</button></div><div class="lcni-filter-summary lcni-filter-summary-mobile" data-filter-result-summary></div><div class="lcni-filter-panel ${state.panelHidden ? 'is-collapsed' : ''}" data-filter-panel><div class="lcni-filter-panel-body">${renderCriteriaPanel()}</div><div class="lcni-filter-panel-actions"><label class="lcni-saved-filter-label">${savedFilterLabel}</label><select data-saved-filter-select class="lcni-select-saved-filter"><option value="">${savedFilterLabel}</option>${(state.savedFilters || []).map((f) => `<option value="${Number(f.id || 0)}" ${Number(f.id || 0) === selectedId ? 'selected' : ''}>${esc(f.filter_name || '')}</option>`).join('')}</select><label class="lcni-saved-filter-label">${templateLabel}</label><select data-template-filter-select class="lcni-select-template-filter"><option value="">${templateLabel}</option>${(state.adminTemplates || []).map((f) => `<option value="${Number(f.id || 0)}" ${Number(f.id || 0) === selectedTemplateId ? 'selected' : ''}>${esc(f.filter_name || '')}</option>`).join('')}</select><button type="button" class="lcni-btn lcni-btn-btn_filter_reload" data-reload-filter>${renderButtonContent('btn_filter_reload', 'Reload')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_save" data-save-current-filter>${renderButtonContent('btn_filter_save', 'Save')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_delete" data-delete-current-filter>${renderButtonContent('btn_filter_delete', 'Delete')}</button><button type="button" class="lcni-btn lcni-btn-btn_set_default_filter" data-set-default-filter>${renderButtonContent('btn_set_default_filter', 'Set Default')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_clear" data-clear-filter>${renderButtonContent('btn_filter_clear', 'Clear')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_apply" data-apply-filter>${renderButtonContent('btn_filter_apply', 'Apply Filter', getApplyLabel())}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_add_watchlist_bulk" data-add-filter-result-watchlist>${renderButtonContent('btn_filter_add_watchlist_bulk', 'Thêm vào Watchlist')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_export_excel" data-export-filter-excel>${renderButtonContent('btn_filter_export_excel', 'Xuất Excel')}</button>${hideBtn}</div></div><div class="lcni-column-pop" data-column-pop ${state.columnPanelOpen ? '' : 'hidden'}></div><div class="lcni-table-scroll lcni-table-wrapper"><table class="lcni-table filter-table"><thead><tr>${columns.map((c, idx) => `<th data-sort-key="${esc(c)}" class="${idx < stickyCount ? 'is-sticky-col lcni-sticky-col' : ''} ${isNumericValue((state.dataset[0] || {})[c]) ? 'lcni-cell-number' : 'lcni-cell-text'}">${esc(labels[c] || c)} <span data-sort-icon>${state.sortKey === c ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</span></th>`).join('')}</tr></thead><tbody><tr><td colspan="${columns.length}" class="lcni-cell-text">Nhấn Apply Filter để tải dữ liệu.</td></tr></tbody></table></div>`;
-    enforceTableScrollableWidth(host, columns, stickyCount);
+    host.innerHTML = `<div class="lcni-filter-toolbar"><button type="button" class="lcni-btn lcni-btn-btn_filter_open" data-filter-toggle>${renderButtonContent('btn_filter_open', 'Filter')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_setting" data-column-toggle-btn>${renderButtonContent('btn_filter_setting', '')}</button></div><div class="lcni-filter-summary lcni-filter-summary-mobile" data-filter-result-summary></div><div class="lcni-filter-panel ${state.panelHidden ? 'is-collapsed' : ''}" data-filter-panel><div class="lcni-filter-panel-body">${renderCriteriaPanel()}</div><div class="lcni-filter-panel-actions"><label class="lcni-saved-filter-label">${savedFilterLabel}</label><select data-saved-filter-select class="lcni-select-saved-filter"><option value="">${savedFilterLabel}</option>${(state.savedFilters || []).map((f) => `<option value="${Number(f.id || 0)}" ${Number(f.id || 0) === selectedId ? 'selected' : ''}>${esc(f.filter_name || '')}</option>`).join('')}</select><label class="lcni-saved-filter-label">${templateLabel}</label><select data-template-filter-select class="lcni-select-template-filter"><option value="">${templateLabel}</option>${(state.adminTemplates || []).map((f) => `<option value="${Number(f.id || 0)}" ${Number(f.id || 0) === selectedTemplateId ? 'selected' : ''}>${esc(f.filter_name || '')}</option>`).join('')}</select><button type="button" class="lcni-btn lcni-btn-btn_filter_reload" data-reload-filter>${renderButtonContent('btn_filter_reload', 'Reload')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_save" data-save-current-filter>${renderButtonContent('btn_filter_save', 'Save')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_delete" data-delete-current-filter>${renderButtonContent('btn_filter_delete', 'Delete')}</button><button type="button" class="lcni-btn lcni-btn-btn_set_default_filter" data-set-default-filter>${renderButtonContent('btn_set_default_filter', 'Set Default')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_clear" data-clear-filter>${renderButtonContent('btn_filter_clear', 'Clear')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_apply" data-apply-filter>${renderButtonContent('btn_filter_apply', 'Apply Filter', getApplyLabel())}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_add_watchlist_bulk" data-add-filter-result-watchlist>${renderButtonContent('btn_filter_add_watchlist_bulk', 'Thêm vào Watchlist')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_export_excel" data-export-filter-excel>${renderButtonContent('btn_filter_export_excel', 'Xuất Excel')}</button>${hideBtn}</div></div><div class="lcni-column-pop" data-column-pop ${state.columnPanelOpen ? '' : 'hidden'}></div><div class="lcni-table-scroll lcni-table-wrapper"><table class="lcni-table ${_stickyHeader ? 'has-sticky-header' : ''}"><thead><tr>${columns.map((c, idx) => { const _sc = _stickyFirstCol && c === 'symbol'; return `<th data-sort-key="${esc(c)}" class="${_sc ? 'is-sticky-col lcni-sticky-col' : ''} ${isNumericValue((state.dataset[0] || {})[c]) ? 'lcni-cell-number' : 'lcni-cell-text'}"${_sc ? ' style="left:0px"' : ''}>${esc(labels[c] || c)} <span data-sort-icon>${state.sortKey === c ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</span></th>`; }).join('')}</tr></thead><tbody><tr><td colspan="${columns.length}" class="lcni-cell-text">Nhấn Apply Filter để tải dữ liệu.</td></tr></tbody></table></div>`;
 
     const selectable = settings.table_columns || columns;
     host.querySelector('[data-column-pop]').innerHTML = `${renderColumnPositionItems(selectable, labels)}<button type="button" class="lcni-btn lcni-btn-btn_save_filter" data-save-columns>${renderButtonContent('btn_save_filter', 'Save')}</button>`;
@@ -788,7 +751,25 @@
     applyDefaultFilterConfig(host);
     if (state.filters.length) applySavedFilterConfig(host, { filters: state.filters });
     renderFilterSummary(host);
-    requestAnimationFrame(() => requestAnimationFrame(() => applyStickyColumnOffsets(host)));
+    // Áp dụng sticky offset ban đầu sau khi DOM đã layout
+    // FIX: double-rAF đảm bảo layout pass hoàn thành trước khi đo offsetWidth
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      applyStickyColumnOffsets(host);
+      // Đăng ký auto-recalc sau resize / column toggle
+      const wrap = host.querySelector('.lcni-table-scroll, .lcni-table-wrapper');
+      if (wrap && window.LcniTableEngine) {
+        // Mobile guard: reset sticky-breaking props trước observe
+        wrap.style.transform  = 'none';
+        wrap.style.contain    = 'none';
+        wrap.style.isolation  = 'auto';
+        wrap.style.willChange = 'auto';
+        wrap.style.webkitOverflowScrolling = 'auto';
+        window.LcniTableEngine.observe(wrap, {
+          sticky_columns: _stickyFirstCol ? 1 : 0,
+          sticky_header:  _stickyHeader,
+        });
+      }
+    }));
   }
 
 
@@ -826,7 +807,6 @@
       } else {
         return;
       }
-      enforceTableScrollableWidth(host, columns, stickyCount);
     }
     window.clearTimeout(host._lcniCountTimer);
     host._lcniCountTimer = window.setTimeout(() => {
@@ -865,17 +845,18 @@
     state.dataset = Array.isArray(payload.items) ? payload.items : state.dataset;
     if (tbody) {
       const style = ((cfg.settings || {}).style || {});
+      // FIX: ?? thay || để admin có thể set 0 (không sticky)
+      const stickyCount = _stickyFirstCol ? 1 : 0; // global config: only col 0
       const columns = state.visibleColumns.length ? state.visibleColumns : ((cfg.settings && cfg.settings.table_columns) || []);
-      const stickyCount = getStickyColumnCount(style, columns);
       const sorted = sortDataset(state.dataset);
 
       if (!sorted.length) {
         tbody.innerHTML = `<tr><td colspan="${columns.length}" class="lcni-cell-text">Không có dữ liệu phù hợp. Vui lòng chỉnh điều kiện và bấm Apply Filter.</td></tr>`;
       } else {
         tbody.innerHTML = sorted.map((row) => `<tr data-symbol="${esc(row.symbol || '')}">${columns.map((column, idx) => {
-        const stickyClass = idx < stickyCount ? 'is-sticky-col lcni-sticky-col' : '';
+        const stickyClass = (_stickyFirstCol && column === 'symbol') ? 'is-sticky-col lcni-sticky-col' : '';
         if (column === 'symbol') {
-          return `<td class="${stickyClass} lcni-cell-text" data-cell-field="symbol" data-cell-value="${esc(row[column] || '')}"><span>${esc(row[column] || '')}</span> <button type="button" class="lcni-btn lcni-btn-btn_add_filter_row" data-lcni-watchlist-add data-symbol="${esc(row.symbol || '')}" aria-label="Add to watchlist">${renderButtonContent('btn_add_filter_row', '')}</button></td>`;
+          return `<td class="${stickyClass} lcni-cell-text" data-cell-field="symbol" data-cell-value="${esc(row[column] || '')}"${stickyClass ? ' style="left:0px"' : ''}><span>${esc(row[column] || '')}</span> <button type="button" class="lcni-btn lcni-btn-btn_add_filter_row" data-lcni-watchlist-add data-symbol="${esc(row.symbol || '')}" aria-label="Add to watchlist">${renderButtonContent('btn_add_filter_row', '')}</button></td>`;
         }
         const typeClass = isNumericValue(row[column]) ? 'lcni-cell-number' : 'lcni-cell-text';
         const cellRule = resolveCellToCellMeta(column, row);
@@ -886,6 +867,8 @@
         const iconPosition = String((iconRule && iconRule.icon_position) || 'left');
         const content = iconHtml ? (iconPosition === 'right' ? `${valueHtml} ${iconHtml}` : `${iconHtml} ${valueHtml}`) : valueHtml;
         const styleParts = [];
+        // FIX: left:0px inline đảm bảo sticky hoạt động ngay cả trước khi JS gán offset
+        if (stickyClass) styleParts.push('left:0px;');
         if (valueRule) styleParts.push(`background:${esc(valueRule.bg_color || '')};color:${esc(valueRule.text_color || '')};`);
         if (cellRule && cellRule.text_color) styleParts.push(`color:${esc(cellRule.text_color)};`);
         const styleAttr = styleParts.length ? ` style="${styleParts.join('')}"` : '';
@@ -896,7 +879,65 @@
     state.total = Number(payload.total || state.total || 0);
     state.lastAppliedTotal = state.total;
     updateApplyButtonLabel(host);
-    requestAnimationFrame(() => requestAnimationFrame(() => applyStickyColumnOffsets(host)));
+    applyStickyColumnOffsets(host);
+    // Broadcast danh sach symbol ket qua de dong bo industry monitor
+    var _lcniSyms = (Array.isArray(state.dataset) ? state.dataset : [])
+      .map(function(r) { return String((r || {}).symbol || '').trim().toUpperCase(); })
+      .filter(Boolean);
+    document.dispatchEvent(new CustomEvent('lcni:symbolsChanged', { detail: { symbols: _lcniSyms }, bubbles: true }));
+  }
+
+  /**
+   * applyStickyColumnOffsets — gán left chính xác cho CSS position:sticky.
+   *
+   * Nguyên tắc: CSS position:sticky với left:Xpx tự giữ element bám Xpx từ
+   * cạnh trái scroll container khi scroll ngang — browser tự tính scrollLeft.
+   * JS chỉ cần đo width mỗi cột sticky và gán left=offset tích lũy, một lần.
+   * KHÔNG cần scroll listener, KHÔNG cần cộng scrollLeft.
+   */
+  function applyStickyColumnOffsets(host) {
+    const wrap = host.querySelector('.lcni-table-scroll, .lcni-table-wrapper');
+    if (!wrap) return;
+
+    // Config rõ ràng — không rely vào _detectStickyCount từ DOM
+    const engineConfig = {
+      sticky_columns: _stickyFirstCol ? 1 : 0,
+      sticky_header:  _stickyHeader,
+    };
+
+    if (window.LcniTableEngine) {
+      // Reset sticky-breaking CSS props trên wrap (iOS Safari guard)
+      // Dùng applyClasses(wrap, {sticky_columns:0}) để không re-class,
+      // sau đó recalcOffsets để tính lại left dựa trên class đã có
+      wrap.style.transform  = 'none';
+      wrap.style.contain    = 'none';
+      wrap.style.isolation  = 'auto';
+      wrap.style.willChange = 'auto';
+      wrap.style.webkitOverflowScrolling = 'auto';
+      window.LcniTableEngine.recalcOffsets(wrap);
+    } else {
+      // Fallback nội bộ khi engine chưa load
+      const table = wrap.querySelector('.lcni-table');
+      if (!table) return;
+      const headerRow = table.querySelector('thead tr');
+      if (!headerRow) return;
+      const stickyThs = Array.from(
+        headerRow.querySelectorAll('th.is-sticky-col, th.lcni-sticky-col')
+      );
+      if (!stickyThs.length) return;
+      stickyThs.forEach(th => { th.style.left = ''; });
+      let acc = 0;
+      stickyThs.forEach(th => {
+        th.style.left = acc + 'px';
+        acc += th.offsetWidth || 80;
+      });
+      table.querySelectorAll('tbody tr').forEach(tr => {
+        let i = 0;
+        tr.querySelectorAll('td.is-sticky-col, td.lcni-sticky-col').forEach(td => {
+          td.style.left = (i === 0 ? 0 : acc) + 'px'; i++;
+        });
+      });
+    }
   }
 
   async function load(host) {
@@ -943,10 +984,6 @@
       state.panelHidden = true;
       const panel = host.querySelector('[data-filter-panel]');
       if (panel) panel.classList.add('is-collapsed');
-      // Mobile: thu panel, bảng tự về vị trí cũ
-      if (isMobileViewport()) {
-        updateTableScrollOffset(host, true);
-      }
     } catch (error) {
       showToast((error && error.message) || 'Không thể áp dụng bộ lọc. Vui lòng thử lại.');
     } finally {
@@ -968,153 +1005,89 @@
   }
 
 
-  function updateTableScrollOffset(host, panelHidden) {
-    if (!isMobileViewport()) return;
-    const tableScroll = host.querySelector('.lcni-table-scroll');
-    if (!tableScroll) return;
 
-    // Đo bottom của toolbar fixed (điểm thấp nhất của nút Bộ lọc)
-    const toolbar = host.querySelector('.lcni-filter-toolbar');
-    const toolbarBottom = toolbar ? toolbar.getBoundingClientRect().bottom : 50;
+  function bindTouchScroll(wrap) {
+    if (!wrap || wrap.dataset.touchScrollBound === '1') return;
+    wrap.dataset.touchScrollBound = '1';
 
-    if (panelHidden) {
-      // Bảng margin-top = toolbar bottom + 1px, header sticky top:0 sẽ đúng
-      tableScroll.style.marginTop = (toolbarBottom + 1) + 'px';
-    } else {
-      // Bảng margin-top = panel height + 1px
-      const panel = host.querySelector('[data-filter-panel]');
-      if (panel) {
-        requestAnimationFrame(() => {
-          const ph = panel.getBoundingClientRect().height;
-          tableScroll.style.marginTop = (ph + 1) + 'px';
-        });
-      } else {
-        tableScroll.style.marginTop = (toolbarBottom + 1) + 'px';
+    // touch-action: pan-x pan-y → browser dùng native scroll cho cả 2 chiều
+    // KHÔNG set scrollLeft/scrollTop thủ công — sticky chỉ hoạt động với native scroll
+    wrap.style.touchAction = 'pan-x pan-y';
+
+    let startX = 0, startY = 0, startScrollLeft = 0, dirLocked = null;
+
+    wrap.addEventListener('touchstart', e => {
+      const t = e.touches[0];
+      startX = t.clientX;
+      startY = t.clientY;
+      startScrollLeft = wrap.scrollLeft;
+      dirLocked = null;
+    }, { passive: true });
+
+    wrap.addEventListener('touchmove', e => {
+      if (e.touches.length !== 1) return;
+      const dx = e.touches[0].clientX - startX;
+      const dy = e.touches[0].clientY - startY;
+
+      // Tăng ngưỡng 6→10px để tránh lock nhầm hướng khi ngón tay chưa ổn định
+      if (dirLocked === null) {
+        if (Math.hypot(dx, dy) < 10) return;
+        dirLocked = Math.abs(dx) > Math.abs(dy) * 1.2; // true = ngang (hệ số 1.2 tránh diagonal)
       }
-    }
+
+      if (dirLocked) {
+        // Cuộn ngang — chỉ preventDefault khi bảng CÒN CÓ THỂ scroll ngang
+        // (không ở biên trái khi vuốt phải, không ở biên phải khi vuốt trái)
+        const maxLeft = wrap.scrollWidth - wrap.clientWidth;
+        const atLeftEdge  = wrap.scrollLeft <= 0 && dx > 0;
+        const atRightEdge = wrap.scrollLeft >= maxLeft && dx < 0;
+
+        if (maxLeft > 0 && !atLeftEdge && !atRightEdge) {
+          // Bảng còn scroll được → chặn page scroll, để bảng scroll ngang
+          e.preventDefault();
+        }
+        // Khi ở biên: không preventDefault → page/parent scroll tiếp quản (rubber-band)
+      }
+      // Cuộn dọc: không bao giờ preventDefault → page scroll hoạt động bình thường
+    }, { passive: false });
+
+    wrap.addEventListener('touchend',    () => { dirLocked = null; }, { passive: true });
+    wrap.addEventListener('touchcancel', () => { dirLocked = null; }, { passive: true });
   }
 
-
-  /**
-   * Set left offset cho từng cột sticky (chỉ cần khi sticky_column_count > 1).
-   * position:sticky tự lo việc bám cạnh trái — JS chỉ set đúng left offset
-   * để các cột sticky xếp lần lượt thay vì chồng lên nhau tại left:0.
-   */
-  function applyStickyColumnOffsets(host) {
-    const table = host.querySelector('.lcni-table');
-    if (!table) return;
-    const headerRow = table.querySelector('thead tr');
-    if (!headerRow) return;
-    const stickyThs = Array.from(headerRow.querySelectorAll('th.is-sticky-col, th.lcni-sticky-col'));
-    if (!stickyThs.length) return;
-
-    // Reset để đo offsetWidth chính xác
-    stickyThs.forEach(th => { th.style.left = ''; });
-
-    // Nếu table chưa có kích thước (hidden/not-rendered), dùng ResizeObserver retry
-    if (!table.offsetWidth) {
-      if (typeof ResizeObserver !== 'undefined' && !table._stickyRO) {
-        table._stickyRO = new ResizeObserver(() => {
-          if (table.offsetWidth) {
-            table._stickyRO.disconnect();
-            table._stickyRO = null;
-            applyStickyColumnOffsets(host);
-          }
-        });
-        table._stickyRO.observe(table);
-      }
-      return;
-    }
-
-    // Tính left lũy kế và gán
-    let acc = 0;
-    const offsets = stickyThs.map(th => {
-      const off = acc;
-      acc += th.offsetWidth;
-      return off;
-    });
-
-    stickyThs.forEach((th, i) => {
-      th.style.left = offsets[i] + 'px';
-    });
-
-    // Gán cho tbody
-    table.querySelectorAll('tbody tr').forEach(tr => {
-      tr.querySelectorAll('td.is-sticky-col, td.lcni-sticky-col').forEach((td, i) => {
-        if (i < offsets.length) td.style.left = offsets[i] + 'px';
-      });
-    });
-  }
-
-    function bindHorizontalScrollLock(host) {
+  function bindHorizontalScrollLock(host) {
     const wrap = host.querySelector('.lcni-table-scroll');
     if (!wrap || wrap.dataset.scrollLockBound === '1') return;
     wrap.dataset.scrollLockBound = '1';
+    bindTouchScroll(wrap); // thêm touch scroll
     wrap.addEventListener('wheel', (event) => {
-      const speed = Number((cfg.settings && cfg.settings.style && cfg.settings.style.table_scroll_speed) || host.style.getPropertyValue('--lcni-table-scroll-speed') || 1) || 1;
+      const speed = 1;
       const deltaX = (event.deltaX || 0) + ((event.shiftKey ? event.deltaY : 0) * speed);
       if (!deltaX) return;
       const maxLeft = wrap.scrollWidth - wrap.clientWidth;
+      if (maxLeft <= 0) return; // bảng không scroll ngang được → không can thiệp
       const nextLeft = wrap.scrollLeft + deltaX;
-      if (maxLeft > 0 && nextLeft >= 0 && nextLeft <= maxLeft) {
+      // Chỉ preventDefault khi bảng thực sự còn scroll được theo hướng đó
+      // (không nuốt wheel event khi đã ở biên → cho page/parent scroll tiếp quản)
+      if (nextLeft >= 0 && nextLeft <= maxLeft) {
         wrap.scrollLeft = nextLeft;
         event.preventDefault();
       }
-    }, { passive: false });
-
-    let touchStartX = 0;
-    let touchStartY = 0;
-    let startScrollLeft = 0;
-    let lockHorizontal = false;
-
-    wrap.addEventListener('touchstart', (event) => {
-      if (!event.touches || event.touches.length !== 1) return;
-      const touch = event.touches[0];
-      touchStartX = touch.clientX;
-      touchStartY = touch.clientY;
-      startScrollLeft = wrap.scrollLeft;
-      lockHorizontal = false;
-    }, { passive: true });
-
-    wrap.addEventListener('touchmove', (event) => {
-      if (!event.touches || event.touches.length !== 1) return;
-      if (wrap.scrollWidth <= wrap.clientWidth) return;
-      const touch = event.touches[0];
-      const deltaX = touch.clientX - touchStartX;
-      const deltaY = touch.clientY - touchStartY;
-
-      if (!lockHorizontal) {
-        if (Math.abs(deltaX) < 6) return;
-        if (Math.abs(deltaX) <= Math.abs(deltaY)) return;
-        lockHorizontal = true;
-      }
-
-      const maxLeft = Math.max(0, wrap.scrollWidth - wrap.clientWidth);
-      const nextLeft = Math.max(0, Math.min(maxLeft, startScrollLeft - deltaX));
-      if (nextLeft === wrap.scrollLeft) return;
-      wrap.scrollLeft = nextLeft;
-      event.preventDefault();
     }, { passive: false });
   }
 
   function bind(host) {
     host.addEventListener('click', async (event) => {
       if (event.target.closest('[data-filter-hide]')) {
-        // Chỉ thu panel, không ẩn cả module
         state.panelHidden = true;
         const panel = host.querySelector('[data-filter-panel]');
         if (panel) panel.classList.add('is-collapsed');
-        if (isMobileViewport()) updateTableScrollOffset(host, true);
         return;
       }
       if (event.target.closest('[data-filter-toggle]')) {
         state.panelHidden = !state.panelHidden;
         const panel = host.querySelector('[data-filter-panel]');
         if (panel) panel.classList.toggle('is-collapsed', state.panelHidden);
-        // Mobile: điều chỉnh table-scroll padding để không bị che bởi panel
-        if (isMobileViewport()) {
-          updateTableScrollOffset(host, state.panelHidden);
-        }
         return;
       }
       if (event.target.closest('[data-criteria-tab]')) {
@@ -1220,7 +1193,31 @@
       if (addBtn) {
         const symbol = String(addBtn.getAttribute('data-symbol') || '').trim().toUpperCase();
         if (!symbol) return;
-        try { await openWatchlistSelector(symbol); addBtn.classList.add('is-active'); } catch (e) { showToast((e && e.message) || 'Không thể cập nhật watchlist'); }
+
+        // --- ajax feedback: spin ---
+        const iconEl = addBtn.querySelector('i');
+        const originalIconClass = iconEl ? iconEl.className : '';
+        addBtn.classList.add('is-loading');
+        addBtn.disabled = true;
+        if (iconEl) iconEl.className = 'fa-solid fa-circle-notch lcni-btn-icon';
+
+        try {
+          await openWatchlistSelector(symbol);
+          // --- success: check-circle ---
+          addBtn.classList.remove('is-loading');
+          addBtn.classList.add('is-done');
+          if (iconEl) iconEl.className = 'fa-solid fa-circle-check';
+          setTimeout(() => {
+            addBtn.classList.remove('is-done');
+            addBtn.disabled = false;
+            if (iconEl) iconEl.className = originalIconClass;
+          }, 1800);
+        } catch (e) {
+          addBtn.classList.remove('is-loading');
+          addBtn.disabled = false;
+          if (iconEl) iconEl.className = originalIconClass;
+          showToast((e && e.message) || 'Không thể cập nhật watchlist');
+        }
       }
     });
 
@@ -1389,7 +1386,8 @@
     bindRowNavigation();
     state.panelHidden = !isMobileViewport();
     const defaultColumns = ((cfg.settings || {}).table_columns || []).slice();
-    state.visibleColumns = ensureSymbolFirst(loadVisibleColumns(defaultColumns));
+    state.visibleColumns = loadVisibleColumns(defaultColumns);
+    if (!state.visibleColumns.includes('symbol')) state.visibleColumns.unshift('symbol');
     state.activeCriteriaColumn = (state.criteria[0] && state.criteria[0].column) || '';
 
     document.querySelectorAll('[data-lcni-stock-filter]').forEach(async (host) => {
@@ -1398,12 +1396,6 @@
       bind(host);
       syncAllNumberRanges(host, 'input');
       updateCriteriaSelectionState(host);
-      // Mobile: set initial padding-top sau khi DOM render xong
-      if (isMobileViewport()) {
-        requestAnimationFrame(() => {
-          updateTableScrollOffset(host, state.panelHidden);
-        });
-      }
 
       let initialConfig = null;
       const cachedFilters = loadFilterState();
@@ -1432,9 +1424,36 @@
       if (state.filters.length) {
         await load(host);
       }
+
+      // Recalculate sticky offsets khi cột thay đổi kích thước (xoay màn hình, zoom...)
+      if (typeof ResizeObserver !== 'undefined') {
+        const ro = new ResizeObserver(() => {
+          applyStickyColumnOffsets(host);
+        });
+        const tableEl = host.querySelector('.lcni-table');
+        if (tableEl) ro.observe(tableEl);
+      }
     });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
+
+  // Lắng nghe symbol sync từ Industry Monitor (mode=symbol) hoặc các widget khác
+  document.addEventListener('lcni:symbol:select', function (e) {
+    var symbol = e.detail && e.detail.symbol ? String(e.detail.symbol).toUpperCase().trim() : '';
+    if (!symbol) return;
+    var hosts = document.querySelectorAll('[data-lcni-stock-filter]');
+    if (!hosts.length) return;
+    hosts.forEach(function (host) {
+      // Set symbol criteria nếu có trong filter
+      var symbolInput = host.querySelector('[data-criteria-col="symbol"] input, [name="symbol"], input[data-filter-col="symbol"]');
+      if (symbolInput) {
+        symbolInput.value = symbol;
+      }
+      // Trigger apply filter
+      var applyBtn = host.querySelector('[data-apply-filter]');
+      if (applyBtn) applyBtn.click();
+    });
+  });
 })();
