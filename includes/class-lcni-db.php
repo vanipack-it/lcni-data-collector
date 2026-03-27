@@ -330,12 +330,14 @@ class LCNI_DB {
             smart_money VARCHAR(30) DEFAULT NULL,
             symbol_type VARCHAR(20) NOT NULL DEFAULT 'STOCK',
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            indicators_ready TINYINT NOT NULL DEFAULT 0,
             PRIMARY KEY  (id),
             UNIQUE KEY unique_ohlc (symbol, timeframe, event_time),
             KEY idx_symbol_timeframe (symbol, timeframe),
             KEY idx_symbol_tf_time (symbol, timeframe, event_time),
             KEY idx_event_time (event_time),
-            KEY idx_symbol_index (symbol, trading_index)
+            KEY idx_symbol_index (symbol, trading_index),
+            KEY idx_ready_tf_et (indicators_ready, timeframe, event_time)
         ) {$charset_collate};";
 
         // Legacy table for backward compatibility.
@@ -964,6 +966,9 @@ class LCNI_DB {
     private static function perform_refresh_ohlc_latest_snapshot($symbols = []) {
         global $wpdb;
 
+        // Hook cho external modules / cache invalidation
+        do_action('lcni_before_ohlc_latest_refresh', $symbols);
+
         $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
         $latest_table = $wpdb->prefix . 'lcni_ohlc_latest';
         $where_clause = '';
@@ -1146,6 +1151,13 @@ class LCNI_DB {
             'position_6m' => 'VARCHAR(40) DEFAULT NULL',
             'position_1y' => 'VARCHAR(40) DEFAULT NULL',
             'breakout_potential_score' => 'INT DEFAULT NULL',
+            // Snapshot consistency flag.
+            // 0 = row chưa có đủ indicators (Python chưa sync xong batch).
+            // 1 = đã có đầy đủ: OHLC + tất cả indicators kể cả rs_*_by_exchange.
+            // Được set = 1 bởi sync_lcni_v4.php SAU khi commit toàn bộ batch.
+            // RuleRepository::find_candidate_symbols_by_window lọc AND o.indicators_ready = 1
+            // để Recommend không đọc row chưa hoàn chỉnh giữa chừng sync.
+            'indicators_ready' => 'TINYINT NOT NULL DEFAULT 0',
         ];
 
         foreach ($required_columns as $column_name => $column_definition) {
@@ -4671,9 +4683,15 @@ class LCNI_DB {
     public static function get_all_symbols() {
         global $wpdb;
 
-        $table = $wpdb->prefix . 'lcni_symbols';
-
-        return $wpdb->get_col("SELECT symbol FROM {$table} ORDER BY symbol ASC");
+        return LCNI_RedisCache::remember(
+            'all_symbols',
+            LCNI_RedisCache::GRP_REF,
+            function() use ($wpdb) {
+                $table = $wpdb->prefix . 'lcni_symbols';
+                return $wpdb->get_col("SELECT symbol FROM {$table} ORDER BY symbol ASC");
+            },
+            LCNI_RedisCache::TTL_REF
+        );
     }
 
     public static function upsert_ohlc_rows($rows, $options = []) {
@@ -4783,7 +4801,10 @@ class LCNI_DB {
             );
 
             if ($refresh_latest_snapshot) {
-                self::perform_refresh_ohlc_latest_snapshot(array_column($touched_series, 'symbol'));
+                $touched_symbols = array_column($touched_series, 'symbol');
+                self::perform_refresh_ohlc_latest_snapshot($touched_symbols);
+                // Invalidate Redis — snapshot đã cập nhật, các cache cũ không còn hợp lệ
+                LCNI_RedisCache::invalidate_ohlc_latest($touched_symbols);
             }
         }
 
@@ -6059,6 +6080,14 @@ class LCNI_DB {
             return self::$symbol_exchange_cache[$symbol];
         }
 
+        // Redis cache — cross-request, TTL 1h
+        $cache_key = 'exchange:' . $symbol;
+        $cached = LCNI_RedisCache::get($cache_key, LCNI_RedisCache::GRP_REF);
+        if ($cached !== false) {
+            self::$symbol_exchange_cache[$symbol] = $cached;
+            return $cached;
+        }
+
         $mapping_table = $wpdb->prefix . 'lcni_sym_icb_market';
         $exchange = (string) $wpdb->get_var(
             $wpdb->prepare(
@@ -6101,6 +6130,7 @@ class LCNI_DB {
 
         $exchange = self::normalize_exchange($exchange);
         self::$symbol_exchange_cache[$symbol] = $exchange;
+        LCNI_RedisCache::set($cache_key, $exchange, LCNI_RedisCache::GRP_REF);
 
         return $exchange;
     }
