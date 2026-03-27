@@ -90,3 +90,30 @@ function lcniResetGoogleBtn( btn ) {
     btn.style.opacity       = '1';
     btn.style.pointerEvents = 'auto';
 }
+
+/**
+ * Bind click vào nút Google custom (khi hiển thị cùng DNSE dạng 50:50).
+ * Thay vì dùng g_id_signin render mặc định, click → google.accounts.id.prompt().
+ */
+document.addEventListener( 'DOMContentLoaded', function () {
+    var customBtn = document.getElementById( 'lcni-google-custom-btn' );
+    if ( ! customBtn ) return;
+
+    customBtn.addEventListener( 'click', function () {
+        customBtn.disabled    = true;
+        customBtn.style.opacity = '0.7';
+        if ( window.google && google.accounts && google.accounts.id ) {
+            google.accounts.id.prompt( function ( notification ) {
+                // Nếu One Tap bị chặn hoặc không hiện được → reset nút
+                if ( notification.isNotDisplayed() || notification.isSkippedMoment() ) {
+                    customBtn.disabled    = false;
+                    customBtn.style.opacity = '1';
+                }
+            } );
+        } else {
+            // SDK chưa load xong → reset
+            customBtn.disabled    = false;
+            customBtn.style.opacity = '1';
+        }
+    } );
+} );
