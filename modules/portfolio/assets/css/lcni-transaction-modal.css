@@ -1,0 +1,497 @@
+/* ================================================================
+   lcni-transaction-modal.css
+   Unified Transaction Modal — used by both Portfolio button
+   and [lcni_add_transaction_float] shortcode.
+   ================================================================ */
+
+/* ── CSS custom properties ─────────────────────────────────── */
+:root {
+  --lcni-tx-primary:        #2563eb;
+  --lcni-tx-primary-hover:  #1d4ed8;
+  --lcni-tx-danger:         #dc2626;
+  --lcni-tx-success:        #16a34a;
+  --lcni-tx-border:         #e5e7eb;
+  --lcni-tx-bg:             #ffffff;
+  --lcni-tx-bg-subtle:      #f9fafb;
+  --lcni-tx-text:           #111827;
+  --lcni-tx-text-muted:     #6b7280;
+  --lcni-tx-radius:         12px;
+  --lcni-tx-shadow:         0 24px 64px rgba(0,0,0,.18), 0 4px 16px rgba(0,0,0,.08);
+  --lcni-tx-z-overlay:      100000;
+  --lcni-tx-z-modal:        100001;
+  --lcni-tx-z-float:        99999;
+  --lcni-tx-z-toast:        100002;
+  --lcni-tx-input-height:   40px;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   BODY LOCK (scroll disabled when modal open)
+══════════════════════════════════════════════════════════════ */
+.lcni-tx-body-lock {
+  overflow: hidden !important;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   OVERLAY
+══════════════════════════════════════════════════════════════ */
+.lcni-tx-overlay {
+  position:       fixed;
+  inset:          0;
+  background:     rgba(0, 0, 0, 0);
+  z-index:        var(--lcni-tx-z-overlay);
+  pointer-events: none;
+  transition:     background 0.22s ease;
+}
+.lcni-tx-overlay--visible {
+  background:     rgba(17, 24, 39, 0.52);
+  pointer-events: auto;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   MODAL SHELL
+══════════════════════════════════════════════════════════════ */
+.lcni-tx-modal {
+  position:        fixed;
+  inset:           0;
+  z-index:         var(--lcni-tx-z-modal);
+  display:         none;          /* JS sets display:flex to open */
+  align-items:     center;
+  justify-content: center;
+  padding:         16px;
+  box-sizing:      border-box;
+}
+
+/* ── Modal box ─────────────────────────────────────────────── */
+.lcni-tx-modal-box {
+  background:    var(--lcni-tx-bg);
+  border-radius: var(--lcni-tx-radius);
+  box-shadow:    var(--lcni-tx-shadow);
+  width:         100%;
+  max-width:     520px;
+  max-height:    90svh;
+  display:       flex;
+  flex-direction: column;
+  overflow:      hidden;
+  animation:     lcni-tx-in 0.18s cubic-bezier(.2,.8,.3,1);
+}
+
+@keyframes lcni-tx-in {
+  from { opacity: 0; transform: translateY(-14px) scale(.97); }
+  to   { opacity: 1; transform: translateY(0)     scale(1); }
+}
+
+/* ── Header ───────────────────────────────────────────────── */
+.lcni-tx-modal-header {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  padding:         16px 20px 14px;
+  border-bottom:   1px solid var(--lcni-tx-border);
+  flex-shrink:     0;
+}
+.lcni-tx-modal-title {
+  margin:      0;
+  font-size:   16px;
+  font-weight: 700;
+  color:       var(--lcni-tx-text);
+  line-height: 1.3;
+}
+
+.lcni-tx-close {
+  display:       flex;
+  align-items:   center;
+  justify-content: center;
+  background:    none;
+  border:        none;
+  width:         32px;
+  height:        32px;
+  font-size:     15px;
+  color:         var(--lcni-tx-text-muted);
+  cursor:        pointer;
+  border-radius: 8px;
+  transition:    background .15s, color .15s;
+  flex-shrink:   0;
+}
+.lcni-tx-close:hover {
+  background: #f3f4f6;
+  color:      var(--lcni-tx-text);
+}
+
+/* ── Body ─────────────────────────────────────────────────── */
+.lcni-tx-modal-body {
+  padding:    18px 20px;
+  overflow-y: auto;
+  flex:       1 1 auto;
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
+  display:    flex;
+  flex-direction: column;
+  gap:        12px;
+}
+
+/* ── Form layout ──────────────────────────────────────────── */
+.lcni-tx-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.lcni-tx-form-group {
+  display:        flex;
+  flex-direction: column;
+  gap:            5px;
+}
+
+/* Full-width group (overrides row grid) */
+.lcni-tx-full {
+  grid-column: 1 / -1;
+}
+
+/* ── Labels ───────────────────────────────────────────────── */
+.lcni-tx-label {
+  font-size:   12px;
+  font-weight: 500;
+  color:       var(--lcni-tx-text);
+  display:     flex;
+  align-items: center;
+  gap:         4px;
+  line-height: 1.3;
+}
+.lcni-tx-req {
+  color: var(--lcni-tx-danger);
+  font-size: 11px;
+}
+.lcni-tx-hint {
+  color:     var(--lcni-tx-text-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+/* ── Inputs & selects ─────────────────────────────────────── */
+.lcni-tx-input {
+  height:      var(--lcni-tx-input-height);
+  padding:     0 10px;
+  border:      1.5px solid var(--lcni-tx-border);
+  border-radius: 8px;
+  font-size:   13px;
+  color:       var(--lcni-tx-text);
+  background:  var(--lcni-tx-bg);
+  width:       100%;
+  box-sizing:  border-box;
+  outline:     none;
+  transition:  border-color .15s, box-shadow .15s;
+  -webkit-appearance: none;
+}
+.lcni-tx-input:focus {
+  border-color: var(--lcni-tx-primary);
+  box-shadow:   0 0 0 3px rgba(37,99,235,.12);
+}
+.lcni-tx-input:read-only {
+  background:  var(--lcni-tx-bg-subtle);
+  color:       var(--lcni-tx-text-muted);
+  cursor:      not-allowed;
+}
+.lcni-tx-select {
+  padding-right: 28px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b7280'/%3E%3C/svg%3E");
+  background-repeat:   no-repeat;
+  background-position: right 10px center;
+  cursor: pointer;
+}
+
+/* ── Total preview ────────────────────────────────────────── */
+.lcni-tx-total-preview {
+  height:        var(--lcni-tx-input-height);
+  display:       flex;
+  align-items:   center;
+  font-size:     14px;
+  font-weight:   700;
+  color:         var(--lcni-tx-text-muted);
+  padding:       0 10px;
+  background:    var(--lcni-tx-bg-subtle);
+  border:        1.5px solid var(--lcni-tx-border);
+  border-radius: 8px;
+  box-sizing:    border-box;
+  transition:    color .2s;
+}
+
+/* ── Error zone ───────────────────────────────────────────── */
+.lcni-tx-error {
+  background:    #fef2f2;
+  border:        1.5px solid #fca5a5;
+  border-radius: 8px;
+  color:         #b91c1c;
+  font-size:     13px;
+  padding:       8px 12px;
+  line-height:   1.4;
+}
+
+/* ── Footer ───────────────────────────────────────────────── */
+.lcni-tx-modal-footer {
+  display:         flex;
+  align-items:     center;
+  justify-content: flex-end;
+  gap:             10px;
+  padding:         12px 20px;
+  border-top:      1px solid var(--lcni-tx-border);
+  flex-shrink:     0;
+  background:      var(--lcni-tx-bg);
+}
+
+/* ── Buttons ──────────────────────────────────────────────── */
+.lcni-tx-btn {
+  display:         inline-flex;
+  align-items:     center;
+  justify-content: center;
+  gap:             6px;
+  height:          38px;
+  padding:         0 18px;
+  border-radius:   8px;
+  font-size:       13px;
+  font-weight:     600;
+  cursor:          pointer;
+  border:          none;
+  outline:         none;
+  transition:      background .15s, opacity .15s, transform .1s;
+  white-space:     nowrap;
+  text-decoration: none;
+}
+.lcni-tx-btn:active { transform: scale(.97); }
+.lcni-tx-btn:disabled {
+  opacity: .55;
+  cursor:  not-allowed;
+  transform: none;
+}
+
+.lcni-tx-btn-primary {
+  background: var(--lcni-tx-primary);
+  color:      #fff;
+}
+.lcni-tx-btn-primary:hover:not(:disabled) {
+  background: var(--lcni-tx-primary-hover);
+}
+
+.lcni-tx-btn-ghost {
+  background: transparent;
+  color:      var(--lcni-tx-text-muted);
+  border:     1.5px solid var(--lcni-tx-border);
+}
+.lcni-tx-btn-ghost:hover:not(:disabled) {
+  background: var(--lcni-tx-bg-subtle);
+  color:      var(--lcni-tx-text);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SUCCESS TOAST
+══════════════════════════════════════════════════════════════ */
+.lcni-tx-toast {
+  position:      fixed;
+  bottom:        20px;
+  right:         16px;
+  z-index:       var(--lcni-tx-z-toast);
+  padding:       10px 16px;
+  border-radius: 10px;
+  font-size:     13px;
+  font-weight:   500;
+  color:         #fff;
+  pointer-events: none;
+  opacity:       0;
+  transform:     translateY(8px);
+  transition:    opacity .25s ease, transform .25s ease;
+  max-width:     calc(100vw - 32px);
+  line-height:   1.4;
+}
+.lcni-tx-toast--success { background: #111827; }
+.lcni-tx-toast--show    { opacity: 1; transform: translateY(0); }
+
+/* ══════════════════════════════════════════════════════════════
+   FLOATING BUTTON  [lcni_add_transaction_float]
+   (Owned by lcni-add-tx-widget.js / initFloatButton)
+   Kept here so both entry points share one CSS file.
+══════════════════════════════════════════════════════════════ */
+.lcni-atx-float {
+  position:    fixed;
+  top:         50%;
+  z-index:     var(--lcni-tx-z-float);
+  display:     flex;
+  align-items: center;
+  gap:         6px;
+  padding:     10px 14px;
+  background:  var(--lcni-tx-primary);
+  color:       #fff;
+  border-radius: 0 8px 8px 0;
+  cursor:      pointer;
+  user-select: none;
+  box-shadow:  0 4px 16px rgba(37,99,235,.35);
+  transition:  padding .2s, box-shadow .2s;
+  font-size:   13px;
+  font-weight: 600;
+  touch-action: none;
+}
+.lcni-atx-float--right {
+  right:         0;
+  border-radius: 8px 0 0 8px;
+}
+.lcni-atx-float--left {
+  left: 0;
+  border-radius: 0 8px 8px 0;
+}
+.lcni-atx-float:hover {
+  box-shadow: 0 6px 24px rgba(37,99,235,.45);
+}
+
+.lcni-atx-float-icon  { font-size: 16px; }
+.lcni-atx-float-label { white-space: nowrap; }
+
+.lcni-atx-float--collapsed .lcni-atx-float-label {
+  display: none;
+}
+.lcni-atx-float--collapsed {
+  padding: 10px 8px;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   MOBILE RESPONSIVE  (≤ 480px)
+══════════════════════════════════════════════════════════════ */
+@media (max-width: 480px) {
+
+  /* Modal fills screen vertically on very small screens */
+  .lcni-tx-modal {
+    align-items:  flex-end;
+    padding:      0;
+  }
+
+  .lcni-tx-modal-box {
+    max-width:     100%;
+    border-radius: var(--lcni-tx-radius) var(--lcni-tx-radius) 0 0;
+    max-height:    92svh;
+    animation:     lcni-tx-in-mobile 0.22s cubic-bezier(.2,.8,.3,1);
+  }
+
+  @keyframes lcni-tx-in-mobile {
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Stack all form rows to single column on mobile */
+  .lcni-tx-form-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  /* Inputs full width (already 1fr, but explicit for safety) */
+  .lcni-tx-input {
+    height: 44px;  /* Larger touch target */
+    font-size: 16px; /* Prevent iOS zoom */
+  }
+
+  .lcni-tx-select {
+    font-size: 16px; /* Prevent iOS zoom */
+  }
+
+  /* Buttons full width on mobile */
+  .lcni-tx-modal-footer {
+    flex-direction: column-reverse;
+    align-items:    stretch;
+    padding:        12px 16px;
+    padding-bottom: max(12px, env(safe-area-inset-bottom, 12px));
+  }
+  .lcni-tx-btn {
+    width:  100%;
+    height: 46px;
+    font-size: 14px;
+  }
+
+  /* Toast at bottom-center on mobile */
+  .lcni-tx-toast {
+    bottom: max(20px, env(safe-area-inset-bottom, 20px));
+    right:  50%;
+    transform: translateX(50%) translateY(8px);
+    text-align: center;
+  }
+  .lcni-tx-toast--show {
+    transform: translateX(50%) translateY(0);
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   TABLET  (481px – 768px)
+══════════════════════════════════════════════════════════════ */
+@media (min-width: 481px) and (max-width: 768px) {
+  .lcni-tx-modal-box {
+    max-width: 90vw;
+  }
+  .lcni-tx-btn {
+    min-width: 100px;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   DNSE ORDER SECTION  (inside fallback modal #lcni-tx-modal)
+══════════════════════════════════════════════════════════════ */
+.lcni-tx-dnse-section {
+  margin-top:    12px;
+  border-top:    2px solid #f3f4f6;
+  padding-top:   12px;
+}
+
+.lcni-tx-dnse-divider {
+  display:     flex;
+  align-items: center;
+  gap:         8px;
+  margin-bottom: 10px;
+  font-size:   12px;
+  font-weight: 600;
+  color:       var(--lcni-tx-text-muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.lcni-tx-dnse-divider span {
+  background: var(--lcni-tx-bg);
+  padding:    0 6px;
+}
+
+.lcni-tx-dnse-note {
+  font-size:  12px;
+  color:      var(--lcni-tx-text-muted);
+  margin:     8px 0 6px;
+  line-height: 1.5;
+}
+
+.lcni-tx-dnse-toggle {
+  display:     flex;
+  align-items: center;
+  gap:         8px;
+  font-size:   13px;
+  color:       var(--lcni-tx-text);
+  cursor:      pointer;
+  user-select: none;
+}
+
+.lcni-tx-dnse-toggle input[type="checkbox"] {
+  width:  16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--lcni-tx-primary);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   DISABLED FIELD STATE  (.lcni-disabled)
+   Applied by handleOrderTypeChange() for market order types
+   (ATO / ATC / MP / PM) that do not require a price input.
+══════════════════════════════════════════════════════════════ */
+.lcni-disabled,
+input.lcni-disabled,
+.lcni-tx-input.lcni-disabled {
+  opacity:        0.6;
+  background:     #f3f3f3;
+  cursor:         not-allowed;
+  pointer-events: none;
+  user-select:    none;
+}
+
+/* Wrap the price group so the entire row dims */
+.lcni-tx-form-group:has(input.lcni-disabled) {
+  opacity: 0.6;
+}

@@ -1,0 +1,161 @@
+.lcni-industry-monitor {
+    width: 100%;
+    max-width: 100%;
+    --lcni-row-bg: #ffffff;
+    --lcni-row-border-color: #e2e2e2;
+    --lcni-row-border-width: 1px;
+    --lcni-table-border-color: #d6d6d6;
+    --lcni-table-border-width: 1px;
+    --lcni-header-bg: #f7f7f7;
+    --lcni-header-height: 44px;
+    --lcni-row-font-size: 14px;
+    --lcni-table-height: 70vh;
+    --lcni-event-time-col-width: 140px;
+    --lcni-dropdown-height: 36px;
+    --lcni-dropdown-width: 280px;
+    --lcni-dropdown-border-color: #d0d0d0;
+    --lcni-dropdown-border-width: 1px;
+}
+
+.lcni-industry-monitor__table-wrap {
+    position: relative;
+    overflow-x: auto;
+    overflow-y: auto;
+    width: 100%;
+    max-height: var(--lcni-table-height);
+    border: var(--lcni-table-border-width) solid var(--lcni-table-border-color);
+    box-shadow: none;
+    /* Override lcni-table-wrapper max-height với giá trị từ CSS variable admin */
+    --lcni-table-wrapper-max-height: var(--lcni-table-height);
+}
+
+/* Khi .lcni-table-wrapper xuất hiện cùng .lcni-industry-monitor__table-wrap,
+   dùng max-height từ CSS variable của industry monitor */
+.lcni-industry-monitor__table-wrap.lcni-table-wrapper {
+    max-height: var(--lcni-table-height);
+}
+
+.lcni-industry-monitor__table {
+    border-collapse: separate;
+    border-spacing: 0;
+    width: max-content;
+    min-width: 100%;
+}
+
+.lcni-industry-monitor__table th,
+.lcni-industry-monitor__table td {
+    border-style: solid;
+    border-color: var(--lcni-row-border-color);
+    border-width: 0 0 var(--lcni-row-border-width) 0;
+    padding: 8px 10px;
+    white-space: nowrap;
+    background: var(--lcni-row-bg);
+    font-size: var(--lcni-row-font-size);
+}
+
+.lcni-industry-monitor__table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 25;
+    background: var(--lcni-header-bg);
+    min-height: var(--lcni-header-height);
+    height: var(--lcni-header-height);
+}
+
+.lcni-industry-monitor__sticky-industry,
+.lcni-industry-monitor__sticky-col {
+    position: sticky;
+    left: 0;
+    z-index: 18;
+    background: #fafafa;
+    text-align: left;
+    width: max-content;
+    min-width: max-content;
+}
+
+.lcni-industry-monitor__table thead .lcni-industry-monitor__sticky-industry {
+    z-index: 60;
+    top: 0;
+    background: var(--lcni-header-bg);
+}
+
+.lcni-industry-monitor__table tbody .lcni-industry-monitor__sticky-col {
+    z-index: 20;
+}
+
+.lcni-industry-monitor__event-time {
+    min-width: var(--lcni-event-time-col-width);
+}
+
+.lcni-industry-monitor__industry-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.lcni-industry-monitor__metric-dropdown {
+    position: relative;
+    z-index: 40;
+}
+
+.lcni-industry-monitor__metric-toggle {
+    min-width: var(--lcni-dropdown-width);
+    width: var(--lcni-dropdown-width);
+    height: var(--lcni-dropdown-height);
+    border: var(--lcni-dropdown-border-width) solid var(--lcni-dropdown-border-color);
+}
+
+.lcni-industry-monitor__metric-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 90;
+    width: var(--lcni-dropdown-width);
+    border: var(--lcni-dropdown-border-width) solid var(--lcni-dropdown-border-color);
+    background: #fff;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+    padding: 8px;
+}
+
+.lcni-industry-monitor__metric-search {
+    width: 100%;
+    margin-bottom: 8px;
+}
+
+.lcni-industry-monitor__metric-options {
+    max-height: 220px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.lcni-industry-monitor__metric-option {
+    text-align: left;
+    background: #f6f6f6;
+    border: 0;
+    padding: 6px 8px;
+    cursor: pointer;
+}
+
+.lcni-industry-monitor__row.is-hoverable {
+    cursor: pointer;
+}
+
+.lcni-industry-monitor__row.is-hoverable:hover th,
+.lcni-industry-monitor__row.is-hoverable:hover td {
+    filter: brightness(0.96);
+}
+
+.lcni-industry-monitor__full-link-wrap {
+    margin-top: 12px;
+    text-align: right;
+}
+
+.lcni-industry-monitor__full-link {
+    display: inline-block;
+    padding: 6px 10px;
+    border: 1px solid #d0d0d0;
+    border-radius: 6px;
+    text-decoration: none;
+}

@@ -1,0 +1,193 @@
+/* ── LCNI Heatmap Filter ────────────────────────────────────────────────── */
+
+/*
+ * position:fixed — fills from topbar bottom → viewport bottom,
+ * sidebar right edge → viewport right edge.
+ * Offsets written by JS via --lcni-hm-top / --lcni-hm-left.
+ */
+.lcni-heatmap-root {
+    position: fixed;
+    top:    var(--lcni-hm-top,  0px);
+    left:   var(--lcni-hm-left, 0px);
+    right:  0;
+    bottom: 0;
+    width:  auto;
+    height: auto;
+    box-sizing: border-box;
+    overflow: hidden;
+    z-index: 100;
+    background: #111; /* dark base visible during load */
+}
+
+/* ── Mobile: thoát fixed, cho phép page scroll ─────────────────────────── */
+@media (max-width: 768px) {
+    .lcni-heatmap-root {
+        position: relative !important;
+        top:    unset !important;
+        left:   unset !important;
+        right:  unset !important;
+        bottom: unset !important;
+        width:  100% !important;
+        /* JS sẽ set --lcni-hm-avail = viewport height − vị trí top của host */
+        height: var(--lcni-hm-avail, 80vh) !important;
+        min-height: 300px;
+        overflow: hidden !important;
+    }
+
+    .lcni-heatmap-grid {
+        height: 100% !important;
+        overflow: hidden !important;
+    }
+}
+
+/* ── Grid ──────────────────────────────────────────────────────────────── */
+.lcni-heatmap-grid {
+    display: flex;
+    flex-wrap: wrap;
+    width:  100%;
+    height: 100%;
+    box-sizing: border-box;
+    align-content: flex-start;
+    overflow: hidden;
+}
+
+/* ── Tiles ─────────────────────────────────────────────────────────────── */
+.lcni-heatmap-tile {
+    box-sizing: border-box;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    padding: 10px 12px 12px;
+    transition: filter 0.15s ease, transform 0.15s ease;
+    user-select: none;
+    flex-shrink: 0;
+}
+
+.lcni-heatmap-tile:hover {
+    filter: brightness(1.1);
+    z-index: 1;
+    transform: scale(1.015);
+}
+
+.lcni-heatmap-label {
+    font-weight: 700;
+    line-height: 1.2;
+    margin-bottom: 2px;
+    word-break: break-word;
+}
+
+.lcni-heatmap-count {
+    font-weight: 700;
+    line-height: 1;
+    margin-bottom: 4px;
+}
+
+.lcni-heatmap-symbols {
+    display: flex;
+    flex-direction: row;   /* wrap theo hàng ngang */
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 1px 8px;          /* row-gap col-gap */
+    overflow: hidden;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.lcni-heatmap-symbol {
+    display: inline-block;
+    font-weight: 600;
+    line-height: 1.55;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: opacity 0.1s;
+    flex-shrink: 0;
+}
+
+.lcni-heatmap-symbol:hover {
+    opacity: 0.8;
+    text-decoration: underline;
+}
+
+/* ── Empty / error ─────────────────────────────────────────────────────── */
+.lcni-heatmap-empty {
+    padding: 24px;
+    text-align: center;
+    color: #aaa;
+    font-size: 14px;
+    width: 100%;
+    margin-top: 60px;
+}
+
+/* ── Skeleton loader ───────────────────────────────────────────────────── */
+.lcni-heatmap-skeleton-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    width:  100%;
+    height: 100%;
+    box-sizing: border-box;
+    align-content: flex-start;
+    gap: 6px;
+    padding: 3px;
+}
+
+/* Pulsing placeholder tiles */
+.lcni-heatmap-skeleton-tile {
+    background: linear-gradient(
+        90deg,
+        rgba(255,255,255,0.06) 0%,
+        rgba(255,255,255,0.13) 40%,
+        rgba(255,255,255,0.06) 100%
+    );
+    background-size: 200% 100%;
+    animation: lcni-hm-shimmer 1.4s infinite linear;
+    flex-shrink: 0;
+}
+
+@keyframes lcni-hm-shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* Spinner overlay centred on the loading container */
+.lcni-heatmap-spinner-wrap {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    gap: 14px;
+    z-index: 5;
+}
+
+.lcni-heatmap-spinner {
+    width:  44px;
+    height: 44px;
+    border: 4px solid rgba(255,255,255,0.15);
+    border-top-color: #ffffff;
+    border-radius: 50%;
+    animation: lcni-hm-spin 0.75s linear infinite;
+}
+
+@keyframes lcni-hm-spin {
+    to { transform: rotate(360deg); }
+}
+
+.lcni-heatmap-spinner-text {
+    color: rgba(255,255,255,0.7);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    margin: 0;
+}
+
+/* Fade-in tiles after load */
+.lcni-heatmap-tile {
+    animation: lcni-hm-fadein 0.35s ease both;
+}
+
+@keyframes lcni-hm-fadein {
+    from { opacity: 0; transform: scale(0.97); }
+    to   { opacity: 1; transform: scale(1); }
+}

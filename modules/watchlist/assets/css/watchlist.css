@@ -1,0 +1,306 @@
+.lcni-watchlist {
+  --lcni-watchlist-label-font-size: 12px;
+  --lcni-watchlist-row-font-size: 13px;
+  --lcni-watchlist-header-bg: #fff;
+  --lcni-watchlist-header-color: #111827;
+  --lcni-watchlist-value-bg: #fff;
+  --lcni-watchlist-value-color: #111827;
+  --lcni-watchlist-row-divider-color: #e5e7eb;
+  --lcni-watchlist-row-divider-width: 1px;
+  --lcni-watchlist-row-hover-bg: #f3f4f6;
+  --lcni-watchlist-head-height: 40px;
+  --lcni-watchlist-dropdown-height: 34px;
+  --lcni-watchlist-dropdown-width: 220px;
+  --lcni-watchlist-dropdown-font-size: 13px;
+  --lcni-watchlist-dropdown-border-color: #d1d5db;
+  --lcni-watchlist-dropdown-radius: 8px;
+  --lcni-watchlist-input-height: 34px;
+  --lcni-watchlist-input-width: 160px;
+  --lcni-watchlist-input-font-size: 13px;
+  --lcni-watchlist-input-border-color: #d1d5db;
+  --lcni-watchlist-input-radius: 8px;
+  --lcni-watchlist-scroll-speed: 1;
+}
+.lcni-watchlist-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:8px; flex-wrap:wrap; }
+.lcni-watchlist-list-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.lcni-watchlist-action-buttons{display:flex;align-items:center;gap:8px;}
+.lcni-watchlist .lcni-watchlist-table-wrap{scrollbar-gutter:stable;}
+.lcni-watchlist-list-controls select{height:var(--lcni-watchlist-dropdown-height);width:var(--lcni-watchlist-dropdown-width);font-size:var(--lcni-watchlist-dropdown-font-size);border:1px solid var(--lcni-watchlist-dropdown-border-color);border-radius:var(--lcni-watchlist-dropdown-radius);}
+.lcni-watchlist-symbol-input{height:var(--lcni-watchlist-input-height);width:var(--lcni-watchlist-input-width);font-size:var(--lcni-watchlist-input-font-size);border:1px solid var(--lcni-watchlist-input-border-color);border-radius:var(--lcni-watchlist-input-radius);padding:0 10px;}
+.lcni-watchlist-dropdown { position: relative; }
+.lcni-watchlist-settings-btn { border:none; background:transparent; cursor:pointer; font-size:18px; line-height:1; }
+.lcni-watchlist-controls { position:absolute; top:28px; right:0; z-index:30; min-width:420px; max-width:min(90vw,680px); background:#fff; border:1px solid #d1d5db; border-radius:8px; box-shadow:0 10px 25px rgba(17,24,39,.12); padding:12px; display:none; flex-direction:column; gap:10px; }
+.lcni-watchlist-dropdown.open .lcni-watchlist-controls { display:flex; }
+.lcni-watchlist-col-grid { display:grid; gap:6px; grid-template-columns:repeat(auto-fill, minmax(120px,1fr)); max-height:260px; overflow:auto; }
+.lcni-watchlist-col-item { font-size:var(--lcni-watchlist-label-font-size); display:flex; align-items:center; gap:6px; padding:4px 6px; border:1px dashed transparent; border-radius:6px; }
+.lcni-watchlist-col-item span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.lcni-watchlist-col-item.is-dragging { opacity:.5; border-color:#9ca3af; }
+.lcni-watchlist-table-wrap { position:relative; overflow:auto; overscroll-behavior:contain; overscroll-behavior-x:contain; max-height:calc(100vh - 180px); -webkit-overflow-scrolling:touch; touch-action:pan-x pan-y; }
+.lcni-watchlist-table { width:100%; min-width:680px; border-collapse:separate; border-spacing:0; table-layout:auto; }
+.lcni-watchlist-table th, .lcni-watchlist-table td { border:0; border-bottom:var(--lcni-watchlist-row-divider-width) solid var(--lcni-watchlist-row-divider-color); padding:8px; white-space:nowrap; word-break:keep-all; }
+.lcni-watchlist-table th { font-size:var(--lcni-watchlist-label-font-size); background:var(--lcni-watchlist-header-bg); color:var(--lcni-watchlist-header-color); height:var(--lcni-watchlist-head-height); font-weight:400; }
+.lcni-watchlist-table td { font-size:var(--lcni-watchlist-row-font-size); background:var(--lcni-watchlist-value-bg); color:var(--lcni-watchlist-value-color); }
+.lcni-watchlist-table .is-sticky-col { position:sticky; left:0; z-index:3; background:var(--lcni-watchlist-value-bg); box-shadow:2px 0 0 rgba(229,231,235,.7); }
+.lcni-watchlist-table.has-sticky-header thead th{position:sticky;top:0;z-index:20;background:var(--lcni-watchlist-header-bg);box-shadow:inset 0 -1px 0 var(--lcni-watchlist-row-divider-color);border-left:0 !important;border-right:0 !important;}
+.lcni-watchlist-table.has-sticky-header thead .is-sticky-col{z-index:25;background:var(--lcni-watchlist-header-bg);box-shadow:2px 0 0 rgba(229,231,235,.7), inset 0 -1px 0 var(--lcni-watchlist-row-divider-color);}
+.lcni-watchlist-table tbody tr { cursor:pointer; transition:background-color .18s ease; }
+.lcni-watchlist-table tbody tr:hover td { background:var(--row-hover-bg, var(--lcni-watchlist-row-hover-bg)); }
+.lcni-watchlist-table tbody tr:hover .is-sticky-col { background:var(--row-hover-bg, var(--lcni-watchlist-row-hover-bg)); }
+.lcni-watchlist-symbol { margin-right:6px; font-weight:600; }
+.lcni-watchlist-overlay { position:absolute; inset:0; background:rgba(255,255,255,.65); display:flex; align-items:center; justify-content:center; z-index:20; }
+.lcni-watchlist-overlay[hidden] { display:none; }
+.lcni-watchlist-toast { position:fixed; right:16px; bottom:16px; background:#111827; color:#fff; padding:10px 14px; border-radius:6px; z-index:999999; }
+.lcni-watchlist-add { border:0; border-radius:999px; width:26px; height:26px; display:inline-flex; align-items:center; justify-content:center; }
+.lcni-watchlist-add-form { display:flex; gap:8px; align-items:center; margin:0; }
+.lcni-watchlist-add-form input { min-width:180px; padding:6px 10px; }
+.lcni-watchlist-add.is-active { background:#ef4444 !important; color:#fff !important; }
+@media (max-width: 767px) {
+  /* Watchlist full width container */
+  .lcni-watchlist {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .lcni-watchlist-header { align-items: flex-start; gap: 6px; }
+
+  .lcni-watchlist-list-controls {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .lcni-watchlist-list-controls select,
+  .lcni-watchlist-symbol-input { width: 100%; min-width: 0; }
+
+  .lcni-watchlist-action-buttons {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    width: 100%;
+  }
+  .lcni-watchlist-action-buttons > .lcni-btn { width: 100%; justify-content: center; min-width: 0; }
+  .lcni-watchlist-action-buttons .lcni-btn-btn_watchlist_setting { padding-left: 0; padding-right: 0; }
+  .lcni-watchlist-action-buttons .lcni-btn span { display: none; }
+
+  .lcni-watchlist-dropdown { align-self: flex-start; }
+
+  /* Settings panel: fixed bottom sheet */
+  .lcni-watchlist-controls {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    top: auto;
+    max-width: none;
+    width: 100%;
+    max-height: 85svh;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    z-index: 9999;
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -4px 24px rgba(0,0,0,.18);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .lcni-watchlist-controls::before {
+    content: '';
+    display: block;
+    width: 40px; height: 4px;
+    background: #d1d5db;
+    border-radius: 2px;
+    margin: 8px auto 4px;
+  }
+
+  /* Table scroll: full height, touch-friendly */
+  .lcni-watchlist-table-wrap {
+    max-height: calc(100svh - 200px);
+    overflow: auto;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x pan-y;
+    overscroll-behavior: contain;
+  }
+
+  .lcni-watchlist-table { min-width: 560px; }
+
+  /* Sticky header on mobile */
+  .lcni-watchlist-table.has-sticky-header thead th {
+    position: sticky !important;
+    top: 0;
+    z-index: 20;
+  }
+  .lcni-watchlist-table.has-sticky-header thead .is-sticky-col {
+    z-index: 25;
+  }
+  /* Sticky first column on mobile */
+  .lcni-watchlist-table .is-sticky-col {
+    position: sticky;
+    left: 0;
+    z-index: 3;
+  }
+}
+
+.lcni-watchlist-table .lcni-cell-number { text-align:right; }
+.lcni-watchlist-table .lcni-cell-text { text-align:left; }
+.lcni-watchlist-modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(17,24,39,.4);z-index:999999;}
+.lcni-watchlist-modal-card{background:#fff;border-radius:10px;min-width:min(92vw,420px);max-width:min(92vw,460px);padding:16px;}
+.lcni-watchlist-modal-card h3{margin:0 0 12px;}
+.lcni-watchlist-modal-card input[type="text"]{width:100%;height:36px;padding:0 10px;margin:0 0 10px;border:1px solid #d1d5db;border-radius:8px;}
+.lcni-filter-watchlist-options{display:grid;gap:8px;max-height:220px;overflow:auto;margin-bottom:12px;}
+.lcni-filter-modal-actions{display:flex;gap:8px;justify-content:flex-end;}
+
+/* ── Mobile CSS variable overrides ───────────────────────────
+   Override fixed-width variables so dropdown + input fill 100%
+   on small screens without breaking desktop layout.
+   ─────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .lcni-watchlist {
+    --lcni-watchlist-dropdown-width: 100%;
+    --lcni-watchlist-input-width:    100%;
+  }
+
+  /* Ensure header stacks vertically and controls stretch full width */
+  .lcni-watchlist-header {
+    flex-direction: column;
+    align-items:    stretch;
+    gap:            10px;
+  }
+
+  .lcni-watchlist-list-controls {
+    display:        flex;
+    flex-direction: column;   /* stack dọc: dropdown → input → buttons */
+    width:          100%;
+    gap:            10px;
+  }
+
+  /* Force select + input to fill container even with inline width */
+  .lcni-watchlist-list-controls select,
+  .lcni-watchlist-list-controls input,
+  .lcni-watchlist-symbol-input {
+    width:     100% !important;
+    max-width: 100% !important;
+    min-width: 0;
+  }
+
+  /* Action buttons: spread evenly across full width */
+  .lcni-watchlist-action-buttons {
+    width:           100%;
+    display:         flex;
+    justify-content: space-between;
+    gap:             8px;
+    flex-wrap:       wrap;
+  }
+}
+
+/* ================================================================
+   WATCHLIST MOBILE FIX v3 — 2-row layout
+   Row 1: [dropdown][input] side by side (full width shared)
+   Row 2: [Add][New][Delete][Settings] equal-width chips
+   ================================================================ */
+@media (max-width: 768px) {
+
+  /* ── CSS variable override ── */
+  .lcni-watchlist {
+    --lcni-watchlist-dropdown-width: 100%;
+    --lcni-watchlist-input-width:    100%;
+    max-width:   100vw;
+    box-sizing:  border-box;
+    overflow-x:  hidden;
+  }
+
+  /* ── Header: column so list-controls và dropdown stack dọc ── */
+  .lcni-watchlist-header {
+    display:        flex   !important;
+    flex-direction: column !important;
+    align-items:    stretch !important;
+    gap:            8px    !important;
+    flex-wrap:      nowrap !important;
+  }
+
+  /* ── List-controls: Row 1 + Row 2 stack dọc ── */
+  .lcni-watchlist-list-controls {
+    display:        flex    !important;
+    flex-direction: column  !important;
+    align-items:    stretch !important;
+    width:          100%    !important;
+    gap:            8px     !important;
+  }
+
+  /* ── ROW 1: select + input side by side ── */
+  /* select và input là anh em trực tiếp trong .lcni-watchlist-list-controls */
+  .lcni-watchlist-list-controls > select {
+    flex:        1 1 40%   !important;
+    width:       auto      !important;
+    min-width:   0         !important;
+    max-width:   100%      !important;
+    box-sizing:  border-box;
+    /* Cùng hàng với input bằng cách tạo sub-row */
+    order: 1;
+  }
+
+  .lcni-watchlist-list-controls > .lcni-watchlist-symbol-input,
+  .lcni-watchlist-list-controls > input[type="text"] {
+    flex:       2 1 55%   !important;
+    width:      auto      !important;
+    min-width:  0         !important;
+    max-width:  100%      !important;
+    box-sizing: border-box;
+    order: 2;
+  }
+
+  /* ── Sub-row trick: wrap select + input vào 1 hàng ngang ── */
+  /* Dùng pseudo-grid: list-controls là flex-column, nhưng ta tạo inner-row */
+  .lcni-watchlist-list-controls {
+    /* Override: dùng flex-row để select + input cùng hàng */
+    flex-direction: row     !important;
+    flex-wrap:      wrap    !important;
+  }
+
+  /* ROW 1: select chiếm 38%, input chiếm 62% */
+  .lcni-watchlist-list-controls > select {
+    flex:  0 0 38% !important;
+    width: 38%     !important;
+  }
+
+  .lcni-watchlist-list-controls > .lcni-watchlist-symbol-input,
+  .lcni-watchlist-list-controls > input[type="text"] {
+    flex:  0 0 calc(62% - 8px) !important;
+    width: calc(62% - 8px)     !important;
+  }
+
+  /* ROW 2: action-buttons chiếm full width, bên dưới select+input */
+  .lcni-watchlist-action-buttons {
+    flex:            0 0 100% !important;
+    width:           100%     !important;
+    display:         flex     !important;
+    flex-wrap:       nowrap   !important;
+    gap:             6px      !important;
+    justify-content: stretch  !important;
+    order:           3;
+  }
+
+  /* Mỗi button chiếm equal share */
+  .lcni-watchlist-action-buttons > .lcni-btn {
+    flex:           1 1 0      !important;
+    min-width:      0          !important;
+    max-width:      100%       !important;
+    white-space:    nowrap     !important;
+    padding:        8px 4px    !important;
+    font-size:      12px       !important;
+    text-align:     center     !important;
+    justify-content: center    !important;
+    overflow:       hidden;
+    text-overflow:  ellipsis;
+  }
+
+  /* Add-form input: full width nếu có */
+  .lcni-watchlist-add-form {
+    display:   flex    !important;
+    width:     100%    !important;
+    gap:       6px;
+    flex:      0 0 100% !important;
+  }
+  .lcni-watchlist-add-form input {
+    flex:      1 1 0 !important;
+    min-width: 0     !important;
+    width:     100%  !important;
+  }
+}

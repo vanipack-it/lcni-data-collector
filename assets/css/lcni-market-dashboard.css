@@ -1,0 +1,501 @@
+/* ===================================================
+   lcni-market-dashboard.css  v1.1.0
+   Full-width layout · Gauges lớn · Mobile responsive
+   =================================================== */
+
+/* ── Root wrapper ─────────────────────────────────── */
+.lcni-market-dashboard {
+    font-family: "DM Sans", "Segoe UI", system-ui, sans-serif;
+    background:  #0d1117;
+    border:      1px solid rgba(255,255,255,.08);
+    border-radius: 14px;
+    padding:     20px 24px;
+    color:       #c9d1d9;
+    width:       100%;
+    max-width:   100%;
+    box-sizing:  border-box;
+    min-width:   0;
+    /* overflow:hidden clip nội dung nhưng không tạo scroll.
+       iOS Safari < 16: dùng hidden thay clip để đảm bảo compat */
+    overflow-x:  hidden;
+    overflow-y:  visible;
+}
+
+/* ── Header ─────────────────────────────────────────── */
+.lcni-mkt-title {
+    font-size:   17px;
+    font-weight: 700;
+    color:       #e8b84b;
+    margin:      0 0 14px;
+}
+
+.lcni-mkt-header {
+    display:         flex;
+    align-items:     center;
+    justify-content: space-between;
+    margin-bottom:   18px;
+    flex-wrap:       wrap;
+    gap:             8px;
+    min-width:       0;
+}
+
+.lcni-mkt-header-left {
+    display:     flex;
+    align-items: center;
+    gap:         8px;
+    flex-wrap:   wrap;
+}
+
+.lcni-mkt-date {
+    font-size: 13px;
+    color:     #6b7280;
+}
+
+.lcni-mkt-tf-select,
+.lcni-mkt-date-select {
+    background:    #161b22;
+    border:        1px solid rgba(255,255,255,.12);
+    border-radius: 6px;
+    color:         #c9d1d9;
+    font-size:     12px;
+    padding:       5px 10px;
+    cursor:        pointer;
+    outline:       none;
+}
+
+.lcni-mkt-refresh-btn {
+    background:    transparent;
+    border:        1px solid rgba(232,184,75,.3);
+    border-radius: 6px;
+    color:         #e8b84b;
+    font-size:     12px;
+    padding:       5px 12px;
+    cursor:        pointer;
+    transition:    background .15s;
+    white-space:   nowrap;
+}
+.lcni-mkt-refresh-btn:hover { background: rgba(232,184,75,.08); }
+
+/* ── Row 1: Composite + 4 Gauges ─────────────────────── */
+.lcni-mkt-row1 {
+    display:       flex;
+    align-items:   flex-start;
+    gap:           24px;
+    margin-bottom: 24px;
+    flex-wrap:     wrap;    /* mặc định wrap; compact--desktop giữ nowrap bên dưới */
+}
+
+/* Composite — lớn nhất */
+.lcni-mkt-composite {
+    display:        flex;
+    flex-direction: column;
+    align-items:    center;
+    gap:            6px;
+    flex-shrink:    0;
+}
+
+.lcni-mkt-composite .lcni-mkt-gauge {
+    width:  160px;
+    height: 100px;
+}
+
+.lcni-mkt-composite .lcni-mkt-gauge-label {
+    font-size:   14px;
+    font-weight: 600;
+    color:       #c9d1d9;
+}
+
+/* 4 gauge phụ */
+.lcni-mkt-gauges4 {
+    display:         flex;
+    flex:            1;
+    gap:             8px;
+    justify-content: space-around;
+    align-items:     flex-start;
+    flex-wrap:       wrap;
+    min-width:       0;
+}
+
+.lcni-mkt-gauge-wrap {
+    display:        flex;
+    flex-direction: column;
+    align-items:    center;
+    gap:            2px;
+    flex:           1;
+    min-width:      90px;
+    max-width:      160px;
+}
+
+.lcni-mkt-gauge {
+    width:  120px;
+    height: 76px;
+}
+
+.lcni-mkt-gauge-label {
+    font-size:   12px;
+    color:       #8b949e;
+    font-weight: 500;
+    text-align:  center;
+}
+
+.lcni-mkt-gauge-sub {
+    font-size:   11px;
+    color:       #6b7280;
+    text-align:  center;
+    max-width:   130px;
+    line-height: 1.4;
+}
+
+/* ── Tags ─────────────────────────────────────────────── */
+.lcni-mkt-tag {
+    display:       inline-block;
+    font-size:     11px;
+    font-weight:   600;
+    padding:       3px 10px;
+    border-radius: 20px;
+    background:    rgba(255,255,255,.07);
+    color:         #c9d1d9;
+}
+.lcni-mkt-tag--green { background: rgba(28,169,124,.18); color: #34d399; }
+.lcni-mkt-tag--red   { background: rgba(224,82,82,.18);  color: #f87171; }
+.lcni-mkt-tag--gray  { background: rgba(255,255,255,.07);color: #9ca3af; }
+.lcni-mkt-tag--amber { background: rgba(232,184,75,.18); color: #fbbf24; }
+
+/* ── Sections ─────────────────────────────────────────── */
+.lcni-mkt-section {
+    border-top:    1px solid rgba(255,255,255,.06);
+    padding-top:   14px;
+    margin-bottom: 14px;
+}
+
+.lcni-mkt-section-title {
+    font-size:      12px;
+    font-weight:    600;
+    color:          #6b7280;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    margin-bottom:  10px;
+}
+
+/* ── Score bars ───────────────────────────────────────── */
+.lcni-mkt-bars,
+.lcni-mkt-rotation-bars {
+    display:        flex;
+    flex-direction: column;
+    gap:            7px;
+    margin-bottom:  10px;
+}
+
+.lcni-mkt-bar-row {
+    display:     flex;
+    align-items: center;
+    gap:         10px;
+}
+
+.lcni-mkt-bar-label {
+    font-size:   12px;
+    color:       #8b949e;
+    min-width:   120px;
+    flex-shrink: 0;
+}
+
+.lcni-mkt-bar-track {
+    flex:          1;
+    height:        5px;
+    background:    rgba(255,255,255,.07);
+    border-radius: 3px;
+    overflow:      hidden;
+}
+
+.lcni-mkt-bar-fill {
+    height:        100%;
+    border-radius: 3px;
+    transition:    width .4s ease;
+}
+
+.lcni-mkt-bar-val {
+    font-size:   12px;
+    font-weight: 600;
+    min-width:   56px;
+    text-align:  right;
+}
+
+/* ── Stats row ────────────────────────────────────────── */
+.lcni-mkt-stats-row {
+    display:    flex;
+    gap:        16px;
+    flex-wrap:  wrap;
+    margin-top: 8px;
+}
+
+.lcni-mkt-stat {
+    display:        flex;
+    flex-direction: column;
+    align-items:    flex-start;
+    gap:            1px;
+    min-width:      70px;
+}
+
+.lcni-mkt-stat span {
+    font-size:   14px;
+    font-weight: 700;
+    color:       #e6edf3;
+}
+
+.lcni-mkt-stat label {
+    font-size: 10px;
+    color:     #6b7280;
+}
+
+/* ── Sector table ─────────────────────────────────────── */
+/* Scroll container: cuộn ngang + dọc */
+.lcni-mkt-table-wrap {
+    overflow:    auto;              /* scroll context 2D đúng cho sticky header */
+    max-height:  var(--lcni-table-max-height, 50vh);
+    touch-action: pan-x pan-y;     /* native scroll → sticky col/header hoạt động */
+    overscroll-behavior: contain;
+}
+
+.lcni-mkt-table {
+    width:           100%;
+    border-collapse: separate;
+    border-spacing:  0;
+    font-size:       var(--lcni-table-value-size, 12px);
+}
+
+.lcni-mkt-table th {
+    text-align:    left;
+    color:         var(--lcni-table-header-color, #6b7280);
+    font-weight:   500;
+    padding:       0 8px;
+    height:        var(--lcni-table-header-height, 42px);
+    border-bottom: var(--lcni-row-divider-width, 1px) solid var(--lcni-row-divider-color, rgba(255,255,255,.06));
+    /* Sticky header */
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: var(--lcni-table-header-bg, #0d1117);
+    box-shadow: inset 0 -1px 0 var(--lcni-row-divider-color, rgba(255,255,255,.06));
+}
+
+.lcni-mkt-table td {
+    padding:       0 8px;
+    height:        var(--lcni-table-row-height, 36px);
+    border-bottom: var(--lcni-row-divider-width, 1px) solid var(--lcni-row-divider-color, rgba(255,255,255,.04));
+    color:         var(--lcni-table-value-color, #c9d1d9);
+    background:    var(--lcni-table-value-bg, #0d1117);
+}
+
+.lcni-mkt-table tr:hover td {
+    background: var(--lcni-row-hover-bg, rgba(255,255,255,.03)) !important;
+}
+
+/* Mobile: min-width để bảng scroll ngang */
+@media (max-width: 600px) {
+    .lcni-mkt-table-wrap {
+        max-height: 45vh;
+    }
+    .lcni-mkt-table {
+        min-width: 420px;
+    }
+}
+
+.lcni-mkt-sector-row--top td { background: rgba(28,169,124,.06); }
+.lcni-mkt-sector-name { font-weight: 500; }
+.lcni-mkt-phase       { font-size: 11px; color: #8b949e; }
+.lcni-mkt-score       { font-weight: 600; color: #e8b84b; }
+
+/* ── Flow bars ────────────────────────────────────────── */
+.lcni-mkt-flow-list {
+    display:        flex;
+    flex-direction: column;
+    gap:            7px;
+}
+
+.lcni-mkt-flow-row {
+    display:     flex;
+    align-items: center;
+    gap:         10px;
+}
+
+.lcni-mkt-flow-name {
+    font-size:     12px;
+    color:         #c9d1d9;
+    min-width:     130px;
+    flex-shrink:   0;
+    white-space:   nowrap;
+    overflow:      hidden;
+    text-overflow: ellipsis;
+}
+
+.lcni-mkt-flow-bar-wrap {
+    flex:          1;
+    height:        5px;
+    background:    rgba(255,255,255,.07);
+    border-radius: 3px;
+    overflow:      hidden;
+}
+
+.lcni-mkt-flow-bar {
+    height:        100%;
+    background:    #534AB7;
+    border-radius: 3px;
+    transition:    width .4s;
+}
+
+.lcni-mkt-flow-pct {
+    font-size:   12px;
+    font-weight: 600;
+    min-width:   44px;
+    text-align:  right;
+    color:       #8b949e;
+}
+
+.lcni-mkt-flow-ratio {
+    font-size:   12px;
+    font-weight: 600;
+    min-width:   38px;
+    text-align:  right;
+}
+
+/* ── Positive / Negative ──────────────────────────────── */
+.lcni-pos { color: #34d399; }
+.lcni-neg { color: #f87171; }
+
+/* ── Footer ───────────────────────────────────────────── */
+.lcni-mkt-footer {
+    border-top:      1px solid rgba(255,255,255,.06);
+    padding-top:     10px;
+    margin-top:      4px;
+    display:         flex;
+    flex-wrap:       wrap;
+    gap:             8px;
+    align-items:     flex-start;
+    justify-content: space-between;
+}
+
+.lcni-mkt-computed-at { font-size: 10px; color: #444c56; }
+.lcni-mkt-rule-hint   { font-size: 11px; color: #6b7280; line-height: 1.5; }
+.lcni-mkt-rule-hint code {
+    background:    rgba(255,255,255,.07);
+    padding:       1px 4px;
+    border-radius: 3px;
+    font-size:     10px;
+    color:         #e8b84b;
+}
+
+/* ── Loading / Error ──────────────────────────────────── */
+.lcni-mkt-loading {
+    text-align: center;
+    padding:    40px 20px;
+    color:      #6b7280;
+    font-size:  13px;
+}
+
+.lcni-mkt-error {
+    text-align: center;
+    padding:    24px 20px;
+    color:      #f87171;
+    font-size:  13px;
+}
+
+/* ── Compact mode: 1 hàng ngang chỉ trên màn rộng ─────── */
+@media (min-width: 768px) {
+    .lcni-market-dashboard--compact .lcni-mkt-row1 {
+        flex-wrap: nowrap;
+    }
+    /* Cho phép gauges4 shrink tự do để không vượt 100% */
+    .lcni-market-dashboard--compact .lcni-mkt-gauges4 {
+        min-width: 0;
+        flex-shrink: 1;
+    }
+    .lcni-market-dashboard--compact .lcni-mkt-gauge-wrap {
+        flex: 1 1 0;
+        min-width: 0;
+        max-width: none;
+    }
+    .lcni-market-dashboard--compact .lcni-mkt-gauge {
+        width: 100%;
+        max-width: 120px;
+    }
+}
+
+/* ── Responsive: tablet ≤ 900px ──────────────────────── */
+@media (max-width: 900px) {
+    .lcni-mkt-row1 { flex-wrap: wrap; }
+
+    .lcni-mkt-composite {
+        width:           100%;
+        flex-direction:  row;
+        justify-content: center;
+        gap:             16px;
+    }
+    .lcni-mkt-composite .lcni-mkt-gauge {
+        width:  140px;
+        height: 88px;
+    }
+    .lcni-mkt-gauges4 {
+        width:           100%;
+        justify-content: space-around;
+        flex-wrap:       wrap;
+    }
+    .lcni-mkt-gauge-wrap { min-width: 80px; flex: 1 1 80px; }
+    .lcni-mkt-gauge { width: 110px; height: 70px; }
+}
+
+/* ── Responsive: mobile ≤ 600px ──────────────────────── */
+@media (max-width: 600px) {
+    .lcni-market-dashboard {
+        padding:       12px 10px;
+        border-radius: 10px;
+        overflow-x:    hidden;
+    }
+    /* Mobile: tất cả stack dọc, compact không giữ nowrap */
+    .lcni-market-dashboard--compact .lcni-mkt-row1,
+    .lcni-mkt-row1 {
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    .lcni-mkt-composite {
+        width:          100%;
+        flex-direction: column;
+    }
+    .lcni-mkt-composite .lcni-mkt-gauge {
+        width:  150px;
+        height: 94px;
+    }
+    .lcni-mkt-gauges4 {
+        width:           100%;
+        justify-content: space-between;
+        gap:             4px;
+        flex-wrap:       wrap;
+    }
+    .lcni-mkt-gauge-wrap {
+        min-width: 0;
+        max-width: none;
+        flex:      1 1 22%;   /* 4 gauges fit trong 1 hàng nếu đủ rộng */
+    }
+    .lcni-mkt-gauge { width: 80px; height: 52px; }
+
+    .lcni-mkt-bar-label { min-width: 90px; font-size: 11px; }
+    .lcni-mkt-flow-name { min-width: 100px; }
+    .lcni-mkt-table th,
+    .lcni-mkt-table td  { padding: 4px 5px; }
+    .lcni-mkt-stat span { font-size: 13px; }
+}
+
+/* ── Mobile: header controls stack ─────────────────────── */
+@media (max-width: 600px) {
+    .lcni-mkt-header { gap: 6px; }
+    .lcni-mkt-tf-select,
+    .lcni-mkt-date-select { font-size: 11px; padding: 4px 6px; }
+    .lcni-mkt-refresh-btn { font-size: 11px; padding: 4px 8px; }
+}
+@media (max-width: 380px) {
+    .lcni-market-dashboard { padding: 10px 8px; }
+    .lcni-mkt-gauge-wrap { flex: 1 1 44%; } /* 2 gauges mỗi hàng */
+    .lcni-mkt-gauge { width: 70px; height: 44px; }
+    .lcni-mkt-composite .lcni-mkt-gauge { width: 110px; height: 70px; }
+}
+

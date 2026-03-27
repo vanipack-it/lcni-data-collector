@@ -1,0 +1,361 @@
+.lcni-app .lcni-stock-filter,
+.lcni-filter-wrapper { display:block; overflow:visible; height:auto; }
+
+.lcni-app .lcni-stock-filter .lcni-filter-toolbar { display:flex; justify-content:flex-end; gap:8px; margin-bottom:0; }
+.lcni-app .lcni-stock-filter .lcni-filter-panel,
+.lcni-app .lcni-stock-filter .lcni-column-pop { padding:10px; margin-bottom:10px; border:1px solid #ddd; background:#fff; }
+.lcni-app .lcni-stock-filter .lcni-filter-panel.is-collapsed .lcni-filter-panel-body,
+.lcni-app .lcni-stock-filter .lcni-filter-panel.is-collapsed .lcni-filter-panel-actions { display:none; }
+.lcni-app .lcni-stock-filter .lcni-filter-panel.is-collapsed { margin:0; padding:0; border:0; }
+
+.lcni-app .lcni-stock-filter .lcni-filter-criteria-grid { display:grid; grid-template-columns:35% 65%; gap:12px; align-items:stretch; height:100%; min-height:0; }
+.lcni-app .lcni-stock-filter .lcni-filter-criteria-tabs { display:flex; flex-direction:column; gap:6px; max-height:320px; overflow:auto; }
+.lcni-app .lcni-stock-filter .lcni-filter-tab { display:flex; align-items:center; gap:8px; text-align:left; padding:8px; border:1px solid #e5e7eb; background:#fff; color:var(--lcni-panel-label-color,#111827); font-size:var(--lcni-panel-label-size,13px); cursor:pointer; }
+.lcni-app .lcni-stock-filter .lcni-filter-tab.is-active { border-color:#3b82f6; background:#eff6ff; }
+.lcni-app .lcni-stock-filter .lcni-filter-tab-check { visibility:hidden; color:#16a34a; font-weight:700; }
+.lcni-app .lcni-stock-filter .lcni-filter-tab-check.is-visible { visibility:visible; }
+
+.lcni-app .lcni-stock-filter .lcni-filter-criteria-values { min-height:220px; display:flex; flex-direction:column; }
+.lcni-app .lcni-stock-filter .lcni-filter-value-panel { display:none; }
+.lcni-app .lcni-stock-filter .lcni-filter-value-panel.is-active { display:block; }
+.lcni-app .lcni-stock-filter .lcni-filter-value-panel strong { display:block; margin-bottom:8px; color:var(--lcni-panel-label-color,#111827); font-size:var(--lcni-panel-label-size,13px); }
+.lcni-app .lcni-stock-filter .lcni-filter-check-list { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:4px; color:var(--lcni-panel-value-color,#374151); font-size:var(--lcni-panel-value-size,13px); max-height:280px; overflow:auto; }
+.lcni-app .lcni-stock-filter .lcni-filter-range-wrap { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.lcni-app .lcni-stock-filter .lcni-filter-range-wrap input { width:100%; color:var(--lcni-panel-value-color,#374151); font-size:var(--lcni-panel-value-size,13px); }
+
+.lcni-app .lcni-stock-filter .lcni-filter-range-dual { gap:10px; }
+.lcni-app .lcni-stock-filter .lcni-filter-range-track { position:relative; height:26px; }
+.lcni-app .lcni-stock-filter .lcni-filter-range-track::before { content:""; position:absolute; left:0; right:0; top:11px; height:4px; border-radius:999px; background:#e5e7eb; }
+.lcni-app .lcni-stock-filter .lcni-filter-range-fill { position:absolute; top:11px; height:4px; border-radius:999px; background:#3b82f6; left:0; width:100%; }
+.lcni-app .lcni-stock-filter .lcni-filter-range-track input[type="range"] { position:absolute; left:0; top:0; width:100%; height:26px; margin:0; background:transparent; pointer-events:none; -webkit-appearance:none; appearance:none; }
+.lcni-app .lcni-stock-filter .lcni-filter-range-track input[type="range"]::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:14px; height:14px; border-radius:50%; background:#2563eb; border:2px solid #fff; box-shadow:0 0 0 1px #2563eb; pointer-events:auto; cursor:pointer; }
+.lcni-app .lcni-stock-filter .lcni-filter-range-track input[type="range"]::-moz-range-thumb { width:14px; height:14px; border-radius:50%; background:#2563eb; border:2px solid #fff; box-shadow:0 0 0 1px #2563eb; pointer-events:auto; cursor:pointer; }
+.lcni-app .lcni-stock-filter .lcni-filter-range-values { display:flex; justify-content:space-between; color:var(--lcni-panel-value-color,#374151); font-size:var(--lcni-panel-value-size,13px); }
+
+.lcni-app .lcni-stock-filter .lcni-filter-panel-actions { margin-top:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.lcni-app .lcni-stock-filter .lcni-saved-filter-label { font-size:var(--lcni-panel-label-size,13px); color:var(--lcni-panel-label-color,#111827); }
+.lcni-app .lcni-stock-filter .lcni-filter-panel-actions select { min-width:190px; height:36px; margin-right:0; font-size:var(--lcni-panel-value-size,13px); border:1px solid #d1d5db; border-radius:8px; padding:0 10px; }
+.lcni-app .lcni-stock-filter .lcni-filter-panel-actions .lcni-select-saved-filter { background:var(--lcni-saved-filter-bg,#fff); color:var(--lcni-saved-filter-color,#111827); border-color:var(--lcni-saved-filter-border,#d1d5db); }
+.lcni-app .lcni-stock-filter .lcni-filter-panel-actions .lcni-select-template-filter { background:var(--lcni-template-filter-bg,#fff); color:var(--lcni-template-filter-color,#111827); border-color:var(--lcni-template-filter-border,#d1d5db); }
+
+.lcni-app .lcni-stock-filter .lcni-column-pop { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:6px; }
+.lcni-app .lcni-stock-filter .lcni-column-option { display:flex; align-items:center; gap:8px; border:1px solid #e5e7eb; border-radius:8px; padding:6px 8px; background:#fff; }
+.lcni-app .lcni-stock-filter .lcni-column-option span { flex:1; }
+.lcni-app .lcni-stock-filter .lcni-table-scroll { max-height:calc(100vh - 180px); overflow:auto; overscroll-behavior:contain; overscroll-behavior-x:contain; scrollbar-gutter:stable; }
+.lcni-app .lcni-stock-filter .lcni-table { width:max-content; min-width:100%; border-collapse:separate; border-spacing:0; }
+.lcni-app .lcni-stock-filter .lcni-table th { font-weight:400; position:sticky; top:0; z-index:20; background:var(--lcni-table-header-bg,#f3f4f6); color:var(--lcni-table-header-color,#111827); font-size:var(--lcni-table-header-size,12px); border-bottom:var(--lcni-row-divider-width,1px) solid var(--lcni-row-divider-color,#e5e7eb); height:var(--lcni-table-header-height,42px); white-space:nowrap; padding-left:5px; padding-right:5px; }
+.lcni-app .lcni-stock-filter .lcni-table td { background:var(--lcni-table-value-bg,#fff); color:var(--lcni-table-value-color,#111827); font-size:var(--lcni-table-value-size,13px); border-bottom:var(--lcni-row-divider-width,1px) solid var(--lcni-row-divider-color,#e5e7eb); white-space:nowrap; word-break:keep-all; height:var(--lcni-table-row-height,36px); padding-left:5px; padding-right:5px; }
+.lcni-app .lcni-stock-filter .lcni-table tr:hover td { background:var(--lcni-row-hover-bg,#eef2ff); }
+.lcni-app .lcni-stock-filter .lcni-table tbody tr { cursor:pointer; }
+/* z-index match watchlist standard: sticky col=15 (below header=20), header+col=25 */
+.lcni-app .lcni-stock-filter .lcni-table .is-sticky-col { position:sticky; left:0; z-index:15; background:var(--lcni-table-value-bg,#fff); box-shadow:2px 0 4px -1px rgba(0,0,0,0.07); }
+.lcni-app .lcni-stock-filter .lcni-table th.is-sticky-col { z-index:25; background:var(--lcni-table-header-bg,#f3f4f6); }
+
+
+.lcni-app .lcni-stock-filter .lcni-filter-summary { font-size:12px; color:#374151; }
+.lcni-app .lcni-stock-filter .lcni-filter-summary-desktop { display:block; margin-top:auto; padding-top:10px; align-items:center; }
+.lcni-app .lcni-stock-filter .lcni-filter-summary-mobile { display:none; margin:8px 0; }
+.lcni-filter-toast { position:fixed; right:16px; bottom:16px; z-index:9999; padding:8px 12px; border-radius:8px; background:#111827; color:#fff; }
+.lcni-filter-modal-backdrop { position:fixed; inset:0; z-index:10000; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.45); }
+.lcni-filter-modal { min-width:320px; max-width:520px; padding:16px; border-radius:10px; background:#fff; }
+.lcni-filter-modal-actions { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; margin-top:12px; }
+.lcni-filter-watchlist-options { display:grid; gap:6px; max-height:260px; overflow:auto; }
+
+.lcni-app .lcni-stock-filter.lcni-disable-sticky-header .lcni-table th { position: static; }
+
+.lcni-app .lcni-stock-filter [data-column-pop][hidden] { display:none !important; }
+
+@media (max-width: 767px) {
+
+  /* ── Layout tổng thể: overflow:clip để sticky hoạt động đúng ──
+   * overflow:clip (Safari ≥16) giữ visual clipping nhưng KHÔNG tạo
+   * scroll context → sticky header + sticky col hoạt động trên Safari.
+   * Safari <16 fallback: clip không được hỗ trợ → graceful degrade về hidden.
+   * Chrome/Firefox: clip hoạt động đúng từ version 90+.
+   * ── */
+  .lcni-app .lcni-stock-filter {
+    display: flex;
+    flex-direction: column;
+    height: 100svh;
+    min-height: 100svh;
+    overflow-x: visible;     /* scroll ngang phải thuộc về .lcni-table-scroll/.lcni-table-wrapper */
+    overflow-y: clip;        /* giữ clipping dọc như thiết kế mobile hiện tại */
+  }
+
+  /* ── Toolbar: fixed góc phải, không cuộn theo bảng ── */
+  .lcni-app .lcni-stock-filter .lcni-filter-toolbar {
+    position: fixed;
+    top: env(safe-area-inset-top, 0px);
+    right: 8px;
+    z-index: 200;
+    display: flex;
+    gap: 4px;
+    padding-top: 6px;
+    background: transparent;
+  }
+  .lcni-app .lcni-stock-filter .lcni-filter-toolbar .lcni-btn {
+    background: #fff !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,.18);
+  }
+
+  /* ── Summary mobile ── */
+  .lcni-app .lcni-stock-filter .lcni-filter-summary-mobile {
+    display: block;
+    flex: 0 0 auto;
+    padding: 6px 12px 4px;
+    font-size: 12px;
+    background: #fff;
+    border-bottom: 1px solid #f1f5f9;
+    margin-top: calc(env(safe-area-inset-top, 0px) + 44px);
+  }
+  .lcni-app .lcni-stock-filter .lcni-filter-summary-desktop { display: none; }
+
+  /* ── Panel: fixed bám đỉnh, chiều cao cố định 90svh ── */
+  .lcni-app .lcni-stock-filter .lcni-filter-panel,
+  .lcni-app .lcni-stock-filter .lcni-column-pop {
+    position: fixed;
+    left: 0; right: 0;
+    top: env(safe-area-inset-top, 0px);
+    height: 90svh;
+    overflow: hidden;
+    z-index: 100;
+    border-radius: 0 0 14px 14px;
+    box-shadow: 0 4px 20px rgba(0,0,0,.15);
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    padding-top: 6px;
+  }
+  .lcni-app .lcni-stock-filter .lcni-filter-panel::before {
+    content: '';
+    display: block;
+    width: 36px; height: 4px;
+    background: #d1d5db;
+    border-radius: 2px;
+    margin: 0 auto 6px;
+    flex: 0 0 auto;
+  }
+  .lcni-app .lcni-stock-filter .lcni-filter-panel.is-collapsed { display: none; }
+
+  /* ── Panel body ── */
+  .lcni-app .lcni-stock-filter .lcni-filter-panel-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Chips tabs ── */
+  .lcni-app .lcni-stock-filter .lcni-filter-panel-body .lcni-filter-criteria-grid {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .lcni-app .lcni-stock-filter .lcni-filter-panel-body .lcni-filter-criteria-tabs {
+    flex: 0 0 auto;
+    max-height: 45%;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 12px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    background: #f9fafb;
+    border-bottom: 2px solid #e5e7eb;
+    align-content: flex-start;
+  }
+  .lcni-app .lcni-stock-filter .lcni-filter-panel-body .lcni-filter-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 12px;
+    border-radius: 20px;
+    border: 1.5px solid #e5e7eb;
+    background: #fff;
+    color: var(--lcni-panel-label-color, #374151);
+    font-size: 12px;
+    white-space: nowrap;
+    flex: 0 0 auto;
+    transition: border-color .15s, background .15s;
+  }
+  .lcni-app .lcni-stock-filter .lcni-filter-panel-body .lcni-filter-tab.is-active {
+    background: #eff6ff;
+    border-color: #3b82f6;
+    color: #1d4ed8;
+    font-weight: 500;
+  }
+  .lcni-app .lcni-stock-filter .lcni-filter-panel-body .lcni-filter-tab-check {
+    font-size: 10px; color: #16a34a;
+  }
+
+  /* ── Values panel ── */
+  .lcni-app .lcni-stock-filter .lcni-filter-panel-body .lcni-filter-criteria-values {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding: 10px 14px;
+    background: #fff;
+  }
+  .lcni-app .lcni-stock-filter .lcni-filter-panel-body .lcni-filter-value-panel strong {
+    font-size: 13px;
+    margin-bottom: 10px;
+  }
+  .lcni-app .lcni-stock-filter .lcni-filter-check-list {
+    max-height: none;
+    font-size: 14px;
+  }
+  .lcni-app .lcni-stock-filter .lcni-filter-range-wrap input {
+    height: 36px; font-size: 14px;
+  }
+
+  /* ── Actions bar ── */
+  .lcni-app .lcni-stock-filter .lcni-filter-panel-actions {
+    flex: 0 0 auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    padding: 8px 12px;
+    padding-bottom: max(10px, env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid #e5e7eb;
+    background: #fff;
+  }
+  .lcni-app .lcni-stock-filter .lcni-filter-panel-actions .lcni-saved-filter-label { display: none; }
+  .lcni-app .lcni-stock-filter .lcni-filter-panel-actions select {
+    min-width: 0; flex: 1 1 130px; height: 32px; font-size: 12px;
+  }
+  .lcni-app .lcni-stock-filter .lcni-filter-panel-actions .lcni-btn {
+    margin: 0; flex: 0 1 auto; white-space: nowrap; font-size: 12px;
+  }
+
+  /* ── Table scroll: scroll container chính cho sticky ──
+   * overflow:auto là bắt buộc để position:sticky;left hoạt động.
+   * KHÔNG dùng position:relative hay transform ở đây. ── */
+  .lcni-app .lcni-stock-filter .lcni-table-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    transition: margin-top .15s ease;
+  }
+
+  /* ── Table layout ── */
+  .lcni-app .lcni-stock-filter .lcni-table {
+    border-collapse: separate !important;
+    border-spacing: 0;
+    width: max-content;
+    min-width: 100%;
+    table-layout: auto;
+  }
+  .lcni-app .lcni-stock-filter .lcni-table th,
+  .lcni-app .lcni-stock-filter .lcni-table td {
+    min-width: 92px;
+  }
+  .lcni-app .lcni-stock-filter .lcni-table th.is-sticky-col,
+  .lcni-app .lcni-stock-filter .lcni-table td.is-sticky-col {
+    min-width: 110px;
+  }
+
+  /* ── Sticky header row ── */
+  .lcni-app .lcni-stock-filter .lcni-table th {
+    position: -webkit-sticky;
+    position: sticky;
+    top: 0;
+    z-index: 20;   /* match watchlist: header=20 */
+    background: var(--lcni-table-header-bg, #f3f4f6);
+  }
+
+  /* ── Sticky columns: CSS position:sticky — left được JS gán đúng 1 lần ──
+   * Scroll container = .lcni-table-scroll (overflow:auto)
+   * JS applyStickyColumnOffsets() chỉ set left=offset tĩnh, CSS tự handle scroll. ── */
+  .lcni-app .lcni-stock-filter .lcni-table .is-sticky-col {
+    position: -webkit-sticky !important;
+    position: sticky !important;
+    left: 0;
+    z-index: 15;   /* match watchlist: sticky col=15, below header=20 */
+    background: var(--lcni-table-value-bg, #fff);
+    box-shadow: 2px 0 4px -1px rgba(0,0,0,0.07);
+  }
+  .lcni-app .lcni-stock-filter .lcni-table th.is-sticky-col {
+    z-index: 25 !important;   /* match watchlist: header+col=25, highest */
+    background: var(--lcni-table-header-bg, #f3f4f6);
+    box-shadow: 2px 0 4px -1px rgba(0,0,0,0.1);
+  }
+  .lcni-app .lcni-stock-filter .lcni-table tr:hover td.is-sticky-col {
+    background: var(--lcni-row-hover-bg, #eef2ff);
+  }
+
+  .lcni-btn-btn_apply_filter span,
+  .lcni-btn-btn_save_filter span,
+  .lcni-btn-btn_filter_reload span,
+  .lcni-btn-btn_filter_delete span,
+  .lcni-btn-btn_filter_save span,
+  .lcni-btn-btn_filter_clear span { display: none; }
+
+  /* ── Override: ngăn theme/plugin cha phá sticky ── */
+  .lcni-app { overflow: visible !important; }
+  .lcni-app .lcni-stock-filter {
+    overflow-x: visible !important;
+    overflow-y: clip !important;
+  }
+  /* table-scroll là scroll container duy nhất — sticky bám vào đây */
+  .lcni-app .lcni-stock-filter .lcni-table-scroll {
+    overflow-x: auto !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  /* Đảm bảo table không bị clip bởi bất kỳ wrapper nào */
+  .lcni-app .lcni-stock-filter .lcni-table-scroll > .lcni-table {
+    overflow: visible !important;
+  }
+}
+
+
+.lcni-app .lcni-stock-filter .lcni-table .lcni-cell-number { text-align:right; }
+.lcni-app .lcni-stock-filter .lcni-table .lcni-cell-text { text-align:left; }
+
+.lcni-filter-cell-hint{position:fixed;z-index:10001;padding:4px 8px;border-radius:6px;background:rgba(17,24,39,.92);color:#fff;font-size:11px;pointer-events:none;transform:translate(12px,-14px);max-width:220px;line-height:1.35;}
+
+/* ================================================================
+   FILTER MOBILE FIX v3 — Chip wrap layout (thay thế v2)
+   Buttons hiển thị dạng chip: width=auto, wrap tự động sang dòng mới.
+   ================================================================ */
+@media (max-width: 767px) {
+
+  /* Actions bar: flex-wrap thay vì column → chip layout */
+  .lcni-app .lcni-stock-filter .lcni-filter-panel-actions {
+    flex-direction: row   !important;
+    flex-wrap:      wrap  !important;
+    align-items:    center !important;
+    gap:            6px   !important;
+  }
+
+  /* Select dropdowns: chiếm đủ rộng (1 dòng riêng) nhưng không full-width */
+  .lcni-app .lcni-stock-filter .lcni-filter-panel-actions select {
+    flex:      1 1 120px !important;
+    width:     auto      !important;
+    max-width: 100%      !important;
+    min-width: 0         !important;
+    box-sizing: border-box;
+  }
+
+  /* Buttons: chip style — width=auto, fit content */
+  .lcni-app .lcni-stock-filter .lcni-filter-panel-actions .lcni-btn {
+    flex:           0 0 auto  !important;
+    width:          auto      !important;
+    max-width:      none      !important;
+    white-space:    nowrap    !important;
+    padding:        7px 10px  !important;
+    font-size:      12px      !important;
+    justify-content: center;
+  }
+}

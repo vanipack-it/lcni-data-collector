@@ -6,88 +6,5945 @@ if (!defined('ABSPATH')) {
 
 class LCNI_Settings {
 
+    const CSV_IMPORT_LOCK_OPTION = 'lcni_csv_import_lock_until';
+
     public function __construct() {
         add_action('admin_menu', [$this, 'menu']);
         add_action('admin_init', [$this, 'register_settings']);
+        add_action('admin_init', [$this, 'handle_admin_actions']);
+        add_action('lcni_csv_import_process', [$this, 'process_csv_import_job'], 10, 2);
+        add_action('wp_ajax_lcni_seed_dashboard_snapshot', [$this, 'ajax_seed_dashboard_snapshot']);
+        add_action('wp_ajax_lcni_rule_rebuild_status', [$this, 'ajax_rule_rebuild_status']);
+        add_action('wp_ajax_lcni_update_data_status_snapshot', [$this, 'ajax_update_data_status_snapshot']);
+        add_action('wp_ajax_lcni_csv_import_status_snapshot', [$this, 'ajax_csv_import_status_snapshot']);
+        add_action('wp_ajax_lcni_report_snapshot', [$this, 'ajax_report_snapshot']);
+        add_action('wp_ajax_lcni_chart_builder_fields', [$this, 'ajax_chart_builder_fields']);
+        add_action('wp_ajax_lcni_chart_builder_filter_values', [$this, 'ajax_chart_builder_filter_values']);
     }
 
     public function menu() {
-        add_menu_page(
-            'LCNI Settings',
-            'LCNI Data',
-            'manage_options',
-            'lcni-settings',
-            [$this, 'settings_page']
-        );
+        add_menu_page('LCNI Settings', 'LCNI Data', 'manage_options', 'lcni-settings', [$this, 'settings_page']);
+        add_submenu_page('lcni-settings', 'Saved Data', 'Saved Data', 'manage_options', 'lcni-data-viewer', [$this, 'data_viewer_page']);
     }
 
     public function register_settings() {
-        register_setting('lcni_settings_group', 'lcni_api_key');
-        register_setting('lcni_settings_group', 'lcni_api_secret');
+        register_setting('lcni_settings_group', 'lcni_timeframe', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_timeframe'], 'default' => '1D']);
+        register_setting('lcni_settings_group', 'lcni_days_to_load', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_days_to_load'], 'default' => 365]);
+        register_setting('lcni_settings_group', 'lcni_test_symbols', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_test_symbols'], 'default' => 'VNINDEX,VN30']);
+        register_setting('lcni_settings_group', 'lcni_seed_timeframes', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_seed_timeframes'], 'default' => '1D']);
+        register_setting('lcni_settings_group', 'lcni_seed_range_mode', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_seed_range_mode'], 'default' => 'full']);
+        register_setting('lcni_settings_group', 'lcni_seed_from_date', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_seed_date'], 'default' => '']);
+        register_setting('lcni_settings_group', 'lcni_seed_to_date', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_seed_date'], 'default' => '']);
+        register_setting('lcni_settings_group', 'lcni_seed_session_count', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_seed_session_count'], 'default' => 300]);
+        register_setting('lcni_settings_group', 'lcni_seed_tasks_per_run', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_positive_int'], 'default' => 10]);
+        register_setting('lcni_settings_group', 'lcni_seed_batch_requests_per_run', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_positive_int'], 'default' => 5]);
+        register_setting('lcni_settings_group', 'lcni_seed_rate_limit_microseconds', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_positive_int'], 'default' => 100000]);
+        register_setting('lcni_settings_group', 'lcni_seed_max_failed_attempts', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_positive_int'], 'default' => 3]);
+        register_setting('lcni_settings_group', 'lcni_seed_retention_enabled', ['type' => 'integer', 'sanitize_callback' => 'absint', 'default' => 1]);
+        register_setting('lcni_settings_group', 'lcni_seed_retention_candles', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_seed_session_count'], 'default' => 260]);
+        register_setting('lcni_settings_group', 'lcni_seed_eod_volume_filter_enabled', ['type' => 'integer', 'sanitize_callback' => 'absint', 'default' => 1]);
+        register_setting('lcni_settings_group', 'lcni_seed_eod_min_volume', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_positive_int'], 'default' => 10000]);
+        register_setting('lcni_settings_group', 'lcni_api_key', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_api_credential'], 'default' => '']);
+        register_setting('lcni_settings_group', 'lcni_api_secret', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_api_credential'], 'default' => '']);
+        register_setting('lcni_settings_group', 'lcni_access_token', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_api_credential'], 'default' => '']);
+        register_setting('lcni_settings_group', 'lcni_secdef_url', ['type' => 'string', 'sanitize_callback' => [$this, 'sanitize_secdef_url'], 'default' => LCNI_API::SECDEF_URL]);
+        register_setting('lcni_settings_group', 'lcni_update_interval_minutes', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_update_interval'], 'default' => 5]);
+        register_setting('lcni_settings_group', 'lcni_ohlc_latest_interval_minutes', ['type' => 'integer', 'sanitize_callback' => [$this, 'sanitize_update_interval'], 'default' => 5]);
+        register_setting('lcni_settings_group', 'lcni_frontend_settings_signals', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_frontend_module_settings'], 'default' => []]);
+        register_setting('lcni_settings_group', 'lcni_frontend_settings_recommend_signal', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_recommend_signal_settings'], 'default' => []]);
+        register_setting('lcni_settings_group', 'lcni_frontend_settings_overview', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_frontend_module_settings'], 'default' => []]);
+        register_setting('lcni_settings_group', 'lcni_frontend_settings_chart', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_frontend_chart_settings'], 'default' => []]);
+        register_setting('lcni_settings_group', 'lcni_frontend_stock_detail_page', ['type' => 'integer', 'sanitize_callback' => 'absint', 'default' => 0]);
+        register_setting('lcni_settings_group', 'lcni_watchlist_stock_page', ['type' => 'string', 'sanitize_callback' => 'sanitize_title', 'default' => '']);
+        register_setting('lcni_settings_group', 'lcni_frontend_overview_title', ['type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'default' => 'Stock Overview']);
+        register_setting('lcni_settings_group', 'lcni_frontend_chart_title', ['type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'default' => 'Stock Chart']);
+        register_setting('lcni_settings_group', 'lcni_frontend_signal_title', ['type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'default' => 'LCNi Signals']);
+        register_setting('lcni_settings_group', 'lcni_filter_criteria_columns', ['type' => 'array', 'sanitize_callback' => ['LCNI_FilterAdmin', 'sanitize_columns'], 'default' => []]);
+        register_setting('lcni_settings_group', 'lcni_filter_table_columns', ['type' => 'array', 'sanitize_callback' => ['LCNI_FilterAdmin', 'sanitize_columns'], 'default' => []]);
+        register_setting('lcni_settings_group', 'lcni_filter_style', ['type' => 'array', 'sanitize_callback' => ['LCNI_FilterAdmin', 'sanitize_style'], 'default' => []]);
+        register_setting('lcni_settings_group', 'lcni_filter_style_config', ['type' => 'array', 'sanitize_callback' => ['LCNI_FilterAdmin', 'sanitize_style'], 'default' => []]);
+        register_setting('lcni_settings_group', 'lcni_filter_default_values', ['type' => 'string', 'sanitize_callback' => ['LCNI_FilterAdmin', 'sanitize_default_filter_values'], 'default' => '']);
+        register_setting('lcni_settings_group', 'lcni_button_style_config', ['type' => 'array', 'sanitize_callback' => [$this, 'sanitize_button_style_config'], 'default' => []]);
+        register_setting('lcni_settings_group', 'lcni_column_labels', ['type' => 'array', 'default' => []]);
+    }
+
+    public function sanitize_timeframe($value) {
+        $value = strtoupper(trim((string) $value));
+
+        return $value === '' ? '1D' : $value;
+    }
+
+    public function sanitize_days_to_load($value) {
+        $days = (int) $value;
+
+        return $days > 0 ? $days : 365;
+    }
+
+    public function sanitize_test_symbols($value) {
+        $symbols = preg_split('/[,\s]+/', strtoupper((string) $value));
+        $symbols = array_filter(array_map('trim', (array) $symbols));
+
+        return implode(',', array_unique($symbols));
+    }
+
+    public function sanitize_seed_timeframes($value) {
+        $timeframes = preg_split('/[,\s]+/', strtoupper((string) $value));
+        $timeframes = array_filter(array_map('trim', (array) $timeframes));
+
+        return implode(',', array_unique($timeframes));
+    }
+
+    public function sanitize_seed_range_mode($value) {
+        $mode = sanitize_key((string) $value);
+
+        return in_array($mode, ['full', 'date_range', 'sessions'], true) ? $mode : 'full';
+    }
+
+    public function sanitize_seed_date($value) {
+        $value = trim((string) $value);
+
+        return preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) ? $value : '';
+    }
+
+    public function sanitize_seed_session_count($value) {
+        return max(1, (int) $value);
+    }
+
+    public function sanitize_positive_int($value) {
+        return max(1, (int) $value);
+    }
+
+    public function sanitize_api_credential($value) {
+        return trim((string) $value);
+    }
+
+    public function sanitize_secdef_url($value) {
+        $url = esc_url_raw(trim((string) $value));
+
+        return $url !== '' ? $url : LCNI_API::SECDEF_URL;
+    }
+
+    public function sanitize_update_interval($value) {
+        return max(1, (int) $value);
+    }
+
+    public function sanitize_refresh_times($value) {
+        $raw_values = is_array($value) ? $value : preg_split('/[\s,;|]+/', (string) $value);
+        $normalized = [];
+
+        foreach ((array) $raw_values as $item) {
+            $time = trim((string) $item);
+            if (!preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $time)) {
+                continue;
+            }
+            $normalized[$time] = $time;
+        }
+
+        if (empty($normalized)) {
+            $normalized['09:00'] = '09:00';
+        }
+
+        $times = array_values($normalized);
+        sort($times, SORT_STRING);
+
+        return $times;
+    }
+
+    public function handle_admin_actions() {
+        if (!is_admin() || !current_user_can('manage_options') || !isset($_POST['lcni_admin_action'])) {
+            return;
+        }
+
+        $action = sanitize_text_field(wp_unslash($_POST['lcni_admin_action']));
+        $nonce = isset($_POST['lcni_action_nonce']) ? sanitize_text_field(wp_unslash($_POST['lcni_action_nonce'])) : '';
+
+        if (!wp_verify_nonce($nonce, 'lcni_admin_actions')) {
+            $this->set_notice('error', 'Nonce không hợp lệ, vui lòng thử lại.');
+            return;
+        }
+
+        if ($action === 'test_api_connection') {
+            $this->run_api_connection_test();
+        } elseif ($action === 'test_api_multi_symbol') {
+            $this->run_multi_symbol_test();
+        } elseif ($action === 'sync_securities') {
+            $security_summary = LCNI_DB::collect_security_definitions();
+
+            if (is_wp_error($security_summary)) {
+                $this->set_notice('error', 'Sync securities thất bại: ' . $security_summary->get_error_message());
+            } else {
+                $this->set_notice('success', sprintf('Đã sync Security Definition vào lcni_symbols: updated %d / total %d.', (int) ($security_summary['updated'] ?? 0), (int) ($security_summary['total'] ?? 0)));
+            }
+        } elseif ($action === 'prepare_csv_import') {
+            $table_key = isset($_POST['lcni_import_table']) ? sanitize_key(wp_unslash($_POST['lcni_import_table'])) : 'lcni_symbols';
+            if (empty($_FILES['lcni_import_csv']['tmp_name'])) {
+                $this->set_notice('error', 'Vui lòng chọn file CSV để import dữ liệu.');
+            } else {
+                $existing_draft = get_transient($this->get_csv_import_draft_key());
+                if (is_array($existing_draft) && !empty($existing_draft['file_path']) && is_string($existing_draft['file_path']) && file_exists($existing_draft['file_path'])) {
+                    @unlink($existing_draft['file_path']);
+                }
+
+                $draft = $this->prepare_csv_import_draft((string) $_FILES['lcni_import_csv']['tmp_name'], $table_key);
+                if (is_wp_error($draft)) {
+                    $this->set_notice('error', 'Không thể đọc CSV: ' . $draft->get_error_message());
+                } else {
+                    set_transient($this->get_csv_import_draft_key(), $draft, 15 * MINUTE_IN_SECONDS);
+                    $this->set_notice('success', 'Đã nhận diện cột CSV. Vui lòng map cột và bấm chạy import.');
+                }
+            }
+        } elseif ($action === 'run_csv_import') {
+            $draft = get_transient($this->get_csv_import_draft_key());
+            if (!is_array($draft) || empty($draft['file_path']) || empty($draft['table_key'])) {
+                $this->set_notice('error', 'Phiên import đã hết hạn. Vui lòng upload CSV lại.');
+            } else {
+                $mapping = isset($_POST['lcni_import_mapping']) ? (array) wp_unslash($_POST['lcni_import_mapping']) : [];
+                $import_options = [];
+                if (($draft['table_key'] ?? '') === 'lcni_ohlc') {
+                    $import_options['timeframe'] = isset($_POST['lcni_import_timeframe']) ? sanitize_text_field(wp_unslash($_POST['lcni_import_timeframe'])) : '1D';
+                }
+
+                $user_id = get_current_user_id();
+                $estimated_total = LCNI_DB::count_csv_rows((string) $draft['file_path']);
+                if (is_wp_error($estimated_total)) {
+                    $estimated_total = 0;
+                }
+
+                $job_id = wp_generate_uuid4();
+                $status = [
+                    'id' => $job_id,
+                    'state' => 'queued',
+                    'table' => (string) $draft['table_key'],
+                    'updated' => 0,
+                    'processed' => 0,
+                    'total' => (int) $estimated_total,
+                    'message' => 'Đã đưa vào hàng đợi import CSV. Đang chờ xử lý nền...',
+                    'updated_at' => current_time('mysql'),
+                ];
+
+                set_transient($this->get_csv_import_status_key($user_id), $status, HOUR_IN_SECONDS);
+                set_transient($this->get_csv_import_payload_key($user_id), [
+                    'job_id' => $job_id,
+                    'file_path' => (string) $draft['file_path'],
+                    'table_key' => (string) $draft['table_key'],
+                    'mapping' => $mapping,
+                    'options' => $import_options,
+                    'offset_rows' => 0,
+                    'updated_total' => 0,
+                    'accumulated_series' => [],
+                    'accumulated_event_times' => [],
+                    'accumulated_timeframes' => [],
+                ], HOUR_IN_SECONDS);
+                delete_transient($this->get_csv_import_draft_key());
+                wp_schedule_single_event(time() + 1, 'lcni_csv_import_process', [$user_id, [
+                    'job_id' => $job_id,
+                    'file_path' => (string) $draft['file_path'],
+                    'table_key' => (string) $draft['table_key'],
+                    'mapping' => $mapping,
+                    'options' => $import_options,
+                    'offset_rows' => 0,
+                    'updated_total' => 0,
+                ]]);
+
+                $this->set_notice('success', 'Đã chuyển import CSV sang chạy nền. Vui lòng theo dõi tiến trình bên dưới.');
+            }
+        } elseif ($action === 'pause_csv_import') {
+            $notice = $this->control_csv_import_job('pause');
+            $this->set_notice($notice['type'], $notice['message']);
+        } elseif ($action === 'resume_csv_import') {
+            $notice = $this->control_csv_import_job('resume');
+            $this->set_notice($notice['type'], $notice['message']);
+        } elseif ($action === 'cancel_csv_import') {
+            $notice = $this->control_csv_import_job('cancel');
+            $this->set_notice($notice['type'], $notice['message']);
+        } elseif ($action === 'start_seed') {
+            $seed_mode = isset($_POST['lcni_seed_mode']) ? $this->sanitize_seed_range_mode(wp_unslash($_POST['lcni_seed_mode'])) : 'full';
+            $seed_from_date = isset($_POST['lcni_seed_from_date']) ? $this->sanitize_seed_date(wp_unslash($_POST['lcni_seed_from_date'])) : '';
+            $seed_to_date = isset($_POST['lcni_seed_to_date']) ? $this->sanitize_seed_date(wp_unslash($_POST['lcni_seed_to_date'])) : '';
+            $seed_sessions = isset($_POST['lcni_seed_session_count']) ? $this->sanitize_seed_session_count(wp_unslash($_POST['lcni_seed_session_count'])) : (int) get_option('lcni_seed_session_count', 300);
+            $tasks_per_run = isset($_POST['lcni_seed_tasks_per_run']) ? $this->sanitize_positive_int(wp_unslash($_POST['lcni_seed_tasks_per_run'])) : (int) get_option('lcni_seed_tasks_per_run', 10);
+            $batch_requests_per_run = isset($_POST['lcni_seed_batch_requests_per_run']) ? $this->sanitize_positive_int(wp_unslash($_POST['lcni_seed_batch_requests_per_run'])) : (int) get_option('lcni_seed_batch_requests_per_run', 5);
+            $rate_limit_microseconds = isset($_POST['lcni_seed_rate_limit_microseconds']) ? $this->sanitize_positive_int(wp_unslash($_POST['lcni_seed_rate_limit_microseconds'])) : (int) get_option('lcni_seed_rate_limit_microseconds', 100000);
+            $max_failed_attempts = isset($_POST['lcni_seed_max_failed_attempts']) ? $this->sanitize_positive_int(wp_unslash($_POST['lcni_seed_max_failed_attempts'])) : (int) get_option('lcni_seed_max_failed_attempts', 3);
+            $retention_enabled = !empty($_POST['lcni_seed_retention_enabled']) ? 1 : 0;
+            $retention_candles = isset($_POST['lcni_seed_retention_candles']) ? $this->sanitize_seed_session_count(wp_unslash($_POST['lcni_seed_retention_candles'])) : (int) get_option('lcni_seed_retention_candles', 260);
+            $volume_filter_enabled = !empty($_POST['lcni_seed_eod_volume_filter_enabled']) ? 1 : 0;
+            $eod_min_volume = isset($_POST['lcni_seed_eod_min_volume']) ? $this->sanitize_positive_int(wp_unslash($_POST['lcni_seed_eod_min_volume'])) : (int) get_option('lcni_seed_eod_min_volume', 10000);
+
+            update_option('lcni_seed_range_mode', $seed_mode);
+            update_option('lcni_seed_from_date', $seed_from_date);
+            update_option('lcni_seed_to_date', $seed_to_date);
+            update_option('lcni_seed_session_count', $seed_sessions);
+            update_option('lcni_seed_tasks_per_run', $tasks_per_run);
+            update_option('lcni_seed_batch_requests_per_run', $batch_requests_per_run);
+            update_option('lcni_seed_rate_limit_microseconds', $rate_limit_microseconds);
+            update_option('lcni_seed_max_failed_attempts', $max_failed_attempts);
+            update_option('lcni_seed_retention_enabled', $retention_enabled);
+            update_option('lcni_seed_retention_candles', max(10, (int) $retention_candles));
+            update_option('lcni_seed_eod_volume_filter_enabled', $volume_filter_enabled);
+            update_option('lcni_seed_eod_min_volume', max(0, (int) $eod_min_volume));
+
+            $constraints = [
+                'mode' => $seed_mode,
+                'from_time' => $this->seed_date_to_timestamp($seed_from_date, false),
+                'to_time' => $this->seed_date_to_timestamp($seed_to_date, true),
+                'sessions' => $seed_sessions,
+            ];
+
+            $created = LCNI_SeedScheduler::start_seed($constraints);
+
+            if (is_wp_error($created)) {
+                $this->set_notice('error', $created->get_error_message());
+            } else {
+                $this->set_notice('success', sprintf('Đã khởi tạo queue seed với %d task.', (int) $created));
+            }
+        } elseif ($action === 'run_seed_batch') {
+            $summary = LCNI_SeedScheduler::run_batch();
+            $pipeline = LCNI_DB::run_seed_serial_pipeline('manual_run_seed_batch');
+            $this->set_notice('success', 'Đã chạy batch tiếp theo: ' . wp_json_encode(['seed' => $summary, 'pipeline' => $pipeline]));
+        } elseif ($action === 'pause_seed') {
+            LCNI_SeedScheduler::pause();
+            $this->set_notice('success', 'Đã tạm dừng seed queue.');
+        } elseif ($action === 'resume_seed') {
+            LCNI_SeedScheduler::resume();
+            $this->set_notice('success', 'Đã resume seed queue.');
+        } elseif ($action === 'save_rule_settings') {
+            $raw_rules = isset($_POST['lcni_rule_settings']) ? (array) wp_unslash($_POST['lcni_rule_settings']) : [];
+            $force_recalculate = !empty($_POST['lcni_rule_execute']);
+            $validated_rules = LCNI_DB::validate_rule_settings_input($raw_rules);
+
+            if (is_wp_error($validated_rules)) {
+                $this->set_notice('error', $validated_rules->get_error_message());
+            } else {
+                @set_time_limit(0);
+                wp_raise_memory_limit('admin');
+
+                $result = LCNI_DB::update_rule_settings($validated_rules, $force_recalculate);
+                $queued = (int) ($result['queued'] ?? 0);
+
+                if (!empty($result['updated'])) {
+                    $this->set_notice('success', sprintf('Đã lưu Rule Setting và đưa %d symbol/timeframe vào hàng đợi chạy nền.', $queued));
+                } elseif ($force_recalculate) {
+                    $this->set_notice('success', sprintf('Đã thực thi Rule Setting và đưa %d symbol/timeframe vào hàng đợi chạy nền.', $queued));
+                } else {
+                    $this->set_notice('success', 'Rule Setting không thay đổi, giữ nguyên dữ liệu hiện tại.');
+                }
+            }
+        } elseif ($action === 'save_update_data_settings') {
+            $enabled = !empty($_POST['lcni_update_enabled']);
+            $refresh_times_raw = isset($_POST['lcni_update_refresh_times']) ? sanitize_text_field(wp_unslash($_POST['lcni_update_refresh_times'])) : '09:00';
+            $refresh_times = $this->sanitize_refresh_times($refresh_times_raw);
+            $saved = LCNI_Update_Manager::save_settings($enabled, $refresh_times);
+            update_option('lcni_update_interval_minutes', (int) ($saved['interval_minutes'] ?? 1));
+            $this->set_notice('success', 'Đã lưu cài đặt Update Data.');
+        } elseif ($action === 'run_manual_update_data') {
+            $status = LCNI_Update_Manager::trigger_manual_update();
+            if (!empty($status['error'])) {
+                $this->set_notice('error', 'Cập nhật thủ công thất bại: ' . $status['error']);
+            } else {
+                $this->set_notice('success', 'Đã chạy cập nhật thủ công.');
+            }
+        } elseif ($action === 'save_ohlc_latest_settings') {
+            $enabled = !empty($_POST['lcni_ohlc_latest_enabled']);
+            $existing_settings = LCNI_OHLC_Latest_Manager::get_settings();
+            $interval = isset($existing_settings['interval_minutes']) ? (int) $existing_settings['interval_minutes'] : 5;
+            $refresh_times_raw = isset($_POST['lcni_ohlc_latest_refresh_times']) ? sanitize_text_field(wp_unslash($_POST['lcni_ohlc_latest_refresh_times'])) : '09:00';
+            $refresh_times = $this->sanitize_refresh_times($refresh_times_raw);
+            LCNI_OHLC_Latest_Manager::save_settings($enabled, $interval, $refresh_times);
+            $this->set_notice('success', 'Đã lưu cài đặt OHLC Latest Snapshot.');
+        } elseif ($action === 'run_manual_ohlc_latest_sync') {
+            $status = LCNI_OHLC_Latest_Manager::trigger_manual_sync();
+            if (!empty($status['error'])) {
+                $this->set_notice('error', 'Đồng bộ thủ công OHLC latest thất bại: ' . $status['error']);
+            } else {
+                $this->set_notice('success', 'Đã đồng bộ thủ công OHLC latest.');
+            }
+        } elseif ($action === 'save_frontend_settings') {
+            $module_raw = isset($_POST['lcni_frontend_module']) ? wp_unslash($_POST['lcni_frontend_module']) : '';
+            $module = sanitize_key(is_scalar($module_raw) ? (string) $module_raw : '');
+            $allowed_modules = ['signals', 'recommend_signal', 'overview', 'chart', 'chart_analyst', 'chart_builder', 'watchlist', 'filter', 'column_labels', 'button_style', 'data_format', 'table_config'];
+
+            if (!in_array($module, $allowed_modules, true)) {
+                $this->set_notice('error', 'Module frontend không hợp lệ.');
+            } else {
+                if ($module === 'table_config') {
+                    $raw = isset($_POST['lcni_table_config']) ? (array) wp_unslash($_POST['lcni_table_config']) : [];
+                    LCNI_Table_Config::save($raw);
+                    $this->set_notice('success', 'Đã lưu cấu hình bảng dữ liệu.');
+                    wp_safe_redirect(admin_url('admin.php?page=lcni-settings&tab=frontend_settings&subtab=lcni-tab-frontend-table-config'));
+                    exit;
+
+                } elseif ($module === 'chart') {
+                    $input = [
+                        'allowed_panels' => isset($_POST['lcni_frontend_allowed_panels']) ? (array) wp_unslash($_POST['lcni_frontend_allowed_panels']) : [],
+                        'default_mode' => isset($_POST['lcni_frontend_default_mode']) ? wp_unslash($_POST['lcni_frontend_default_mode']) : '',
+                        'compact_mode' => isset($_POST['lcni_frontend_compact_mode']) ? wp_unslash($_POST['lcni_frontend_compact_mode']) : '',
+                        'default_visible_bars' => isset($_POST['lcni_frontend_default_visible_bars']) ? wp_unslash($_POST['lcni_frontend_default_visible_bars']) : 120,
+                        'chart_sync_enabled' => isset($_POST['lcni_frontend_chart_sync_enabled']) ? wp_unslash($_POST['lcni_frontend_chart_sync_enabled']) : '',
+                        'fit_to_screen_on_load' => isset($_POST['lcni_frontend_fit_to_screen_on_load']) ? wp_unslash($_POST['lcni_frontend_fit_to_screen_on_load']) : '',
+                        'default_ma20' => isset($_POST['lcni_frontend_default_ma20']) ? wp_unslash($_POST['lcni_frontend_default_ma20']) : '',
+                        'default_ma50' => isset($_POST['lcni_frontend_default_ma50']) ? wp_unslash($_POST['lcni_frontend_default_ma50']) : '',
+                        'default_rsi' => isset($_POST['lcni_frontend_default_rsi']) ? wp_unslash($_POST['lcni_frontend_default_rsi']) : '',
+                        'default_macd' => isset($_POST['lcni_frontend_default_macd']) ? wp_unslash($_POST['lcni_frontend_default_macd']) : '',
+                        'default_rs_1w_by_exchange' => isset($_POST['lcni_frontend_default_rs_1w_by_exchange']) ? wp_unslash($_POST['lcni_frontend_default_rs_1w_by_exchange']) : '',
+                        'default_rs_1m_by_exchange' => isset($_POST['lcni_frontend_default_rs_1m_by_exchange']) ? wp_unslash($_POST['lcni_frontend_default_rs_1m_by_exchange']) : '',
+                        'default_rs_3m_by_exchange' => isset($_POST['lcni_frontend_default_rs_3m_by_exchange']) ? wp_unslash($_POST['lcni_frontend_default_rs_3m_by_exchange']) : '',
+                    ];
+                    update_option('lcni_frontend_settings_chart', $this->sanitize_frontend_chart_settings($input));
+                    update_option('lcni_frontend_chart_title', $this->sanitize_module_title(isset($_POST['lcni_frontend_module_title']) ? wp_unslash($_POST['lcni_frontend_module_title']) : '', 'Stock Chart'));
+
+                } elseif ($module === 'chart_builder') {
+                    $payload = isset($_POST['lcni_chart_builder']) ? (array) wp_unslash($_POST['lcni_chart_builder']) : [];
+                    $sanitized = LCNI_Chart_Builder_Service::sanitize_payload($payload);
+                    if ($sanitized['name'] === '' || $sanitized['slug'] === '') {
+                        $this->set_notice('error', 'Chart Builder cần name và slug.');
+                    } else {
+                        $chart_id = LCNI_Chart_Builder_Repository::upsert_chart($sanitized);
+                        LCNI_DB::log_change('chart_builder_saved', 'Saved chart builder #' . (int) $chart_id . ' (' . $sanitized['slug'] . ').');
+                    }
+
+                } elseif ($module === 'chart_analyst') {
+                    $templates = [];
+                    foreach (['momentum', 'trend', 'swing'] as $template_key) {
+                        $templates[$template_key] = [
+                            'label' => isset($_POST['lcni_chart_analyst_template_label'][$template_key])
+                                ? wp_unslash($_POST['lcni_chart_analyst_template_label'][$template_key])
+                                : '',
+                            'indicators' => isset($_POST['lcni_chart_analyst_template_indicators'][$template_key])
+                                ? (array) wp_unslash($_POST['lcni_chart_analyst_template_indicators'][$template_key])
+                                : [],
+                        ];
+                    }
+
+                    $input = [
+                        'templates' => $templates,
+                        'default_template' => [
+                            'stock_detail' => isset($_POST['lcni_chart_analyst_default_template_stock_detail']) ? wp_unslash($_POST['lcni_chart_analyst_default_template_stock_detail']) : '',
+                            'dashboard' => isset($_POST['lcni_chart_analyst_default_template_dashboard']) ? wp_unslash($_POST['lcni_chart_analyst_default_template_dashboard']) : '',
+                            'watchlist' => isset($_POST['lcni_chart_analyst_default_template_watchlist']) ? wp_unslash($_POST['lcni_chart_analyst_default_template_watchlist']) : '',
+                        ],
+                    ];
+
+                    update_option('lcni_chart_analyst_settings', LCNI_Chart_Analyst_Settings::sanitize_config($input));
+                } elseif ($module === 'recommend_signal') {
+					$recommend_allowed_columns = isset($_POST['lcni_frontend_recommend_signal_allowed_columns'])
+                        ? wp_unslash($_POST['lcni_frontend_recommend_signal_allowed_columns'])
+                        : [];
+                    if (!is_array($recommend_allowed_columns)) {
+                        $recommend_allowed_columns = [$recommend_allowed_columns];
+                    }
+
+                    $recommend_column_order_raw = isset($_POST['lcni_frontend_recommend_signal_column_order'])
+                        ? wp_unslash($_POST['lcni_frontend_recommend_signal_column_order'])
+                        : '';
+                    if (!is_scalar($recommend_column_order_raw)) {
+                        $recommend_column_order_raw = '';
+                    }
+
+                    $recommend_scalar_post = static function ($key, $default = '') {
+                        if (!isset($_POST[$key])) {
+                            return $default;
+                        }
+
+                        $value = wp_unslash($_POST[$key]);
+
+                        return is_scalar($value) ? (string) $value : $default;
+                    };
+                    // Detect whether the Style sub-tab fields are present in this POST request.
+                    $recommend_style_submitted = isset($_POST['lcni_frontend_recommend_signal_style_rule_column'])
+                        || isset($_POST['lcni_frontend_recommend_signal_style_table_max_height']);
+
+                    if ($recommend_style_submitted) {
+                        $recommend_rule_columns    = isset($_POST['lcni_frontend_recommend_signal_style_rule_column'])    ? (array) wp_unslash($_POST['lcni_frontend_recommend_signal_style_rule_column'])    : [];
+                        $recommend_rule_operators  = isset($_POST['lcni_frontend_recommend_signal_style_rule_operator'])  ? (array) wp_unslash($_POST['lcni_frontend_recommend_signal_style_rule_operator'])  : [];
+                        $recommend_rule_values     = isset($_POST['lcni_frontend_recommend_signal_style_rule_value'])     ? (array) wp_unslash($_POST['lcni_frontend_recommend_signal_style_rule_value'])     : [];
+                        $recommend_rule_bg_colors  = isset($_POST['lcni_frontend_recommend_signal_style_rule_bg_color'])  ? (array) wp_unslash($_POST['lcni_frontend_recommend_signal_style_rule_bg_color'])  : [];
+                        $recommend_rule_text_colors= isset($_POST['lcni_frontend_recommend_signal_style_rule_text_color'])? (array) wp_unslash($_POST['lcni_frontend_recommend_signal_style_rule_text_color']): [];
+                        $recommend_table_max_height = $recommend_scalar_post('lcni_frontend_recommend_signal_style_table_max_height', 560);
+                        $recommend_style_rules_input = [
+                            'columns'     => $recommend_rule_columns,
+                            'operators'   => $recommend_rule_operators,
+                            'values'      => $recommend_rule_values,
+                            'bg_colors'   => $recommend_rule_bg_colors,
+                            'text_colors' => $recommend_rule_text_colors,
+                        ];
+                    } else {
+                        // Style sub-tab not submitted — preserve existing saved styles.
+                        $existing_recommend = get_option('lcni_frontend_settings_recommend_signal', []);
+                        $existing_styles = isset($existing_recommend['styles']) && is_array($existing_recommend['styles']) ? $existing_recommend['styles'] : [];
+                        $recommend_table_max_height = $existing_styles['table_max_height'] ?? 560;
+                        $recommend_style_rules_input = $existing_styles['cell_color_rules'] ?? [];
+                    }
+
+                    $input = [
+                        'allowed_columns' => $recommend_allowed_columns,
+                        'column_order' => explode(',', (string) $recommend_column_order_raw),
+                        'styles' => [
+                            'table_max_height' => $recommend_table_max_height,
+                            'cell_color_rules' => $recommend_style_rules_input,
+                        ],
+                    ];
+
+                    $sanitized = $this->sanitize_recommend_signal_settings($input);
+                    update_option('lcni_frontend_settings_recommend_signal', $sanitized);
+                } elseif ($module === 'watchlist') {
+                    $existing_watchlist = $this->sanitize_watchlist_settings(get_option('lcni_watchlist_settings', []));
+                    $existing_label_pairs = $this->normalize_watchlist_column_label_pairs($existing_watchlist['column_labels'] ?? []);
+                    $watchlist_section = isset($_POST['lcni_frontend_watchlist_section']) ? sanitize_key((string) wp_unslash($_POST['lcni_frontend_watchlist_section'])) : '';
+                    $input = [
+                        'allowed_columns' => $existing_watchlist['allowed_columns'] ?? [],
+                        'default_columns_desktop' => $existing_watchlist['default_columns_desktop'] ?? [],
+                        'default_columns_mobile' => $existing_watchlist['default_columns_mobile'] ?? [],
+                        'stock_detail_page_id' => $existing_watchlist['stock_detail_page_id'] ?? 0,
+                        'guest_mode' => $existing_watchlist['guest_mode'] ?? 'link',
+                        'guest_login_page_id' => $existing_watchlist['guest_login_page_id'] ?? 0,
+                        'guest_register_page_id' => $existing_watchlist['guest_register_page_id'] ?? 0,
+                        'column_label_keys' => array_map('sanitize_key', wp_list_pluck($existing_label_pairs, 'data_key')),
+                        'column_label_values' => array_map('sanitize_text_field', wp_list_pluck($existing_label_pairs, 'label')),
+                        'styles' => $existing_watchlist['styles'] ?? [],
+                        'value_color_rule_columns' => array_map('sanitize_key', wp_list_pluck((array) ($existing_watchlist['value_color_rules'] ?? []), 'column')),
+                        'value_color_rule_operators' => wp_list_pluck((array) ($existing_watchlist['value_color_rules'] ?? []), 'operator'),
+                        'value_color_rule_values' => wp_list_pluck((array) ($existing_watchlist['value_color_rules'] ?? []), 'value'),
+                        'value_color_rule_bg_colors' => wp_list_pluck((array) ($existing_watchlist['value_color_rules'] ?? []), 'bg_color'),
+                        'value_color_rule_text_colors' => wp_list_pluck((array) ($existing_watchlist['value_color_rules'] ?? []), 'text_color'),
+                        'add_button' => $existing_watchlist['add_button'] ?? [],
+                        'add_form_button' => $existing_watchlist['add_form_button'] ?? [],
+                    ];
+
+                    if ($watchlist_section === 'columns') {
+                        $input['allowed_columns'] = isset($_POST['lcni_frontend_watchlist_allowed_columns']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_allowed_columns']) : [];
+                        $posted_column_order = array_filter(array_map('sanitize_key', explode(',', (string) (isset($_POST['lcni_frontend_watchlist_column_order']) ? wp_unslash($_POST['lcni_frontend_watchlist_column_order']) : ''))));
+                        $styles = isset($input['styles']) && is_array($input['styles']) ? $input['styles'] : [];
+                        $styles['column_order'] = $posted_column_order;
+                        $input['styles'] = $styles;
+                    } elseif ($watchlist_section === 'stock_detail_page') {
+                        $input['stock_detail_page_id'] = isset($_POST['lcni_frontend_stock_detail_page']) ? wp_unslash($_POST['lcni_frontend_stock_detail_page']) : 0;
+                        $input['guest_mode'] = isset($_POST['lcni_watchlist_guest_mode']) ? wp_unslash($_POST['lcni_watchlist_guest_mode']) : 'link';
+                        $input['guest_login_page_id'] = isset($_POST['lcni_watchlist_guest_login_page']) ? wp_unslash($_POST['lcni_watchlist_guest_login_page']) : 0;
+                        $input['guest_register_page_id'] = isset($_POST['lcni_watchlist_guest_register_page']) ? wp_unslash($_POST['lcni_watchlist_guest_register_page']) : 0;
+                    } elseif ($watchlist_section === 'default_columns') {
+                        $input['default_columns_desktop'] = isset($_POST['lcni_frontend_watchlist_default_columns_desktop']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_default_columns_desktop']) : [];
+                        $input['default_columns_mobile'] = isset($_POST['lcni_frontend_watchlist_default_columns_mobile']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_default_columns_mobile']) : [];
+                        $posted_column_order = array_filter(array_map('sanitize_key', explode(',', (string) (isset($_POST['lcni_frontend_watchlist_column_order']) ? wp_unslash($_POST['lcni_frontend_watchlist_column_order']) : ''))));
+                        $styles = isset($input['styles']) && is_array($input['styles']) ? $input['styles'] : [];
+                        $styles['column_order'] = $posted_column_order;
+                        $input['styles'] = $styles;
+                    } elseif ($watchlist_section === 'column_labels') {
+                        $input['column_label_keys'] = isset($_POST['lcni_frontend_watchlist_column_label_key']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_column_label_key']) : [];
+                        $input['column_label_values'] = isset($_POST['lcni_frontend_watchlist_column_label']) ? (array) wp_unslash($_POST['lcni_frontend_watchlist_column_label']) : [];
+                        $pairs = [];
+                        $count = max(count($input['column_label_keys']), count($input['column_label_values']));
+                        for ($i = 0; $i < $count; $i++) {
+                            $k = sanitize_key($input['column_label_keys'][$i] ?? '');
+                            $v = sanitize_text_field((string) ($input['column_label_values'][$i] ?? ''));
+                            if ($k !== '' && $v !== '') {
+                                $pairs[] = ['data_key' => $k, 'label' => $v];
+                            }
+                        }
+                        update_option('lcni_column_labels', $pairs);
+                    } elseif ($watchlist_section === 'style_config') {
+                        $input['styles'] = [
+                            'font' => isset($_POST['lcni_frontend_watchlist_style_font']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_font']) : '',
+                            'dropdown_height' => isset($_POST['lcni_frontend_watchlist_style_dropdown_height']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_dropdown_height']) : 34,
+                            'dropdown_width' => isset($_POST['lcni_frontend_watchlist_style_dropdown_width']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_dropdown_width']) : 220,
+                            'dropdown_font_size' => isset($_POST['lcni_frontend_watchlist_style_dropdown_font_size']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_dropdown_font_size']) : 13,
+                            'dropdown_border_color' => isset($_POST['lcni_frontend_watchlist_style_dropdown_border_color']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_dropdown_border_color']) : '',
+                            'dropdown_border_radius' => isset($_POST['lcni_frontend_watchlist_style_dropdown_border_radius']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_dropdown_border_radius']) : 8,
+                            'input_height' => isset($_POST['lcni_frontend_watchlist_style_input_height']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_input_height']) : 34,
+                            'input_width' => isset($_POST['lcni_frontend_watchlist_style_input_width']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_input_width']) : 160,
+                            'input_font_size' => isset($_POST['lcni_frontend_watchlist_style_input_font_size']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_input_font_size']) : 13,
+                            'input_border_color' => isset($_POST['lcni_frontend_watchlist_style_input_border_color']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_input_border_color']) : '',
+                            'input_border_radius' => isset($_POST['lcni_frontend_watchlist_style_input_border_radius']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_input_border_radius']) : 8,
+                            'scroll_speed' => isset($_POST['lcni_frontend_watchlist_style_scroll_speed']) ? wp_unslash($_POST['lcni_frontend_watchlist_style_scroll_speed']) : 1,
+                            'column_order' => array_filter(array_map('sanitize_key', explode(',', (string) (isset($_POST['lcni_frontend_watchlist_column_order']) ? wp_unslash($_POST['lcni_frontend_watchlist_column_order']) : '')))),
+                        ];
+                        $input['value_color_rule_columns'] = isset($_POST['lcni_watchlist_value_color_rule_column']) ? (array) wp_unslash($_POST['lcni_watchlist_value_color_rule_column']) : [];
+                        $input['value_color_rule_operators'] = isset($_POST['lcni_watchlist_value_color_rule_operator']) ? (array) wp_unslash($_POST['lcni_watchlist_value_color_rule_operator']) : [];
+                        $input['value_color_rule_values'] = isset($_POST['lcni_watchlist_value_color_rule_value']) ? (array) wp_unslash($_POST['lcni_watchlist_value_color_rule_value']) : [];
+                        $input['value_color_rule_bg_colors'] = isset($_POST['lcni_watchlist_value_color_rule_bg_color']) ? (array) wp_unslash($_POST['lcni_watchlist_value_color_rule_bg_color']) : [];
+                        $input['value_color_rule_text_colors'] = isset($_POST['lcni_watchlist_value_color_rule_text_color']) ? (array) wp_unslash($_POST['lcni_watchlist_value_color_rule_text_color']) : [];
+                        $input['add_button'] = [];
+                        $input['add_form_button'] = [
+                            'background' => isset($_POST['lcni_frontend_watchlist_form_btn_background']) ? wp_unslash($_POST['lcni_frontend_watchlist_form_btn_background']) : '',
+                            'text_color' => isset($_POST['lcni_frontend_watchlist_form_btn_text_color']) ? wp_unslash($_POST['lcni_frontend_watchlist_form_btn_text_color']) : '',
+                            'font_size' => isset($_POST['lcni_frontend_watchlist_form_btn_font_size']) ? wp_unslash($_POST['lcni_frontend_watchlist_form_btn_font_size']) : 14,
+                            'height' => isset($_POST['lcni_frontend_watchlist_form_btn_height']) ? wp_unslash($_POST['lcni_frontend_watchlist_form_btn_height']) : 34,
+                            'icon' => isset($_POST['lcni_frontend_watchlist_form_btn_icon']) ? wp_unslash($_POST['lcni_frontend_watchlist_form_btn_icon']) : '',
+                        ];
+                    }
+
+                    $watchlist_settings = $this->sanitize_watchlist_settings($input);
+                    update_option('lcni_watchlist_settings', $watchlist_settings);
+                    update_option('lcni_frontend_stock_detail_page', (int) $watchlist_settings['stock_detail_page_id']);
+                    update_option('lcni_watchlist_stock_page', sanitize_title((string) ($watchlist_settings['stock_detail_page_slug'] ?? '')));
+                } elseif ($module === 'filter') {
+                    $section = isset($_POST['lcni_filter_section']) ? sanitize_key((string) wp_unslash($_POST['lcni_filter_section'])) : '';
+                    if ($section === 'criteria') {
+                        $selected_columns = LCNI_FilterAdmin::sanitize_columns(isset($_POST['lcni_filter_criteria_columns']) ? (array) wp_unslash($_POST['lcni_filter_criteria_columns']) : []);
+                        $ordered_columns = LCNI_FilterAdmin::sanitize_column_order(explode(',', (string) (isset($_POST['lcni_filter_criteria_column_order']) ? wp_unslash($_POST['lcni_filter_criteria_column_order']) : '')));
+                        $ordered_columns = array_values(array_filter($ordered_columns, static function ($column) use ($selected_columns) {
+                            return in_array($column, $selected_columns, true);
+                        }));
+                        foreach ($selected_columns as $column) {
+                            if (!in_array($column, $ordered_columns, true)) {
+                                $ordered_columns[] = $column;
+                            }
+                        }
+                        update_option('lcni_filter_criteria_columns', $ordered_columns);
+                        update_option('lcni_filter_criteria_column_order', $ordered_columns);
+                    } elseif ($section === 'table_columns') {
+                        $selected_columns = LCNI_FilterAdmin::sanitize_columns(isset($_POST['lcni_filter_table_columns']) ? (array) wp_unslash($_POST['lcni_filter_table_columns']) : []);
+                        $ordered_columns = LCNI_FilterAdmin::sanitize_column_order(explode(',', (string) (isset($_POST['lcni_filter_table_column_order']) ? wp_unslash($_POST['lcni_filter_table_column_order']) : '')));
+                        $ordered_columns = array_values(array_filter($ordered_columns, static function ($column) use ($selected_columns) {
+                            return in_array($column, $selected_columns, true);
+                        }));
+                        foreach ($selected_columns as $column) {
+                            if (!in_array($column, $ordered_columns, true)) {
+                                $ordered_columns[] = $column;
+                            }
+                        }
+                        update_option('lcni_filter_table_columns', $selected_columns);
+                        update_option('lcni_filter_table_column_order', $ordered_columns);
+                    } elseif ($section === 'style') {
+                        $raw_style = isset($_POST['lcni_filter_style_config']) ? (array) wp_unslash($_POST['lcni_filter_style_config']) : (isset($_POST['lcni_filter_style']) ? (array) wp_unslash($_POST['lcni_filter_style']) : []);
+                        $style_config = LCNI_FilterAdmin::sanitize_style($raw_style);
+                        update_option('lcni_filter_style', $style_config);
+                        update_option('lcni_filter_style_config', $style_config);
+                    } elseif ($section === 'default_values') {
+                        update_option('lcni_filter_default_values', LCNI_FilterAdmin::sanitize_default_filter_values(isset($_POST['lcni_filter_default_values']) ? (string) wp_unslash($_POST['lcni_filter_default_values']) : ''));
+                    } elseif ($section === 'default_criteria') {
+                        update_option('lcni_filter_default_admin_saved_filter_id', absint(isset($_POST['lcni_filter_default_admin_saved_filter_id']) ? wp_unslash($_POST['lcni_filter_default_admin_saved_filter_id']) : 0));
+                    } elseif ($section === 'filter_page') {
+                        $filter_page_id = absint(isset($_POST['lcni_filter_link_page_id']) ? wp_unslash($_POST['lcni_filter_link_page_id']) : 0);
+                        $filter_login_page_id = absint(isset($_POST['lcni_filter_login_page_id']) ? wp_unslash($_POST['lcni_filter_login_page_id']) : 0);
+                        $filter_register_page_id = absint(isset($_POST['lcni_filter_register_page_id']) ? wp_unslash($_POST['lcni_filter_register_page_id']) : 0);
+                        // Performance page (cho nút Xem thống kê trên [lcni_rule_follow])
+                        $perf_page_id = absint(isset($_POST['lcni_performance_page_id']) ? wp_unslash($_POST['lcni_performance_page_id']) : 0);
+                        if ($perf_page_id > 0) {
+                            $perf_post = get_post($perf_page_id);
+                            if (!($perf_post instanceof WP_Post) || $perf_post->post_type !== 'page') {
+                                $perf_page_id = 0;
+                            }
+                        }
+                        update_option('lcni_performance_page_id', $perf_page_id);
+                        // Signals Rule page
+                        $sig_rule_page_id = absint(isset($_POST['lcni_signals_rule_page_id']) ? wp_unslash($_POST['lcni_signals_rule_page_id']) : 0);
+                        update_option('lcni_signals_rule_page_id', $sig_rule_page_id);
+                        // Trang [lcni_user_rule] — nút Tự động trong [lcni_rule_follow]
+                        $ur_page_id = absint(isset($_POST['lcni_user_rule_page_id']) ? wp_unslash($_POST['lcni_user_rule_page_id']) : 0);
+                        update_option('lcni_user_rule_page_id', $ur_page_id);
+                        $filter_page_slug = 'sug-filter';
+                        if ($filter_page_id > 0) {
+                            $post = get_post($filter_page_id);
+                            if ($post instanceof WP_Post && $post->post_type === 'page') {
+                                $filter_page_slug = sanitize_title((string) $post->post_name);
+                            } else {
+                                $filter_page_id = 0;
+                            }
+                        }
+
+                        if ($filter_login_page_id > 0) {
+                            $login_post = get_post($filter_login_page_id);
+                            if (!($login_post instanceof WP_Post) || $login_post->post_type !== 'page') {
+                                $filter_login_page_id = 0;
+                            }
+                        }
+
+                        if ($filter_register_page_id > 0) {
+                            $register_post = get_post($filter_register_page_id);
+                            if (!($register_post instanceof WP_Post) || $register_post->post_type !== 'page') {
+                                $filter_register_page_id = 0;
+                            }
+                        }
+
+                        update_option('lcni_filter_link_page_id', $filter_page_id);
+                        update_option('lcni_filter_link_page', $filter_page_slug !== '' ? $filter_page_slug : 'sug-filter');
+                        update_option('lcni_filter_login_page_id', $filter_login_page_id);
+                        update_option('lcni_filter_register_page_id', $filter_register_page_id);
+                    }
+                } elseif ($module === 'button_style') {
+                    $button_input = isset($_POST['lcni_button_style_config']) ? (array) wp_unslash($_POST['lcni_button_style_config']) : [];
+                    update_option('lcni_button_style_config', $this->sanitize_button_style_config($button_input));
+
+                    $watchlist_settings = $this->sanitize_watchlist_settings(get_option('lcni_watchlist_settings', []));
+                    $watchlist_styles = isset($watchlist_settings['styles']) && is_array($watchlist_settings['styles']) ? $watchlist_settings['styles'] : [];
+                    $watchlist_styles['dropdown_height'] = isset($_POST['lcni_form_dropdown_height']) ? wp_unslash($_POST['lcni_form_dropdown_height']) : ($watchlist_styles['dropdown_height'] ?? 34);
+                    $watchlist_styles['dropdown_font_size'] = isset($_POST['lcni_form_dropdown_font_size']) ? wp_unslash($_POST['lcni_form_dropdown_font_size']) : ($watchlist_styles['dropdown_font_size'] ?? 13);
+                    $watchlist_styles['dropdown_border_color'] = isset($_POST['lcni_form_dropdown_border_color']) ? wp_unslash($_POST['lcni_form_dropdown_border_color']) : ($watchlist_styles['dropdown_border_color'] ?? '#d1d5db');
+                    $watchlist_styles['dropdown_border_radius'] = isset($_POST['lcni_form_dropdown_border_radius']) ? wp_unslash($_POST['lcni_form_dropdown_border_radius']) : ($watchlist_styles['dropdown_border_radius'] ?? 8);
+                    $watchlist_styles['input_height'] = isset($_POST['lcni_form_input_height']) ? wp_unslash($_POST['lcni_form_input_height']) : ($watchlist_styles['input_height'] ?? 34);
+                    $watchlist_styles['input_font_size'] = isset($_POST['lcni_form_input_font_size']) ? wp_unslash($_POST['lcni_form_input_font_size']) : ($watchlist_styles['input_font_size'] ?? 13);
+                    $watchlist_styles['input_border_color'] = isset($_POST['lcni_form_input_border_color']) ? wp_unslash($_POST['lcni_form_input_border_color']) : ($watchlist_styles['input_border_color'] ?? '#d1d5db');
+                    $watchlist_styles['input_border_radius'] = isset($_POST['lcni_form_input_border_radius']) ? wp_unslash($_POST['lcni_form_input_border_radius']) : ($watchlist_styles['input_border_radius'] ?? 8);
+
+                    $global_rules_raw = $this->collect_global_cell_color_rule_input_from_post();
+                    $global_rules = $this->sanitize_global_cell_color_rules($global_rules_raw);
+                    $cell_to_cell_raw = $this->collect_global_cell_to_cell_rule_input_from_post();
+                    $cell_to_cell_rules = $this->sanitize_global_cell_to_cell_rules($cell_to_cell_raw);
+
+                    $watchlist_settings['styles'] = $watchlist_styles;
+                    $watchlist_settings['value_color_rules'] = $global_rules;
+                    update_option('lcni_watchlist_settings', $this->sanitize_watchlist_settings($watchlist_settings));
+                    update_option('lcni_global_cell_color_rules', $global_rules);
+                    update_option('lcni_cell_to_cell_color_rules', $cell_to_cell_rules);
+
+                    $filter_style = LCNI_FilterAdmin::sanitize_style(get_option('lcni_filter_style_config', get_option('lcni_filter_style', [])));
+                    $filter_style['saved_filter_label'] = sanitize_text_field((string) (isset($_POST['lcni_form_saved_filter_label']) ? wp_unslash($_POST['lcni_form_saved_filter_label']) : ($filter_style['saved_filter_label'] ?? 'Saved filters')));
+                    $filter_style['conditional_value_colors'] = wp_json_encode($global_rules);
+                    $filter_style['cell_to_cell_colors'] = wp_json_encode($cell_to_cell_rules);
+                    update_option('lcni_filter_style', $filter_style);
+                    update_option('lcni_filter_style_config', $filter_style);
+
+                } elseif ($module === 'data_format') {
+                    $input = isset($_POST[LCNI_Data_Format_Settings::OPTION_KEY]) ? (array) wp_unslash($_POST[LCNI_Data_Format_Settings::OPTION_KEY]) : [];
+                    update_option(LCNI_Data_Format_Settings::OPTION_KEY, LCNI_Data_Format_Settings::sanitize_settings($input));
+                } elseif ($module === 'column_labels') {
+                    $keys = isset($_POST['lcni_global_column_label_key']) ? (array) wp_unslash($_POST['lcni_global_column_label_key']) : [];
+                    $values = isset($_POST['lcni_global_column_label']) ? (array) wp_unslash($_POST['lcni_global_column_label']) : [];
+                    $pairs = [];
+                    $count = max(count($keys), count($values));
+                    for ($i = 0; $i < $count; $i++) {
+                        $key = sanitize_key($keys[$i] ?? '');
+                        $label = sanitize_text_field((string) ($values[$i] ?? ''));
+                        if ($key === '' || $label === '') {
+                            continue;
+                        }
+                        $pairs[] = ['data_key' => $key, 'label' => $label];
+                    }
+                    update_option('lcni_column_labels', $pairs);
+                } else {
+                    $posted_allowed_fields = isset($_POST['lcni_frontend_allowed_fields']) ? (array) wp_unslash($_POST['lcni_frontend_allowed_fields']) : [];
+                    $posted_field_order = array_filter(array_map('sanitize_key', explode(',', (string) (isset($_POST['lcni_frontend_allowed_field_order']) ? wp_unslash($_POST['lcni_frontend_allowed_field_order']) : ''))));
+                    $ordered_allowed_fields = [];
+                    foreach ($posted_field_order as $field_key) {
+                        if (in_array($field_key, $posted_allowed_fields, true) && !in_array($field_key, $ordered_allowed_fields, true)) {
+                            $ordered_allowed_fields[] = $field_key;
+                        }
+                    }
+                    foreach ($posted_allowed_fields as $field_key) {
+                        $safe_key = sanitize_key((string) $field_key);
+                        if ($safe_key !== '' && !in_array($safe_key, $ordered_allowed_fields, true)) {
+                            $ordered_allowed_fields[] = $safe_key;
+                        }
+                    }
+
+                    $input = [
+                        '__module' => $module,
+                        'allowed_fields' => $ordered_allowed_fields,
+                        'styles' => [
+                            'label_color' => isset($_POST['lcni_frontend_style_label_color']) ? wp_unslash($_POST['lcni_frontend_style_label_color']) : '',
+                            'value_color' => isset($_POST['lcni_frontend_style_value_color']) ? wp_unslash($_POST['lcni_frontend_style_value_color']) : '',
+                            'item_background' => isset($_POST['lcni_frontend_style_item_background']) ? wp_unslash($_POST['lcni_frontend_style_item_background']) : '',
+                            'container_background' => isset($_POST['lcni_frontend_style_container_background']) ? wp_unslash($_POST['lcni_frontend_style_container_background']) : '',
+                            'container_border' => isset($_POST['lcni_frontend_style_container_border']) ? wp_unslash($_POST['lcni_frontend_style_container_border']) : '',
+                            'item_height' => isset($_POST['lcni_frontend_style_item_height']) ? wp_unslash($_POST['lcni_frontend_style_item_height']) : '',
+                            'label_font_size' => isset($_POST['lcni_frontend_style_label_font_size']) ? wp_unslash($_POST['lcni_frontend_style_label_font_size']) : '',
+                            'value_font_size' => isset($_POST['lcni_frontend_style_value_font_size']) ? wp_unslash($_POST['lcni_frontend_style_value_font_size']) : '',
+                            'value_rules' => [],
+                        ],
+                    ];
+
+                    update_option('lcni_frontend_settings_' . $module, $this->sanitize_frontend_module_settings($input));
+                    $title_option = $module === 'signals' ? 'lcni_frontend_signal_title' : 'lcni_frontend_overview_title';
+                    $title_fallback = $module === 'signals' ? 'LCNi Signals' : 'Stock Overview';
+                    update_option($title_option, $this->sanitize_module_title(isset($_POST['lcni_frontend_module_title']) ? wp_unslash($_POST['lcni_frontend_module_title']) : '', $title_fallback));
+                }
+                $this->set_notice('success', 'Đã lưu Frontend Settings cho module ' . $module . '.');
+            }
+        }
+
+         $redirect_tab_raw = isset($_POST['lcni_redirect_tab']) ? wp_unslash($_POST['lcni_redirect_tab']) : '';
+        $redirect_page_raw = isset($_POST['lcni_redirect_page']) ? wp_unslash($_POST['lcni_redirect_page']) : 'lcni-settings';
+        $redirect_tab = sanitize_key(is_scalar($redirect_tab_raw) ? (string) $redirect_tab_raw : '');
+        $redirect_page = sanitize_key(is_scalar($redirect_page_raw) ? (string) $redirect_page_raw : 'lcni-settings');
+        $redirect_page = in_array($redirect_page, ['lcni-settings', 'lcni-data-viewer'], true) ? $redirect_page : 'lcni-settings';
+        $redirect_url = admin_url('admin.php?page=' . $redirect_page);
+
+        if ($redirect_page === 'lcni-settings' && in_array($redirect_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'change_logs', 'lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange', 'lcni-tab-update-runtime', 'lcni-tab-update-ohlc-latest', 'lcni-tab-frontend-signals', 'lcni-tab-frontend-recommend-signal', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-chart-builder', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-table-config', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format'], true)) {
+            $redirect_url = add_query_arg('tab', $redirect_tab, $redirect_url);
+        }
+
+        if ($redirect_page === 'lcni-data-viewer' && in_array($redirect_tab, ['lcni-tab-symbols', 'lcni-tab-market', 'lcni-tab-icb2', 'lcni-tab-sym-icb-market', 'lcni-tab-ohlc'], true)) {
+            $redirect_url = add_query_arg('tab', $redirect_tab, $redirect_url);
+        }
+
+        wp_safe_redirect($redirect_url);
+        exit;
+    }
+
+    private function set_notice($type, $message, $debug = []) {
+        set_transient('lcni_settings_notice', ['type' => $type, 'message' => $message, 'debug' => $debug], 60);
+    }
+
+    private function get_csv_import_draft_key() {
+        return 'lcni_csv_import_draft_' . get_current_user_id();
+    }
+
+    private function get_csv_import_status_key($user_id = null) {
+        $target_user_id = $user_id === null ? get_current_user_id() : (int) $user_id;
+        return 'lcni_csv_import_status_' . $target_user_id;
+    }
+
+    private function get_csv_import_payload_key($user_id = null) {
+        $target_user_id = $user_id === null ? get_current_user_id() : (int) $user_id;
+        return 'lcni_csv_import_payload_' . $target_user_id;
+    }
+
+
+    private function control_csv_import_job($command) {
+        $user_id = get_current_user_id();
+        $status_key = $this->get_csv_import_status_key($user_id);
+        $payload_key = $this->get_csv_import_payload_key($user_id);
+        $status = get_transient($status_key);
+
+        if (!is_array($status) || empty($status['id'])) {
+            return ['type' => 'error', 'message' => 'Chưa có tiến trình import CSV để thao tác.'];
+        }
+
+        if ($command === 'pause') {
+            if (in_array((string) ($status['state'] ?? ''), ['done', 'error', 'cancelled'], true)) {
+                return ['type' => 'error', 'message' => 'Tiến trình import CSV đã kết thúc, không thể tạm dừng.'];
+            }
+
+            $status['state'] = 'paused';
+            $status['message'] = 'Đã tạm dừng import CSV. Bấm Resume để tiếp tục.';
+            $status['updated_at'] = current_time('mysql');
+            set_transient($status_key, $status, HOUR_IN_SECONDS);
+
+            return ['type' => 'success', 'message' => 'Đã tạm dừng tiến trình import CSV.'];
+        }
+
+        if ($command === 'resume') {
+            if (($status['state'] ?? '') !== 'paused') {
+                return ['type' => 'error', 'message' => 'Chỉ có thể tiếp tục khi tiến trình đang ở trạng thái tạm dừng.'];
+            }
+
+            $payload = get_transient($payload_key);
+            if (!is_array($payload) || empty($payload['job_id']) || empty($payload['file_path']) || !file_exists((string) $payload['file_path'])) {
+                $status['state'] = 'error';
+                $status['message'] = 'Không tìm thấy dữ liệu job để resume import CSV.';
+                $status['updated_at'] = current_time('mysql');
+                set_transient($status_key, $status, HOUR_IN_SECONDS);
+
+                return ['type' => 'error', 'message' => 'Không thể resume: thiếu payload hoặc file import đã mất.'];
+            }
+
+            $status['state'] = 'queued';
+            $status['message'] = 'Đã tiếp tục import CSV. Đang chờ xử lý nền...';
+            $status['updated_at'] = current_time('mysql');
+            set_transient($status_key, $status, HOUR_IN_SECONDS);
+
+            wp_schedule_single_event(time() + 1, 'lcni_csv_import_process', [$user_id, $payload]);
+            return ['type' => 'success', 'message' => 'Đã tiếp tục tiến trình import CSV.'];
+        }
+
+        if ($command === 'cancel') {
+            if (in_array((string) ($status['state'] ?? ''), ['done', 'error', 'cancelled'], true)) {
+                return ['type' => 'error', 'message' => 'Tiến trình import CSV đã kết thúc, không thể hủy.'];
+            }
+
+            $payload = get_transient($payload_key);
+            if (is_array($payload) && !empty($payload['file_path']) && is_string($payload['file_path']) && file_exists($payload['file_path'])) {
+                @unlink($payload['file_path']);
+            }
+
+            delete_transient($payload_key);
+            $status['state'] = 'cancelled';
+            $status['message'] = 'Đã hủy tiến trình import CSV.';
+            $status['updated_at'] = current_time('mysql');
+            set_transient($status_key, $status, HOUR_IN_SECONDS);
+
+            return ['type' => 'success', 'message' => 'Đã hủy tiến trình import CSV.'];
+        }
+
+        return ['type' => 'error', 'message' => 'Lệnh điều khiển import CSV không hợp lệ.'];
+    }
+
+    private function prepare_csv_import_draft($tmp_file_path, $table_key) {
+        $targets = LCNI_DB::get_csv_import_targets();
+        if (!isset($targets[$table_key])) {
+            return new WP_Error('invalid_table', 'Bảng import không hợp lệ.');
+        }
+
+        $headers = LCNI_DB::detect_csv_columns($tmp_file_path);
+        if (is_wp_error($headers)) {
+            return $headers;
+        }
+
+        $upload_dir = wp_upload_dir();
+        if (!empty($upload_dir['error'])) {
+            return new WP_Error('upload_dir_error', (string) $upload_dir['error']);
+        }
+
+        $target_dir = trailingslashit($upload_dir['basedir']) . 'lcni-imports';
+        if (!wp_mkdir_p($target_dir)) {
+            return new WP_Error('mkdir_failed', 'Không thể tạo thư mục tạm cho import CSV.');
+        }
+
+        $saved_file = trailingslashit($target_dir) . 'import-' . get_current_user_id() . '-' . current_time('timestamp') . '-' . wp_generate_password(8, false, false) . '.csv';
+        if (!@copy($tmp_file_path, $saved_file)) {
+            return new WP_Error('copy_failed', 'Không thể lưu file CSV tạm thời để map cột.');
+        }
+
+        $suggested_mapping = LCNI_DB::suggest_csv_mapping($table_key, $headers);
+
+        return [
+            'table_key' => $table_key,
+            'file_path' => $saved_file,
+            'headers' => $headers,
+            'suggested_mapping' => $suggested_mapping,
+            'created_at' => current_time('timestamp'),
+        ];
+    }
+
+    private function run_api_connection_test() {
+        $test_result = LCNI_API::test_connection();
+
+        if (is_wp_error($test_result)) {
+            LCNI_DB::log_change('api_connection_failed', 'Manual chart-api connection test failed from admin button.');
+            $this->set_notice('error', 'Kết nối chart-api thất bại: ' . $test_result->get_error_message());
+            return;
+        }
+
+        LCNI_DB::log_change('api_connection_success', 'Manual chart-api connection test passed from admin button.');
+        $this->set_notice('success', 'Kết nối chart-api thành công.');
+    }
+
+    public function process_csv_import_job($user_id, $payload = []) {
+        $user_id = (int) $user_id;
+        $status_key = $this->get_csv_import_status_key($user_id);
+        $payload_key = $this->get_csv_import_payload_key($user_id);
+        $existing_status = get_transient($status_key);
+        $job_id = isset($payload['job_id']) ? sanitize_text_field((string) $payload['job_id']) : '';
+
+        if (!is_array($payload) || empty($payload['file_path']) || empty($payload['table_key'])) {
+            set_transient($status_key, [
+                'id' => $job_id,
+                'state' => 'error',
+                'table' => (string) ($payload['table_key'] ?? ''),
+                'updated' => 0,
+                'processed' => 0,
+                'total' => 0,
+                'message' => 'Payload import không hợp lệ.',
+                'updated_at' => current_time('mysql'),
+            ], HOUR_IN_SECONDS);
+            delete_transient($payload_key);
+            $this->release_csv_import_lock();
+            return;
+        }
+
+        if (is_array($existing_status) && !empty($existing_status['id']) && $job_id !== '' && $existing_status['id'] !== $job_id) {
+            return;
+        }
+
+        $status = is_array($existing_status) ? $existing_status : [];
+
+        if (($status['state'] ?? '') === 'paused') {
+            return;
+        }
+
+        if (($status['state'] ?? '') === 'cancelled') {
+            delete_transient($payload_key);
+            $this->release_csv_import_lock();
+            if (!empty($payload['file_path']) && is_string($payload['file_path']) && file_exists($payload['file_path'])) {
+                @unlink($payload['file_path']);
+            }
+            return;
+        }
+
+        $status['state'] = 'running';
+        $status['message'] = 'Đang import CSV ở chế độ nền...';
+        $status['updated_at'] = current_time('mysql');
+        set_transient($status_key, $status, HOUR_IN_SECONDS);
+        $this->touch_csv_import_lock();
+
+        set_transient($payload_key, [
+            'job_id' => $job_id,
+            'file_path' => (string) $payload['file_path'],
+            'table_key' => (string) $payload['table_key'],
+            'mapping' => isset($payload['mapping']) && is_array($payload['mapping']) ? $payload['mapping'] : [],
+            'options' => isset($payload['options']) && is_array($payload['options']) ? $payload['options'] : [],
+            'offset_rows' => max(0, (int) ($payload['offset_rows'] ?? 0)),
+            'updated_total' => max(0, (int) ($payload['updated_total'] ?? 0)),
+            'accumulated_series' => isset($payload['accumulated_series']) && is_array($payload['accumulated_series']) ? $payload['accumulated_series'] : [],
+            'accumulated_event_times' => isset($payload['accumulated_event_times']) && is_array($payload['accumulated_event_times']) ? $payload['accumulated_event_times'] : [],
+            'accumulated_timeframes' => isset($payload['accumulated_timeframes']) && is_array($payload['accumulated_timeframes']) ? $payload['accumulated_timeframes'] : [],
+        ], HOUR_IN_SECONDS);
+
+        $chunk_size = max(200, (int) apply_filters('lcni_csv_import_chunk_size', 1500));
+        $offset_rows = max(0, (int) ($payload['offset_rows'] ?? 0));
+        $updated_total = max(0, (int) ($payload['updated_total'] ?? 0));
+        $accumulated_series = isset($payload['accumulated_series']) && is_array($payload['accumulated_series']) ? $payload['accumulated_series'] : [];
+        $accumulated_event_times = isset($payload['accumulated_event_times']) && is_array($payload['accumulated_event_times']) ? $payload['accumulated_event_times'] : [];
+        $accumulated_timeframes = isset($payload['accumulated_timeframes']) && is_array($payload['accumulated_timeframes']) ? $payload['accumulated_timeframes'] : [];
+
+        $options = isset($payload['options']) && is_array($payload['options']) ? $payload['options'] : [];
+        $options['offset_rows'] = $offset_rows;
+        $options['max_rows'] = $chunk_size;
+        $options['progress_callback'] = function($processed, $updated) use ($status_key, &$status) {
+            $base_processed = isset($status['processed_base']) ? (int) $status['processed_base'] : 0;
+            $base_updated = isset($status['updated_base']) ? (int) $status['updated_base'] : 0;
+            $status['processed'] = $base_processed + (int) $processed;
+            $status['updated'] = $base_updated + (int) $updated;
+            $status['updated_at'] = current_time('mysql');
+            set_transient($status_key, $status, HOUR_IN_SECONDS);
+        };
+
+        $status['processed_base'] = $offset_rows;
+        $status['updated_base'] = $updated_total;
+        set_transient($status_key, $status, HOUR_IN_SECONDS);
+
+        $import_summary = LCNI_DB::import_csv_with_mapping(
+            (string) $payload['file_path'],
+            (string) $payload['table_key'],
+            isset($payload['mapping']) && is_array($payload['mapping']) ? $payload['mapping'] : [],
+            $options
+        );
+
+        if (is_wp_error($import_summary)) {
+            $status['state'] = 'error';
+            $status['message'] = 'Import CSV thất bại: ' . $import_summary->get_error_message();
+        } else {
+            $processed_chunk = max(0, (int) ($import_summary['processed'] ?? 0));
+            $updated_chunk = max(0, (int) ($import_summary['updated'] ?? 0));
+            $has_more = !empty($import_summary['has_more']);
+            $status['table'] = (string) ($import_summary['table'] ?? ($status['table'] ?? 'N/A'));
+            $status['processed'] = $offset_rows + $processed_chunk;
+            $status['updated'] = $updated_total + $updated_chunk;
+            $status['total'] = max((int) ($status['total'] ?? 0), (int) $status['processed']);
+
+            foreach ((array) ($import_summary['touched_series'] ?? []) as $series) {
+                if (!is_array($series)) {
+                    continue;
+                }
+                $symbol = strtoupper(sanitize_text_field((string) ($series['symbol'] ?? '')));
+                $timeframe = strtoupper(sanitize_text_field((string) ($series['timeframe'] ?? '')));
+                if ($symbol === '' || $timeframe === '') {
+                    continue;
+                }
+                $accumulated_series[$symbol . '|' . $timeframe] = [
+                    'symbol' => $symbol,
+                    'timeframe' => $timeframe,
+                ];
+            }
+
+            foreach ((array) ($import_summary['touched_event_times'] ?? []) as $event_time) {
+                $event_time = (int) $event_time;
+                if ($event_time > 0) {
+                    $accumulated_event_times[$event_time] = true;
+                }
+            }
+
+            foreach ((array) ($import_summary['touched_timeframes'] ?? []) as $timeframe) {
+                $timeframe = strtoupper(sanitize_text_field((string) $timeframe));
+                if ($timeframe !== '') {
+                    $accumulated_timeframes[$timeframe] = true;
+                }
+            }
+
+            if ($has_more && $processed_chunk > 0) {
+                $status['state'] = 'running';
+                $status['message'] = sprintf(
+                    'Đang import %s theo lô %d dòng... (%d/%d, updated %d).',
+                    $status['table'],
+                    $chunk_size,
+                    (int) $status['processed'],
+                    (int) ($status['total'] ?? 0),
+                    (int) $status['updated']
+                );
+
+                set_transient($status_key, $status, HOUR_IN_SECONDS);
+
+                $next_payload = [
+                    'job_id' => $job_id,
+                    'file_path' => (string) $payload['file_path'],
+                    'table_key' => (string) $payload['table_key'],
+                    'mapping' => isset($payload['mapping']) && is_array($payload['mapping']) ? $payload['mapping'] : [],
+                    'options' => isset($payload['options']) && is_array($payload['options']) ? $payload['options'] : [],
+                    'offset_rows' => $offset_rows + $processed_chunk,
+                    'updated_total' => $updated_total + $updated_chunk,
+                    'accumulated_series' => $accumulated_series,
+                    'accumulated_event_times' => $accumulated_event_times,
+                    'accumulated_timeframes' => $accumulated_timeframes,
+                ];
+                set_transient($payload_key, $next_payload, HOUR_IN_SECONDS);
+
+                $latest_status = get_transient($status_key);
+                if (is_array($latest_status) && ($latest_status['state'] ?? '') === 'paused') {
+                    return;
+                }
+
+                if (is_array($latest_status) && ($latest_status['state'] ?? '') === 'cancelled') {
+                    delete_transient($payload_key);
+                    $this->release_csv_import_lock();
+                    if (!empty($payload['file_path']) && is_string($payload['file_path']) && file_exists($payload['file_path'])) {
+                        @unlink($payload['file_path']);
+                    }
+                    return;
+                }
+
+                wp_schedule_single_event(time() + 1, 'lcni_csv_import_process', [$user_id, $next_payload]);
+
+                return;
+            }
+
+            $status['state'] = 'done';
+            $status['table'] = (string) ($import_summary['table'] ?? ($status['table'] ?? 'N/A'));
+            $skipped_invalid = max(0, (int) ($import_summary['skipped_invalid'] ?? 0));
+            $upsert_updated = max(0, (int) ($import_summary['upsert_updated'] ?? 0));
+            $failed_inserts = max(0, (int) ($import_summary['failed_inserts'] ?? 0));
+            $last_error = sanitize_text_field((string) ($import_summary['last_error'] ?? ''));
+
+            if (($payload['table_key'] ?? '') === 'lcni_ohlc' && !empty($accumulated_series)) {
+                LCNI_DB::finalize_ohlc_import_post_process(
+                    array_values($accumulated_series),
+                    array_map('intval', array_keys($accumulated_event_times)),
+                    array_values(array_keys($accumulated_timeframes))
+                );
+                $this->release_csv_import_lock();
+                LCNI_DB::run_seed_serial_pipeline('csv_import_finalize');
+            }
+
+            $status['message'] = sprintf(
+                'Đã import CSV vào %s: updated %d / total %d. skipped_invalid %d, upsert_updated %d, failed_inserts %d%s',
+                $status['table'],
+                (int) $status['updated'],
+                (int) $status['processed'],
+                $skipped_invalid,
+                $upsert_updated,
+                $failed_inserts,
+                ($last_error !== '' ? ' | last_error: ' . $last_error : '')
+            );
+        }
+
+        unset($status['processed_base'], $status['updated_base']);
+
+        $status['updated_at'] = current_time('mysql');
+        set_transient($status_key, $status, HOUR_IN_SECONDS);
+        delete_transient($payload_key);
+
+        $this->release_csv_import_lock();
+
+        if (!empty($payload['file_path']) && is_string($payload['file_path']) && file_exists($payload['file_path'])) {
+            @unlink($payload['file_path']);
+        }
+    }
+
+    private function touch_csv_import_lock() {
+        update_option(self::CSV_IMPORT_LOCK_OPTION, time() + 300, false);
+    }
+
+    private function release_csv_import_lock() {
+        delete_option(self::CSV_IMPORT_LOCK_OPTION);
+    }
+
+    public function ajax_csv_import_status_snapshot() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Forbidden'], 403);
+        }
+
+        check_ajax_referer('lcni_csv_import_status_nonce', 'nonce');
+
+        $status = get_transient($this->get_csv_import_status_key());
+        if (!is_array($status)) {
+            $status = [
+                'state' => 'idle',
+                'table' => '',
+                'updated' => 0,
+                'processed' => 0,
+                'total' => 0,
+                'message' => 'Chưa có tiến trình import CSV.',
+                'updated_at' => current_time('mysql'),
+            ];
+        } else {
+            $state = (string) ($status['state'] ?? '');
+            if (in_array($state, ['running', 'queued'], true)) {
+                $lock_until = (int) get_option(self::CSV_IMPORT_LOCK_OPTION, 0);
+                $payload = get_transient($this->get_csv_import_payload_key());
+                $processed = max(0, (int) ($status['processed'] ?? 0));
+                $total = max(0, (int) ($status['total'] ?? 0));
+
+                if ($lock_until <= time() && !is_array($payload)) {
+                    if ($total > 0 && $processed >= $total) {
+                        $status['state'] = 'done';
+                        if (empty($status['message']) || $status['message'] === 'Đang import CSV ở chế độ nền...') {
+                            $status['message'] = 'Import CSV đã hoàn tất.';
+                        }
+                    } else {
+                        $status['state'] = 'error';
+                        $status['message'] = 'Tiến trình import CSV nền đã dừng đột ngột. Vui lòng import lại hoặc Resume nếu còn payload.';
+                    }
+
+                    $status['updated_at'] = current_time('mysql');
+                    set_transient($this->get_csv_import_status_key(), $status, HOUR_IN_SECONDS);
+                }
+            }
+        }
+
+        wp_send_json_success($status);
+    }
+
+    private function run_multi_symbol_test() {
+        $raw_symbols = (string) get_option('lcni_test_symbols', 'VNINDEX,VN30');
+        $symbols = preg_split('/[,\s]+/', strtoupper($raw_symbols));
+        $symbols = array_values(array_unique(array_filter(array_map('trim', (array) $symbols))));
+
+        if (empty($symbols)) {
+            $this->set_notice('error', 'Chưa có symbol để test. Vui lòng nhập danh sách symbol.');
+            return;
+        }
+
+        $timeframe = strtoupper((string) get_option('lcni_timeframe', '1D'));
+        $debug_logs = [];
+        $success_count = 0;
+
+        foreach ($symbols as $symbol) {
+            $payload = LCNI_API::get_candles($symbol, $timeframe, 10);
+            if (!is_array($payload) || empty($payload['t']) || !is_array($payload['t'])) {
+                $debug_logs[] = sprintf('[FAIL] %s: Không lấy được dữ liệu nến.', $symbol);
+                continue;
+            }
+
+            $candles = lcni_convert_candles($payload, $symbol, $timeframe);
+            $latest = end($candles);
+            $latest_time = isset($latest['candle_time']) ? $latest['candle_time'] : 'N/A';
+            $debug_logs[] = sprintf('[OK] %s: %d nến, nến mới nhất=%s', $symbol, count($candles), $latest_time);
+            $success_count++;
+        }
+
+        LCNI_DB::log_change('multi_symbol_test', sprintf('Tested %d symbols, success=%d.', count($symbols), $success_count), $debug_logs);
+        $this->set_notice($success_count === count($symbols) ? 'success' : 'error', sprintf('Test chart-api nhiều symbol: %d/%d thành công.', $success_count, count($symbols)), $debug_logs);
+    }
+
+    private function seed_date_to_timestamp($date, $end_of_day = false) {
+        $date = trim((string) $date);
+        if ($date === '') {
+            return $end_of_day ? current_time('timestamp') : 1;
+        }
+
+        $time_suffix = $end_of_day ? ' 23:59:59' : ' 00:00:00';
+        $timezone = wp_timezone();
+
+        try {
+            $date_time = new DateTimeImmutable($date . $time_suffix, $timezone);
+            $timestamp = $date_time->getTimestamp();
+        } catch (Exception $e) {
+            $timestamp = false;
+        }
+
+        return $timestamp === false ? ($end_of_day ? current_time('timestamp') : 1) : (int) $timestamp;
+    }
+
+    private function format_task_progress($task) {
+        $status = isset($task['status']) ? (string) $task['status'] : 'pending';
+
+        if ($status === 'done') {
+            return 100;
+        }
+
+        $seed_constraints = LCNI_SeedScheduler::get_seed_constraints();
+        $seed_to_time = max(1, (int) ($seed_constraints['to_time'] ?? current_time('timestamp')));
+        $task_to_time = isset($task['last_to_time']) ? max(1, (int) $task['last_to_time']) : $seed_to_time;
+
+        $min_from = max(1, (int) ($seed_constraints['from_time'] ?? 1));
+        if ((string) ($seed_constraints['mode'] ?? 'full') === 'sessions') {
+            $sessions = max(1, (int) ($seed_constraints['sessions'] ?? 300));
+            $interval = LCNI_HistoryFetcher::timeframe_to_seconds((string) ($task['timeframe'] ?? '1D'));
+            $min_from = max(1, $seed_to_time - ($interval * $sessions));
+        }
+
+        $total_span = max(1, $seed_to_time - $min_from);
+        $processed_span = max(0, $seed_to_time - $task_to_time);
+        $progress = (int) floor(($processed_span / $total_span) * 100);
+        $progress = max(0, min(99, $progress));
+
+        return $progress;
+    }
+
+    private function render_task_rows($tasks) {
+        if (empty($tasks)) {
+            return '<tr><td colspan="4">Chưa có task seed.</td></tr>';
+        }
+
+        $rows = '';
+        $next_pending_marked = false;
+
+        foreach ($tasks as $task) {
+            $status = isset($task['status']) ? (string) $task['status'] : 'pending';
+            $progress = $this->format_task_progress($task);
+            $status_class = 'status-pending';
+            $bar_class = 'progress-pending';
+
+            if ($status === 'running') {
+                $status_class = 'status-running';
+                $bar_class = 'progress-running';
+            } elseif ($status === 'done') {
+                $status_class = 'status-done';
+                $bar_class = 'progress-done';
+            }
+
+            $task_label = ($task['symbol'] ?? '') . ' ' . ($task['timeframe'] ?? '');
+            if ($status === 'pending' && !$next_pending_marked) {
+                $task_label .= ' (NEXT)';
+                $next_pending_marked = true;
+            }
+
+            $rows .= sprintf(
+                '<tr>' .
+                    '<td>%s</td>' .
+                    '<td><span class="lcni-status-pill %s">%s</span></td>' .
+                    '<td>%s</td>' .
+                    '<td><div class="lcni-progress-track"><div class="lcni-progress-fill %s" style="width:%d%%;"></div></div><span class="lcni-progress-text">%d%%</span></td>' .
+                '</tr>',
+                esc_html($task_label),
+                esc_attr($status_class),
+                esc_html(strtoupper($status)),
+                esc_html((string) ($task['last_to_time'] ?? '')),
+                esc_attr($bar_class),
+                (int) $progress,
+                (int) $progress
+            );
+        }
+
+        return $rows;
+    }
+
+    public function ajax_seed_dashboard_snapshot() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Forbidden'], 403);
+        }
+
+        check_ajax_referer('lcni_seed_dashboard_nonce', 'nonce');
+
+        $stats = LCNI_SeedRepository::get_dashboard_stats();
+        $tasks = LCNI_SeedRepository::get_recent_tasks(30);
+
+        wp_send_json_success([
+            'stats' => [
+                'total' => (int) ($stats['total'] ?? 0),
+                'done' => (int) ($stats['done'] ?? 0),
+                'running' => (int) ($stats['running'] ?? 0),
+                'pending' => (int) ($stats['pending'] ?? 0),
+                'error_tasks' => (int) ($stats['error_tasks'] ?? 0),
+                'failed_attempts' => (int) ($stats['failed_attempts'] ?? 0),
+                'paused' => LCNI_SeedScheduler::is_paused() ? 'YES' : 'NO',
+            ],
+            'rows_html' => $this->render_task_rows($tasks),
+            'updated_at' => current_time('mysql'),
+        ]);
+    }
+
+    public function ajax_rule_rebuild_status() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Forbidden'], 403);
+        }
+
+        check_ajax_referer('lcni_rule_rebuild_nonce', 'nonce');
+
+        $status = LCNI_DB::get_rule_rebuild_status();
+        wp_send_json_success($status);
+    }
+
+    private function format_mysql_datetime_to_gmt7($datetime) {
+        $raw = trim((string) $datetime);
+        if ($raw === '') {
+            return '-';
+        }
+
+        try {
+            $wp_timezone = wp_timezone();
+            $date = new DateTimeImmutable($raw, $wp_timezone);
+
+            return $date->setTimezone(new DateTimeZone('Asia/Ho_Chi_Minh'))->format('Y-m-d H:i:s');
+        } catch (Exception $e) {
+            return $raw;
+        }
+    }
+
+    private function format_timestamp_to_gmt7($timestamp) {
+        $ts = (int) $timestamp;
+        if ($ts <= 0) {
+            return '-';
+        }
+
+        return wp_date('Y-m-d H:i:s', $ts, new DateTimeZone('Asia/Ho_Chi_Minh'));
+    }
+
+    private function normalize_runtime_status_for_display($status) {
+        $status = is_array($status) ? $status : [];
+        $diagnostics = LCNI_Update_Manager::get_runtime_diagnostics();
+        $runtime_symbol = $this->get_latest_symbol_price_snapshot('lcni_ohlc', 'CEO');
+
+        $message = (string) ($status['message'] ?? '-');
+
+        return [
+            'running_label' => !empty($status['running']) ? 'Đang chạy' : 'Đã dừng',
+            'processed_symbols' => (int) ($status['processed_symbols'] ?? 0),
+            'success_symbols' => (int) ($status['success_symbols'] ?? 0),
+            'error_symbols' => (int) ($status['error_symbols'] ?? 0),
+            'pending_symbols' => (int) ($status['pending_symbols'] ?? 0),
+            'changed_symbols' => (int) ($status['changed_symbols'] ?? 0),
+            'execution_seconds' => (int) ($status['execution_seconds'] ?? 0),
+            'indicators_done_label' => !empty($status['indicators_done']) ? 'Đã xong' : 'Chưa xong',
+            'started_at' => $this->format_mysql_datetime_to_gmt7($status['started_at'] ?? ''),
+            'ended_at' => $this->format_mysql_datetime_to_gmt7($status['ended_at'] ?? ''),
+            'next_run_at' => $this->format_timestamp_to_gmt7($status['next_run_ts'] ?? 0),
+            'message' => $message,
+            'error' => (string) ($status['error'] ?? ''),
+            'symbol_check_label' => (string) $runtime_symbol['label'],
+            'symbol_check_open_price' => (string) $runtime_symbol['open_price'],
+            'symbol_check_high_price' => (string) $runtime_symbol['high_price'],
+            'symbol_check_low_price' => (string) $runtime_symbol['low_price'],
+            'symbol_check_close_price' => (string) $runtime_symbol['close_price'],
+            'symbol_check_event_time' => (string) $runtime_symbol['event_time'],
+            'wordpress_timezone' => (string) ($diagnostics['wordpress_timezone'] ?? '-'),
+            'market_timezone' => (string) ($diagnostics['market_timezone'] ?? '-'),
+            'server_timezone' => (string) ($diagnostics['server_timezone'] ?? '-'),
+            'current_time_mysql' => (string) ($diagnostics['current_time_mysql'] ?? '-'),
+            'current_time_timestamp' => (string) ($diagnostics['current_time_timestamp'] ?? '-'),
+            'is_trading_time' => !empty($diagnostics['is_trading_time']) ? 'true' : 'false',
+        ];
+    }
+
+    private function normalize_ohlc_latest_status_for_display($status) {
+        $status = is_array($status) ? $status : [];
+        $latest_symbol = $this->get_latest_symbol_price_snapshot('lcni_ohlc_latest', 'CEO');
+
+        return [
+            'running_label' => !empty($status['running']) ? 'Đang chạy' : 'Đã dừng',
+            'rows_affected' => (int) ($status['rows_affected'] ?? 0),
+            'started_at' => $this->format_mysql_datetime_to_gmt7($status['started_at'] ?? ''),
+            'ended_at' => $this->format_mysql_datetime_to_gmt7($status['ended_at'] ?? ''),
+            'message' => (string) ($status['message'] ?? '-'),
+            'error' => (string) ($status['error'] ?? ''),
+            'symbol_check_label' => (string) $latest_symbol['label'],
+            'symbol_check_open_price' => (string) $latest_symbol['open_price'],
+            'symbol_check_high_price' => (string) $latest_symbol['high_price'],
+            'symbol_check_low_price' => (string) $latest_symbol['low_price'],
+            'symbol_check_close_price' => (string) $latest_symbol['close_price'],
+            'symbol_check_event_time' => (string) $latest_symbol['event_time'],
+            'last_run_status' => empty($status['error']) ? 'Thành công' : 'Thất bại',
+        ];
+    }
+
+    private function get_latest_symbol_price_snapshot($table_suffix, $symbol) {
+        global $wpdb;
+
+        $table_name = $wpdb->prefix . $table_suffix;
+        $safe_symbol = strtoupper(sanitize_text_field((string) $symbol));
+        if ($safe_symbol === '') {
+            $safe_symbol = 'CEO';
+        }
+
+        $table_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table_name));
+        if ($table_exists !== $table_name) {
+            return [
+                'label' => sprintf('%s (chưa có bảng %s)', $safe_symbol, $table_name),
+                'open_price' => '-',
+                'high_price' => '-',
+                'low_price' => '-',
+                'close_price' => '-',
+                'event_time' => '-',
+            ];
+        }
+
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT symbol, open_price, high_price, low_price, close_price, event_time
+                FROM {$table_name}
+                WHERE symbol = %s
+                ORDER BY event_time DESC
+                LIMIT 1",
+                $safe_symbol
+            ),
+            ARRAY_A
+        );
+
+        if (empty($row)) {
+            return [
+                'label' => sprintf('%s (không có dữ liệu)', $safe_symbol),
+                'open_price' => '-',
+                'high_price' => '-',
+                'low_price' => '-',
+                'close_price' => '-',
+                'event_time' => '-',
+            ];
+        }
+
+        return [
+            'label' => strtoupper((string) ($row['symbol'] ?? $safe_symbol)),
+            'open_price' => (string) ($row['open_price'] ?? '-'),
+            'high_price' => (string) ($row['high_price'] ?? '-'),
+            'low_price' => (string) ($row['low_price'] ?? '-'),
+            'close_price' => (string) ($row['close_price'] ?? '-'),
+            'event_time' => $this->format_mysql_datetime_to_gmt7($row['event_time'] ?? ''),
+        ];
+    }
+
+    public function ajax_update_data_status_snapshot() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Forbidden'], 403);
+        }
+
+        check_ajax_referer('lcni_update_data_status_nonce', 'nonce');
+
+        wp_send_json_success([
+            'runtime' => $this->normalize_runtime_status_for_display(LCNI_Update_Manager::get_status()),
+            'snapshot' => $this->normalize_ohlc_latest_status_for_display(LCNI_OHLC_Latest_Manager::get_status()),
+            'updated_at' => wp_date('Y-m-d H:i:s', null, new DateTimeZone('Asia/Ho_Chi_Minh')),
+        ]);
+    }
+
+    public function ajax_report_snapshot() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Forbidden'], 403);
+        }
+
+        check_ajax_referer('lcni_report_snapshot_nonce', 'nonce');
+
+        global $wpdb;
+
+        $logs = $wpdb->get_results("SELECT action, message, created_at FROM {$wpdb->prefix}lcni_change_logs ORDER BY id DESC LIMIT 50", ARRAY_A);
+        $report_data = $this->get_report_system_data();
+
+        wp_send_json_success([
+            'logs' => is_array($logs) ? $logs : [],
+            'report' => $report_data,
+            'updated_at' => wp_date('Y-m-d H:i:s', null, new DateTimeZone('Asia/Ho_Chi_Minh')),
+        ]);
+    }
+
+    private function calculate_percent($completed, $total) {
+        $total = max(0, (int) $total);
+        $completed = max(0, (int) $completed);
+
+        if ($total === 0) {
+            return 100;
+        }
+
+        return (int) min(100, floor(($completed / $total) * 100));
+    }
+
+    private function get_report_system_data() {
+        global $wpdb;
+
+        $stats = LCNI_SeedRepository::get_dashboard_stats();
+        $runtime_status = LCNI_Update_Manager::get_status();
+        $snapshot_status = LCNI_OHLC_Latest_Manager::get_status();
+        $rule_rebuild_status = LCNI_DB::get_rule_rebuild_status();
+
+        $running_tasks = 0;
+        if ((int) ($stats['running'] ?? 0) > 0) {
+            $running_tasks++;
+        }
+        if (!empty($runtime_status['running'])) {
+            $running_tasks++;
+        }
+        if (!empty($snapshot_status['running'])) {
+            $running_tasks++;
+        }
+        if (($rule_rebuild_status['status'] ?? 'idle') === 'running') {
+            $running_tasks++;
+        }
+
+        $seed_percent = $this->calculate_percent((int) ($stats['done'] ?? 0), (int) ($stats['total'] ?? 0));
+        $runtime_percent = $this->calculate_percent((int) ($runtime_status['processed_symbols'] ?? 0), (int) ($runtime_status['total_symbols'] ?? 0));
+        $snapshot_percent = empty($snapshot_status['running']) ? 100 : 0;
+        $rule_percent = (int) ($rule_rebuild_status['progress_percent'] ?? 100);
+        $overall_percent = (int) floor(($seed_percent + $runtime_percent + $snapshot_percent + $rule_percent) / 4);
+
+        $latest_symbol = $wpdb->get_row("SELECT symbol, event_time FROM {$wpdb->prefix}lcni_ohlc ORDER BY event_time DESC LIMIT 1", ARRAY_A);
+        $updated_symbols_today = (int) $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT COUNT(DISTINCT symbol) FROM {$wpdb->prefix}lcni_ohlc WHERE DATE(created_at) = %s",
+                current_time('Y-m-d')
+            )
+        );
+
+        $latest_symbol_event_time = '';
+        if (!empty($latest_symbol['event_time'])) {
+            $latest_symbol_event_time = $this->format_mysql_datetime_to_gmt7(gmdate('Y-m-d H:i:s', (int) $latest_symbol['event_time']));
+        }
+
+        $completed_background_tasks = $wpdb->get_results(
+            "SELECT symbol, timeframe, created_at, updated_at
+            FROM {$wpdb->prefix}lcni_seed_tasks
+            WHERE status = 'done'
+            ORDER BY updated_at DESC
+            LIMIT 10",
+            ARRAY_A
+        );
+
+        return [
+            'running_tasks' => $running_tasks,
+            'overall_percent' => $overall_percent,
+            'seed' => [
+                'total' => (int) ($stats['total'] ?? 0),
+                'done' => (int) ($stats['done'] ?? 0),
+                'running' => (int) ($stats['running'] ?? 0),
+                'pending' => (int) ($stats['pending'] ?? 0),
+                'percent' => $seed_percent,
+            ],
+            'runtime' => [
+                'running' => !empty($runtime_status['running']),
+                'processed' => (int) ($runtime_status['processed_symbols'] ?? 0),
+                'total' => (int) ($runtime_status['total_symbols'] ?? 0),
+                'percent' => $runtime_percent,
+            ],
+            'snapshot' => [
+                'running' => !empty($snapshot_status['running']),
+                'started_at' => (string) ($snapshot_status['started_at'] ?? ''),
+                'ended_at' => (string) ($snapshot_status['ended_at'] ?? ''),
+                'percent' => $snapshot_percent,
+            ],
+            'latest_symbol' => [
+                'symbol' => (string) ($latest_symbol['symbol'] ?? '-'),
+                'event_time' => $latest_symbol_event_time !== '' ? $latest_symbol_event_time : '-',
+            ],
+            'updated_symbols_today' => $updated_symbols_today,
+            'rule_rebuild' => [
+                'status' => (string) ($rule_rebuild_status['status'] ?? 'idle'),
+                'processed' => (int) ($rule_rebuild_status['processed'] ?? 0),
+                'total' => (int) ($rule_rebuild_status['total'] ?? 0),
+                'percent' => $rule_percent,
+            ],
+            'completed_background_tasks' => is_array($completed_background_tasks) ? $completed_background_tasks : [],
+        ];
     }
 
     public function settings_page() {
         global $wpdb;
 
-        $log_table = $wpdb->prefix . 'lcni_change_logs';
-        $logs = [];
+        $active_tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'general';
+        $rule_sub_tabs = ['lcni-tab-rule-xay-nen', 'lcni-tab-rule-xay-nen-count-30', 'lcni-tab-rule-nen-type', 'lcni-tab-rule-pha-nen', 'lcni-tab-rule-tang-gia-kem-vol', 'lcni-tab-rule-rs-exchange'];
+        $frontend_sub_tabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-recommend-signal', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-chart-builder', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-table-config', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format'];
+        $update_data_sub_tabs = ['lcni-tab-update-runtime', 'lcni-tab-update-ohlc-latest'];
+        if (in_array($active_tab, $rule_sub_tabs, true)) {
+            $active_tab = 'rule_settings';
+        }
+        if (in_array($active_tab, $frontend_sub_tabs, true)) {
+            $active_tab = 'frontend_settings';
+        }
+        if (in_array($active_tab, $update_data_sub_tabs, true)) {
+            $active_tab = 'update_data';
+        }
 
-        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $log_table)) === $log_table) {
-            $logs = $wpdb->get_results("SELECT action, message, created_at FROM {$log_table} ORDER BY created_at DESC LIMIT 10", ARRAY_A);
+        if ($active_tab === 'change_logs') {
+            $active_tab = 'report';
+        }
+
+        if (!in_array($active_tab, ['general', 'seed_dashboard', 'update_data', 'rule_settings', 'frontend_settings', 'compute_control', 'report', 'dnse_trading', 'cache_redis'], true)) {
+            $active_tab = 'general';
+        }
+
+        $rule_settings = LCNI_DB::get_rule_settings();
+        $stats = LCNI_SeedRepository::get_dashboard_stats();
+        $tasks = LCNI_SeedRepository::get_recent_tasks(30);
+        $logs = $wpdb->get_results("SELECT action, message, created_at FROM {$wpdb->prefix}lcni_change_logs ORDER BY id DESC LIMIT 50", ARRAY_A);
+        $report_data = $this->get_report_system_data();
+        $notice = get_transient('lcni_settings_notice');
+        $csv_import_targets = LCNI_DB::get_csv_import_targets();
+        $csv_import_draft = get_transient($this->get_csv_import_draft_key());
+
+        if ($notice) {
+            delete_transient('lcni_settings_notice');
         }
         ?>
         <div class="wrap">
-            <h1>LCNI API Settings</h1>
-            <form method="post" action="options.php">
-                <?php settings_fields('lcni_settings_group'); ?>
+            <h1>LCNI Data Collector</h1>
 
-                <table class="form-table">
+            <?php if (!empty($notice)) : ?>
+                <div class="notice notice-<?php echo esc_attr($notice['type'] === 'success' ? 'success' : 'error'); ?> is-dismissible"><p><?php echo esc_html($notice['message']); ?></p>
+                    <?php if (!empty($notice['debug']) && is_array($notice['debug'])) : ?><pre style="max-height:260px;overflow:auto;background:#fff;padding:10px;border:1px solid #ccd0d4;"><?php echo esc_html(implode("\n", $notice['debug'])); ?></pre><?php endif; ?>
+                </div>
+            <?php endif; ?>
+
+            <h2 class="nav-tab-wrapper">
+                <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=general')); ?>" class="nav-tab <?php echo $active_tab === 'general' ? 'nav-tab-active' : ''; ?>">General</a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=seed_dashboard')); ?>" class="nav-tab <?php echo $active_tab === 'seed_dashboard' ? 'nav-tab-active' : ''; ?>">Seed Dashboard</a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=update_data')); ?>" class="nav-tab <?php echo $active_tab === 'update_data' ? 'nav-tab-active' : ''; ?>">Update Data</a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=rule_settings')); ?>" class="nav-tab <?php echo $active_tab === 'rule_settings' ? 'nav-tab-active' : ''; ?>">Rule Setting</a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=frontend_settings')); ?>" class="nav-tab <?php echo $active_tab === 'frontend_settings' ? 'nav-tab-active' : ''; ?>">Frontend Setting</a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=compute_control')); ?>" class="nav-tab <?php echo $active_tab === 'compute_control' ? 'nav-tab-active' : ''; ?>" style="color:<?php echo $active_tab === 'compute_control' ? '' : '#c0392b'; ?>">⚙ Compute Control</a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=report')); ?>" class="nav-tab <?php echo $active_tab === 'report' ? 'nav-tab-active' : ''; ?>">Report</a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=cache_redis')); ?>" class="nav-tab <?php echo $active_tab === 'cache_redis' ? 'nav-tab-active' : ''; ?>" style="color:<?php echo $active_tab === 'cache_redis' ? '' : '#0f6e56'; ?>">&#9889; Cache</a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=dnse_trading')); ?>" class="nav-tab <?php echo $active_tab === 'dnse_trading' ? 'nav-tab-active' : ''; ?>" style="color:<?php echo $active_tab === 'dnse_trading' ? '' : '#2271b1'; ?>">📈 DNSE Trading</a>
+            </h2>
+
+            <?php if ($active_tab === 'general') : ?>
+                <form method="post" action="options.php">
+                    <?php settings_fields('lcni_settings_group'); ?>
+                    <table class="form-table" role="presentation">
+                        <tr><th>Timeframe</th><td><input type="text" name="lcni_timeframe" value="<?php echo esc_attr(get_option('lcni_timeframe', '1D')); ?>" size="20"></td></tr>
+                        <tr><th>Days to load</th><td><input type="number" name="lcni_days_to_load" value="<?php echo esc_attr((string) get_option('lcni_days_to_load', 365)); ?>" min="1"></td></tr>
+                        <tr><th>Test symbols</th><td><input type="text" name="lcni_test_symbols" value="<?php echo esc_attr(get_option('lcni_test_symbols', 'VNINDEX,VN30')); ?>" size="60"></td></tr>
+                        <tr><th>Seed timeframes</th><td><input type="text" name="lcni_seed_timeframes" value="<?php echo esc_attr(get_option('lcni_seed_timeframes', '1D')); ?>" size="40"><p class="description">Ví dụ: 1D,1H,15M</p></td></tr>
+                    </table>
+                    <?php submit_button(); ?>
+                </form>
+
+                <h2>Quick Actions</h2>
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_redirect_tab" value="general"><input type="hidden" name="lcni_admin_action" value="test_api_connection"><?php submit_button('Test chart-api', 'secondary', 'submit', false); ?></form>
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_redirect_tab" value="general"><input type="hidden" name="lcni_admin_action" value="test_api_multi_symbol"><?php submit_button('Test nhiều symbol', 'secondary', 'submit', false); ?></form>
+            <?php elseif ($active_tab === 'seed_dashboard') : ?>
+                <h2>Seed Manager</h2>
+                <form method="post" enctype="multipart/form-data" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=seed_dashboard')); ?>" style="margin-bottom:12px;padding:10px;background:#fff;border:1px solid #dcdcde;border-radius:6px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                    <input type="hidden" name="lcni_redirect_tab" value="seed_dashboard">
+                    <input type="hidden" name="lcni_admin_action" value="prepare_csv_import">
+                    <label for="lcni_import_table"><strong>Import CSV (chung):</strong></label>
+                    <select id="lcni_import_table" name="lcni_import_table">
+                        <?php foreach ($csv_import_targets as $table_key => $target) : ?>
+                            <option value="<?php echo esc_attr($table_key); ?>" <?php selected(($csv_import_draft['table_key'] ?? 'lcni_symbols'), $table_key); ?>><?php echo esc_html($target['label']); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <input type="file" id="lcni_import_csv" name="lcni_import_csv" accept=".csv" required>
+                    <?php submit_button('Nhận diện cột CSV', 'secondary', 'submit', false); ?>
+                    <p class="description" style="flex:1 1 100%;margin:0;">Workflow: nhận diện cột → chọn bảng → map cột CSV với cột DB → chạy import. Bảng thường dùng upsert theo Primary Key; riêng LCNI OHLC sẽ tự gán <code>id</code>, chuẩn hóa <code>event_time</code> theo Unix timestamp, upsert theo bộ <code>symbol + timeframe + event_time</code> và tự tính lại các cột chỉ báo liên quan.</p>
+                </form>
+
+                <?php if (!empty($csv_import_draft) && is_array($csv_import_draft) && !empty($csv_import_draft['headers']) && !empty($csv_import_draft['table_key']) && isset($csv_import_targets[$csv_import_draft['table_key']])) : ?>
+                    <?php $target_meta = $csv_import_targets[$csv_import_draft['table_key']]; ?>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=seed_dashboard')); ?>" style="margin-bottom:12px;padding:10px;background:#fff;border:1px solid #dcdcde;border-radius:6px;">
+                        <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                        <input type="hidden" name="lcni_redirect_tab" value="seed_dashboard">
+                        <input type="hidden" name="lcni_admin_action" value="run_csv_import">
+                        <p style="margin-top:0;"><strong>Map cột cho bảng:</strong> <?php echo esc_html($target_meta['label']); ?> (Primary Key: <code><?php echo esc_html((string) $target_meta['primary_key']); ?></code>)</p>
+                        <?php if (($csv_import_draft['table_key'] ?? '') === 'lcni_ohlc') : ?>
+                            <p class="description" style="margin-top:-6px;">Yêu cầu map đủ 6 cột bắt buộc: <code>symbol</code>, <code>open_price</code>, <code>high_price</code>, <code>low_price</code>, <code>close_price</code>, <code>event_time</code>. Hệ thống tự tăng <code>id</code>, upsert theo bộ <code>symbol + timeframe + event_time</code>, và tự tính các cột liên quan sau import.</p>
+                            <p style="margin:8px 0 12px;">
+                                <label for="lcni_import_timeframe"><strong>Timeframe:</strong></label>
+                                <select id="lcni_import_timeframe" name="lcni_import_timeframe">
+                                    <option value="1D">1D</option>
+                                    <option value="1W">1W</option>
+                                    <option value="1M">1M</option>
+                                </select>
+                            </p>
+                        <?php endif; ?>
+                        <table class="widefat striped" style="max-width:980px;">
+                            <thead><tr><th>Cột CSV</th><th>Cột DB</th></tr></thead>
+                            <tbody>
+                                <?php foreach ((array) $csv_import_draft['headers'] as $header) : ?>
+                                    <?php $normalized = (string) ($header['normalized'] ?? ''); ?>
+                                    <tr>
+                                        <td><code><?php echo esc_html((string) ($header['raw'] ?? '')); ?></code><br><small><?php echo esc_html($normalized); ?></small></td>
+                                        <td>
+                                            <select name="lcni_import_mapping[<?php echo esc_attr($normalized); ?>]">
+                                                <option value="">-- Bỏ qua --</option>
+                                                <?php foreach ((array) $target_meta['columns'] as $db_column => $db_type) : ?>
+                                                    <option value="<?php echo esc_attr($db_column); ?>" <?php selected(($csv_import_draft['suggested_mapping'][$normalized] ?? ''), $db_column); ?>><?php echo esc_html($db_column . ' (' . $db_type . ')'); ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                        <?php submit_button('Chạy Import CSV', 'primary', 'submit', false); ?>
+                    </form>
+                <?php endif; ?>
+
+                <div id="lcni-csv-import-progress" style="margin-bottom:12px;padding:10px;background:#fff;border:1px solid #dcdcde;border-radius:6px;max-width:760px;">
+                    <p style="margin-top:0;margin-bottom:8px;"><strong>Tiến trình Import CSV (chạy nền)</strong></p>
+                    <div style="width:100%;height:18px;background:#f0f0f1;border-radius:10px;overflow:hidden;">
+                        <div id="lcni-csv-import-progress-bar" style="height:100%;width:0%;background:#2271b1;transition:width .3s ease;"></div>
+                    </div>
+                    <p id="lcni-csv-import-progress-text" style="margin:8px 0 0;color:#1d2327;">Chưa có tiến trình import CSV.</p>
+                </div>
+
+                <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;">
+                    <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;">
+                        <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                        <input type="hidden" name="lcni_redirect_tab" value="seed_dashboard">
+                        <input type="hidden" name="lcni_admin_action" value="pause_csv_import">
+                        <?php submit_button('Dừng Import CSV', 'secondary', 'submit', false); ?>
+                    </form>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;">
+                        <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                        <input type="hidden" name="lcni_redirect_tab" value="seed_dashboard">
+                        <input type="hidden" name="lcni_admin_action" value="resume_csv_import">
+                        <?php submit_button('Tiếp tục Import CSV', 'secondary', 'submit', false); ?>
+                    </form>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;">
+                        <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                        <input type="hidden" name="lcni_redirect_tab" value="seed_dashboard">
+                        <input type="hidden" name="lcni_admin_action" value="cancel_csv_import">
+                        <?php submit_button('Hủy Import CSV', 'delete', 'submit', false); ?>
+                    </form>
+                </div>
+
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_redirect_tab" value="seed_dashboard"><input type="hidden" name="lcni_admin_action" value="sync_securities"><?php submit_button('Sync Security Definition', 'secondary', 'submit', false); ?></form>
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;padding:8px 10px;background:#fff;border:1px solid #dcdcde;border-radius:6px;">
+                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                    <input type="hidden" name="lcni_redirect_tab" value="seed_dashboard">
+                    <input type="hidden" name="lcni_admin_action" value="start_seed">
+                    <label style="margin-right:8px;"><strong>Khởi tạo SEED:</strong></label>
+                    <select name="lcni_seed_mode" style="margin-right:6px;">
+                        <?php $seed_mode = get_option('lcni_seed_range_mode', 'full'); ?>
+                        <option value="full" <?php selected($seed_mode, 'full'); ?>>Toàn bộ</option>
+                        <option value="date_range" <?php selected($seed_mode, 'date_range'); ?>>Theo ngày</option>
+                        <option value="sessions" <?php selected($seed_mode, 'sessions'); ?>>Theo số phiên</option>
+                    </select>
+                    <input type="date" name="lcni_seed_from_date" value="<?php echo esc_attr(get_option('lcni_seed_from_date', '')); ?>" style="margin-right:6px;">
+                    <input type="date" name="lcni_seed_to_date" value="<?php echo esc_attr(get_option('lcni_seed_to_date', '')); ?>" style="margin-right:6px;">
+                    <input type="number" name="lcni_seed_session_count" value="<?php echo esc_attr((string) get_option('lcni_seed_session_count', 300)); ?>" min="1" style="width:90px;margin-right:6px;" title="Số phiên khi chọn mode sessions">
+                    <input type="number" name="lcni_seed_tasks_per_run" value="<?php echo esc_attr((string) get_option('lcni_seed_tasks_per_run', 10)); ?>" min="1" style="width:90px;margin-right:6px;" title="Số task xử lý mỗi lần chạy cron">
+                    <input type="number" name="lcni_seed_batch_requests_per_run" value="<?php echo esc_attr((string) get_option('lcni_seed_batch_requests_per_run', 5)); ?>" min="1" style="width:90px;margin-right:6px;" title="BATCH_REQUESTS_PER_RUN">
+                    <input type="number" name="lcni_seed_rate_limit_microseconds" value="<?php echo esc_attr((string) get_option('lcni_seed_rate_limit_microseconds', 100000)); ?>" min="1" style="width:130px;margin-right:6px;" title="RATE_LIMIT_MICROSECONDS">
+                    <input type="number" name="lcni_seed_max_failed_attempts" value="<?php echo esc_attr((string) get_option('lcni_seed_max_failed_attempts', 3)); ?>" min="1" style="width:90px;margin-right:6px;" title="Số lần lỗi tối đa trước khi bỏ qua symbol/timeframe lỗi">
+                    <label style="display:inline-flex;align-items:center;gap:4px;margin-right:8px;"><input type="checkbox" name="lcni_seed_eod_volume_filter_enabled" value="1" <?php checked((int) get_option('lcni_seed_eod_volume_filter_enabled', 1), 1); ?>> Lọc volume 1D</label>
+                    <input type="number" name="lcni_seed_eod_min_volume" value="<?php echo esc_attr((string) get_option('lcni_seed_eod_min_volume', 10000)); ?>" min="0" style="width:110px;margin-right:6px;" title="Ngưỡng volume 1D tối thiểu">
+                    <label style="display:inline-flex;align-items:center;gap:4px;margin-right:8px;"><input type="checkbox" name="lcni_seed_retention_enabled" value="1" <?php checked((int) get_option('lcni_seed_retention_enabled', 1), 1); ?>> Giới hạn retention</label>
+                    <input type="number" name="lcni_seed_retention_candles" value="<?php echo esc_attr((string) get_option('lcni_seed_retention_candles', 260)); ?>" min="10" style="width:90px;margin-right:6px;" title="Số nến giữ lại cho mỗi symbol/timeframe">
+                    <?php submit_button('Start Seed', 'primary', 'submit', false); ?>
+                </form>
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_redirect_tab" value="seed_dashboard"><input type="hidden" name="lcni_admin_action" value="run_seed_batch"><?php submit_button('Run 1 Batch', 'secondary', 'submit', false); ?></form>
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;margin-right:8px;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_redirect_tab" value="seed_dashboard"><input type="hidden" name="lcni_admin_action" value="pause_seed"><?php submit_button('Pause Seed', 'secondary', 'submit', false); ?></form>
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="display:inline-block;"><?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?><input type="hidden" name="lcni_redirect_tab" value="seed_dashboard"><input type="hidden" name="lcni_admin_action" value="resume_seed"><?php submit_button('Resume Seed', 'secondary', 'submit', false); ?></form>
+
+                <h2 style="margin-top:20px;">Seed Dashboard</h2>
+                <p id="lcni-dashboard-updated-at" style="margin-top:0;color:#50575e;">Cập nhật realtime mỗi 5 giây.</p>
+                <div id="lcni-seed-stats" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+                    <div style="background:#f6f7f7;border:1px solid #dcdcde;padding:8px 12px;border-radius:6px;min-width:120px;"><strong>Total</strong><br><span data-stat="total"><?php echo esc_html((string) ($stats['total'] ?? 0)); ?></span></div>
+                    <div style="background:#ecf9f1;border:1px solid #b8e6cc;padding:8px 12px;border-radius:6px;min-width:120px;"><strong>Done</strong><br><span data-stat="done"><?php echo esc_html((string) ($stats['done'] ?? 0)); ?></span></div>
+                    <div style="background:#fff8e5;border:1px solid #f0d898;padding:8px 12px;border-radius:6px;min-width:120px;"><strong>Running</strong><br><span data-stat="running"><?php echo esc_html((string) ($stats['running'] ?? 0)); ?></span></div>
+                    <div style="background:#eef3ff;border:1px solid #c9d7ff;padding:8px 12px;border-radius:6px;min-width:120px;"><strong>Pending</strong><br><span data-stat="pending"><?php echo esc_html((string) ($stats['pending'] ?? 0)); ?></span></div>
+                    <div style="background:#fff1f0;border:1px solid #f4b7b2;padding:8px 12px;border-radius:6px;min-width:120px;"><strong>Error tasks</strong><br><span data-stat="error_tasks"><?php echo esc_html((string) ($stats['error_tasks'] ?? 0)); ?></span></div>
+                    <div style="background:#fff1f0;border:1px solid #f4b7b2;padding:8px 12px;border-radius:6px;min-width:120px;"><strong>Failed attempts</strong><br><span data-stat="failed_attempts"><?php echo esc_html((string) ($stats['failed_attempts'] ?? 0)); ?></span></div>
+                    <div style="background:#f6f7f7;border:1px solid #dcdcde;padding:8px 12px;border-radius:6px;min-width:120px;"><strong>Paused</strong><br><span data-stat="paused"><?php echo LCNI_SeedScheduler::is_paused() ? 'YES' : 'NO'; ?></span></div>
+                </div>
+
+                <table class="widefat striped" style="max-width:1000px;">
+                    <thead><tr><th>Task</th><th>Status</th><th>Last To Time</th><th>Progress</th></tr></thead>
+                    <tbody id="lcni-seed-task-rows"><?php echo wp_kses_post($this->render_task_rows($tasks)); ?></tbody>
+                </table>
+
+                <script>
+                    (function() {
+                        const endpoint = '<?php echo esc_js(admin_url('admin-ajax.php')); ?>';
+                        const nonce = '<?php echo esc_js(wp_create_nonce('lcni_seed_dashboard_nonce')); ?>';
+                        const importNonce = '<?php echo esc_js(wp_create_nonce('lcni_csv_import_status_nonce')); ?>';
+                        const rowsTarget = document.getElementById('lcni-seed-task-rows');
+                        const updatedHint = document.getElementById('lcni-dashboard-updated-at');
+                        const importProgressBar = document.getElementById('lcni-csv-import-progress-bar');
+                        const importProgressText = document.getElementById('lcni-csv-import-progress-text');
+
+                        if (!rowsTarget || !updatedHint) {
+                            return;
+                        }
+
+                        const updateStatValue = function(name, value) {
+                            const target = document.querySelector('[data-stat="' + name + '"]');
+                            if (target) {
+                                target.textContent = value;
+                            }
+                        };
+
+                        const refreshDashboard = function() {
+                            const body = new URLSearchParams();
+                            body.append('action', 'lcni_seed_dashboard_snapshot');
+                            body.append('nonce', nonce);
+
+                            fetch(endpoint, {
+                                method: 'POST',
+                                credentials: 'same-origin',
+                                headers: {
+                                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                                },
+                                body: body.toString()
+                            })
+                            .then(function(response) { return response.json(); })
+                            .then(function(payload) {
+                                if (!payload || !payload.success || !payload.data) {
+                                    return;
+                                }
+
+                                rowsTarget.innerHTML = payload.data.rows_html || '';
+                                const stats = payload.data.stats || {};
+                                updateStatValue('total', String(stats.total ?? 0));
+                                updateStatValue('done', String(stats.done ?? 0));
+                                updateStatValue('running', String(stats.running ?? 0));
+                                updateStatValue('pending', String(stats.pending ?? 0));
+                                updateStatValue('error_tasks', String(stats.error_tasks ?? 0));
+                                updateStatValue('failed_attempts', String(stats.failed_attempts ?? 0));
+                                updateStatValue('paused', stats.paused ? String(stats.paused) : 'NO');
+
+                                updatedHint.textContent = 'Cập nhật realtime mỗi 5 giây. Lần cập nhật gần nhất: ' + (payload.data.updated_at || 'N/A');
+                            });
+                        };
+
+                        const refreshImportProgress = function() {
+                            if (!importProgressBar || !importProgressText) {
+                                return;
+                            }
+
+                            const body = new URLSearchParams();
+                            body.append('action', 'lcni_csv_import_status_snapshot');
+                            body.append('nonce', importNonce);
+
+                            fetch(endpoint, {
+                                method: 'POST',
+                                credentials: 'same-origin',
+                                headers: {
+                                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                                },
+                                body: body.toString()
+                            })
+                            .then(function(response) { return response.json(); })
+                            .then(function(payload) {
+                                if (!payload || !payload.success || !payload.data) {
+                                    return;
+                                }
+
+                                const info = payload.data;
+                                const total = parseInt(info.total || 0, 10);
+                                const processed = parseInt(info.processed || 0, 10);
+                                const updated = parseInt(info.updated || 0, 10);
+                                let percent = 0;
+
+                                if (total > 0) {
+                                    percent = Math.min(100, Math.round((processed / total) * 100));
+                                } else if (info.state === 'done') {
+                                    percent = 100;
+                                }
+
+                                importProgressBar.style.width = percent + '%';
+
+                                const table = info.table ? ('[' + info.table + '] ') : '';
+                                if (info.state === 'running' || info.state === 'queued') {
+                                    importProgressText.textContent = table + (info.message || 'Đang xử lý...') + ' (' + processed + '/' + (total > 0 ? total : '?') + ', updated ' + updated + ')';
+                                } else if (info.state === 'paused') {
+                                    importProgressText.textContent = table + (info.message || 'Import CSV đang tạm dừng.');
+                                } else if (info.state === 'cancelled') {
+                                    importProgressText.textContent = table + (info.message || 'Import CSV đã bị hủy.');
+                                } else if (info.state === 'done') {
+                                    importProgressText.textContent = table + (info.message || 'Import CSV hoàn tất.');
+                                } else if (info.state === 'error') {
+                                    importProgressText.textContent = table + (info.message || 'Import CSV thất bại.');
+                                } else {
+                                    importProgressText.textContent = info.message || 'Chưa có tiến trình import CSV.';
+                                }
+                            });
+                        };
+
+                        setInterval(refreshDashboard, 5000);
+                        setInterval(refreshImportProgress, 3000);
+                        refreshDashboard();
+                        refreshImportProgress();
+                    })();
+                </script>
+
+            <?php elseif ($active_tab === 'update_data') : ?>
+                <?php
+                $update_settings = LCNI_Update_Manager::get_settings();
+                $ohlc_latest_settings = LCNI_OHLC_Latest_Manager::get_settings();
+                $update_status = $this->normalize_runtime_status_for_display(LCNI_Update_Manager::get_status());
+                $ohlc_latest_status = $this->normalize_ohlc_latest_status_for_display(LCNI_OHLC_Latest_Manager::get_status());
+                $requested_update_sub_tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'lcni-tab-update-runtime';
+                $active_update_sub_tab = in_array($requested_update_sub_tab, ['lcni-tab-update-runtime', 'lcni-tab-update-ohlc-latest'], true) ? $requested_update_sub_tab : 'lcni-tab-update-runtime';
+                $update_status_nonce = wp_create_nonce('lcni_update_data_status_nonce');
+                ?>
+                <h2>Update Data</h2>
+                <div class="lcni-sub-tab-nav" id="lcni-update-sub-tabs">
+                    <button type="button" data-sub-tab="lcni-tab-update-runtime">Update Data Runtime (wp_lcni_ohlc)</button>
+                    <button type="button" data-sub-tab="lcni-tab-update-ohlc-latest">OHLC Latest Snapshot (wp_lcni_ohlc_latest)</button>
+                </div>
+
+                <div id="lcni-tab-update-runtime" class="lcni-sub-tab-content">
+                    <h3>Update Data Runtime (wp_lcni_ohlc)</h3>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="max-width:720px;margin-bottom:16px;">
+                        <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                        <input type="hidden" name="lcni_redirect_tab" value="lcni-tab-update-runtime">
+                        <input type="hidden" name="lcni_admin_action" value="save_update_data_settings">
+                        <table class="form-table" role="presentation">
+                            <tr>
+                                <th>Bật tự động cập nhật</th>
+                                <td><label><input type="checkbox" name="lcni_update_enabled" value="1" <?php checked(!empty($update_settings['enabled'])); ?>> Kích hoạt</label></td>
+                            </tr>
+                            <tr>
+                                <th>Khung giờ chạy tự động (GMT+7, HH:MM)</th>
+                                <td>
+                                    <input type="text" name="lcni_update_refresh_times" value="<?php echo esc_attr(implode(', ', (array) ($update_settings['refresh_times'] ?? ['09:00']))); ?>" class="regular-text" placeholder="09:00, 10:30, 14:45">
+                                    <p class="description" style="margin:6px 0 0;">Hỗ trợ nhiều mốc giờ tương tự Power BI. Ngăn cách bằng dấu phẩy.</p>
+                                </td>
+                            </tr>
+                        </table>
+                        <?php submit_button('Lưu & Thực thi tự động', 'primary', 'submit', false); ?>
+                    </form>
+
+                    <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="margin-bottom:16px;display:inline-block;">
+                        <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                        <input type="hidden" name="lcni_redirect_tab" value="lcni-tab-update-runtime">
+                        <input type="hidden" name="lcni_admin_action" value="run_manual_update_data">
+                        <?php submit_button('Cập nhật thủ công ngay', 'secondary', 'submit', false); ?>
+                    </form>
+
+                    <h3>Trạng thái cập nhật</h3>
+                    <p id="lcni-runtime-status-updated-at" style="margin:0 0 8px;color:#50575e;">Timezone hiển thị: GMT+7 (Asia/Ho_Chi_Minh).</p>
+                    <table class="widefat striped" style="max-width:980px;">
+                        <tbody>
+                            <tr><th>Đang chạy</th><td data-lcni-runtime-status="running_label"><?php echo esc_html((string) $update_status['running_label']); ?></td></tr>
+                            <tr><th>Số symbol đã cập nhật</th><td data-lcni-runtime-status="processed_symbols"><?php echo esc_html((string) ($update_status['processed_symbols'] ?? 0)); ?></td></tr>
+                            <tr><th>Số symbol thành công</th><td data-lcni-runtime-status="success_symbols"><?php echo esc_html((string) ($update_status['success_symbols'] ?? 0)); ?></td></tr>
+                            <tr><th>Số symbol lỗi</th><td data-lcni-runtime-status="error_symbols"><?php echo esc_html((string) ($update_status['error_symbols'] ?? 0)); ?></td></tr>
+                            <tr><th>Số symbol chờ cập nhật</th><td data-lcni-runtime-status="pending_symbols"><?php echo esc_html((string) ($update_status['pending_symbols'] ?? 0)); ?></td></tr>
+                            <tr><th>Số symbol thay đổi giá</th><td data-lcni-runtime-status="changed_symbols"><?php echo esc_html((string) ($update_status['changed_symbols'] ?? 0)); ?></td></tr>
+                            <tr><th>Cột tính toán hoàn tất</th><td data-lcni-runtime-status="indicators_done_label"><?php echo esc_html((string) $update_status['indicators_done_label']); ?></td></tr>
+                            <tr><th>Thời gian bắt đầu</th><td data-lcni-runtime-status="started_at"><?php echo esc_html((string) ($update_status['started_at'] ?? '-')); ?></td></tr>
+                            <tr><th>Thời gian kết thúc</th><td data-lcni-runtime-status="ended_at"><?php echo esc_html((string) ($update_status['ended_at'] ?? '-')); ?></td></tr>
+                            <tr><th>Thời gian chạy (giây)</th><td data-lcni-runtime-status="execution_seconds"><?php echo esc_html((string) ($update_status['execution_seconds'] ?? 0)); ?></td></tr>
+                            <tr><th>Dự kiến phiên cập nhật tiếp theo</th><td data-lcni-runtime-status="next_run_at"><?php echo esc_html((string) ($update_status['next_run_at'] ?? '-')); ?></td></tr>
+                            <tr><th>Thông báo</th><td data-lcni-runtime-status="message"><?php echo esc_html((string) ($update_status['message'] ?? '-')); ?></td></tr>
+                            <tr><th>Lỗi</th><td data-lcni-runtime-status="error"><?php echo esc_html((string) ($update_status['error'] ?? '')); ?></td></tr>
+                            <tr><th>Symbol check</th><td data-lcni-runtime-status="symbol_check_label"><?php echo esc_html((string) ($update_status['symbol_check_label'] ?? 'CEO')); ?></td></tr>
+                            <tr><th>Open</th><td data-lcni-runtime-status="symbol_check_open_price"><?php echo esc_html((string) ($update_status['symbol_check_open_price'] ?? '-')); ?></td></tr>
+                            <tr><th>High</th><td data-lcni-runtime-status="symbol_check_high_price"><?php echo esc_html((string) ($update_status['symbol_check_high_price'] ?? '-')); ?></td></tr>
+                            <tr><th>Low</th><td data-lcni-runtime-status="symbol_check_low_price"><?php echo esc_html((string) ($update_status['symbol_check_low_price'] ?? '-')); ?></td></tr>
+                            <tr><th>Close</th><td data-lcni-runtime-status="symbol_check_close_price"><?php echo esc_html((string) ($update_status['symbol_check_close_price'] ?? '-')); ?></td></tr>
+                            <tr><th>Updated_at (GMT+7)</th><td data-lcni-runtime-status="symbol_check_event_time"><?php echo esc_html((string) ($update_status['symbol_check_event_time'] ?? '-')); ?></td></tr>
+                            <tr><th>WordPress timezone</th><td data-lcni-runtime-status="wordpress_timezone"><?php echo esc_html((string) ($update_status['wordpress_timezone'] ?? '-')); ?></td></tr>
+                            <tr><th>Market timezone</th><td data-lcni-runtime-status="market_timezone"><?php echo esc_html((string) ($update_status['market_timezone'] ?? '-')); ?></td></tr>
+                            <tr><th>Server timezone</th><td data-lcni-runtime-status="server_timezone"><?php echo esc_html((string) ($update_status['server_timezone'] ?? '-')); ?></td></tr>
+                            <tr><th>current_time('mysql')</th><td data-lcni-runtime-status="current_time_mysql"><?php echo esc_html((string) ($update_status['current_time_mysql'] ?? '-')); ?></td></tr>
+                            <tr><th>current_time('timestamp')</th><td data-lcni-runtime-status="current_time_timestamp"><?php echo esc_html((string) ($update_status['current_time_timestamp'] ?? '-')); ?></td></tr>
+                            <tr><th>Trading check</th><td data-lcni-runtime-status="is_trading_time"><?php echo esc_html((string) ($update_status['is_trading_time'] ?? 'false')); ?></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div id="lcni-tab-update-ohlc-latest" class="lcni-sub-tab-content">
+                    <h3>OHLC Latest Snapshot (wp_lcni_ohlc_latest)</h3>
+                    <p>Tự động sync cấu trúc + dữ liệu bằng MySQL Event + Stored Procedure.</p>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="max-width:720px;margin-bottom:16px;">
+                        <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                        <input type="hidden" name="lcni_redirect_tab" value="lcni-tab-update-ohlc-latest">
+                        <input type="hidden" name="lcni_admin_action" value="save_ohlc_latest_settings">
+                        <table class="form-table" role="presentation">
+                            <tr>
+                                <th>Bật event tự động</th>
+                                <td><label><input type="checkbox" name="lcni_ohlc_latest_enabled" value="1" <?php checked(!empty($ohlc_latest_settings['enabled'])); ?>> Kích hoạt</label></td>
+                            </tr>
+                            <tr>
+                                <th>Khung giờ sync Snapshot (GMT+7, HH:MM)</th>
+                                <td>
+                                    <input type="text" name="lcni_ohlc_latest_refresh_times" value="<?php echo esc_attr(implode(', ', (array) ($ohlc_latest_settings['refresh_times'] ?? ['09:00']))); ?>" class="regular-text" placeholder="09:00, 10:30, 14:45">
+                                    <p class="description" style="margin:6px 0 0;">WP-Cron sẽ kích hoạt sync theo các mốc giờ này (GMT+7).</p>
+                                </td>
+                            </tr>
+                        </table>
+                        <?php submit_button('Lưu cài đặt Snapshot', 'primary', 'submit', false); ?>
+                    </form>
+
+                    <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" style="margin-bottom:16px;display:inline-block;">
+                        <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                        <input type="hidden" name="lcni_redirect_tab" value="lcni-tab-update-ohlc-latest">
+                        <input type="hidden" name="lcni_admin_action" value="run_manual_ohlc_latest_sync">
+                        <?php submit_button('Sync Snapshot thủ công ngay', 'secondary', 'submit', false); ?>
+                    </form>
+
+                    <h3>Trạng thái snapshot</h3>
+                    <p id="lcni-snapshot-status-updated-at" style="margin:0 0 8px;color:#50575e;">Timezone hiển thị: GMT+7 (Asia/Ho_Chi_Minh).</p>
+                    <table class="widefat striped" style="max-width:980px;">
+                        <tbody>
+                            <tr><th>Đang chạy</th><td data-lcni-snapshot-status="running_label"><?php echo esc_html((string) $ohlc_latest_status['running_label']); ?></td></tr>
+                            <tr><th>Rows affected lần chạy cuối</th><td data-lcni-snapshot-status="rows_affected"><?php echo esc_html((string) ($ohlc_latest_status['rows_affected'] ?? 0)); ?></td></tr>
+                            <tr><th>Thời gian bắt đầu</th><td data-lcni-snapshot-status="started_at"><?php echo esc_html((string) ($ohlc_latest_status['started_at'] ?? '-')); ?></td></tr>
+                            <tr><th>Thời gian kết thúc</th><td data-lcni-snapshot-status="ended_at"><?php echo esc_html((string) ($ohlc_latest_status['ended_at'] ?? '-')); ?></td></tr>
+                            <tr><th>Thông báo</th><td data-lcni-snapshot-status="message"><?php echo esc_html((string) ($ohlc_latest_status['message'] ?? '-')); ?></td></tr>
+                            <tr><th>Trạng thái lần chạy gần nhất</th><td data-lcni-snapshot-status="last_run_status"><?php echo esc_html((string) ($ohlc_latest_status['last_run_status'] ?? '-')); ?></td></tr>
+                            <tr><th>Lỗi</th><td data-lcni-snapshot-status="error"><?php echo esc_html((string) ($ohlc_latest_status['error'] ?? '')); ?></td></tr>
+                            <tr><th>Symbol check</th><td data-lcni-snapshot-status="symbol_check_label"><?php echo esc_html((string) ($ohlc_latest_status['symbol_check_label'] ?? 'CEO')); ?></td></tr>
+                            <tr><th>Open</th><td data-lcni-snapshot-status="symbol_check_open_price"><?php echo esc_html((string) ($ohlc_latest_status['symbol_check_open_price'] ?? '-')); ?></td></tr>
+                            <tr><th>High</th><td data-lcni-snapshot-status="symbol_check_high_price"><?php echo esc_html((string) ($ohlc_latest_status['symbol_check_high_price'] ?? '-')); ?></td></tr>
+                            <tr><th>Low</th><td data-lcni-snapshot-status="symbol_check_low_price"><?php echo esc_html((string) ($ohlc_latest_status['symbol_check_low_price'] ?? '-')); ?></td></tr>
+                            <tr><th>Close</th><td data-lcni-snapshot-status="symbol_check_close_price"><?php echo esc_html((string) ($ohlc_latest_status['symbol_check_close_price'] ?? '-')); ?></td></tr>
+                            <tr><th>Thời gian cập nhật</th><td data-lcni-snapshot-status="symbol_check_event_time"><?php echo esc_html((string) ($ohlc_latest_status['symbol_check_event_time'] ?? '-')); ?></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <script>
+                    (function() {
+                        const nav = document.getElementById('lcni-update-sub-tabs');
+                        if (!nav) {
+                            return;
+                        }
+                        const buttons = nav.querySelectorAll('button[data-sub-tab]');
+                        const panes = document.querySelectorAll('#lcni-tab-update-runtime, #lcni-tab-update-ohlc-latest');
+                        const active = '<?php echo esc_js($active_update_sub_tab); ?>';
+                        const endpoint = '<?php echo esc_js(admin_url('admin-ajax.php')); ?>';
+                        const statusNonce = '<?php echo esc_js($update_status_nonce); ?>';
+                        const runtimeUpdatedAt = document.getElementById('lcni-runtime-status-updated-at');
+                        const snapshotUpdatedAt = document.getElementById('lcni-snapshot-status-updated-at');
+
+                        const activate = function(tabId) {
+                            buttons.forEach((btn) => btn.classList.toggle('active', btn.getAttribute('data-sub-tab') === tabId));
+                            panes.forEach((pane) => pane.classList.toggle('active', pane.id === tabId));
+                        };
+
+                        buttons.forEach((btn) => {
+                            btn.addEventListener('click', () => activate(btn.getAttribute('data-sub-tab')));
+                        });
+
+                        const setFields = function(selectorPrefix, data) {
+                            if (!data || typeof data !== 'object') {
+                                return;
+                            }
+
+                            Object.keys(data).forEach((key) => {
+                                const el = document.querySelector('[' + selectorPrefix + '="' + key + '"]');
+                                if (el) {
+                                    el.textContent = String(data[key] ?? '');
+                                }
+                            });
+                        };
+
+                        const refreshStatuses = function() {
+                            const body = new URLSearchParams();
+                            body.append('action', 'lcni_update_data_status_snapshot');
+                            body.append('nonce', statusNonce);
+
+                            fetch(endpoint, {
+                                method: 'POST',
+                                credentials: 'same-origin',
+                                headers: {
+                                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                                },
+                                body: body.toString()
+                            })
+                            .then((response) => response.json())
+                            .then((payload) => {
+                                if (!payload || !payload.success || !payload.data) {
+                                    return;
+                                }
+
+                                setFields('data-lcni-runtime-status', payload.data.runtime || {});
+                                setFields('data-lcni-snapshot-status', payload.data.snapshot || {});
+
+                                const updatedLabel = 'Timezone hiển thị: GMT+7 (Asia/Ho_Chi_Minh). Cập nhật gần nhất: ' + (payload.data.updated_at || '-');
+                                if (runtimeUpdatedAt) {
+                                    runtimeUpdatedAt.textContent = updatedLabel;
+                                }
+                                if (snapshotUpdatedAt) {
+                                    snapshotUpdatedAt.textContent = updatedLabel;
+                                }
+                            });
+                        };
+
+                        activate(active);
+                        refreshStatuses();
+                        setInterval(refreshStatuses, 5000);
+                    })();
+                </script>
+
+            <?php elseif ($active_tab === 'compute_control') : ?>
+                <?php LCNI_Compute_Control::render_tab(); ?>
+            <?php elseif ($active_tab === 'cache_redis') : ?>
+                <h2>Cache &amp; Redis</h2>
+                <?php lcni_maybe_generate_sync_api_key(); ?>
+                <?php
+                $api_key    = get_option('lcni_sync_api_key', '');
+                $flush_url  = rest_url('lcni/v1/cache/flush');
+                $ping_url   = rest_url('lcni/v1/cache/ping');
+                $redis_ok   = wp_cache_get('lcni_redis_test_' . time() % 60, 'lcni_ref') !== false
+                              || function_exists('wp_cache_flush_group');
+                ?>
+                <table class="form-table" role="presentation">
                     <tr>
-                        <th>API Key</th>
+                        <th>Sync API Key</th>
                         <td>
-                            <input type="text" name="lcni_api_key"
-                                   value="<?php echo esc_attr(get_option('lcni_api_key')); ?>"
-                                   size="50">
+                            <code style="display:inline-block;padding:6px 10px;background:#f6f7f7;border:1px solid #dcdcde;border-radius:4px;font-size:13px;word-break:break-all;max-width:600px;">
+                                <?php echo esc_html($api_key ?: '(chưa có — vui lòng reload trang)'); ?>
+                            </code>
+                            <p class="description">Dán key này vào <code>sync_lcni_v4_10_2.php</code> → <code>WP_CACHE_API_KEY</code></p>
+                            <form method="post" style="margin-top:8px;">
+                                <?php wp_nonce_field('lcni_regen_api_key', 'lcni_regen_nonce'); ?>
+                                <input type="hidden" name="lcni_action" value="regen_api_key">
+                                <?php submit_button('Tạo key mới', 'secondary small', 'submit', false); ?>
+                                <span style="color:#c0392b;font-size:12px;margin-left:8px;">Sau khi tạo key mới, phải cập nhật lại sync.php</span>
+                            </form>
                         </td>
                     </tr>
-
                     <tr>
-                        <th>API Secret</th>
+                        <th>Cache Flush URL</th>
                         <td>
-                            <input type="password" name="lcni_api_secret"
-                                   value="<?php echo esc_attr(get_option('lcni_api_secret')); ?>"
-                                   size="50">
+                            <code style="display:inline-block;padding:6px 10px;background:#f6f7f7;border:1px solid #dcdcde;border-radius:4px;font-size:13px;">
+                                <?php echo esc_html($flush_url); ?>
+                            </code>
+                            <p class="description">Dán vào <code>WP_CACHE_FLUSH_URL</code> trong sync.php</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Redis Status</th>
+                        <td>
+                            <?php
+                            $test_k = 'lcni_admin_ping_' . time();
+                            wp_cache_set($test_k, 1, 'lcni_ref', 5);
+                            $hit = wp_cache_get($test_k, 'lcni_ref');
+                            if ($hit === 1) {
+                                echo '<span style="color:#0f6e56;font-weight:500;">&#10003; Redis connected (Unix socket)</span>';
+                            } else {
+                                echo '<span style="color:#c0392b;">&#10007; Redis không phản hồi — đang dùng transient fallback</span>';
+                            }
+                            ?>
+                            <p class="description">
+                                Verify thêm:
+                                <a href="<?php echo esc_url($ping_url . '?api_key=' . urlencode($api_key)); ?>" target="_blank">Ping REST endpoint</a>
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Manual flush</th>
+                        <td>
+                            <form method="post" style="display:inline-block;margin-right:6px;">
+                                <?php wp_nonce_field('lcni_manual_flush', 'lcni_flush_nonce'); ?>
+                                <input type="hidden" name="lcni_action" value="flush_ohlc_latest">
+                                <?php submit_button('Flush ohlc_latest', 'secondary small', 'submit', false); ?>
+                            </form>
+                            <form method="post" style="display:inline-block;">
+                                <?php wp_nonce_field('lcni_manual_flush', 'lcni_flush_nonce'); ?>
+                                <input type="hidden" name="lcni_action" value="flush_all_cache">
+                                <?php submit_button('Flush toàn bộ cache', 'delete small', 'submit', false); ?>
+                            </form>
+                            <p class="description">Dùng khi cần force reload dữ liệu không chờ TTL hết hạn</p>
                         </td>
                     </tr>
                 </table>
+                <?php
+                // Xử lý form actions
+                if ( isset($_POST['lcni_action']) ) {
+                    if ( $_POST['lcni_action'] === 'regen_api_key' && check_admin_referer('lcni_regen_api_key', 'lcni_regen_nonce') ) {
+                        $new_key = bin2hex(random_bytes(32));
+                        update_option('lcni_sync_api_key', $new_key, false);
+                        echo '<div class="notice notice-success"><p>Key mới đã được tạo. Nhớ cập nhật sync.php.</p></div>';
+                    }
+                    if ( $_POST['lcni_action'] === 'flush_ohlc_latest' && check_admin_referer('lcni_manual_flush', 'lcni_flush_nonce') ) {
+                        LCNI_RedisCache::invalidate_ohlc_latest();
+                        echo '<div class="notice notice-success"><p>Đã flush cache ohlc_latest.</p></div>';
+                    }
+                    if ( $_POST['lcni_action'] === 'flush_all_cache' && check_admin_referer('lcni_manual_flush', 'lcni_flush_nonce') ) {
+                        LCNI_RedisCache::invalidate_ohlc_latest();
+                        LCNI_RedisCache::invalidate_market_stats();
+                        LCNI_RedisCache::invalidate_symbol_ref();
+                        echo '<div class="notice notice-success"><p>Đã flush toàn bộ LCNI cache groups.</p></div>';
+                    }
+                }
+                ?>
+            <?php elseif ($active_tab === 'dnse_trading') : ?>
+                <?php
+                if ( class_exists('LCNI_DnseTradingAdminPage') ) {
+                    LCNI_DnseTradingAdminPage::render_settings_inline();
+                } else {
+                    echo '<p style="padding:20px;color:#646970;">Module DNSE Trading chưa được kích hoạt. Kiểm tra lại cấu hình plugin.</p>';
+                }
+                ?>
+            <?php elseif ($active_tab === 'rule_settings') : ?>
+                <?php $this->render_rule_settings_section($rule_settings, 'lcni-settings'); ?>
+            <?php elseif ($active_tab === 'frontend_settings') : ?>
+                <?php $this->render_frontend_settings_section(); ?>
+            <?php else : ?>
+                <?php $report_sub_tab = isset($_GET['report_tab']) ? sanitize_key(wp_unslash($_GET['report_tab'])) : 'change_logs'; ?>
+                <h2>Report</h2>
+                <h2 class="nav-tab-wrapper" style="margin-bottom: 16px;">
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=report&report_tab=change_logs')); ?>" class="nav-tab <?php echo $report_sub_tab === 'change_logs' ? 'nav-tab-active' : ''; ?>">Change Logs</a>
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=lcni-settings&tab=report&report_tab=report_system')); ?>" class="nav-tab <?php echo $report_sub_tab === 'report_system' ? 'nav-tab-active' : ''; ?>">Report System</a>
+                </h2>
 
-                <?php submit_button(); ?>
-            </form>
+                <p id="lcni-report-updated-at" style="margin:0 0 8px;color:#50575e;">Report auto refresh: --</p>
+                <?php if ($report_sub_tab === 'report_system') : ?>
+                    <table class="widefat striped" style="max-width:1100px; margin-bottom: 16px;">
+                        <tbody id="lcni-report-system-summary-body">
+                            <tr><th style="width: 45%;">Bao nhiêu tác vụ đang chạy ngầm? Đã chạy được bao nhiêu %?</th><td><?php echo esc_html(sprintf('%d tác vụ | %d%%', (int) ($report_data['running_tasks'] ?? 0), (int) ($report_data['overall_percent'] ?? 0))); ?></td></tr>
+                            <tr><th>Tác vụ seed nền</th><td><?php echo esc_html(sprintf('%d/%d hoàn thành | running=%d | pending=%d | %d%%', (int) ($report_data['seed']['done'] ?? 0), (int) ($report_data['seed']['total'] ?? 0), (int) ($report_data['seed']['running'] ?? 0), (int) ($report_data['seed']['pending'] ?? 0), (int) ($report_data['seed']['percent'] ?? 0))); ?></td></tr>
+                            <tr><th>Runtime update</th><td><?php echo esc_html(sprintf('%s | %d/%d symbol | %d%%', !empty($report_data['runtime']['running']) ? 'Đang chạy' : 'Đang dừng', (int) ($report_data['runtime']['processed'] ?? 0), (int) ($report_data['runtime']['total'] ?? 0), (int) ($report_data['runtime']['percent'] ?? 0))); ?></td></tr>
+                            <tr><th>Snapshot đồng bộ</th><td><?php echo esc_html(sprintf('%s | %d%% | start: %s | end: %s', !empty($report_data['snapshot']['running']) ? 'Đang chạy' : 'Đang dừng', (int) ($report_data['snapshot']['percent'] ?? 0), (string) ($report_data['snapshot']['started_at'] ?: '-'), (string) ($report_data['snapshot']['ended_at'] ?: '-'))); ?></td></tr>
+                            <tr><th>Dữ liệu symbol gần nhất cập nhật là symbol nào? ngày nào YYYY-MM-DD HH:MM?</th><td><?php echo esc_html(sprintf('%s | %s', (string) ($report_data['latest_symbol']['symbol'] ?? '-'), (string) ($report_data['latest_symbol']['event_time'] ?? '-'))); ?></td></tr>
+                            <tr><th>Đã cập nhật bao nhiêu symbol trong ngày hiện tại?</th><td><?php echo esc_html((string) ($report_data['updated_symbols_today'] ?? 0)); ?></td></tr>
+                            <tr><th>Tác vụ tự động tính toán khi có row mới hoặc dữ liệu mới</th><td><?php echo esc_html(sprintf('Rule rebuild: %s | %d/%d | %d%%', strtoupper((string) ($report_data['rule_rebuild']['status'] ?? 'idle')), (int) ($report_data['rule_rebuild']['processed'] ?? 0), (int) ($report_data['rule_rebuild']['total'] ?? 0), (int) ($report_data['rule_rebuild']['percent'] ?? 0))); ?></td></tr>
+                        </tbody>
+                    </table>
 
-            <h2>Change Logs</h2>
-            <?php if (!empty($logs)) : ?>
-                <table class="widefat striped" style="max-width: 1100px;">
-                    <thead>
-                        <tr>
-                            <th style="width: 180px;">Time</th>
-                            <th style="width: 180px;">Action</th>
-                            <th>Message</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($logs as $log) : ?>
+                    <h3>Tác vụ chạy ngầm đã hoàn thành (gần nhất)</h3>
+                    <table class="widefat striped" style="max-width:1100px;"><thead><tr><th>Symbol</th><th>Timeframe</th><th>Bắt đầu</th><th>Kết thúc</th></tr></thead><tbody id="lcni-report-system-completed-body">
+                    <?php if (!empty($report_data['completed_background_tasks'])) : ?>
+                        <?php foreach ($report_data['completed_background_tasks'] as $task) : ?>
                             <tr>
-                                <td><?php echo esc_html($log['created_at']); ?></td>
-                                <td><?php echo esc_html($log['action']); ?></td>
-                                <td><?php echo esc_html($log['message']); ?></td>
+                                <td><?php echo esc_html((string) ($task['symbol'] ?? '-')); ?></td>
+                                <td><?php echo esc_html((string) ($task['timeframe'] ?? '-')); ?></td>
+                                <td><?php echo esc_html((string) ($task['created_at'] ?? '-')); ?></td>
+                                <td><?php echo esc_html((string) ($task['updated_at'] ?? '-')); ?></td>
                             </tr>
                         <?php endforeach; ?>
-                    </tbody>
-                </table>
-            <?php else : ?>
-                <p>No change logs available yet.</p>
+                    <?php else : ?>
+                        <tr><td colspan="4">Chưa có tác vụ nền hoàn thành.</td></tr>
+                    <?php endif; ?>
+                    </tbody></table>
+                <?php else : ?>
+                    <table class="widefat striped" style="max-width:1100px;"><thead><tr><th style="width:180px;">Time</th><th style="width:180px;">Action</th><th>Message</th></tr></thead><tbody id="lcni-report-change-logs-body">
+                    <?php if (!empty($logs)) : ?>
+                        <?php foreach ($logs as $log) : ?>
+                            <tr><td><?php echo esc_html($log['created_at']); ?></td><td><?php echo esc_html($log['action']); ?></td><td><?php echo esc_html($log['message']); ?></td></tr>
+                        <?php endforeach; ?>
+                    <?php else : ?>
+                        <tr><td colspan="3">No change logs available yet.</td></tr>
+                    <?php endif; ?>
+                    </tbody></table>
+                <?php endif; ?>
+
+                <script>
+                    (function() {
+                        const endpoint = '<?php echo esc_js(admin_url('admin-ajax.php')); ?>';
+                        const nonce = '<?php echo esc_js(wp_create_nonce('lcni_report_snapshot_nonce')); ?>';
+                        const reportTab = '<?php echo esc_js($report_sub_tab); ?>';
+                        const updatedAt = document.getElementById('lcni-report-updated-at');
+                        const logsBody = document.getElementById('lcni-report-change-logs-body');
+                        const summaryBody = document.getElementById('lcni-report-system-summary-body');
+                        const completedBody = document.getElementById('lcni-report-system-completed-body');
+                        const esc = (value) => String(value == null ? '' : value).replace(/[&<>"']/g, (ch) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[ch]));
+
+                        const renderLogs = (rows) => {
+                            if (!logsBody) {
+                                return;
+                            }
+                            if (!Array.isArray(rows) || rows.length === 0) {
+                                logsBody.innerHTML = '<tr><td colspan="3">No change logs available yet.</td></tr>';
+                                return;
+                            }
+                            logsBody.innerHTML = rows.map((row) => '<tr><td>' + esc(row.created_at || '-') + '</td><td>' + esc(row.action || '-') + '</td><td>' + esc(row.message || '-') + '</td></tr>').join('');
+                        };
+
+                        const renderReportSystem = (data) => {
+                            if (!summaryBody || !data || typeof data !== 'object') {
+                                return;
+                            }
+                            const seed = data.seed || {};
+                            const runtime = data.runtime || {};
+                            const snapshot = data.snapshot || {};
+                            const latest = data.latest_symbol || {};
+                            const rule = data.rule_rebuild || {};
+
+                            summaryBody.innerHTML = [
+                                '<tr><th style="width:45%;">Bao nhiêu tác vụ đang chạy ngầm? Đã chạy được bao nhiêu %?</th><td>' + esc((Number(data.running_tasks || 0)) + ' tác vụ | ' + (Number(data.overall_percent || 0)) + '%') + '</td></tr>',
+                                '<tr><th>Tác vụ seed nền</th><td>' + esc((Number(seed.done || 0)) + '/' + (Number(seed.total || 0)) + ' hoàn thành | running=' + (Number(seed.running || 0)) + ' | pending=' + (Number(seed.pending || 0)) + ' | ' + (Number(seed.percent || 0)) + '%') + '</td></tr>',
+                                '<tr><th>Runtime update</th><td>' + esc((runtime.running ? 'Đang chạy' : 'Đang dừng') + ' | ' + (Number(runtime.processed || 0)) + '/' + (Number(runtime.total || 0)) + ' symbol | ' + (Number(runtime.percent || 0)) + '%') + '</td></tr>',
+                                '<tr><th>Snapshot đồng bộ</th><td>' + esc((snapshot.running ? 'Đang chạy' : 'Đang dừng') + ' | ' + (Number(snapshot.percent || 0)) + '% | start: ' + (snapshot.started_at || '-') + ' | end: ' + (snapshot.ended_at || '-')) + '</td></tr>',
+                                '<tr><th>Dữ liệu symbol gần nhất cập nhật là symbol nào? ngày nào YYYY-MM-DD HH:MM?</th><td>' + esc((latest.symbol || '-') + ' | ' + (latest.event_time || '-')) + '</td></tr>',
+                                '<tr><th>Đã cập nhật bao nhiêu symbol trong ngày hiện tại?</th><td>' + esc(Number(data.updated_symbols_today || 0)) + '</td></tr>',
+                                '<tr><th>Tác vụ tự động tính toán khi có row mới hoặc dữ liệu mới</th><td>' + esc('Rule rebuild: ' + String(rule.status || 'idle').toUpperCase() + ' | ' + Number(rule.processed || 0) + '/' + Number(rule.total || 0) + ' | ' + Number(rule.percent || 0) + '%') + '</td></tr>'
+                            ].join('');
+
+                            if (completedBody) {
+                                const tasks = Array.isArray(data.completed_background_tasks) ? data.completed_background_tasks : [];
+                                completedBody.innerHTML = tasks.length ? tasks.map((task) => '<tr><td>' + esc(task.symbol || '-') + '</td><td>' + esc(task.timeframe || '-') + '</td><td>' + esc(task.created_at || '-') + '</td><td>' + esc(task.updated_at || '-') + '</td></tr>').join('') : '<tr><td colspan="4">Chưa có tác vụ nền hoàn thành.</td></tr>';
+                            }
+                        };
+
+                        const refresh = () => {
+                            const body = new URLSearchParams();
+                            body.set('action', 'lcni_report_snapshot');
+                            body.set('nonce', nonce);
+
+                            fetch(endpoint, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' }, body: body.toString() })
+                                .then((response) => response.json())
+                                .then((payload) => {
+                                    if (!payload || !payload.success || !payload.data) {
+                                        return;
+                                    }
+                                    if (reportTab === 'change_logs') {
+                                        renderLogs(payload.data.logs || []);
+                                    } else {
+                                        renderReportSystem(payload.data.report || {});
+                                    }
+                                    if (updatedAt) {
+                                        updatedAt.textContent = 'Report auto refresh: ' + (payload.data.updated_at || '-');
+                                    }
+                                });
+                        };
+
+                        refresh();
+                        setInterval(refresh, 5000);
+                    })();
+                </script>
             <?php endif; ?>
         </div>
         <?php
     }
+
+    public function data_viewer_page() {
+        global $wpdb;
+
+        $ohlc_columns = [
+            'symbol' => 'Symbol',
+            'timeframe' => 'Timeframe',
+            'event_time' => 'Event Time',
+            'trading_index' => 'Trading Index',
+            'open_price' => 'Open',
+            'high_price' => 'High',
+            'low_price' => 'Low',
+            'close_price' => 'Close',
+            'volume' => 'Volume',
+            'value_traded' => 'Value Traded',
+            'pct_t_1' => '%T-1',
+            'pct_t_3' => '%T-3',
+            'pct_1w' => '%1W',
+            'pct_1m' => '%1M',
+            'rs_1m_by_exchange' => 'RS 1M (Exchange)',
+            'rs_1w_by_exchange' => 'RS 1W (Exchange)',
+            'rs_3m_by_exchange' => 'RS 3M (Exchange)',
+            'rs_exchange_status' => 'RS Exchange Status',
+            'rs_exchange_recommend' => 'RS Exchange Recommend',
+            'pct_3m' => '%3M',
+            'pct_6m' => '%6M',
+            'pct_1y' => '%1Y',
+            'ma10' => 'MA10',
+            'ma20' => 'MA20',
+            'ma50' => 'MA50',
+            'ma100' => 'MA100',
+            'ma200' => 'MA200',
+            'h1m' => 'H1M',
+            'h3m' => 'H3M',
+            'h6m' => 'H6M',
+            'h1y' => 'H1Y',
+            'l1m' => 'L1M',
+            'l3m' => 'L3M',
+            'l6m' => 'L6M',
+            'l1y' => 'L1Y',
+            'vol_ma10' => 'VolMA10',
+            'vol_ma20' => 'VolMA20',
+            'gia_sv_ma10' => 'Gia sv MA10',
+            'gia_sv_ma20' => 'Gia sv MA20',
+            'gia_sv_ma50' => 'Gia sv MA50',
+            'gia_sv_ma100' => 'Gia sv MA100',
+            'gia_sv_ma200' => 'Gia sv MA200',
+            'vol_sv_vol_ma10' => 'Vol sv Vol MA10',
+            'vol_sv_vol_ma20' => 'Vol sv Vol MA20',
+            'macd' => 'MACD',
+            'macd_signal' => 'MACD Signal',
+            'rsi' => 'RSI',
+            'xay_nen' => 'Xây nền',
+            'xay_nen_count_30' => 'Xây nền count 30',
+            'nen_type' => 'Nền type',
+            'pha_nen' => 'Phá nền',
+            'tang_gia_kem_vol' => 'Tăng giá kèm Vol',
+            'created_at' => 'Created At',
+        ];
+
+        $ohlc_rows = $wpdb->get_results("SELECT symbol, timeframe, event_time, trading_index, open_price, high_price, low_price, close_price, volume, value_traded, pct_t_1, pct_t_3, pct_1w, pct_1m, rs_1m_by_exchange, rs_1w_by_exchange, rs_3m_by_exchange, rs_exchange_status, rs_exchange_recommend, pct_3m, pct_6m, pct_1y, ma10, ma20, ma50, ma100, ma200, h1m, h3m, h6m, h1y, l1m, l3m, l6m, l1y, vol_ma10, vol_ma20, gia_sv_ma10, gia_sv_ma20, gia_sv_ma50, gia_sv_ma100, gia_sv_ma200, vol_sv_vol_ma10, vol_sv_vol_ma20, macd, macd_signal, rsi, xay_nen, xay_nen_count_30, nen_type, pha_nen, tang_gia_kem_vol, smart_money, created_at FROM {$wpdb->prefix}lcni_ohlc ORDER BY event_time DESC LIMIT 50", ARRAY_A);
+        $symbol_rows = $wpdb->get_results("SELECT s.symbol, s.market_id, m.exchange, s.id_icb2, i.name_icb2, s.board_id, s.isin, s.basic_price, s.ceiling_price, s.floor_price, s.security_status, s.source, s.updated_at FROM {$wpdb->prefix}lcni_symbols s LEFT JOIN {$wpdb->prefix}lcni_marketid m ON m.market_id = s.market_id LEFT JOIN {$wpdb->prefix}lcni_icb2 i ON i.id_icb2 = s.id_icb2 ORDER BY s.updated_at DESC LIMIT 50", ARRAY_A);
+        $market_rows = $wpdb->get_results("SELECT market_id, exchange, updated_at FROM {$wpdb->prefix}lcni_marketid ORDER BY CAST(market_id AS UNSIGNED), market_id", ARRAY_A);
+        $icb2_rows = $wpdb->get_results("SELECT id_icb2, name_icb2, updated_at FROM {$wpdb->prefix}lcni_icb2 ORDER BY id_icb2 ASC", ARRAY_A);
+        $mapping_rows = $wpdb->get_results("SELECT map.symbol, map.market_id, map.exchange, map.id_icb2, i.name_icb2, map.updated_at FROM {$wpdb->prefix}lcni_sym_icb_market map LEFT JOIN {$wpdb->prefix}lcni_icb2 i ON i.id_icb2 = map.id_icb2 ORDER BY map.updated_at DESC LIMIT 50", ARRAY_A);
+        $active_tab = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : 'lcni-tab-symbols';
+        ?>
+        <div class="wrap">
+            <h1>Saved Data</h1>
+            <p>Trang này hiển thị dữ liệu đã lưu từ API/CSV (50 bản ghi gần nhất mỗi bảng).</p>
+
+            <style>
+                .lcni-tab-nav { display: flex; gap: 8px; border-bottom: 1px solid #dcdcde; margin-top: 20px; flex-wrap: wrap; }
+                .lcni-tab-nav button { border: 1px solid #dcdcde; border-bottom: 0; background: #f6f7f7; padding: 8px 12px; cursor: pointer; }
+                .lcni-tab-nav button.active { background: #fff; font-weight: 600; }
+                .lcni-tab-content { display: none; margin-top: 16px; }
+                .lcni-tab-content.active { display: block; }
+                .lcni-column-picker { border: 1px solid #dcdcde; padding: 10px; margin-bottom: 10px; max-width: 980px; background: #fff; }
+                .lcni-column-picker-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+                .lcni-column-picker-list { display: grid; gap: 6px; grid-template-columns: repeat(3, minmax(0, 1fr)); max-height: 240px; overflow: auto; }
+                .lcni-column-picker-item { font-size: 12px; }
+                #lcni-ohlc-table th, #lcni-ohlc-table td { font-size: 11px; padding: 6px 8px; line-height: 1.3; white-space: nowrap; }
+            </style>
+
+            <div class="lcni-tab-nav" id="lcni-saved-data-tabs" data-active-tab="<?php echo esc_attr($active_tab); ?>">
+                <button data-tab="lcni-tab-symbols">LCNI Symbols</button>
+                <button data-tab="lcni-tab-market">LCNI Market Mapping</button>
+                <button data-tab="lcni-tab-icb2">LCNI ICB2</button>
+                <button data-tab="lcni-tab-sym-icb-market">LCNI Symbol-Market-ICB</button>
+                <button data-tab="lcni-tab-ohlc">OHLC Data + Indicators</button>
+            </div>
+
+            <div id="lcni-tab-symbols" class="lcni-tab-content">
+                <?php if (!empty($symbol_rows)) : ?>
+                    <table class="widefat striped" style="max-width: 1500px;"><thead><tr><th>Symbol</th><th>Market ID</th><th>Exchange</th><th>ID ICB2</th><th>Tên ngành</th><th>Board</th><th>ISIN</th><th>Basic</th><th>Ceiling</th><th>Floor</th><th>Status</th><th>Source</th><th>Updated At</th></tr></thead><tbody>
+                        <?php foreach ($symbol_rows as $row) : ?><tr><td><?php echo esc_html($row['symbol']); ?></td><td><?php echo esc_html($row['market_id']); ?></td><td><?php echo esc_html($row['exchange'] ?: 'N/A'); ?></td><td><?php echo esc_html($row['id_icb2']); ?></td><td><?php echo esc_html($row['name_icb2'] ?: 'N/A'); ?></td><td><?php echo esc_html($row['board_id']); ?></td><td><?php echo esc_html($row['isin']); ?></td><td><?php echo esc_html($row['basic_price']); ?></td><td><?php echo esc_html($row['ceiling_price']); ?></td><td><?php echo esc_html($row['floor_price']); ?></td><td><?php echo esc_html($row['security_status']); ?></td><td><?php echo esc_html($row['source']); ?></td><td><?php echo esc_html($row['updated_at']); ?></td></tr><?php endforeach; ?>
+                    </tbody></table>
+                <?php else : ?><p>Chưa có dữ liệu lcni_symbols.</p><?php endif; ?>
+            </div>
+
+            <div id="lcni-tab-market" class="lcni-tab-content">
+                <?php if (!empty($market_rows)) : ?>
+                    <table class="widefat striped" style="max-width: 700px;"><thead><tr><th>Market ID</th><th>Exchange</th><th>Updated At</th></tr></thead><tbody>
+                        <?php foreach ($market_rows as $row) : ?><tr><td><?php echo esc_html($row['market_id']); ?></td><td><?php echo esc_html($row['exchange']); ?></td><td><?php echo esc_html($row['updated_at']); ?></td></tr><?php endforeach; ?>
+                    </tbody></table>
+                <?php else : ?><p>Chưa có dữ liệu lcni_marketid.</p><?php endif; ?>
+            </div>
+
+            <div id="lcni-tab-icb2" class="lcni-tab-content">
+                <?php if (!empty($icb2_rows)) : ?>
+                    <table class="widefat striped" style="max-width: 900px;"><thead><tr><th>ID ICB2</th><th>Tên ngành</th><th>Updated At</th></tr></thead><tbody>
+                        <?php foreach ($icb2_rows as $row) : ?><tr><td><?php echo esc_html($row['id_icb2']); ?></td><td><?php echo esc_html($row['name_icb2']); ?></td><td><?php echo esc_html($row['updated_at']); ?></td></tr><?php endforeach; ?>
+                    </tbody></table>
+                <?php else : ?><p>Chưa có dữ liệu lcni_icb2.</p><?php endif; ?>
+            </div>
+
+            <div id="lcni-tab-sym-icb-market" class="lcni-tab-content">
+                <?php if (!empty($mapping_rows)) : ?>
+                    <table class="widefat striped" style="max-width: 1000px;"><thead><tr><th>Symbol</th><th>Market ID</th><th>Exchange</th><th>ID ICB2</th><th>Tên ngành</th><th>Updated At</th></tr></thead><tbody>
+                        <?php foreach ($mapping_rows as $row) : ?><tr><td><?php echo esc_html($row['symbol']); ?></td><td><?php echo esc_html($row['market_id']); ?></td><td><?php echo esc_html($row['exchange'] ?: 'N/A'); ?></td><td><?php echo esc_html($row['id_icb2']); ?></td><td><?php echo esc_html($row['name_icb2'] ?: 'N/A'); ?></td><td><?php echo esc_html($row['updated_at']); ?></td></tr><?php endforeach; ?>
+                    </tbody></table>
+                <?php else : ?><p>Chưa có dữ liệu lcni_sym_icb_market.</p><?php endif; ?>
+            </div>
+
+            <div id="lcni-tab-ohlc" class="lcni-tab-content">
+                <?php if (!empty($ohlc_rows)) : ?>
+                    <div class="lcni-column-picker">
+                        <label for="lcni-ohlc-column-filter"><strong>Lọc cột hiển thị:</strong></label>
+                        <input type="text" id="lcni-ohlc-column-filter" class="regular-text" placeholder="Nhập tên cột để lọc danh sách cột" style="margin:6px 0;display:block;">
+                        <div class="lcni-column-picker-actions">
+                            <button type="button" class="button" id="lcni-ohlc-select-all">Chọn tất cả</button>
+                            <button type="button" class="button" id="lcni-ohlc-clear-all">Bỏ chọn tất cả</button>
+                            <button type="button" class="button" id="lcni-ohlc-select-rule">Chọn nhanh cột Rule</button>
+                            <button type="button" class="button" id="lcni-ohlc-reset-filter">Hiện lại danh sách</button>
+                        </div>
+                        <div id="lcni-ohlc-column-picker" class="lcni-column-picker-list">
+                            <?php foreach ($ohlc_columns as $column_key => $column_label) : ?>
+                                <?php $default_checked = in_array($column_key, ['symbol', 'timeframe', 'event_time', 'close_price', 'volume', 'macd', 'rsi', 'xay_nen', 'xay_nen_count_30', 'nen_type', 'pha_nen', 'tang_gia_kem_vol', 'created_at'], true); ?>
+                                <label class="lcni-column-picker-item" data-column-key="<?php echo esc_attr($column_key); ?>" data-column-label="<?php echo esc_attr(strtolower($column_label)); ?>">
+                                    <input type="checkbox" data-column-toggle="<?php echo esc_attr($column_key); ?>" <?php checked($default_checked); ?>>
+                                    <?php echo esc_html($column_label); ?>
+                                </label>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+
+                    <div style="overflow-x:auto; max-width: 100%;">
+                        <table class="widefat striped" style="min-width: 2800px;" id="lcni-ohlc-table"><thead><tr>
+                            <?php foreach ($ohlc_columns as $column_key => $column_label) : ?>
+                                <th data-col="<?php echo esc_attr($column_key); ?>"><?php echo esc_html($column_label); ?></th>
+                            <?php endforeach; ?>
+                        </tr></thead><tbody>
+                            <?php foreach ($ohlc_rows as $row) : ?>
+                                <tr>
+                                    <?php foreach ($ohlc_columns as $column_key => $column_label) : ?>
+                                        <td data-col="<?php echo esc_attr($column_key); ?>">
+                                            <?php
+                                            $value = isset($row[$column_key]) ? $row[$column_key] : '';
+                                            if ($column_key === 'event_time' && $value !== '') {
+                                                $value = gmdate('Y-m-d H:i:s', (int) $value);
+                                            }
+                                            echo esc_html((string) $value);
+                                            ?>
+                                        </td>
+                                    <?php endforeach; ?>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody></table>
+                    </div>
+                <?php else : ?><p>Chưa có dữ liệu OHLC.</p><?php endif; ?>
+            </div>
+
+            <script>
+                (function() {
+                    const nav = document.getElementById('lcni-saved-data-tabs');
+                    if (!nav) {
+                        return;
+                    }
+
+                    const buttons = nav.querySelectorAll('button[data-tab]');
+                    const panes = document.querySelectorAll('.lcni-tab-content');
+                    const activeTabFromUrl = nav.getAttribute('data-active-tab') || 'lcni-tab-symbols';
+
+                    const activateTab = function(tabId) {
+                        buttons.forEach((btn) => btn.classList.toggle('active', btn.getAttribute('data-tab') === tabId));
+                        panes.forEach((pane) => pane.classList.toggle('active', pane.id === tabId));
+                    };
+
+                    buttons.forEach((button) => {
+                        button.addEventListener('click', () => activateTab(button.getAttribute('data-tab')));
+                    });
+
+                    activateTab(activeTabFromUrl);
+
+                    const filterInput = document.getElementById('lcni-ohlc-column-filter');
+                    const picker = document.getElementById('lcni-ohlc-column-picker');
+                    const table = document.getElementById('lcni-ohlc-table');
+                    const selectAllBtn = document.getElementById('lcni-ohlc-select-all');
+                    const clearAllBtn = document.getElementById('lcni-ohlc-clear-all');
+                    const selectRuleBtn = document.getElementById('lcni-ohlc-select-rule');
+                    const resetFilterBtn = document.getElementById('lcni-ohlc-reset-filter');
+
+                    if (filterInput && picker && table) {
+                        const ruleColumns = ['xay_nen', 'xay_nen_count_30', 'nen_type', 'pha_nen', 'tang_gia_kem_vol', 'smart_money', 'rs_exchange_status', 'rs_exchange_recommend', 'macd', 'rsi', 'symbol', 'timeframe', 'event_time', 'close_price', 'volume'];
+                        const checkboxes = Array.from(picker.querySelectorAll('input[data-column-toggle]'));
+                        const storageKey = 'lcni_ohlc_visible_columns';
+
+                        const tableCells = Array.from(table.querySelectorAll('[data-col]'));
+
+                        const toggleColumn = function(columnKey, isVisible) {
+                            tableCells.forEach((cell) => {
+                                if (cell.getAttribute('data-col') !== columnKey) {
+                                    return;
+                                }
+
+                                if (isVisible) {
+                                    cell.hidden = false;
+                                    cell.style.display = '';
+                                } else {
+                                    cell.hidden = true;
+                                    cell.style.display = 'none';
+                                }
+                            });
+                        };
+
+                        const saveSelection = function() {
+                            const selected = checkboxes
+                                .filter((checkbox) => checkbox.checked)
+                                .map((checkbox) => checkbox.getAttribute('data-column-toggle'));
+                            window.localStorage.setItem(storageKey, JSON.stringify(selected));
+                        };
+
+                        const applyColumnSelection = function() {
+                            checkboxes.forEach((checkbox) => {
+                                toggleColumn(checkbox.getAttribute('data-column-toggle'), checkbox.checked);
+                            });
+                        };
+
+                        const setSelectionForAll = function(isChecked) {
+                            checkboxes.forEach((checkbox) => {
+                                checkbox.checked = isChecked;
+                            });
+                            applyColumnSelection();
+                            saveSelection();
+                        };
+
+                        const hydrateSelectionFromStorage = function() {
+                            const savedRaw = window.localStorage.getItem(storageKey);
+                            if (!savedRaw) {
+                                return;
+                            }
+
+                            let savedColumns = [];
+                            try {
+                                savedColumns = JSON.parse(savedRaw);
+                            } catch (error) {
+                                return;
+                            }
+
+                            if (!Array.isArray(savedColumns) || savedColumns.length === 0) {
+                                return;
+                            }
+
+                            checkboxes.forEach((checkbox) => {
+                                checkbox.checked = savedColumns.includes(checkbox.getAttribute('data-column-toggle'));
+                            });
+                        };
+
+                        checkboxes.forEach((checkbox) => {
+                            checkbox.addEventListener('change', () => {
+                                toggleColumn(checkbox.getAttribute('data-column-toggle'), checkbox.checked);
+                                saveSelection();
+                            });
+                        });
+
+                        hydrateSelectionFromStorage();
+                        applyColumnSelection();
+
+                        if (selectAllBtn) {
+                            selectAllBtn.addEventListener('click', () => setSelectionForAll(true));
+                        }
+
+                        if (clearAllBtn) {
+                            clearAllBtn.addEventListener('click', () => setSelectionForAll(false));
+                        }
+
+                        if (selectRuleBtn) {
+                            selectRuleBtn.addEventListener('click', () => {
+                                checkboxes.forEach((checkbox) => {
+                                    checkbox.checked = ruleColumns.includes(checkbox.getAttribute('data-column-toggle'));
+                                });
+                                applyColumnSelection();
+                                saveSelection();
+                            });
+                        }
+
+                        const applyFilter = function(needle) {
+                            picker.querySelectorAll('.lcni-column-picker-item').forEach((item) => {
+                                const key = item.getAttribute('data-column-key') || '';
+                                const label = item.getAttribute('data-column-label') || '';
+                                const isMatch = needle === '' || key.includes(needle) || label.includes(needle);
+                                item.style.display = isMatch ? '' : 'none';
+                            });
+                        };
+
+                        filterInput.addEventListener('input', () => {
+                            applyFilter(filterInput.value.trim().toLowerCase());
+                        });
+
+                        if (resetFilterBtn) {
+                            resetFilterBtn.addEventListener('click', () => {
+                                filterInput.value = '';
+                                applyFilter('');
+                            });
+                        }
+                    }
+
+                })();
+            </script>
+        </div>
+        <?php
+    }
+
+    public function sanitize_frontend_module_settings($value) {
+        if (!is_array($value)) {
+            $value = [];
+        }
+
+        $module = sanitize_key((string) ($value['__module'] ?? ''));
+        $default = $this->get_default_frontend_module_settings($module);
+        $allowed_fields = isset($value['allowed_fields']) && is_array($value['allowed_fields'])
+            ? array_values(array_intersect($default['fields'], array_map('sanitize_key', $value['allowed_fields'])))
+            : $default['fields'];
+
+        if (empty($allowed_fields)) {
+            $allowed_fields = $default['fields'];
+        }
+
+        $styles = isset($value['styles']) && is_array($value['styles']) ? $value['styles'] : [];
+
+        return [
+            'allowed_fields' => $allowed_fields,
+            'styles' => [
+                'label_color' => sanitize_hex_color((string) ($styles['label_color'] ?? $default['styles']['label_color'])) ?: $default['styles']['label_color'],
+                'value_color' => sanitize_hex_color((string) ($styles['value_color'] ?? $default['styles']['value_color'])) ?: $default['styles']['value_color'],
+                'item_background' => sanitize_hex_color((string) ($styles['item_background'] ?? $default['styles']['item_background'])) ?: $default['styles']['item_background'],
+                'container_background' => sanitize_hex_color((string) ($styles['container_background'] ?? $default['styles']['container_background'])) ?: $default['styles']['container_background'],
+                'container_border' => sanitize_hex_color((string) ($styles['container_border'] ?? $default['styles']['container_border'])) ?: $default['styles']['container_border'],
+                'item_height' => $this->sanitize_frontend_item_height($styles['item_height'] ?? $default['styles']['item_height'], $default['styles']['item_height']),
+                'label_font_size' => $this->sanitize_frontend_font_size($styles['label_font_size'] ?? $default['styles']['label_font_size'], $default['styles']['label_font_size']),
+                'value_font_size' => $this->sanitize_frontend_font_size($styles['value_font_size'] ?? $default['styles']['value_font_size'], $default['styles']['value_font_size']),
+                'value_rules' => $this->sanitize_frontend_value_rules($styles['value_rules'] ?? [], $default['fields']),
+            ],
+        ];
+    }
+
+
+    public function sanitize_frontend_chart_settings($value) {
+        if (!is_array($value)) {
+            $value = [];
+        }
+
+        $default = [
+            'default_mode' => 'line',
+            'allowed_panels' => ['volume', 'macd', 'rsi', 'rs'],
+            'compact_mode' => true,
+            'default_visible_bars' => 120,
+            'chart_sync_enabled' => true,
+            'fit_to_screen_on_load' => true,
+            'default_ma20' => true,
+            'default_ma50' => true,
+            'default_rsi' => true,
+            'default_macd' => false,
+            'default_rs_1w_by_exchange' => true,
+            'default_rs_1m_by_exchange' => true,
+            'default_rs_3m_by_exchange' => false,
+        ];
+
+        $allowed_panels = isset($value['allowed_panels']) && is_array($value['allowed_panels'])
+            ? array_values(array_intersect($default['allowed_panels'], array_map('sanitize_key', $value['allowed_panels'])))
+            : $default['allowed_panels'];
+
+        if (empty($allowed_panels)) {
+            $allowed_panels = $default['allowed_panels'];
+        }
+
+        $mode = sanitize_key((string) ($value['default_mode'] ?? $default['default_mode']));
+        if (!in_array($mode, ['line', 'candlestick'], true)) {
+            $mode = $default['default_mode'];
+        }
+
+        $compact_raw = $value['compact_mode'] ?? $default['compact_mode'];
+        $compact_mode = in_array($compact_raw, [1, '1', true, 'true', 'yes', 'on'], true);
+        $sync_raw = $value['chart_sync_enabled'] ?? $default['chart_sync_enabled'];
+        $chart_sync_enabled = in_array($sync_raw, [1, '1', true, 'true', 'yes', 'on'], true);
+        $fit_to_screen_raw = $value['fit_to_screen_on_load'] ?? $default['fit_to_screen_on_load'];
+        $fit_to_screen_on_load = in_array($fit_to_screen_raw, [1, '1', true, 'true', 'yes', 'on'], true);
+        $default_visible_bars = max(20, min(1000, (int) ($value['default_visible_bars'] ?? $default['default_visible_bars'])));
+        $default_ma20 = in_array(($value['default_ma20'] ?? $default['default_ma20']), [1, '1', true, 'true', 'yes', 'on'], true);
+        $default_ma50 = in_array(($value['default_ma50'] ?? $default['default_ma50']), [1, '1', true, 'true', 'yes', 'on'], true);
+        $default_rsi = in_array(($value['default_rsi'] ?? $default['default_rsi']), [1, '1', true, 'true', 'yes', 'on'], true);
+        $default_macd = in_array(($value['default_macd'] ?? $default['default_macd']), [1, '1', true, 'true', 'yes', 'on'], true);
+        $default_rs_1w_by_exchange = in_array(($value['default_rs_1w_by_exchange'] ?? $default['default_rs_1w_by_exchange']), [1, '1', true, 'true', 'yes', 'on'], true);
+        $default_rs_1m_by_exchange = in_array(($value['default_rs_1m_by_exchange'] ?? $default['default_rs_1m_by_exchange']), [1, '1', true, 'true', 'yes', 'on'], true);
+        $default_rs_3m_by_exchange = in_array(($value['default_rs_3m_by_exchange'] ?? $default['default_rs_3m_by_exchange']), [1, '1', true, 'true', 'yes', 'on'], true);
+
+        return [
+            'default_mode' => $mode,
+            'allowed_panels' => $allowed_panels,
+            'compact_mode' => $compact_mode,
+            'default_visible_bars' => $default_visible_bars,
+            'chart_sync_enabled' => $chart_sync_enabled,
+            'fit_to_screen_on_load' => $fit_to_screen_on_load,
+            'default_ma20' => $default_ma20,
+            'default_ma50' => $default_ma50,
+            'default_rsi' => $default_rsi,
+            'default_macd' => $default_macd,
+            'default_rs_1w_by_exchange' => $default_rs_1w_by_exchange,
+            'default_rs_1m_by_exchange' => $default_rs_1m_by_exchange,
+            'default_rs_3m_by_exchange' => $default_rs_3m_by_exchange,
+        ];
+    }
+
+private function sanitize_module_title($value, $fallback) {
+        $title = sanitize_text_field((string) $value);
+
+        return $title !== '' ? $title : $fallback;
+    }
+
+    private function sanitize_frontend_font_size($size, $fallback) {
+        $value = (int) $size;
+
+        return $value >= 10 && $value <= 40 ? $value : (int) $fallback;
+    }
+
+    private function sanitize_frontend_item_height($height, $fallback) {
+        $value = (int) $height;
+
+        return $value >= 40 && $value <= 300 ? $value : (int) $fallback;
+    }
+
+    private function sanitize_frontend_value_rules($rules, $allowed_fields) {
+        if (!is_array($rules)) {
+            return [];
+        }
+
+        $operators = ['equals', 'contains', 'gt', 'gte', 'lt', 'lte'];
+        $normalized = [];
+
+        foreach ($rules as $rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+
+            $field = sanitize_key((string) ($rule['field'] ?? ''));
+            $operator = sanitize_key((string) ($rule['operator'] ?? ''));
+            $value = sanitize_text_field((string) ($rule['value'] ?? ''));
+            $color = sanitize_hex_color((string) ($rule['color'] ?? ''));
+
+            if ($field === '' || $field === 'all') {
+                $field = '*';
+            }
+
+            if ($field !== '*' && !in_array($field, $allowed_fields, true)) {
+                continue;
+            }
+
+            if (!in_array($operator, $operators, true) || $value === '' || !$color) {
+                continue;
+            }
+
+            $normalized[] = [
+                'field' => $field,
+                'operator' => $operator,
+                'value' => $value,
+                'color' => $color,
+            ];
+        }
+
+        return array_slice($normalized, 0, 50);
+    }
+
+    private function collect_global_cell_color_rule_input_from_post() {
+        $json_payload = isset($_POST['lcni_global_rules_json']) ? wp_unslash($_POST['lcni_global_rules_json']) : '';
+        if (is_string($json_payload) && $json_payload !== '') {
+            $decoded = json_decode($json_payload, true);
+            if (is_array($decoded)) {
+                return $decoded;
+            }
+        }
+
+        $fields = isset($_POST['lcni_global_rule_field']) ? (array) wp_unslash($_POST['lcni_global_rule_field']) : [];
+        $operators = isset($_POST['lcni_global_rule_operator']) ? (array) wp_unslash($_POST['lcni_global_rule_operator']) : [];
+        $values = isset($_POST['lcni_global_rule_value']) ? (array) wp_unslash($_POST['lcni_global_rule_value']) : [];
+        $bg_colors = isset($_POST['lcni_global_rule_bg_color']) ? (array) wp_unslash($_POST['lcni_global_rule_bg_color']) : [];
+        $text_colors = isset($_POST['lcni_global_rule_text_color']) ? (array) wp_unslash($_POST['lcni_global_rule_text_color']) : [];
+        $icon_classes = isset($_POST['lcni_global_rule_icon_class']) ? (array) wp_unslash($_POST['lcni_global_rule_icon_class']) : [];
+        $icon_positions = isset($_POST['lcni_global_rule_icon_position']) ? (array) wp_unslash($_POST['lcni_global_rule_icon_position']) : [];
+
+        $rules = [];
+        $indexes = array_values(array_unique(array_merge(
+            array_keys($fields),
+            array_keys($operators),
+            array_keys($values),
+            array_keys($bg_colors),
+            array_keys($text_colors),
+            array_keys($icon_classes),
+            array_keys($icon_positions)
+        )));
+        sort($indexes);
+
+        foreach ($indexes as $index) {
+            $rules[] = [
+                'field' => $fields[$index] ?? '',
+                'operator' => $operators[$index] ?? '',
+                'value' => $values[$index] ?? '',
+                'bg_color' => $bg_colors[$index] ?? '',
+                'text_color' => $text_colors[$index] ?? '',
+                'icon_class' => $icon_classes[$index] ?? '',
+                'icon_position' => $icon_positions[$index] ?? 'left',
+            ];
+        }
+
+        return $rules;
+    }
+
+    private function sanitize_global_cell_color_rules($rules) {
+        $service = new LCNI_WatchlistService(new LCNI_WatchlistRepository());
+        $all_columns = $service->get_all_columns();
+        $allowed_operators = ['=', '!=', '>', '>=', '<', '<=', 'contains', 'not_contains'];
+        $normalized = [];
+
+        foreach ((array) $rules as $rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+
+            $field = sanitize_key((string) ($rule['field'] ?? ''));
+            $operator = sanitize_text_field((string) ($rule['operator'] ?? ''));
+            $value = trim(sanitize_text_field((string) ($rule['value'] ?? '')));
+            $bg_color = sanitize_hex_color((string) ($rule['bg_color'] ?? ''));
+            $text_color = sanitize_hex_color((string) ($rule['text_color'] ?? ''));
+            $icon_class = sanitize_text_field((string) ($rule['icon_class'] ?? ''));
+            $icon_position = in_array(($rule['icon_position'] ?? 'left'), ['left', 'right'], true) ? $rule['icon_position'] : 'left';
+
+            if ($field === '' || !in_array($field, $all_columns, true) || !in_array($operator, $allowed_operators, true) || $value === '' || !$bg_color || !$text_color) {
+                continue;
+            }
+
+            $normalized[] = [
+                'column' => $field,
+                'operator' => $operator,
+                'value' => is_numeric($value) ? (float) $value : $value,
+                'bg_color' => $bg_color,
+                'text_color' => $text_color,
+                'icon_class' => $icon_class,
+                'icon_position' => $icon_position,
+            ];
+        }
+
+        return array_slice($normalized, 0, 100);
+    }
+
+
+    private function collect_global_cell_to_cell_rule_input_from_post() {
+        $json_payload = isset($_POST['lcni_cell_to_cell_rules_json']) ? wp_unslash($_POST['lcni_cell_to_cell_rules_json']) : '';
+        if (is_string($json_payload) && $json_payload !== '') {
+            $decoded = json_decode($json_payload, true);
+            if (is_array($decoded)) {
+                return $decoded;
+            }
+        }
+
+        $source_fields = isset($_POST['lcni_cell_to_cell_source_field']) ? (array) wp_unslash($_POST['lcni_cell_to_cell_source_field']) : [];
+        $operators = isset($_POST['lcni_cell_to_cell_operator']) ? (array) wp_unslash($_POST['lcni_cell_to_cell_operator']) : [];
+        $values = isset($_POST['lcni_cell_to_cell_value']) ? (array) wp_unslash($_POST['lcni_cell_to_cell_value']) : [];
+        $target_fields = isset($_POST['lcni_cell_to_cell_target_field']) ? (array) wp_unslash($_POST['lcni_cell_to_cell_target_field']) : [];
+        $text_colors = isset($_POST['lcni_cell_to_cell_text_color']) ? (array) wp_unslash($_POST['lcni_cell_to_cell_text_color']) : [];
+        $icon_classes = isset($_POST['lcni_cell_to_cell_icon_class']) ? (array) wp_unslash($_POST['lcni_cell_to_cell_icon_class']) : [];
+        $icon_positions = isset($_POST['lcni_cell_to_cell_icon_position']) ? (array) wp_unslash($_POST['lcni_cell_to_cell_icon_position']) : [];
+        $icon_sizes = isset($_POST['lcni_cell_to_cell_icon_size']) ? (array) wp_unslash($_POST['lcni_cell_to_cell_icon_size']) : [];
+        $icon_colors = isset($_POST['lcni_cell_to_cell_icon_color']) ? (array) wp_unslash($_POST['lcni_cell_to_cell_icon_color']) : [];
+
+        $rules = [];
+        $indexes = array_values(array_unique(array_merge(
+            array_keys($source_fields),
+            array_keys($operators),
+            array_keys($values),
+            array_keys($target_fields),
+            array_keys($text_colors),
+            array_keys($icon_classes),
+            array_keys($icon_positions),
+            array_keys($icon_sizes),
+            array_keys($icon_colors)
+        )));
+        sort($indexes);
+
+        foreach ($indexes as $index) {
+            $rules[] = [
+                'source_field' => $source_fields[$index] ?? '',
+                'operator' => $operators[$index] ?? '',
+                'value' => $values[$index] ?? '',
+                'target_field' => $target_fields[$index] ?? '',
+                'text_color' => $text_colors[$index] ?? '',
+                'icon_class' => $icon_classes[$index] ?? '',
+                'icon_position' => $icon_positions[$index] ?? 'right',
+                'icon_size' => $icon_sizes[$index] ?? 12,
+                'icon_color' => $icon_colors[$index] ?? '',
+            ];
+        }
+
+        return $rules;
+    }
+
+    private function sanitize_global_cell_to_cell_rules($rules) {
+        $service = new LCNI_WatchlistService(new LCNI_WatchlistRepository());
+        $all_columns = $service->get_all_columns();
+        $allowed_operators = ['=', '!=', '>', '>=', '<', '<=', 'contains', 'not_contains'];
+        $normalized = [];
+
+        foreach ((array) $rules as $rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+
+            $source = sanitize_key((string) ($rule['source_field'] ?? ''));
+            $target = sanitize_key((string) ($rule['target_field'] ?? ''));
+            $operator = sanitize_text_field((string) ($rule['operator'] ?? ''));
+            $value = trim(sanitize_text_field((string) ($rule['value'] ?? '')));
+            $text_color = sanitize_hex_color((string) ($rule['text_color'] ?? ''));
+            $icon_class = sanitize_text_field((string) ($rule['icon_class'] ?? ''));
+            $icon_position = in_array(($rule['icon_position'] ?? 'right'), ['left', 'right'], true) ? $rule['icon_position'] : 'right';
+            $icon_size = max(8, min(32, (int) ($rule['icon_size'] ?? 12)));
+            $icon_color = sanitize_hex_color((string) ($rule['icon_color'] ?? ''));
+
+            if ($source === '' || $target === '' || !in_array($source, $all_columns, true) || !in_array($target, $all_columns, true) || !in_array($operator, $allowed_operators, true) || $value === '') {
+                continue;
+            }
+
+            $normalized[] = [
+                'source_field' => $source,
+                'operator' => $operator,
+                'value' => is_numeric($value) ? (float) $value : $value,
+                'target_field' => $target,
+                'text_color' => $text_color ?: '#111827',
+                'icon_class' => $icon_class,
+                'icon_position' => $icon_position,
+                'icon_size' => $icon_size,
+                'icon_color' => $icon_color ?: '#dc2626',
+            ];
+        }
+
+        return array_slice($normalized, 0, 200);
+    }
+
+    private function map_global_rules_to_frontend_value_rules($rules, $allowed_fields) {
+        $operator_map = [
+            '=' => 'equals',
+            '!=' => 'not_equals',
+            '>' => 'gt',
+            '>=' => 'gte',
+            '<' => 'lt',
+            '<=' => 'lte',
+            'contains' => 'contains',
+        ];
+
+        $mapped = [];
+        foreach ((array) $rules as $rule) {
+            $field = sanitize_key((string) ($rule['target_field'] ?? ($rule['column'] ?? '')));
+            $operator = (string) ($rule['operator'] ?? '');
+            $value = sanitize_text_field((string) ($rule['value'] ?? ''));
+            $color = sanitize_hex_color((string) ($rule['text_color'] ?? ''));
+
+            if ($field === '' || !in_array($field, (array) $allowed_fields, true) || !isset($operator_map[$operator]) || $value === '' || !$color) {
+                continue;
+            }
+
+            $mapped[] = [
+                'field' => $field,
+                'operator' => $operator_map[$operator],
+                'value' => $value,
+                'color' => $color,
+            ];
+        }
+
+        return $this->sanitize_frontend_value_rules($mapped, (array) $allowed_fields);
+    }
+
+    private function get_default_frontend_module_settings($module = '') {
+        $module = sanitize_key((string) $module);
+        $overview_fields = ['symbol', 'exchange', 'icb2_name', 'eps', 'eps_1y_pct', 'dt_1y_pct', 'bien_ln_gop', 'bien_ln_rong', 'roe', 'de_ratio', 'pe_ratio', 'pb_ratio', 'ev_ebitda', 'tcbs_khuyen_nghi', 'co_tuc_pct', 'tc_rating', 'so_huu_nn_pct', 'tien_mat_rong_von_hoa', 'tien_mat_rong_tong_tai_san', 'loi_nhuan_4_quy_gan_nhat', 'tang_truong_dt_quy_gan_nhat', 'tang_truong_dt_quy_gan_nhi', 'tang_truong_ln_quy_gan_nhat', 'tang_truong_ln_quy_gan_nhi'];
+        $signals_fields = array_keys($this->get_frontend_signal_labels());
+
+        if ($module === 'signals') {
+            $fields = $signals_fields;
+        } elseif ($module === 'overview') {
+            $fields = $overview_fields;
+        } else {
+            $fields = array_values(array_unique(array_merge($signals_fields, $overview_fields)));
+        }
+
+        return [
+            'fields' => $fields,
+            'styles' => [
+                'label_color' => '#4b5563',
+                'value_color' => '#111827',
+                'item_background' => '#f9fafb',
+                'container_background' => '#ffffff',
+                'container_border' => '#e5e7eb',
+                'item_height' => 56,
+                'label_font_size' => 12,
+                'value_font_size' => 14,
+                'value_rules' => [],
+            ],
+        ];
+    }
+
+    private function get_frontend_signal_labels() {
+        global $wpdb;
+
+        $labels = [
+            'xay_nen' => 'Nền giá',
+            'xay_nen_count_30' => 'Số phiên đi nền trong 30 phiên',
+            'nen_type' => 'Dạng nền',
+            'pha_nen' => 'Tín hiệu phá nền',
+            'tang_gia_kem_vol' => 'Tăng giá kèm Vol',
+            'smart_money' => 'Tín hiệu smart',
+            'rs_exchange_status' => 'Trạng thái sức mạnh giá',
+            'rs_exchange_recommend' => 'Gợi ý sức mạnh giá',
+            'rs_recommend_status' => 'Gợi ý trạng thái sức mạnh giá',
+        ];
+
+        if (!isset($wpdb) || !($wpdb instanceof wpdb)) {
+            return $labels;
+        }
+
+        $table = $wpdb->prefix . 'lcni_ohlc_latest';
+        $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+        if ($exists !== $table) {
+            return $labels;
+        }
+
+        $columns = $wpdb->get_col("SHOW COLUMNS FROM {$table}");
+        if (!is_array($columns) || empty($columns)) {
+            return $labels;
+        }
+
+        foreach ($columns as $column) {
+            $field = sanitize_key((string) $column);
+            if ($field === '' || isset($labels[$field])) {
+                continue;
+            }
+
+            $labels[$field] = ucwords(str_replace('_', ' ', $field));
+        }
+
+        return $this->apply_global_column_labels($labels);
+    }
+
+    private function apply_global_column_labels($labels) {
+        $mapped_labels = is_array($labels) ? $labels : [];
+        $configured = get_option('lcni_column_labels', []);
+
+        if (!is_array($configured)) {
+            return $mapped_labels;
+        }
+
+        foreach ($configured as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $data_key = sanitize_key($item['data_key'] ?? '');
+            $label = sanitize_text_field((string) ($item['label'] ?? ''));
+
+            if ($data_key === '' || $label === '') {
+                continue;
+            }
+
+            if (array_key_exists($data_key, $mapped_labels)) {
+                $mapped_labels[$data_key] = $label;
+            }
+        }
+
+        return $mapped_labels;
+    }
+
+    private function render_frontend_settings_section() {
+        $signals_labels = $this->get_frontend_signal_labels();
+        $overview_labels = [
+            'symbol' => 'Mã', 'exchange' => 'Sàn', 'icb2_name' => 'Ngành ICB 2', 'eps' => 'EPS', 'eps_1y_pct' => '% EPS 1 năm', 'dt_1y_pct' => '% DT 1 năm', 'bien_ln_gop' => 'Biên LN gộp', 'bien_ln_rong' => 'Biên LN ròng', 'roe' => 'ROE', 'de_ratio' => 'D/E', 'pe_ratio' => 'P/E', 'pb_ratio' => 'P/B', 'ev_ebitda' => 'EV/EBITDA', 'tcbs_khuyen_nghi' => 'TCBS khuyến nghị', 'co_tuc_pct' => '% Cổ tức', 'tc_rating' => 'TC Rating', 'so_huu_nn_pct' => '% Sở hữu NN', 'tien_mat_rong_von_hoa' => 'Tiền mặt ròng/Vốn hóa', 'tien_mat_rong_tong_tai_san' => 'Tiền mặt ròng/Tổng tài sản', 'loi_nhuan_4_quy_gan_nhat' => 'Lợi nhuận 4 quý gần nhất', 'tang_truong_dt_quy_gan_nhat' => 'Tăng trưởng DT quý gần nhất', 'tang_truong_dt_quy_gan_nhi' => 'Tăng trưởng DT quý gần nhì', 'tang_truong_ln_quy_gan_nhat' => 'Tăng trưởng LN quý gần nhất', 'tang_truong_ln_quy_gan_nhi' => 'Tăng trưởng LN quý gần nhì'
+        ];
+        $signals = $this->sanitize_frontend_module_settings(array_merge(['__module' => 'signals'], (array) get_option('lcni_frontend_settings_signals', ['allowed_fields' => array_keys($signals_labels)])));
+        $overview = $this->sanitize_frontend_module_settings(array_merge(['__module' => 'overview'], (array) get_option('lcni_frontend_settings_overview', ['allowed_fields' => array_keys($overview_labels)])));
+        $chart = $this->sanitize_frontend_chart_settings(get_option('lcni_frontend_settings_chart', []));
+        $watchlist = $this->sanitize_watchlist_settings(get_option('lcni_watchlist_settings', []));
+        $chart_analyst = LCNI_Chart_Analyst_Settings::sanitize_config(get_option('lcni_chart_analyst_settings', []));
+        ?>
+        <style>
+            .lcni-sub-tab-nav { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; border-bottom: 1px solid #dcdcde; }
+            .lcni-sub-tab-nav button { border: 1px solid #dcdcde; border-bottom: 0; background: #f6f7f7; padding: 6px 10px; cursor: pointer; }
+            .lcni-sub-tab-nav button.active { background: #fff; font-weight: 600; }
+            .lcni-sub-tab-content { display: none; }
+            .lcni-sub-tab-content.active { display: block; }
+            .lcni-front-form { max-width: 980px; background:#fff; border:1px solid #dcdcde; padding:12px; }
+            .lcni-front-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px,1fr)); gap:8px 16px; margin:12px 0;}
+            .lcni-watchlist-pane { display: none; }
+            .lcni-watchlist-pane.active { display: block; }
+        </style>
+        <p>Cấu hình hiển thị frontend cho từng shortcode module.</p>
+        <div class="lcni-sub-tab-nav" id="lcni-front-sub-tabs">
+            <button type="button" data-sub-tab="lcni-tab-frontend-signals">LCNi Signals</button>
+            <button type="button" data-sub-tab="lcni-tab-frontend-recommend-signal">Recommend Signal</button>
+            <button type="button" data-sub-tab="lcni-tab-frontend-overview">Stock Overview</button>
+            <button type="button" data-sub-tab="lcni-tab-frontend-chart">Stock Chart</button>
+            <button type="button" data-sub-tab="lcni-tab-frontend-chart-analyst">Chart Analyst</button>
+            <button type="button" data-sub-tab="lcni-tab-frontend-chart-builder">Chart Builder</button>
+            <button type="button" data-sub-tab="lcni-tab-frontend-watchlist">Watchlist</button>
+            <button type="button" data-sub-tab="lcni-tab-frontend-filter">Filter</button>
+            <button type="button" data-sub-tab="lcni-tab-frontend-table-config" style="font-weight:600;color:#2271b1;">🗂 Bảng dữ liệu</button>
+            <button type="button" data-sub-tab="lcni-tab-frontend-style-config">Style Config</button>
+            <button type="button" data-sub-tab="lcni-tab-frontend-column-label">Column Label</button>
+            <button type="button" data-sub-tab="lcni-tab-frontend-data-format">Data Format</button>
+            <button type="button" data-sub-tab="lcni-tab-frontend-member">Member</button>
+        </div>
+        <?php $this->render_frontend_module_form('signals', 'lcni-tab-frontend-signals', $signals_labels, $signals); ?>
+        <?php $this->render_frontend_recommend_signal_form('recommend_signal', 'lcni-tab-frontend-recommend-signal'); ?>
+        <?php $this->render_frontend_module_form('overview', 'lcni-tab-frontend-overview', $overview_labels, $overview); ?>
+        <?php $this->render_frontend_chart_form('chart', 'lcni-tab-frontend-chart', $chart); ?>
+        <?php $this->render_frontend_chart_analyst_form('chart_analyst', 'lcni-tab-frontend-chart-analyst', $chart_analyst); ?>
+        <?php $this->render_frontend_chart_builder_form('chart_builder', 'lcni-tab-frontend-chart-builder'); ?>
+        <?php $this->render_frontend_watchlist_form('watchlist', 'lcni-tab-frontend-watchlist', $watchlist); ?>
+        <?php LCNI_FilterAdmin::render_filter_form('lcni-tab-frontend-filter'); ?>
+        <?php $this->render_table_config_form('lcni-tab-frontend-table-config'); ?>
+        <?php $this->render_frontend_button_style_form('button_style', 'lcni-tab-frontend-style-config'); ?>
+        <?php $this->render_global_column_label_form('column_labels', 'lcni-tab-frontend-column-label', $watchlist); ?>
+        <?php $this->render_frontend_data_format_form('data_format', 'lcni-tab-frontend-data-format'); ?>
+        <div id="lcni-tab-frontend-member" class="lcni-sub-tab-content">
+            <div class="lcni-front-form">
+                <h3>Member Frontend Settings</h3>
+                <p>Cấu hình shortcode Member được tách riêng trong tab Member.</p>
+                <p><a class="button button-primary" href="<?php echo esc_url(admin_url('admin.php?page=lcni-member-settings')); ?>">Mở tab Member</a></p>
+            </div>
+        </div>
+        <script>
+            (function() {
+                const nav = document.getElementById('lcni-front-sub-tabs');
+                if (!nav) { return; }
+                const buttons = nav.querySelectorAll('button[data-sub-tab]');
+                const panes = document.querySelectorAll('.lcni-sub-tab-content');
+                const current = (new URLSearchParams(window.location.search).get('tab')) || 'lcni-tab-frontend-signals';
+                const activate = function(tabId){
+                    buttons.forEach((btn) => btn.classList.toggle('active', btn.getAttribute('data-sub-tab') === tabId));
+                    panes.forEach((pane) => {
+                        if (pane.id === 'lcni-tab-frontend-signals' || pane.id === 'lcni-tab-frontend-recommend-signal' || pane.id === 'lcni-tab-frontend-overview' || pane.id === 'lcni-tab-frontend-chart' || pane.id === 'lcni-tab-frontend-chart-analyst' || pane.id === 'lcni-tab-frontend-chart-builder' || pane.id === 'lcni-tab-frontend-watchlist' || pane.id === 'lcni-tab-frontend-filter' || pane.id === 'lcni-tab-frontend-table-config' || pane.id === 'lcni-tab-frontend-style-config' || pane.id === 'lcni-tab-frontend-column-label' || pane.id === 'lcni-tab-frontend-data-format' || pane.id === 'lcni-tab-frontend-member') {
+                            pane.classList.toggle('active', pane.id === tabId);
+                        }
+                    });
+                };
+                buttons.forEach((btn) => btn.addEventListener('click', () => activate(btn.getAttribute('data-sub-tab'))));
+                const validTabs = ['lcni-tab-frontend-signals', 'lcni-tab-frontend-recommend-signal', 'lcni-tab-frontend-overview', 'lcni-tab-frontend-chart', 'lcni-tab-frontend-chart-analyst', 'lcni-tab-frontend-chart-builder', 'lcni-tab-frontend-watchlist', 'lcni-tab-frontend-filter', 'lcni-tab-frontend-table-config', 'lcni-tab-frontend-style-config', 'lcni-tab-frontend-column-label', 'lcni-tab-frontend-data-format', 'lcni-tab-frontend-member'];
+                activate(validTabs.includes(current) ? current : 'lcni-tab-frontend-signals');
+
+                const bindFrontendModuleSortable = (form) => {
+                    if (!form) return;
+                    const selectedList = form.querySelector('[data-frontend-module-selected-list]');
+                    const hiddenOrder = form.querySelector('[data-frontend-module-selected-order]');
+                    if (!selectedList || !hiddenOrder) return;
+
+                    const labelMap = {};
+                    form.querySelectorAll('[data-frontend-module-checkbox]').forEach((checkbox) => {
+                        const parentLabel = checkbox.closest('label');
+                        labelMap[checkbox.value] = parentLabel ? parentLabel.textContent.trim() : checkbox.value;
+                    });
+
+                    const syncOrder = () => {
+                        hiddenOrder.value = Array.from(selectedList.querySelectorAll('[data-frontend-module-selected-field]'))
+                            .map((node) => node.getAttribute('data-frontend-module-selected-field') || '')
+                            .filter(Boolean)
+                            .join(',');
+                    };
+
+                    const bindDnD = () => {
+                        let dragging = null;
+                        selectedList.querySelectorAll('[data-frontend-module-selected-field]').forEach((item) => {
+                            item.addEventListener('dragstart', () => { dragging = item; item.style.opacity = '0.5'; });
+                            item.addEventListener('dragend', () => { item.style.opacity = ''; dragging = null; syncOrder(); });
+                            item.addEventListener('dragover', (event) => event.preventDefault());
+                            item.addEventListener('drop', (event) => {
+                                event.preventDefault();
+                                if (!dragging || dragging === item) return;
+                                const rect = item.getBoundingClientRect();
+                                const after = (event.clientY - rect.top) > rect.height / 2;
+                                if (after) item.after(dragging); else item.before(dragging);
+                                syncOrder();
+                            });
+                        });
+                    };
+
+                    const rebuildSelected = () => {
+                        const checked = Array.from(form.querySelectorAll('[data-frontend-module-checkbox]:checked')).map((node) => node.value);
+                        const existing = Array.from(selectedList.querySelectorAll('[data-frontend-module-selected-field]')).map((node) => node.getAttribute('data-frontend-module-selected-field') || '');
+                        const next = existing.filter((field) => checked.includes(field));
+                        checked.forEach((field) => { if (!next.includes(field)) next.push(field); });
+                        selectedList.innerHTML = next.map((field) => `<li draggable="true" data-frontend-module-selected-field="${field}" style="cursor:move;padding:4px 0;">${labelMap[field] || field}</li>`).join('');
+                        bindDnD();
+                        syncOrder();
+                    };
+
+                    form.querySelectorAll('[data-frontend-module-checkbox]').forEach((checkbox) => checkbox.addEventListener('change', rebuildSelected));
+                    bindDnD();
+                    syncOrder();
+                };
+
+                document.querySelectorAll('form[data-frontend-module-form]').forEach(bindFrontendModuleSortable);
+            })();
+        </script>
+        <?php
+    }
+
+    public function ajax_chart_builder_fields() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'forbidden'], 403);
+        }
+
+        $source = isset($_GET['data_source']) ? sanitize_key(wp_unslash($_GET['data_source'])) : '';
+        $fields = LCNI_Chart_Builder_Repository::get_table_columns($source, true);
+        wp_send_json_success(['fields' => $fields]);
+    }
+
+    public function ajax_chart_builder_filter_values() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'forbidden'], 403);
+        }
+
+        $source = isset($_GET['data_source']) ? sanitize_key(wp_unslash($_GET['data_source'])) : '';
+        $field = isset($_GET['field']) ? sanitize_text_field((string) wp_unslash($_GET['field'])) : '';
+        $values = LCNI_Chart_Builder_Repository::get_distinct_field_values($source, $field, 120);
+        wp_send_json_success(['values' => $values]);
+    }
+
+    private function render_frontend_chart_builder_form($module, $tab_id) {
+        $charts = LCNI_Chart_Builder_Repository::list_charts();
+        $data_sources = [
+            'ohlc' => 'wp_lcni_ohlc',
+            'ohlc_latest' => 'wp_lcni_ohlc_latest',
+            'thong_ke_nganh_icb_2' => 'wp_lcni_thong_ke_nganh_icb_2',
+            'thong_ke_nganh_icb_2_toan_thi_truong' => 'wp_lcni_thong_ke_nganh_icb_2_toan_thi_truong',
+            'thong_ke_thi_truong' => 'wp_lcni_thong_ke_thi_truong',
+            'industry_return' => 'wp_lcni_industry_return',
+            'industry_index' => 'wp_lcni_industry_index',
+            'industry_metrics' => 'wp_lcni_industry_metrics',
+            'recommend_performance' => 'wp_lcni_recommend_performance',
+            'recommend_rule' => 'wp_lcni_recommend_rule',
+            'recommend_signal' => 'wp_lcni_recommend_signal',
+            'money_flow' => 'wp_lcni_money_flow',
+            'stock_stats' => 'wp_lcni_stock_stats',
+        ];
+        $chart_templates = [
+            'multi_line' => ['label' => 'Multi-line', 'axis_slots' => 1, 'series_slots' => 3],
+            'area_stack' => ['label' => 'Area Stack', 'axis_slots' => 1, 'series_slots' => 4],
+            'share_dataset' => ['label' => 'Share Dataset', 'axis_slots' => 1, 'series_slots' => 2],
+            'heatmap_matrix' => ['label' => 'Heatmap Matrix', 'axis_slots' => 2, 'series_slots' => 1],
+            'heatmap_matrix_2' => ['label' => 'HeatMap 2', 'axis_slots' => 2, 'series_slots' => 1],
+            'treemap_1' => ['label' => 'TreeMap 1', 'axis_slots' => 2, 'series_slots' => 1],
+            'market_breadth' => ['label' => 'Market Breadth', 'axis_slots' => 1, 'series_slots' => 4],
+            'rsi_zone' => ['label' => 'RSI Zone', 'axis_slots' => 1, 'series_slots' => 2],
+            'smart_money_flow' => ['label' => 'Smart Money Flow', 'axis_slots' => 1, 'series_slots' => 3],
+            'candlestick' => ['label' => 'Candlestick', 'axis_slots' => 1, 'series_slots' => 4],
+            'mini_line_sparkline' => ['label' => 'Mini Line Charts (Sparkline)', 'axis_slots' => 2, 'series_slots' => 3],
+        ];
+        ?>
+        <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
+            <style>
+                #<?php echo esc_attr($tab_id); ?> .lcni-front-form { max-width: 100%; }
+                .lcni-chart-builder-subtabs { display:flex; gap:8px; margin-bottom:12px; border-bottom:1px solid #dcdcde; }
+                .lcni-chart-builder-subtabs button { border:1px solid #dcdcde; border-bottom:0; background:#f6f7f7; padding:6px 10px; cursor:pointer; }
+                .lcni-chart-builder-subtabs button.active { background:#fff; font-weight:600; }
+                .lcni-chart-builder-pane { display:none; }
+                .lcni-chart-builder-pane.active { display:block; }
+                .lcni-chart-grid { display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px; margin-bottom:12px; }
+                .lcni-chart-column { border:1px solid #dcdcde; border-radius:4px; background:#fff; padding:12px; }
+                .lcni-chart-drop-zone { border:1px dashed #8c8f94; border-radius:4px; min-height:38px; padding:8px; margin-bottom:8px; background:#f9f9f9; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+                .lcni-chart-drop-zone.is-over { background:#e8f0fe; border-color:#2271b1; }
+                .lcni-chart-drop-zone-actions { display:flex; gap:6px; align-items:center; }
+                .lcni-chart-drop-zone-properties { border:1px solid #dcdcde; border-radius:4px; padding:8px; margin:-4px 0 10px; background:#fff; }
+                .lcni-chart-drop-zone-properties label { display:block; margin-bottom:6px; }
+                .lcni-chart-map-cols { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+                .lcni-chart-source-grid { display:grid; grid-template-rows: 20% 80%; gap:8px; height:360px; }
+                .lcni-chart-source-tables, .lcni-chart-source-fields { border:1px solid #dcdcde; border-radius:4px; padding:8px; overflow:auto; }
+                .lcni-chart-field-pill { display:inline-block; border:1px solid #dcdcde; padding:3px 8px; margin:4px 4px 0 0; border-radius:999px; background:#fff; cursor:grab; }
+                .lcni-chart-preview { border:1px solid #dcdcde; border-radius:4px; padding:8px; background:#fff; }
+                .lcni-chart-preview-canvas { width:100%; height:380px; }
+                .lcni-chart-template-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+                .lcni-chart-template-card { border:1px solid #dcdcde; border-radius:6px; padding:10px; background:#fff; }
+                .lcni-chart-library-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+                .lcni-chart-library-item { border:1px solid #dcdcde; border-radius:8px; padding:12px; background:#fff; position:relative; }
+                .lcni-filter-map-grid { display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
+                .lcni-filter-values { border:1px dashed #c3c4c7; padding:8px; border-radius:4px; max-height:160px; overflow:auto; }
+                .lcni-template-editor-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:99999; }
+                .lcni-template-editor-modal .inner { background:#fff; max-width:760px; margin:4% auto; padding:16px; border-radius:8px; }
+            </style>
+            <div class="lcni-chart-builder-subtabs" data-lcni-chart-builder-subtabs>
+                <button type="button" class="active" data-pane="builder">Chart Builder</button>
+                <button type="button" data-pane="list">List Chart</button>
+                <button type="button" data-pane="library">Thư viện Chart mẫu</button>
+            </div>
+
+            <div class="lcni-chart-builder-pane active" data-pane="builder">
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form" id="lcni-chart-builder-form">
+                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                    <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                    <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
+                    <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                    <input type="hidden" name="lcni_chart_builder[id]" id="lcni-chart-builder-id" value="0">
+                    <h3>Chart Builder</h3>
+                    <div class="lcni-chart-grid">
+                        <div class="lcni-chart-column">
+                            <p><label>Tên chart<br><input type="text" name="lcni_chart_builder[name]" id="lcni-chart-builder-name" class="regular-text" required></label></p>
+                            <p><label>Slug shortcode<br><input type="text" name="lcni_chart_builder[slug]" id="lcni-chart-builder-slug" class="regular-text" required></label></p>
+                            <input type="hidden" name="lcni_chart_builder[data_source]" id="lcni-chart-builder-source" value="thong_ke_thi_truong">
+                            <input type="hidden" name="lcni_chart_builder[chart_type]" id="lcni-chart-builder-template" value="multi_line">
+                            <p><button type="button" class="button" id="lcni-chart-template-picker-btn">Chọn chart mẫu: <span id="lcni-chart-template-picker-label">Multi-line</span></button></p>
+                            <p style="color:#646970;">Cột này chỉ giữ thông tin định danh chart. Tùy chỉnh series/axis được quản lý tại cột Axis &amp; Series mapping.</p>
+                        </div>
+                        <div class="lcni-chart-column">
+                            <h4>Axis & Series mapping (dynamic theo template)</h4>
+                            <div id="lcni-axis-series-container"></div>
+                            <div id="lcni-heatmap-color-controls" style="display:none; border:1px solid #dcdcde; border-radius:4px; padding:8px; margin-bottom:10px;">
+                                <strong>Màu HeatMap (admin)</strong>
+                                <p><label>Màu thấp <input type="color" id="lcni-heatmap-color-low" name="lcni_chart_builder[heatmap_color_low]" value="#d73027"></label></p>
+                                <p><label>Màu trung bình <input type="color" id="lcni-heatmap-color-mid" name="lcni_chart_builder[heatmap_color_mid]" value="#fee08b"></label></p>
+                                <p><label>Màu cao <input type="color" id="lcni-heatmap-color-high" name="lcni_chart_builder[heatmap_color_high]" value="#1a9850"></label></p>
+                            </div>
+                            <h4>Filter mapping</h4>
+                            <div class="lcni-filter-map-grid">
+                                <div>
+                                    <strong>Cột A: Field cần lọc</strong>
+                                    <div id="lcni-filter-container"></div>
+                                    <p><button type="button" class="button" id="lcni-chart-builder-add-filter">+ Thêm Filter</button></p>
+                                </div>
+                                <div>
+                                    <strong>Cột B: Value lọc theo field</strong>
+                                    <div id="lcni-filter-values-container"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="lcni-chart-column">
+                            <div class="lcni-chart-source-grid">
+                                <div class="lcni-chart-source-tables"><strong>Data source (20%)</strong><p style="margin-top:8px;"><select id="lcni-chart-builder-source-dup" style="width:100%;"><?php foreach ($data_sources as $k => $label) : ?><option value="<?php echo esc_attr($k); ?>"><?php echo esc_html($label); ?></option><?php endforeach; ?></select></p></div>
+                                <div class="lcni-chart-source-fields"><strong>Fields (80%)</strong><div id="lcni-chart-builder-fields-list"></div></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="lcni-chart-preview"><h4>Preview chart</h4><div id="lcni-chart-builder-preview" class="lcni-chart-preview-canvas"></div></div>
+                    <?php submit_button('Lưu Chart Builder'); ?>
+                </form>
+            </div>
+
+            <div class="lcni-chart-builder-pane" data-pane="list">
+                <h3>Danh sách chart đã tạo</h3>
+                <table class="widefat striped"><thead><tr><th>ID</th><th>Name</th><th>Slug</th><th>Shortcode</th><th>Action</th></tr></thead><tbody>
+                <?php if (empty($charts)) : ?><tr><td colspan="5">Chưa có chart.</td></tr><?php else : foreach ($charts as $chart) : ?>
+                    <tr><td><?php echo esc_html((string) $chart['id']); ?></td><td><?php echo esc_html((string) $chart['name']); ?></td><td><?php echo esc_html((string) $chart['slug']); ?></td><td><code>[lcni_chart id="<?php echo esc_attr((string) $chart['id']); ?>"]</code><br><code>[lcni_chart slug="<?php echo esc_attr((string) $chart['slug']); ?>"]</code></td><td><button type="button" class="button lcni-edit-chart" data-chart='<?php echo esc_attr(wp_json_encode($chart)); ?>'>Chỉnh sửa</button></td></tr>
+                <?php endforeach; endif; ?>
+                </tbody></table>
+            </div>
+
+            <div class="lcni-chart-builder-pane" data-pane="library">
+                <h3>Thư viện Chart mẫu</h3>
+                <div class="lcni-chart-library-grid">
+                    <?php foreach ($chart_templates as $template_key => $template_data) : ?>
+                        <div class="lcni-chart-library-item" data-library-template="<?php echo esc_attr($template_key); ?>">
+                            <button type="button" class="button" style="position:absolute;top:8px;right:8px;" data-edit-template>Tùy chỉnh</button>
+                            <h4><?php echo esc_html($template_data['label']); ?></h4>
+                            <div style="height:88px;border:1px solid #dcdcde;border-radius:4px;background:#f6f7f7;display:flex;align-items:center;justify-content:center;" data-template-thumb><?php echo esc_html($template_data['label']); ?></div>
+                            <p>Template <?php echo esc_html($template_data['label']); ?> có thể tùy chỉnh tên/ảnh/code mẫu.</p>
+                            <button type="button" class="button button-primary lcni-load-template" data-template="<?php echo esc_attr($template_key); ?>">Dùng mẫu</button>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+
+            <div class="lcni-template-editor-modal" id="lcni-template-editor-modal">
+                <div class="inner">
+                    <h3>Tùy chỉnh chart mẫu</h3>
+                    <p><label>Tên template<br><input type="text" id="lcni-template-editor-name" class="regular-text"></label></p>
+                    <p><label>Ảnh đại diện<br><input type="file" id="lcni-template-editor-image" accept="image/*"></label></p>
+                    <p><label>Code chính liên quan<br><textarea id="lcni-template-editor-code" rows="8" style="width:100%;"></textarea></label></p>
+                    <p><button type="button" class="button button-primary" id="lcni-template-editor-save">Lưu</button> <button type="button" class="button" id="lcni-template-editor-close">Đóng</button></p>
+                </div>
+            </div>
+
+            <div id="lcni-chart-template-picker" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:99999;">
+                <div style="background:#fff;max-width:860px;margin:5% auto;padding:16px;border-radius:8px;">
+                    <h3 style="margin-top:0;">Chọn Chart mẫu</h3>
+                    <div class="lcni-chart-template-grid">
+                        <?php foreach ($chart_templates as $template_key => $template_data) : ?>
+                            <div class="lcni-chart-template-card" data-template-key="<?php echo esc_attr($template_key); ?>" data-template-label="<?php echo esc_attr($template_data['label']); ?>">
+                                <div style="height:84px;border:1px solid #dcdcde;border-radius:4px;display:flex;align-items:center;justify-content:center;background:#f6f7f7;"><?php echo esc_html($template_data['label']); ?></div>
+                                <p><strong><?php echo esc_html($template_data['label']); ?></strong></p>
+                                <button type="button" class="button button-primary lcni-select-chart-template">Chọn</button>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                    <p><button type="button" class="button" id="lcni-chart-template-picker-close">Đóng</button></p>
+                </div>
+            </div>
+
+            <script src="<?php echo esc_url(LCNI_URL . 'assets/vendor/echarts.min.js'); ?>"></script>
+            <script>
+                (function () {
+                    const tabRoot = document.getElementById('<?php echo esc_js($tab_id); ?>');
+                    if (!tabRoot) return;
+                    const templateMeta = <?php echo wp_json_encode($chart_templates); ?>;
+                    const paneButtons = tabRoot.querySelectorAll('[data-lcni-chart-builder-subtabs] button');
+                    const panes = tabRoot.querySelectorAll('.lcni-chart-builder-pane');
+                    paneButtons.forEach((button) => button.addEventListener('click', () => {
+                        paneButtons.forEach((b) => b.classList.toggle('active', b === button));
+                        panes.forEach((p) => p.classList.toggle('active', p.getAttribute('data-pane') === button.getAttribute('data-pane')));
+                        if (button.getAttribute('data-pane') === 'builder') {
+                            requestAnimationFrame(() => {
+                                renderPreview();
+                                if (previewChart) previewChart.resize();
+                            });
+                        }
+                    }));
+
+                    const source = tabRoot.querySelector('#lcni-chart-builder-source');
+                    const sourceDup = tabRoot.querySelector('#lcni-chart-builder-source-dup');
+                    const fieldsList = tabRoot.querySelector('#lcni-chart-builder-fields-list');
+                    const axisSeriesContainer = tabRoot.querySelector('#lcni-axis-series-container');
+                    const filterContainer = tabRoot.querySelector('#lcni-filter-container');
+                    const filterValuesContainer = tabRoot.querySelector('#lcni-filter-values-container');
+                    const addFilterBtn = tabRoot.querySelector('#lcni-chart-builder-add-filter');
+                    const templateInput = tabRoot.querySelector('#lcni-chart-builder-template');
+                    const templateLabel = tabRoot.querySelector('#lcni-chart-template-picker-label');
+                    const previewNode = tabRoot.querySelector('#lcni-chart-builder-preview');
+                    const templatePickerBtn = tabRoot.querySelector('#lcni-chart-template-picker-btn');
+                    const templatePicker = tabRoot.querySelector('#lcni-chart-template-picker');
+                    const heatmapColorControls = tabRoot.querySelector('#lcni-heatmap-color-controls');
+                    const heatmapColorLow = tabRoot.querySelector('#lcni-heatmap-color-low');
+                    const heatmapColorMid = tabRoot.querySelector('#lcni-heatmap-color-mid');
+                    const heatmapColorHigh = tabRoot.querySelector('#lcni-heatmap-color-high');
+                    let previewChart = null;
+
+                    const mkDropZone = (target, text, clearCb, options = {}) => {
+                        const zone = document.createElement('div');
+                        zone.className = 'lcni-chart-drop-zone';
+                        zone.setAttribute('data-target', target);
+                        zone.innerHTML = '<span data-text>' + text + '</span><span class="lcni-chart-drop-zone-actions"><button type="button" class="button-link" data-properties>Tùy chỉnh thuộc tính</button><button type="button" class="button-link" data-clear>xóa</button></span>';
+                        const isSeriesZone = options.type === 'series';
+                        const panelId = isSeriesZone ? ('lcni-series-properties-' + (options.index || 0)) : '';
+                        let propertiesPanel = null;
+                        if (isSeriesZone) {
+                            propertiesPanel = document.createElement('div');
+                            propertiesPanel.className = 'lcni-chart-drop-zone-properties';
+                            propertiesPanel.id = panelId;
+                            propertiesPanel.style.display = 'none';
+                            propertiesPanel.innerHTML = '<label>Kiểu hiển thị <select data-prop="series-type"><option value="line">Line</option><option value="bar">Bar</option></select></label>' +
+                                '<label>Màu series <input type="color" data-prop="series-color" value="#5470c6"></label>' +
+                                '<label>Line style <select data-prop="series-line-style"><option value="solid">Solid</option><option value="dashed">Dashed</option></select></label>' +
+                                '<label><input type="checkbox" data-prop="series-stack" checked> Stack (template hỗ trợ)</label>' +
+                                '<label><input type="checkbox" data-prop="series-area" checked> Area (template hỗ trợ)</label>' +
+                                '<label><input type="checkbox" data-prop="series-label-show"> Hiển thị label</label>';
+                            zone.insertAdjacentElement('afterend', propertiesPanel);
+
+                            const propertyButton = zone.querySelector('[data-properties]');
+                            if (propertyButton) {
+                                propertyButton.addEventListener('click', () => {
+                                    propertiesPanel.style.display = propertiesPanel.style.display === 'none' ? 'block' : 'none';
+                                });
+                            }
+
+                            propertiesPanel.querySelectorAll('[data-prop]').forEach((control) => {
+                                control.addEventListener('input', () => { if (typeof options.onPropertiesChange === 'function') options.onPropertiesChange(propertiesPanel, options.index || 0); renderPreview(); });
+                                control.addEventListener('change', () => { if (typeof options.onPropertiesChange === 'function') options.onPropertiesChange(propertiesPanel, options.index || 0); renderPreview(); });
+                            });
+                        }
+                        zone.querySelector('[data-clear]').addEventListener('click', () => { if (typeof clearCb === 'function') clearCb(zone); renderPreview(); });
+                        zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('is-over'); });
+                        zone.addEventListener('dragleave', () => zone.classList.remove('is-over'));
+                        zone.addEventListener('drop', (e) => {
+                            e.preventDefault(); zone.classList.remove('is-over');
+                            const field = e.dataTransfer.getData('text/plain'); if (!field) return;
+                            const t = zone.getAttribute('data-target') || '';
+                            if (t === 'xAxis') {
+                                let input = tabRoot.querySelector('#lcni-chart-builder-xaxis');
+                                if (!input) { input = document.createElement('input'); input.type = 'hidden'; input.id = 'lcni-chart-builder-xaxis'; input.name = 'lcni_chart_builder[xAxis]'; tabRoot.querySelector('#lcni-chart-builder-form').appendChild(input); }
+                                input.value = field; zone.querySelector('[data-text]').textContent = 'Axis X: ' + field;
+                            } else if (t === 'yAxis') {
+                                let input = tabRoot.querySelector('#lcni-chart-builder-yaxis');
+                                if (!input) { input = document.createElement('input'); input.type = 'hidden'; input.id = 'lcni-chart-builder-yaxis'; input.name = 'lcni_chart_builder[yAxis]'; tabRoot.querySelector('#lcni-chart-builder-form').appendChild(input); }
+                                input.value = field; zone.querySelector('[data-text]').textContent = 'Axis Y: ' + field;
+                            } else if (t.indexOf('series-') === 0) {
+                                const idx = Number(t.replace('series-', ''));
+                                const f = tabRoot.querySelectorAll('.lcni-chart-builder-series-field')[idx];
+                                if (f) { f.value = field; zone.querySelector('[data-text]').textContent = 'Series ' + (idx + 1) + ': ' + field; }
+                            } else if (t.indexOf('filter-') === 0) {
+                                const idx = Number(t.replace('filter-', ''));
+                                const f = tabRoot.querySelectorAll('.lcni-chart-builder-filter-field')[idx];
+                                if (f) { f.value = field; zone.querySelector('[data-text]').textContent = 'Filter ' + (idx + 1) + ': ' + field; loadFilterValues(idx, field); }
+                            }
+                            renderPreview();
+                        });
+                        if (!isSeriesZone) { const propertyButton = zone.querySelector('[data-properties]'); if (propertyButton) propertyButton.style.display = 'none'; }
+                        return zone;
+                    };
+
+
+                    const syncSeriesPropertiesFromPanel = (panel, index) => {
+                        if (!panel) return;
+                        const typeInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-type')[index];
+                        const colorInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-color')[index];
+                        const lineStyleInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-line-style')[index];
+                        const stackInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-stack')[index];
+                        const areaInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-area')[index];
+                        const labelInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-label-show')[index];
+                        const typeControl = panel.querySelector('[data-prop="series-type"]');
+                        const colorControl = panel.querySelector('[data-prop="series-color"]');
+                        const lineStyleControl = panel.querySelector('[data-prop="series-line-style"]');
+                        const stackControl = panel.querySelector('[data-prop="series-stack"]');
+                        const areaControl = panel.querySelector('[data-prop="series-area"]');
+                        const labelControl = panel.querySelector('[data-prop="series-label-show"]');
+                        if (typeInput && typeControl) typeInput.value = typeControl.value || 'line';
+                        if (colorInput && colorControl) colorInput.value = colorControl.value || '#5470c6';
+                        if (lineStyleInput && lineStyleControl) lineStyleInput.value = lineStyleControl.value || 'solid';
+                        if (stackInput && stackControl) stackInput.value = stackControl.checked ? '1' : '0';
+                        if (areaInput && areaControl) areaInput.value = areaControl.checked ? '1' : '0';
+                        if (labelInput && labelControl) labelInput.value = labelControl.checked ? '1' : '0';
+                    };
+
+                    const applySeriesPropertiesToPanel = (panel, index) => {
+                        if (!panel) return;
+                        const typeInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-type')[index];
+                        const colorInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-color')[index];
+                        const lineStyleInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-line-style')[index];
+                        const stackInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-stack')[index];
+                        const areaInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-area')[index];
+                        const labelInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-label-show')[index];
+                        const typeControl = panel.querySelector('[data-prop="series-type"]');
+                        const colorControl = panel.querySelector('[data-prop="series-color"]');
+                        const lineStyleControl = panel.querySelector('[data-prop="series-line-style"]');
+                        const stackControl = panel.querySelector('[data-prop="series-stack"]');
+                        const areaControl = panel.querySelector('[data-prop="series-area"]');
+                        const labelControl = panel.querySelector('[data-prop="series-label-show"]');
+                        if (typeControl) typeControl.value = (typeInput && typeInput.value) ? typeInput.value : 'line';
+                        if (colorControl) colorControl.value = (colorInput && colorInput.value) ? colorInput.value : '#5470c6';
+                        if (lineStyleControl) lineStyleControl.value = (lineStyleInput && lineStyleInput.value) ? lineStyleInput.value : 'solid';
+                        if (stackControl) stackControl.checked = !(stackInput && stackInput.value === '0');
+                        if (areaControl) areaControl.checked = !(areaInput && areaInput.value === '0');
+                        if (labelControl) labelControl.checked = !!(labelInput && labelInput.value === '1');
+                    };
+
+                    const applyTemplateProperties = () => {
+                        const key = templateInput ? templateInput.value : 'multi_line';
+                        const areaTemplates = ['area_stack'];
+                        const dashedTemplates = ['share_dataset', 'market_breadth', 'smart_money_flow'];
+                        const isHeatmapTemplate = key === 'heatmap_matrix' || key === 'heatmap_matrix_2';
+                        if (heatmapColorControls) {
+                            heatmapColorControls.style.display = isHeatmapTemplate ? 'block' : 'none';
+                        }
+                        tabRoot.querySelectorAll('.lcni-chart-drop-zone-properties').forEach((panel, index) => {
+                            const stackControl = panel.querySelector('[data-prop="series-stack"]');
+                            const areaControl = panel.querySelector('[data-prop="series-area"]');
+                            const lineStyleControl = panel.querySelector('[data-prop="series-line-style"]');
+                            if (stackControl) stackControl.checked = areaTemplates.indexOf(key) > -1;
+                            if (areaControl) areaControl.checked = areaTemplates.indexOf(key) > -1;
+                            if (lineStyleControl) lineStyleControl.value = dashedTemplates.indexOf(key) > -1 && (index % 2 === 1) ? 'dashed' : 'solid';
+                            syncSeriesPropertiesFromPanel(panel, index);
+                        });
+                    };
+
+                    const renderAxisSeriesSlots = () => {
+                        const key = templateInput ? templateInput.value : 'multi_line';
+                        const meta = templateMeta[key] || { axis_slots: 1, series_slots: 2 };
+                        axisSeriesContainer.innerHTML = '';
+                        axisSeriesContainer.appendChild(mkDropZone('xAxis', 'Axis X (drag field vào đây)', (zone) => { const i = tabRoot.querySelector('#lcni-chart-builder-xaxis'); if (i) i.value = ''; zone.querySelector('[data-text]').textContent = 'Axis X (drag field vào đây)'; }));
+                        if (Number(meta.axis_slots || 1) > 1) {
+                            axisSeriesContainer.appendChild(mkDropZone('yAxis', 'Axis Y (drag field vào đây)', (zone) => { const i = tabRoot.querySelector('#lcni-chart-builder-yaxis'); if (i) i.value = ''; zone.querySelector('[data-text]').textContent = 'Axis Y (drag field vào đây)'; }));
+                            let yInput = tabRoot.querySelector('#lcni-chart-builder-yaxis');
+                            if (!yInput) { yInput = document.createElement('input'); yInput.type = 'hidden'; yInput.id = 'lcni-chart-builder-yaxis'; yInput.name = 'lcni_chart_builder[yAxis]'; tabRoot.querySelector('#lcni-chart-builder-form').appendChild(yInput); }
+                        }
+                        for (let i = 0; i < meta.series_slots; i += 1) {
+                            axisSeriesContainer.appendChild(mkDropZone('series-' + i, 'Series ' + (i + 1) + ' (drag field)', (zone) => { const f = tabRoot.querySelectorAll('.lcni-chart-builder-series-field')[i]; if (f) f.value = ''; zone.querySelector('[data-text]').textContent = 'Series ' + (i + 1) + ' (drag field)'; }, { type: 'series', index: i, onPropertiesChange: syncSeriesPropertiesFromPanel }));
+                            ['series_name','series_field','series_type','series_color','series_stack','series_area','series_label_show','series_line_style'].forEach((n) => {
+                                const input = document.createElement('input');
+                                input.type = 'hidden'; input.name = 'lcni_chart_builder[' + n + '][]';
+                                if (n === 'series_name') input.value = 'Series ' + (i + 1);
+                                if (n === 'series_field') input.className = 'lcni-chart-builder-series-field';
+                                if (n === 'series_color') { input.className = 'lcni-chart-builder-series-color'; input.value = '#5470c6'; }
+                                if (n === 'series_type') { input.value = 'line'; input.className = 'lcni-chart-builder-series-type'; }
+                                if (n === 'series_stack') { input.value = '1'; input.className = 'lcni-chart-builder-series-stack'; }
+                                if (n === 'series_area') { input.value = '1'; input.className = 'lcni-chart-builder-series-area'; }
+                                if (n === 'series_label_show') { input.value = '0'; input.className = 'lcni-chart-builder-series-label-show'; }
+                                if (n === 'series_line_style') { input.className = 'lcni-chart-builder-series-line-style'; input.value = 'solid'; }
+                                axisSeriesContainer.appendChild(input);
+                            });
+                        }
+                    };
+
+                    const sanitizeFilterFieldKey = (value) => String(value || '').replace(/[^a-zA-Z0-9_.]/g, '');
+                    const escapeHtml = (value) => String(value || '').replace(/[&<>\"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[ch] || ch));
+
+                    const syncFilterValueInputs = (field, values) => {
+                        const safeField = sanitizeFilterFieldKey(field);
+                        if (!safeField) return;
+                        tabRoot.querySelectorAll('input[data-filter-value-field="' + safeField + '"]').forEach((node) => node.remove());
+                        values.forEach((value) => {
+                            const input = document.createElement('input');
+                            input.type = 'hidden';
+                            input.name = 'lcni_chart_builder[filter_value][' + safeField + '][]';
+                            input.value = value;
+                            input.setAttribute('data-filter-value-field', safeField);
+                            tabRoot.querySelector('#lcni-chart-builder-form').appendChild(input);
+                        });
+                    };
+
+                    const addFilterSlot = (value = '', selectedValues = []) => {
+                        const idx = tabRoot.querySelectorAll('.lcni-chart-builder-filter-field').length;
+                        const zone = mkDropZone('filter-' + idx, 'Filter ' + (idx + 1) + ' (drag field)', (z) => { const f = tabRoot.querySelectorAll('.lcni-chart-builder-filter-field')[idx]; if (f) { syncFilterValueInputs(f.value || '', []); f.value = ''; } z.querySelector('[data-text]').textContent = 'Filter ' + (idx + 1) + ' (drag field)'; filterValuesContainer.innerHTML = ''; });
+                        filterContainer.appendChild(zone);
+                        const input = document.createElement('input'); input.type = 'hidden'; input.name = 'lcni_chart_builder[filter_field][]'; input.className = 'lcni-chart-builder-filter-field'; input.value = value; filterContainer.appendChild(input);
+                        if (value) {
+                            syncFilterValueInputs(value, selectedValues);
+                            zone.querySelector('[data-text]').textContent = 'Filter ' + (idx + 1) + ': ' + value;
+                            loadFilterValues(idx, value);
+                        }
+                    };
+
+                    const loadFilterValues = (idx, field) => {
+                        const src = source ? source.value : ''; if (!src || !field) return;
+                        const endpoint = '<?php echo esc_js(admin_url('admin-ajax.php')); ?>?action=lcni_chart_builder_filter_values&data_source=' + encodeURIComponent(src) + '&field=' + encodeURIComponent(field);
+                        fetch(endpoint, { credentials: 'same-origin' }).then((r) => r.json()).then((json) => {
+                            const values = (json && json.success && json.data && Array.isArray(json.data.values)) ? json.data.values : [];
+                            const safeField = sanitizeFilterFieldKey(field);
+                            const selected = new Set(Array.from(tabRoot.querySelectorAll('input[data-filter-value-field="' + safeField + '"]')).map((node) => node.value));
+                            if (!selected.size) values.forEach((value) => selected.add(String(value)));
+                            syncFilterValueInputs(field, Array.from(selected));
+                            filterValuesContainer.innerHTML = '<div class="lcni-filter-values" data-filter-values-field="' + escapeHtml(safeField) + '"><strong>Filter ' + (idx + 1) + ': ' + escapeHtml(field) + '</strong>' + values.map((v) => { const checked = selected.has(String(v)) ? ' checked' : ''; return '<label style="display:block;"><input type="checkbox" value="' + escapeHtml(v) + '"' + checked + '> ' + escapeHtml(v) + '</label>'; }).join('') + '</div>';
+                            const box = filterValuesContainer.querySelector('[data-filter-values-field="' + safeField + '"]');
+                            if (!box) return;
+                            box.addEventListener('change', (event) => {
+                                const target = event.target;
+                                if (!target || target.tagName !== 'INPUT' || target.type !== 'checkbox') return;
+                                const nextValues = Array.from(box.querySelectorAll('input[type="checkbox"]:checked')).map((node) => node.value);
+                                syncFilterValueInputs(field, nextValues);
+                            });
+                        });
+                    };
+
+                    const reloadFields = () => {
+                        const src = source ? source.value : (sourceDup ? sourceDup.value : ''); if (!src) return;
+                        fetch('<?php echo esc_js(admin_url('admin-ajax.php')); ?>?action=lcni_chart_builder_fields&data_source=' + encodeURIComponent(src), { credentials: 'same-origin' })
+                            .then((r) => r.json()).then((json) => {
+                                const fields = (json && json.success && json.data && Array.isArray(json.data.fields)) ? json.data.fields : [];
+                                fieldsList.innerHTML = fields.map((f) => '<span class="lcni-chart-field-pill" draggable="true" data-field="' + f + '">' + f + '</span>').join('');
+                                fieldsList.querySelectorAll('[data-field]').forEach((pill) => pill.addEventListener('dragstart', (e) => e.dataTransfer.setData('text/plain', pill.getAttribute('data-field') || '')));
+                            });
+                    };
+
+                    const getPreviewRows = () => {
+                        const x = (tabRoot.querySelector('#lcni-chart-builder-xaxis') || {}).value || '';
+                        const y = (tabRoot.querySelector('#lcni-chart-builder-yaxis') || {}).value || '';
+                        const seriesFields = Array.from(tabRoot.querySelectorAll('.lcni-chart-builder-series-field')).map((i) => i.value).filter(Boolean);
+                        if (!x || !seriesFields.length) return {x:'', y:'', rows:[], seriesFields:[]};
+                        const rows = [];
+                        for (let i = 0; i < 40; i += 1) {
+                            const r = {};
+                            r[x] = String(i + 1);
+                            if (y) {
+                                r[y] = 'Group ' + ((i % 6) + 1);
+                            }
+                            seriesFields.forEach((f) => { r[f] = Math.round((Math.sin((i + 1) / 4) + 1.2) * 80 + (Math.random() * 15)); });
+                            rows.push(r);
+                        }
+                        return {x, y, rows, seriesFields};
+                    };
+
+                    const renderPreview = () => {
+                        if (!previewNode || !window.echarts) return;
+                        if (!previewChart) previewChart = window.echarts.init(previewNode);
+                        const p = getPreviewRows(); if (!p.x || !p.seriesFields.length) { previewChart.clear(); return; }
+                        const templateKey = (templateInput || {}).value || 'multi_line';
+                        const heatmapColors = [
+                            (heatmapColorLow && heatmapColorLow.value) || '#d73027',
+                            (heatmapColorMid && heatmapColorMid.value) || '#fee08b',
+                            (heatmapColorHigh && heatmapColorHigh.value) || '#1a9850',
+                        ];
+
+                        if (templateKey === 'mini_line_sparkline') {
+                            const xField = p.x;
+                            const miniChartField = p.y;
+                            const xAxisValues = Array.from(new Set(p.rows.map((row) => String(row[xField] || '')).filter(Boolean)));
+                            const miniChartKeys = miniChartField
+                                ? Array.from(new Set(p.rows.map((row) => String(row[miniChartField] || '')).filter(Boolean)))
+                                : ['Mini Chart'];
+
+                            const chartPerRow = 4;
+                            const columnGap = 3;
+                            const rowGap = 6;
+                            const rowCount = Math.ceil(miniChartKeys.length / chartPerRow);
+                            const topArea = 4;
+                            const bottomArea = 16;
+                            const availableHeight = 100 - topArea - bottomArea - rowGap * Math.max(0, rowCount - 1);
+                            const availableWidth = 100 - columnGap * Math.max(0, chartPerRow - 1);
+                            const cellHeight = availableHeight / Math.max(1, rowCount);
+                            const cellWidth = availableWidth / chartPerRow;
+
+                            const option = {
+                                tooltip: {
+                                    trigger: 'axis',
+                                    formatter: (params) => {
+                                        if (!Array.isArray(params) || !params.length) return '';
+                                        const axisLabel = params[0].axisValueLabel || params[0].axisValue || '';
+                                        const lines = [axisLabel, params[0].seriesName.split(' · ')[0]];
+                                        params.forEach((item) => {
+                                            const label = item.seriesName.split(' · ').slice(1).join(' · ') || item.seriesName;
+                                            lines.push(item.marker + label + ': ' + Number(item.data || 0));
+                                        });
+                                        return lines.join('<br/>');
+                                    },
+                                },
+                                grid: [],
+                                xAxis: [],
+                                yAxis: [],
+                                series: [],
+                                graphic: [],
+                            };
+
+                            miniChartKeys.forEach((chartKey, chartIndex) => {
+                                const col = chartIndex % chartPerRow;
+                                const row = Math.floor(chartIndex / chartPerRow);
+                                const gridId = 'mini-' + chartIndex;
+                                const left = col * (cellWidth + columnGap);
+                                const top = topArea + row * (cellHeight + rowGap);
+                                const isBottomRow = row === rowCount - 1;
+                                const rowsByXAxis = {};
+
+                                p.rows.forEach((rowData) => {
+                                    const currentChartKey = miniChartField ? String(rowData[miniChartField] || '') : 'Mini Chart';
+                                    const axisValue = String(rowData[xField] || '');
+                                    if (currentChartKey === chartKey && axisValue) {
+                                        rowsByXAxis[axisValue] = rowData;
+                                    }
+                                });
+
+                                option.grid.push({ id: gridId, left: left + '%', top: top + '%', width: cellWidth + '%', height: cellHeight + '%', containLabel: false });
+                                option.xAxis.push({ type: 'category', id: gridId, gridId: gridId, data: xAxisValues, axisTick: { show: false }, axisLine: { show: isBottomRow }, axisLabel: { show: isBottomRow, fontSize: 10 }, splitLine: { show: false } });
+                                option.yAxis.push({ id: gridId, gridId: gridId, type: 'value', scale: true, axisLabel: { show: false }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false } });
+                                option.graphic.push({ type: 'text', left: (left + 0.4) + '%', top: (top - 1.8) + '%', style: { text: chartKey, fontSize: 11, fontWeight: 600, fill: '#4b5563' } });
+
+                                p.seriesFields.forEach((field, seriesIndex) => {
+                                    const colorInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-color')[seriesIndex];
+                                    const lineStyleInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-line-style')[seriesIndex];
+                                    const lineColor = (colorInput && colorInput.value) || ['#5470c6', '#91cc75', '#ee6666'][seriesIndex % 3];
+                                    option.series.push({
+                                        name: chartKey + ' · ' + field,
+                                        xAxisId: gridId,
+                                        yAxisId: gridId,
+                                        type: 'line',
+                                        smooth: true,
+                                        symbol: 'none',
+                                        connectNulls: true,
+                                        lineStyle: { lineWidth: 1.2, type: (lineStyleInput && lineStyleInput.value) || 'solid', color: lineColor },
+                                        itemStyle: { color: lineColor },
+                                        data: xAxisValues.map((axisValue) => {
+                                            const rowData = rowsByXAxis[axisValue] || null;
+                                            const numeric = rowData ? Number(rowData[field]) : null;
+                                            return Number.isFinite(numeric) ? numeric : null;
+                                        }),
+                                    });
+                                });
+                            });
+
+                            previewChart.setOption(option, true);
+                            previewChart.resize();
+                            return;
+                        }
+
+                        if (templateKey === 'heatmap_matrix' || templateKey === 'heatmap_matrix_2') {
+                            const xData = Array.from(new Set(p.rows.map((r) => String(r[p.x] || '')))).filter(Boolean);
+                            const yField = p.y || '';
+                            const yData = yField
+                                ? Array.from(new Set(p.rows.map((r) => String(r[yField] || '')))).filter(Boolean)
+                                : ['Group 1'];
+                            const valueField = p.seriesFields[0] || '';
+                            const data = p.rows.map((row) => {
+                                const xIndex = xData.indexOf(String(row[p.x] || ''));
+                                const yValue = yField ? String(row[yField] || '') : 'Group 1';
+                                const yIndex = yData.indexOf(yValue);
+                                return [xIndex, yIndex, Number(row[valueField] || 0)];
+                            }).filter((item) => item[0] > -1 && item[1] > -1);
+
+                            previewChart.setOption({
+                                tooltip: {
+                                    position: 'top',
+                                    formatter: (params) => {
+                                        const xv = xData[params.data[0]] || '';
+                                        const yv = yData[params.data[1]] || '';
+                                        return yv + '<br/>' + xv + ': ' + params.data[2] + '%';
+                                    },
+                                },
+                                grid: { height: '80%', top: '10%' },
+                                xAxis: { type: 'category', data: xData, splitArea: { show: true } },
+                                yAxis: { type: 'category', data: yData, splitArea: { show: true } },
+                                dataZoom: [{ type: 'slider', xAxisIndex: 0, bottom: 48 }, { type: 'inside', xAxisIndex: 0 }],
+                                visualMap: {
+                                    min: 0,
+                                    max: 30,
+                                    calculable: true,
+                                    orient: 'horizontal',
+                                    left: 'center',
+                                    bottom: '2%',
+                                    inRange: { color: heatmapColors },
+                                },
+                                series: [{
+                                    name: '%GTGD',
+                                    type: 'heatmap',
+                                    data,
+                                    label: { show: true, formatter: '{c}%' },
+                                    emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.5)' } },
+                                }],
+                            }, true);
+                            previewChart.resize();
+                            return;
+                        }
+
+                        if (templateKey === 'treemap_1') {
+                            const parentField = p.x;
+                            const childField = p.y;
+                            const valueField = p.seriesFields[0] || '';
+                            const grouped = {};
+
+                            p.rows.forEach((row) => {
+                                const parent = String(row[parentField] || 'N/A');
+                                const child = childField ? String(row[childField] || 'N/A') : '';
+                                const value = Number(row[valueField] || 0);
+                                if (!grouped[parent]) {
+                                    grouped[parent] = {};
+                                }
+                                const childKey = child || parent;
+                                grouped[parent][childKey] = (grouped[parent][childKey] || 0) + value;
+                            });
+
+                            const treeData = Object.keys(grouped).map((parent) => ({
+                                name: parent,
+                                children: Object.keys(grouped[parent]).map((child) => ({ name: child, value: grouped[parent][child] })),
+                            }));
+
+                            previewChart.setOption({
+                                tooltip: { formatter: (info) => info.name + ': ' + Number(info.value || 0) },
+                                series: [{
+                                    type: 'treemap',
+                                    leafDepth: 1,
+                                    roam: false,
+                                    breadcrumb: { show: true },
+                                    label: { show: true, formatter: '{b}' },
+                                    upperLabel: { show: true, height: 24 },
+                                    data: treeData,
+                                }],
+                            }, true);
+                            previewChart.resize();
+                            return;
+                        }
+
+                        previewChart.setOption({ tooltip:{trigger:'axis'}, legend:{top:'bottom', data:p.seriesFields}, xAxis:{type:'category', data:p.rows.map((r)=>r[p.x])}, yAxis:{type:'value'}, dataZoom:[{type:'slider',xAxisIndex:0,bottom:32,height:16},{type:'inside',xAxisIndex:0}], series:p.seriesFields.map((f,index)=>{ const typeInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-type')[index]; const colorInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-color')[index]; const lineStyleInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-line-style')[index]; const stackInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-stack')[index]; const areaInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-area')[index]; const labelInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-label-show')[index]; const type = (typeInput && typeInput.value) || 'line'; const color = (colorInput && colorInput.value) || '#5470c6'; return {name:f,type,smooth:type!=='bar',stack:stackInput&&stackInput.value==='1'?'Total':undefined,areaStyle:areaInput&&areaInput.value==='1'?{}:undefined,label:labelInput&&labelInput.value==='1'?{show:true,position:'top'}:undefined,lineStyle:{type:(lineStyleInput&&lineStyleInput.value)||'solid',color:color},itemStyle:{color:color},data:p.rows.map((r)=>Number(r[f]||0))};}) }, true);
+                        previewChart.resize();
+                    };
+
+                                        if (sourceDup) sourceDup.addEventListener('change', () => { if (source) source.value = sourceDup.value; reloadFields(); renderPreview(); });
+                    if (source) source.addEventListener('change', () => { if (sourceDup) sourceDup.value = source.value; reloadFields(); renderPreview(); });
+                    if (addFilterBtn) addFilterBtn.addEventListener('click', () => addFilterSlot(''));
+
+                    if (templatePickerBtn && templatePicker) templatePickerBtn.addEventListener('click', () => { templatePicker.style.display = 'block'; });
+                    const templatePickerClose = tabRoot.querySelector('#lcni-chart-template-picker-close');
+                    if (templatePickerClose && templatePicker) templatePickerClose.addEventListener('click', () => { templatePicker.style.display = 'none'; });
+                    tabRoot.querySelectorAll('.lcni-select-chart-template').forEach((button) => button.addEventListener('click', () => {
+                        const card = button.closest('[data-template-key]'); if (!card || !templateInput) return;
+                        templateInput.value = card.getAttribute('data-template-key') || 'multi_line';
+                        if (templateLabel) templateLabel.textContent = card.getAttribute('data-template-label') || templateInput.value;
+                        renderAxisSeriesSlots(); applyTemplateProperties(); renderPreview(); if (templatePicker) templatePicker.style.display = 'none';
+                    }));
+
+                    tabRoot.querySelectorAll('.lcni-load-template').forEach((button) => button.addEventListener('click', () => {
+                        if (templateInput) templateInput.value = button.getAttribute('data-template') || 'multi_line';
+                        if (templateLabel) templateLabel.textContent = (templateMeta[templateInput.value] || {}).label || templateInput.value;
+                        renderAxisSeriesSlots(); applyTemplateProperties(); renderPreview(); paneButtons[0].click();
+                    }));
+
+                    const editor = tabRoot.querySelector('#lcni-template-editor-modal');
+                    let editingCard = null;
+                    tabRoot.querySelectorAll('[data-edit-template]').forEach((button) => button.addEventListener('click', () => {
+                        editingCard = button.closest('[data-library-template]'); if (!editingCard || !editor) return;
+                        editor.style.display = 'block';
+                        tabRoot.querySelector('#lcni-template-editor-name').value = (editingCard.querySelector('h4') || {}).textContent || '';
+                        tabRoot.querySelector('#lcni-template-editor-code').value = editingCard.getAttribute('data-template-code') || '';
+                    }));
+                    const editorClose = tabRoot.querySelector('#lcni-template-editor-close');
+                    if (editorClose && editor) editorClose.addEventListener('click', () => { editor.style.display = 'none'; editingCard = null; });
+                    const editorSave = tabRoot.querySelector('#lcni-template-editor-save');
+                    if (editorSave && editor) editorSave.addEventListener('click', () => {
+                        if (!editingCard) return;
+                        const name = tabRoot.querySelector('#lcni-template-editor-name').value || '';
+                        const code = tabRoot.querySelector('#lcni-template-editor-code').value || '';
+                        const imageInput = tabRoot.querySelector('#lcni-template-editor-image');
+                        const h4 = editingCard.querySelector('h4'); if (h4 && name) h4.textContent = name;
+                        editingCard.setAttribute('data-template-code', code);
+                        if (imageInput && imageInput.files && imageInput.files[0]) {
+                            const reader = new FileReader();
+                            reader.onload = () => { const thumb = editingCard.querySelector('[data-template-thumb]'); if (thumb) thumb.innerHTML = '<img src="' + reader.result + '" alt="template" style="max-width:100%;max-height:100%;object-fit:cover;">'; };
+                            reader.readAsDataURL(imageInput.files[0]);
+                        }
+                        editor.style.display = 'none';
+                    });
+
+                    tabRoot.querySelectorAll('.lcni-edit-chart').forEach((button) => button.addEventListener('click', () => {
+                        let chart = null; let config = {};
+                        try { chart = JSON.parse(button.getAttribute('data-chart') || '{}'); } catch (e) { chart = null; }
+                        try { config = JSON.parse((chart && chart.config_json) || '{}'); } catch (e) { config = {}; }
+                        if (!chart) return;
+                        tabRoot.querySelector('#lcni-chart-builder-id').value = chart.id || 0;
+                        tabRoot.querySelector('#lcni-chart-builder-name').value = chart.name || '';
+                        tabRoot.querySelector('#lcni-chart-builder-slug').value = chart.slug || '';
+                        if (source) source.value = chart.data_source || 'thong_ke_thi_truong';
+                        if (sourceDup) sourceDup.value = source.value;
+                        if (templateInput) templateInput.value = chart.chart_type || 'multi_line';
+                        if (templateLabel) templateLabel.textContent = (templateMeta[templateInput.value] || {}).label || templateInput.value;
+                        renderAxisSeriesSlots();
+                        const xInput = tabRoot.querySelector('#lcni-chart-builder-xaxis'); if (xInput) xInput.value = config.xAxis || '';
+                        const xZone = axisSeriesContainer.querySelector('[data-target="xAxis"] [data-text]'); if (xZone && xInput && xInput.value) xZone.textContent = 'Axis X: ' + xInput.value;
+                        const yInput = tabRoot.querySelector('#lcni-chart-builder-yaxis'); if (yInput) yInput.value = config.yAxis || '';
+                        const yZone = axisSeriesContainer.querySelector('[data-target="yAxis"] [data-text]'); if (yZone && yInput && yInput.value) yZone.textContent = 'Axis Y: ' + yInput.value;
+                        if (heatmapColorLow) heatmapColorLow.value = ((config.heatmap || {}).low) || '#d73027';
+                        if (heatmapColorMid) heatmapColorMid.value = ((config.heatmap || {}).mid) || '#fee08b';
+                        if (heatmapColorHigh) heatmapColorHigh.value = ((config.heatmap || {}).high) || '#1a9850';
+                        const savedSeries = Array.isArray(config.series) ? config.series : [];
+                        savedSeries.forEach((it, idx) => {
+                            const f = tabRoot.querySelectorAll('.lcni-chart-builder-series-field')[idx];
+                            const zoneText = axisSeriesContainer.querySelector('[data-target="series-' + idx + '"] [data-text]');
+                            if (f && it && it.field) { f.value = it.field; if (zoneText) zoneText.textContent = 'Series ' + (idx + 1) + ': ' + it.field; }
+                            const lineStyleInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-line-style')[idx];
+                            const typeInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-type')[idx];
+                            const colorInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-color')[idx];
+                            const stackInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-stack')[idx];
+                            const areaInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-area')[idx];
+                            const labelInput = tabRoot.querySelectorAll('.lcni-chart-builder-series-label-show')[idx];
+                            if (lineStyleInput && it && it.line_style) lineStyleInput.value = it.line_style;
+                            if (typeInput && it && it.type) typeInput.value = it.type;
+                            if (colorInput && it && it.color) colorInput.value = it.color;
+                            if (stackInput) stackInput.value = it && it.stack ? '1' : '0';
+                            if (areaInput) areaInput.value = it && it.area ? '1' : '0';
+                            if (labelInput) labelInput.value = it && it.label_show ? '1' : '0';
+                            const panel = tabRoot.querySelector('#lcni-series-properties-' + idx);
+                            applySeriesPropertiesToPanel(panel, idx);
+                        });
+                        filterContainer.innerHTML = ''; filterValuesContainer.innerHTML = '';
+                        tabRoot.querySelectorAll('input[data-filter-value-field]').forEach((node) => node.remove());
+                        const filterValueMap = (config && typeof config.filter_values === 'object' && config.filter_values)
+                            ? config.filter_values
+                            : {};
+                        (Array.isArray(config.filters) ? config.filters : ['']).forEach((f) => {
+                            const selectedValues = Array.isArray(filterValueMap[f]) ? filterValueMap[f] : [];
+                            addFilterSlot(f || '', selectedValues);
+                        });
+                        reloadFields(); renderPreview(); paneButtons[0].click();
+                    }));
+
+                    renderAxisSeriesSlots();
+                    applyTemplateProperties();
+                    addFilterSlot('');
+                    reloadFields();
+                    [heatmapColorLow, heatmapColorMid, heatmapColorHigh].forEach((input) => {
+                        if (!input) return;
+                        input.addEventListener('input', () => renderPreview());
+                        input.addEventListener('change', () => renderPreview());
+                    });
+                    renderPreview();
+                    window.addEventListener('resize', () => { if (previewChart) previewChart.resize(); });
+                })();
+            </script>
+        </div>
+        <?php
+    }
+
+    private function render_table_config_form( string $tab_id ): void {
+        $cfg = LCNI_Table_Config::get_config();
+        $d   = LCNI_Table_Config::DEFAULTS;
+        ?>
+        <div id="<?php echo esc_attr( $tab_id ); ?>" class="lcni-sub-tab-content">
+        <form method="post" action="<?php echo esc_url( admin_url( 'admin.php?page=lcni-settings' ) ); ?>">
+            <?php wp_nonce_field( 'lcni_admin_actions', 'lcni_action_nonce' ); ?>
+            <input type="hidden" name="lcni_admin_action"   value="save_frontend_settings">
+            <input type="hidden" name="lcni_frontend_module" value="table_config">
+            <input type="hidden" name="lcni_redirect_tab"   value="frontend_settings">
+
+            <h2 style="margin-top:0">🗂 Cấu hình bảng dữ liệu</h2>
+            <p style="color:#6b7280;margin-top:-8px;margin-bottom:24px">
+                Áp dụng cho tất cả bảng: Filter, Watchlist, Signal/Recommend, Portfolio.<br>
+                Sticky header và sticky cột đầu được điều khiển tại đây — không cần chỉnh từng module.
+            </p>
+
+            <style>
+            .lcni-tc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:20px;margin-bottom:24px}
+            .lcni-tc-card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:18px}
+            .lcni-tc-card h3{margin:0 0 14px;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#6b7280}
+            .lcni-tc-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+            .lcni-tc-row label{font-size:13px;color:#374151;white-space:nowrap}
+            .lcni-tc-row input[type=number]{width:70px;padding:4px 6px;border:1px solid #d1d5db;border-radius:5px;font-size:13px}
+            .lcni-tc-row input[type=color]{width:44px;height:30px;padding:2px;border:1px solid #d1d5db;border-radius:5px;cursor:pointer}
+            .lcni-tc-preview{background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin-bottom:24px;overflow:auto}
+            .lcni-tc-preview table{border-collapse:separate;border-spacing:0;min-width:400px;width:100%}
+            .lcni-tc-sticky-toggle{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:13px;color:#374151}
+            .lcni-tc-sticky-toggle input[type=checkbox]{width:16px;height:16px;cursor:pointer}
+            </style>
+
+            <div class="lcni-tc-grid">
+
+                <!-- Header -->
+                <div class="lcni-tc-card">
+                    <h3>Header</h3>
+                    <div class="lcni-tc-row">
+                        <label>Màu nền</label>
+                        <input type="color" name="lcni_table_config[header_bg]"
+                               value="<?php echo esc_attr( $cfg['header_bg'] ); ?>">
+                    </div>
+                    <div class="lcni-tc-row">
+                        <label>Màu chữ</label>
+                        <input type="color" name="lcni_table_config[header_color]"
+                               value="<?php echo esc_attr( $cfg['header_color'] ); ?>">
+                    </div>
+                    <div class="lcni-tc-row">
+                        <label>Font size (px)</label>
+                        <input type="number" name="lcni_table_config[header_font_size]"
+                               min="9" max="30" value="<?php echo (int) $cfg['header_font_size']; ?>">
+                    </div>
+                    <div class="lcni-tc-row">
+                        <label>Chiều cao row (px)</label>
+                        <input type="number" name="lcni_table_config[header_height]"
+                               min="24" max="80" value="<?php echo (int) $cfg['header_height']; ?>">
+                    </div>
+                </div>
+
+                <!-- Row / Cell -->
+                <div class="lcni-tc-card">
+                    <h3>Row / Cell</h3>
+                    <div class="lcni-tc-row">
+                        <label>Màu nền</label>
+                        <input type="color" name="lcni_table_config[row_bg]"
+                               value="<?php echo esc_attr( $cfg['row_bg'] ); ?>">
+                    </div>
+                    <div class="lcni-tc-row">
+                        <label>Màu chữ</label>
+                        <input type="color" name="lcni_table_config[row_color]"
+                               value="<?php echo esc_attr( $cfg['row_color'] ); ?>">
+                    </div>
+                    <div class="lcni-tc-row">
+                        <label>Font size (px)</label>
+                        <input type="number" name="lcni_table_config[row_font_size]"
+                               min="9" max="30" value="<?php echo (int) $cfg['row_font_size']; ?>">
+                    </div>
+                    <div class="lcni-tc-row">
+                        <label>Chiều cao row (px)</label>
+                        <input type="number" name="lcni_table_config[row_height]"
+                               min="20" max="80" value="<?php echo (int) $cfg['row_height']; ?>">
+                    </div>
+                </div>
+
+                <!-- Divider & Hover -->
+                <div class="lcni-tc-card">
+                    <h3>Phân tách & Hover</h3>
+                    <div class="lcni-tc-row">
+                        <label>Màu đường kẻ</label>
+                        <input type="color" name="lcni_table_config[row_divider_color]"
+                               value="<?php echo esc_attr( $cfg['row_divider_color'] ); ?>">
+                    </div>
+                    <div class="lcni-tc-row">
+                        <label>Độ dày đường kẻ (px)</label>
+                        <input type="number" name="lcni_table_config[row_divider_width]"
+                               min="0" max="6" value="<?php echo (int) $cfg['row_divider_width']; ?>">
+                    </div>
+                    <div class="lcni-tc-row">
+                        <label>Màu hover row</label>
+                        <input type="color" name="lcni_table_config[row_hover_bg]"
+                               value="<?php echo esc_attr( $cfg['row_hover_bg'] ); ?>">
+                    </div>
+                </div>
+
+                <!-- Scroll & Sticky -->
+                <div class="lcni-tc-card">
+                    <h3>Scroll & Sticky</h3>
+                    <div class="lcni-tc-row">
+                        <label>Chiều cao cuộn tối đa (%vh)</label>
+                        <input type="number" name="lcni_table_config[max_height]"
+                               min="20" max="100" value="<?php echo (int) $cfg['max_height']; ?>">
+                    </div>
+                    <div class="lcni-tc-sticky-toggle" style="margin-top:12px">
+                        <input type="checkbox" id="lcni_tc_sticky_header"
+                               name="lcni_table_config[table_sticky_header]" value="1"
+                               <?php checked( $cfg['table_sticky_header'] ); ?>>
+                        <label for="lcni_tc_sticky_header">Sticky header (tất cả bảng)</label>
+                    </div>
+                    <div class="lcni-tc-sticky-toggle">
+                        <input type="checkbox" id="lcni_tc_sticky_col"
+                               name="lcni_table_config[table_sticky_first_column]" value="1"
+                               <?php checked( $cfg['table_sticky_first_column'] ); ?>>
+                        <label for="lcni_tc_sticky_col">Sticky cột đầu (tất cả bảng)</label>
+                    </div>
+                </div>
+
+            </div><!-- .lcni-tc-grid -->
+
+            <!-- Live preview -->
+            <h3 style="font-size:13px;font-weight:600;margin-bottom:8px">Preview (cập nhật khi thay đổi)</h3>
+            <div class="lcni-tc-preview" id="lcni-tc-preview-wrap">
+                <table id="lcni-tc-preview-table">
+                    <thead>
+                        <tr>
+                            <th style="padding:0 10px;text-align:left">Mã CP</th>
+                            <th style="padding:0 10px;text-align:right">Giá</th>
+                            <th style="padding:0 10px;text-align:right">%T-1</th>
+                            <th style="padding:0 10px;text-align:left">Trạng thái</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr id="lcni-tc-row-normal">
+                            <td style="padding:0 10px;font-weight:600">NVL</td>
+                            <td style="padding:0 10px;text-align:right">13.90</td>
+                            <td style="padding:0 10px;text-align:right;color:#16a34a">+6.92%</td>
+                            <td style="padding:0 10px">Tăng giá kèm Vol</td>
+                        </tr>
+                        <tr id="lcni-tc-row-hover" style="background:var(--lcni-row-hover-bg,#eef2ff)">
+                            <td style="padding:0 10px;font-weight:600">VCI</td>
+                            <td style="padding:0 10px;text-align:right">45.20</td>
+                            <td style="padding:0 10px;text-align:right;color:#dc2626">-1.30%</td>
+                            <td style="padding:0 10px">← hover</td>
+                        </tr>
+                        <tr id="lcni-tc-row-normal2">
+                            <td style="padding:0 10px;font-weight:600">HPG</td>
+                            <td style="padding:0 10px;text-align:right">26.50</td>
+                            <td style="padding:0 10px;text-align:right;color:#6b7280">0.00%</td>
+                            <td style="padding:0 10px">Trung tính</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <script>
+            (function(){
+                const form   = document.currentScript.closest('form');
+                const table  = document.getElementById('lcni-tc-preview-table');
+                const hoverRow = document.getElementById('lcni-tc-row-hover');
+                if (!form || !table) return;
+
+                function v(name) {
+                    const el = form.querySelector('[name="lcni_table_config['+name+']"]');
+                    return el ? el.value : '';
+                }
+                function px(name) { return v(name) + 'px'; }
+                function checked(name) {
+                    const el = form.querySelector('[name="lcni_table_config['+name+']"]');
+                    return el && el.checked;
+                }
+
+                function applyPreview() {
+                    const ths = table.querySelectorAll('th');
+                    ths.forEach(th => {
+                        th.style.background  = v('header_bg');
+                        th.style.color       = v('header_color');
+                        th.style.fontSize    = px('header_font_size');
+                        th.style.height      = px('header_height');
+                        th.style.borderBottom = px('row_divider_width') + ' solid ' + v('row_divider_color');
+                    });
+                    const tds = table.querySelectorAll('td');
+                    tds.forEach(td => {
+                        td.style.fontSize    = px('row_font_size');
+                        td.style.height      = px('row_height');
+                        td.style.borderBottom = px('row_divider_width') + ' solid ' + v('row_divider_color');
+                    });
+                    // Normal rows bg
+                    ['lcni-tc-row-normal','lcni-tc-row-normal2'].forEach(id => {
+                        const row = document.getElementById(id);
+                        if (row) {
+                            row.style.background = v('row_bg');
+                            row.querySelectorAll('td').forEach(td => {
+                                td.style.background = v('row_bg');
+                                td.style.color = v('row_color');
+                            });
+                        }
+                    });
+                    // Hover row
+                    if (hoverRow) {
+                        hoverRow.style.background = v('row_hover_bg');
+                        hoverRow.querySelectorAll('td').forEach(td => {
+                            td.style.background = v('row_hover_bg');
+                            td.style.color = v('row_color');
+                        });
+                    }
+                }
+
+                form.querySelectorAll('[name^="lcni_table_config"]').forEach(el => {
+                    el.addEventListener('input', applyPreview);
+                    el.addEventListener('change', applyPreview);
+                });
+                applyPreview();
+            })();
+            </script>
+
+            <p>
+                <button type="submit" class="button button-primary">💾 Lưu cấu hình bảng</button>
+                <button type="button" class="button" style="margin-left:8px"
+                    onclick="if(confirm('Reset về mặc định?')){
+                        const f=this.closest('form');
+                        const d=<?php echo wp_json_encode( LCNI_Table_Config::DEFAULTS ); ?>;
+                        Object.entries(d).forEach(([k,v])=>{
+                            const el=f.querySelector('[name=\"lcni_table_config[\'+k+\']\"]');
+                            if(el){
+                                if(el.type==='checkbox') el.checked=!!v;
+                                else el.value=v;
+                                el.dispatchEvent(new Event('input'));
+                            }
+                        });
+                    }">↺ Reset mặc định</button>
+            </p>
+        </form>
+        </div>
+        <?php
+    }
+
+    private function render_frontend_data_format_form($module, $tab_id) {
+        $settings = LCNI_Data_Format_Settings::get_settings();
+        $option_key = LCNI_Data_Format_Settings::OPTION_KEY;
+        $multiply_100_fields = LCNI_Data_Format_Settings::get_multiply_100_fields();
+        $already_percent_fields = LCNI_Data_Format_Settings::get_already_percent_fields();
+        $module_scope_labels = LCNI_Data_Format_Settings::get_module_scope_labels();
+        ?>
+        <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
+                <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                <h3>Data Format</h3>
+                <p><label><input type="checkbox" name="<?php echo esc_attr($option_key); ?>[use_intl]" value="1" <?php checked(!empty($settings['use_intl'])); ?>> Use Intl.NumberFormat</label></p>
+                <p><label>Locale <select name="<?php echo esc_attr($option_key); ?>[locale]"><option value="vi-VN" <?php selected($settings['locale'], 'vi-VN'); ?>>vi-VN</option><option value="en-US" <?php selected($settings['locale'], 'en-US'); ?>>en-US</option></select></label></p>
+                <p><label><input type="checkbox" name="<?php echo esc_attr($option_key); ?>[compact_numbers]" value="1" <?php checked(!empty($settings['compact_numbers'])); ?>> Use compact numbers</label></p>
+                <p><label>Compact threshold <input type="number" min="0" step="1" name="<?php echo esc_attr($option_key); ?>[compact_threshold]" value="<?php echo esc_attr((string) $settings['compact_threshold']); ?>"></label></p>
+                <h4>Decimals</h4>
+                <?php foreach ((array) ($settings['decimals'] ?? []) as $type => $precision) : ?>
+                    <p><label><?php echo esc_html(ucfirst(str_replace('_', ' ', (string) $type))); ?> <input type="number" min="0" max="8" step="1" name="<?php echo esc_attr($option_key); ?>[decimals][<?php echo esc_attr((string) $type); ?>]" value="<?php echo esc_attr((string) $precision); ?>"></label></p>
+                <?php endforeach; ?>
+
+                <h4>Percent Normalization</h4>
+                <fieldset style="border:1px solid #dcdcde;padding:12px;margin:0 0 12px;">
+                    <legend><strong>Fields require *100</strong></legend>
+                    <?php foreach ($multiply_100_fields as $field_key) : ?>
+                        <p>
+                            <label>
+                                <input type="checkbox" name="<?php echo esc_attr($option_key); ?>[percent_normalization][multiply_100_fields][]" value="<?php echo esc_attr($field_key); ?>" <?php checked(in_array($field_key, (array) ($settings['percent_normalization']['multiply_100_fields'] ?? []), true)); ?>>
+                                <?php echo esc_html($field_key); ?>
+                            </label>
+                        </p>
+                    <?php endforeach; ?>
+                </fieldset>
+
+                <fieldset style="border:1px solid #dcdcde;padding:12px;margin:0 0 12px;">
+                    <legend><strong>Already percent (NO *100)</strong></legend>
+                    <?php foreach ($already_percent_fields as $field_key) : ?>
+                        <p>
+                            <label>
+                                <input type="checkbox" name="<?php echo esc_attr($option_key); ?>[percent_normalization][already_percent_fields][]" value="<?php echo esc_attr($field_key); ?>" <?php checked(in_array($field_key, (array) ($settings['percent_normalization']['already_percent_fields'] ?? []), true)); ?>>
+                                <?php echo esc_html($field_key); ?>
+                            </label>
+                        </p>
+                    <?php endforeach; ?>
+                </fieldset>
+
+                <h4>Module Scope</h4>
+                <fieldset style="border:1px solid #dcdcde;padding:12px;margin:0 0 12px;">
+                    <?php foreach ($module_scope_labels as $module_key => $module_label) : ?>
+                        <p>
+                            <label>
+                                <input type="checkbox" name="<?php echo esc_attr($option_key); ?>[module_scope][<?php echo esc_attr($module_key); ?>]" value="1" <?php checked(!empty($settings['module_scope'][$module_key])); ?>>
+                                <?php echo esc_html($module_label); ?>
+                            </label>
+                        </p>
+                    <?php endforeach; ?>
+                </fieldset>
+                <?php submit_button('Save Data Format'); ?>
+            </form>
+        </div>
+        <?php
+    }
+
+    public function sanitize_button_style_config($input) {
+        return LCNI_Button_Style_Config::sanitize_config($input);
+    }
+
+    private function render_frontend_button_style_form($module, $tab_id) {
+        $settings = LCNI_Button_Style_Config::get_config();
+        $button_keys = LCNI_Button_Style_Config::get_button_keys();
+        $table_keys = LCNI_Button_Style_Config::get_table_button_keys();
+        $outside_override_keys = LCNI_Button_Style_Config::get_outside_override_button_keys();
+        $shared_all = isset($settings['__shared_all']) && is_array($settings['__shared_all']) ? $settings['__shared_all'] : [];
+        $shared_table = isset($settings['__shared_table']) && is_array($settings['__shared_table']) ? $settings['__shared_table'] : [];
+        $shared_outside = isset($settings['__shared_outside']) && is_array($settings['__shared_outside']) ? $settings['__shared_outside'] : [];
+        $watchlist_settings = $this->sanitize_watchlist_settings(get_option('lcni_watchlist_settings', []));
+        $watchlist_styles = isset($watchlist_settings['styles']) && is_array($watchlist_settings['styles']) ? $watchlist_settings['styles'] : [];
+        $cell_rules = get_option('lcni_global_cell_color_rules', $watchlist_settings['value_color_rules'] ?? []);
+        $cell_rules = is_array($cell_rules) ? array_values($cell_rules) : [];
+        $cell_to_cell_rules = get_option('lcni_cell_to_cell_color_rules', []);
+        $cell_to_cell_rules = is_array($cell_to_cell_rules) ? $cell_to_cell_rules : [];
+        $rule_rows = max(5, count($cell_rules));
+        $filter_style = LCNI_FilterAdmin::sanitize_style(get_option('lcni_filter_style_config', get_option('lcni_filter_style', [])));
+        $service = new LCNI_WatchlistService(new LCNI_WatchlistRepository());
+        $all_columns = $service->get_all_columns();
+        ?>
+        <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
+                <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                <input type="hidden" name="lcni_global_rules_json" id="lcni-global-rules-json" value="">
+                <input type="hidden" name="lcni_cell_to_cell_rules_json" id="lcni-cell-to-cell-rules-json" value="">
+
+                <h3>Button</h3>
+                <p>Toàn bộ nút dùng chung màu nền, màu chữ và hover. Nút trong bảng dùng chung chiều cao/cỡ chữ riêng.</p>
+                <fieldset style="border:1px solid #dcdcde;padding:12px;margin:0 0 12px;">
+                    <legend><strong>Shared color (all buttons)</strong></legend>
+                    <p><label>background_color <input type="color" name="lcni_button_style_config[__shared_all][background_color]" value="<?php echo esc_attr((string) ($shared_all['background_color'] ?? "#2563eb")); ?>"></label></p>
+                    <p><label>text_color <input type="color" name="lcni_button_style_config[__shared_all][text_color]" value="<?php echo esc_attr((string) ($shared_all['text_color'] ?? "#ffffff")); ?>"></label></p>
+                    <p><label>hover_background_color <input type="color" name="lcni_button_style_config[__shared_all][hover_background_color]" value="<?php echo esc_attr((string) ($shared_all['hover_background_color'] ?? "#1d4ed8")); ?>"></label></p>
+                    <p><label>hover_text_color <input type="color" name="lcni_button_style_config[__shared_all][hover_text_color]" value="<?php echo esc_attr((string) ($shared_all['hover_text_color'] ?? "#ffffff")); ?>"></label></p>
+                </fieldset>
+                <fieldset style="border:1px solid #dcdcde;padding:12px;margin:0 0 12px;">
+                    <legend><strong>Trong bảng</strong></legend>
+                    <p><label>height <input type="text" name="lcni_button_style_config[__shared_table][height]" value="<?php echo esc_attr((string) ($shared_table['height'] ?? "36px")); ?>"></label></p>
+                    <p><label>font_size <input type="text" name="lcni_button_style_config[__shared_table][font_size]" value="<?php echo esc_attr((string) ($shared_table['font_size'] ?? "14px")); ?>"></label></p>
+                    <p><label>padding_left_right <input type="text" name="lcni_button_style_config[__shared_table][padding_left_right]" value="<?php echo esc_attr((string) ($shared_table['padding_left_right'] ?? "12px")); ?>"></label></p>
+                    <p><label>text_color <input type="color" name="lcni_button_style_config[__shared_table][text_color]" value="<?php echo esc_attr((string) ($shared_table['text_color'] ?? "#2563eb")); ?>"></label></p>
+                    <p><label>hover_text_color <input type="color" name="lcni_button_style_config[__shared_table][hover_text_color]" value="<?php echo esc_attr((string) ($shared_table['hover_text_color'] ?? "#1d4ed8")); ?>"></label></p>
+                    <p class="description">Áp dụng cho: btn_add_filter_row, btn_recommend_signal_add, btn_signal_follow_add, btn_rule_follow_add, btn_watchlist_remove_symbol, btn_watchlist_remove_symbol_row</p>
+                </fieldset>
+                <fieldset style="border:1px solid #dcdcde;padding:12px;margin:0 0 12px;">
+                    <legend><strong>Ngoài bảng</strong></legend>
+                    <p><label>height <input type="text" name="lcni_button_style_config[__shared_outside][height]" value="<?php echo esc_attr((string) ($shared_outside['height'] ?? "36px")); ?>"></label></p>
+                    <p><label>font_size <input type="text" name="lcni_button_style_config[__shared_outside][font_size]" value="<?php echo esc_attr((string) ($shared_outside['font_size'] ?? "14px")); ?>"></label></p>
+                    <p><label>padding_left_right <input type="text" name="lcni_button_style_config[__shared_outside][padding_left_right]" value="<?php echo esc_attr((string) ($shared_outside['padding_left_right'] ?? "12px")); ?>"></label></p>
+                </fieldset>
+
+                <?php foreach ($button_keys as $button_key => $button_label) : $button = $settings[$button_key] ?? []; ?>
+                    <fieldset style="border:1px solid #dcdcde;padding:12px;margin:0 0 12px;">
+                        <legend><strong><?php echo esc_html($button_label . ' (' . $button_key . ')'); ?></strong></legend>
+                        <p><label>label_text <input type="text" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][label_text]" value="<?php echo esc_attr((string) ($button['label_text'] ?? '')); ?>" class="regular-text"></label></p>
+                        <p><label>icon_class <input type="text" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][icon_class]" value="<?php echo esc_attr((string) ($button['icon_class'] ?? '')); ?>" class="regular-text" placeholder="fa-solid fa-filter"></label></p>
+                        <p><label>icon_position
+                            <select name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][icon_position]">
+                                <option value="left" <?php selected((string) ($button['icon_position'] ?? 'left'), 'left'); ?>>left</option>
+                                <option value="right" <?php selected((string) ($button['icon_position'] ?? 'left'), 'right'); ?>>right</option>
+                            </select>
+                        </label></p>
+                        <p><label>border <input type="text" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][border]" value="<?php echo esc_attr((string) ($button['border'] ?? '0')); ?>"></label></p>
+                        <p><label>border_radius <input type="text" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][border_radius]" value="<?php echo esc_attr((string) ($button['border_radius'] ?? '8px')); ?>"></label></p>
+                        <?php if (in_array($button_key, $outside_override_keys, true)) : ?>
+                            <p><label>background_color <input type="color" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][background_color]" value="<?php echo esc_attr((string) ($button['background_color'] ?? '#2563eb')); ?>"></label></p>
+                            <p><label>text_color <input type="color" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][text_color]" value="<?php echo esc_attr((string) ($button['text_color'] ?? '#ffffff')); ?>"></label></p>
+                            <p><label>height <input type="text" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][height]" value="<?php echo esc_attr((string) ($button['height'] ?? '36px')); ?>"></label></p>
+                            <p><label>font_size <input type="text" name="lcni_button_style_config[<?php echo esc_attr($button_key); ?>][font_size]" value="<?php echo esc_attr((string) ($button['font_size'] ?? '14px')); ?>"></label></p>
+                        <?php endif; ?>
+                        <?php if (in_array($button_key, $table_keys, true)) : ?>
+                            <p class="description">Kích thước/typography dùng từ nhóm "Trong bảng".</p>
+                        <?php elseif (in_array($button_key, $outside_override_keys, true)) : ?>
+                            <p class="description">Nút Login/Register/Close/Confirm có thể override màu nền, màu chữ, height, font-size riêng.</p>
+                        <?php else : ?>
+                            <p class="description">Kích thước/typography dùng từ nhóm "Ngoài bảng".</p>
+                        <?php endif; ?>
+                    </fieldset>
+                <?php endforeach; ?>
+
+                <h3>Form</h3>
+                <p><label>Saved filters label <input type="text" name="lcni_form_saved_filter_label" value="<?php echo esc_attr((string) ($filter_style['saved_filter_label'] ?? 'Saved filters')); ?>"></label></p>
+                <div class="lcni-front-grid" style="grid-template-columns: repeat(2, minmax(220px,1fr));">
+                    <div>
+                        <h4>Watchlist dropdown style</h4>
+                        <p><label>height <input type="number" min="28" max="80" name="lcni_form_dropdown_height" value="<?php echo esc_attr((string) ($watchlist_styles['dropdown_height'] ?? 34)); ?>"></label></p>
+                        <p><label>font_size <input type="number" min="10" max="24" name="lcni_form_dropdown_font_size" value="<?php echo esc_attr((string) ($watchlist_styles['dropdown_font_size'] ?? 13)); ?>"></label></p>
+                        <p><label>border_color <input type="color" name="lcni_form_dropdown_border_color" value="<?php echo esc_attr((string) ($watchlist_styles['dropdown_border_color'] ?? '#d1d5db')); ?>"></label></p>
+                        <p><label>border_radius <input type="number" min="0" max="24" name="lcni_form_dropdown_border_radius" value="<?php echo esc_attr((string) ($watchlist_styles['dropdown_border_radius'] ?? 8)); ?>"></label></p>
+                    </div>
+                    <div>
+                        <h4>Symbol input style</h4>
+                        <p><label>height <input type="number" min="28" max="80" name="lcni_form_input_height" value="<?php echo esc_attr((string) ($watchlist_styles['input_height'] ?? 34)); ?>"></label></p>
+                        <p><label>font_size <input type="number" min="10" max="24" name="lcni_form_input_font_size" value="<?php echo esc_attr((string) ($watchlist_styles['input_font_size'] ?? 13)); ?>"></label></p>
+                        <p><label>border_color <input type="color" name="lcni_form_input_border_color" value="<?php echo esc_attr((string) ($watchlist_styles['input_border_color'] ?? '#d1d5db')); ?>"></label></p>
+                        <p><label>border_radius <input type="number" min="0" max="24" name="lcni_form_input_border_radius" value="<?php echo esc_attr((string) ($watchlist_styles['input_border_radius'] ?? 8)); ?>"></label></p>
+                    </div>
+                </div>
+
+                <h3>Cell Color</h3>
+                <p class="description">Rule toàn cục, áp dụng mọi module có field tương ứng.</p>
+                <table style="border-collapse:collapse; width:100%;">
+                    <thead>
+                        <tr>
+                            <th>Field</th><th>Điều kiện</th><th>Giá trị so sánh</th><th>Màu nền</th><th>Màu text</th><th>Icon</th><th>Vị trí icon</th>
+                        </tr>
+                    </thead>
+                    <tbody id="lcni-global-rule-rows">
+                    <?php for ($i = 0; $i < $rule_rows; $i++) : $rule = $cell_rules[$i] ?? []; ?>
+                        <tr>
+                            <td><select name="lcni_global_rule_field[]"><option value="">-- Field --</option><?php foreach ($all_columns as $column) : ?><option value="<?php echo esc_attr($column); ?>" <?php selected((string) ($rule['column'] ?? ''), $column); ?>><?php echo esc_html($column); ?></option><?php endforeach; ?></select></td>
+                            <td><select name="lcni_global_rule_operator[]"><?php foreach (['=', '!=', '>', '>=', '<', '<=', 'contains', 'not_contains'] as $operator) : ?><option value="<?php echo esc_attr($operator); ?>" <?php selected((string) ($rule['operator'] ?? '='), $operator); ?>><?php echo esc_html($operator); ?></option><?php endforeach; ?></select></td>
+                            <td><input type="text" name="lcni_global_rule_value[]" value="<?php echo esc_attr((string) ($rule['value'] ?? '')); ?>"></td>
+                            <td><input type="color" name="lcni_global_rule_bg_color[]" value="<?php echo esc_attr((string) ($rule['bg_color'] ?? '#16a34a')); ?>"></td>
+                            <td><input type="color" name="lcni_global_rule_text_color[]" value="<?php echo esc_attr((string) ($rule['text_color'] ?? '#ffffff')); ?>"></td>
+                            <td><input type="text" name="lcni_global_rule_icon_class[]" value="<?php echo esc_attr((string) ($rule['icon_class'] ?? '')); ?>" placeholder="fa-solid fa-arrow-up"></td>
+                            <td><select name="lcni_global_rule_icon_position[]"><option value="left" <?php selected((string) ($rule['icon_position'] ?? 'left'), 'left'); ?>>left</option><option value="right" <?php selected((string) ($rule['icon_position'] ?? 'left'), 'right'); ?>>right</option></select></td>
+                        </tr>
+                    <?php endfor; ?>
+                    </tbody>
+                </table>
+                <p><button type="button" class="button" id="lcni-add-global-cell-rule">+ Thêm rule</button></p>
+                <template id="lcni-global-cell-rule-template"><tr><td><select name="lcni_global_rule_field[]"><option value="">-- Field --</option><?php foreach ($all_columns as $column) : ?><option value="<?php echo esc_attr($column); ?>"><?php echo esc_html($column); ?></option><?php endforeach; ?></select></td><td><select name="lcni_global_rule_operator[]"><?php foreach (['=', '!=', '>', '>=', '<', '<=', 'contains', 'not_contains'] as $operator) : ?><option value="<?php echo esc_attr($operator); ?>"><?php echo esc_html($operator); ?></option><?php endforeach; ?></select></td><td><input type="text" name="lcni_global_rule_value[]"></td><td><input type="color" name="lcni_global_rule_bg_color[]" value="#16a34a"></td><td><input type="color" name="lcni_global_rule_text_color[]" value="<?php echo esc_attr((string) ($shared_all['text_color'] ?? "#ffffff")); ?>"></td><td><input type="text" name="lcni_global_rule_icon_class[]" placeholder="fa-solid fa-arrow-up"></td><td><select name="lcni_global_rule_icon_position[]"><option value="left">left</option><option value="right">right</option></select></td></tr></template>
+                <h3>Cell to Cell Color</h3>
+                <p class="description">Tạo rule điều kiện theo Field A để tô màu/icon cho Field B (9 cột).</p>
+                <table style="border-collapse:collapse; width:100%;">
+                    <thead>
+                        <tr>
+                            <th>Field A</th><th>Điều kiện</th><th>Giá trị so sánh</th><th>Field B</th><th>Màu text</th><th>Icon</th><th>Vị trí icon</th><th>Kích thước icon</th><th>Màu icon</th>
+                        </tr>
+                    </thead>
+                    <tbody id="lcni-cell-to-cell-rule-rows">
+                    <?php for ($i = 0; $i < max(5, count($cell_to_cell_rules)); $i++) : $rule = $cell_to_cell_rules[$i] ?? []; ?>
+                        <tr>
+                            <td><select name="lcni_cell_to_cell_source_field[]"><option value="">-- Field --</option><?php foreach ($all_columns as $column) : ?><option value="<?php echo esc_attr($column); ?>" <?php selected((string) ($rule['source_field'] ?? ''), $column); ?>><?php echo esc_html($column); ?></option><?php endforeach; ?></select></td>
+                            <td><select name="lcni_cell_to_cell_operator[]"><?php foreach (['=', '!=', '>', '>=', '<', '<=', 'contains', 'not_contains'] as $operator) : ?><option value="<?php echo esc_attr($operator); ?>" <?php selected((string) ($rule['operator'] ?? '='), $operator); ?>><?php echo esc_html($operator); ?></option><?php endforeach; ?></select></td>
+                            <td><input type="text" name="lcni_cell_to_cell_value[]" value="<?php echo esc_attr((string) ($rule['value'] ?? '')); ?>"></td>
+                            <td><select name="lcni_cell_to_cell_target_field[]"><option value="">-- Field --</option><?php foreach ($all_columns as $column) : ?><option value="<?php echo esc_attr($column); ?>" <?php selected((string) ($rule['target_field'] ?? ''), $column); ?>><?php echo esc_html($column); ?></option><?php endforeach; ?></select></td>
+                            <td><input type="color" name="lcni_cell_to_cell_text_color[]" value="<?php echo esc_attr((string) ($rule['text_color'] ?? '#111827')); ?>"></td>
+                            <td><input type="text" name="lcni_cell_to_cell_icon_class[]" value="<?php echo esc_attr((string) ($rule['icon_class'] ?? '')); ?>" placeholder="fa-solid fa-flag"></td>
+                            <td><select name="lcni_cell_to_cell_icon_position[]"><option value="left" <?php selected((string) ($rule['icon_position'] ?? 'right'), 'left'); ?>>left</option><option value="right" <?php selected((string) ($rule['icon_position'] ?? 'right'), 'right'); ?>>right</option></select></td>
+                            <td><input type="number" min="8" max="32" name="lcni_cell_to_cell_icon_size[]" value="<?php echo esc_attr((string) ($rule['icon_size'] ?? 12)); ?>"></td>
+                            <td><input type="color" name="lcni_cell_to_cell_icon_color[]" value="<?php echo esc_attr((string) ($rule['icon_color'] ?? '#dc2626')); ?>"></td>
+                        </tr>
+                    <?php endfor; ?>
+                    </tbody>
+                </table>
+                <p><button type="button" class="button" id="lcni-add-cell-to-cell-rule">+ Thêm rule</button></p>
+                <template id="lcni-cell-to-cell-rule-template"><tr><td><select name="lcni_cell_to_cell_source_field[]"><option value="">-- Field --</option><?php foreach ($all_columns as $column) : ?><option value="<?php echo esc_attr($column); ?>"><?php echo esc_html($column); ?></option><?php endforeach; ?></select></td><td><select name="lcni_cell_to_cell_operator[]"><?php foreach (['=', '!=', '>', '>=', '<', '<=', 'contains', 'not_contains'] as $operator) : ?><option value="<?php echo esc_attr($operator); ?>"><?php echo esc_html($operator); ?></option><?php endforeach; ?></select></td><td><input type="text" name="lcni_cell_to_cell_value[]"></td><td><select name="lcni_cell_to_cell_target_field[]"><option value="">-- Field --</option><?php foreach ($all_columns as $column) : ?><option value="<?php echo esc_attr($column); ?>"><?php echo esc_html($column); ?></option><?php endforeach; ?></select></td><td><input type="color" name="lcni_cell_to_cell_text_color[]" value="#111827"></td><td><input type="text" name="lcni_cell_to_cell_icon_class[]" placeholder="fa-solid fa-flag"></td><td><select name="lcni_cell_to_cell_icon_position[]"><option value="left">left</option><option value="right" selected>right</option></select></td><td><input type="number" min="8" max="32" name="lcni_cell_to_cell_icon_size[]" value="12"></td><td><input type="color" name="lcni_cell_to_cell_icon_color[]" value="#dc2626"></td></tr></template>
+
+                <?php submit_button('Save'); ?>
+            </form>
+            <script>
+                (function(){
+                    const addBtn = document.getElementById('lcni-add-global-cell-rule');
+                    const rows = document.getElementById('lcni-global-rule-rows');
+                    const template = document.getElementById('lcni-global-cell-rule-template');
+                    const form = rows ? rows.closest('form') : null;
+                    const globalRulesJsonInput = document.getElementById('lcni-global-rules-json');
+                    const cellToCellRulesJsonInput = document.getElementById('lcni-cell-to-cell-rules-json');
+                    if (addBtn && rows && template) {
+                        addBtn.addEventListener('click', function(){ rows.insertAdjacentHTML('beforeend', template.innerHTML); });
+                    }
+                    const addCellToCellBtn = document.getElementById('lcni-add-cell-to-cell-rule');
+                    const cellToCellRows = document.getElementById('lcni-cell-to-cell-rule-rows');
+                    const cellToCellTemplate = document.getElementById('lcni-cell-to-cell-rule-template');
+                    if (addCellToCellBtn && cellToCellRows && cellToCellTemplate) {
+                        addCellToCellBtn.addEventListener('click', function(){ cellToCellRows.insertAdjacentHTML('beforeend', cellToCellTemplate.innerHTML); });
+                    }
+
+                    if (form && globalRulesJsonInput && cellToCellRulesJsonInput) {
+                        form.addEventListener('submit', function(){
+                            const globalRows = rows ? Array.from(rows.querySelectorAll('tr')) : [];
+                            const cellToCellRuleRows = cellToCellRows ? Array.from(cellToCellRows.querySelectorAll('tr')) : [];
+
+                            const globalRules = globalRows.map(function(row){
+                                return {
+                                    field: (row.querySelector('select[name="lcni_global_rule_field[]"]') || {}).value || '',
+                                    operator: (row.querySelector('select[name="lcni_global_rule_operator[]"]') || {}).value || '',
+                                    value: (row.querySelector('input[name="lcni_global_rule_value[]"]') || {}).value || '',
+                                    bg_color: (row.querySelector('input[name="lcni_global_rule_bg_color[]"]') || {}).value || '',
+                                    text_color: (row.querySelector('input[name="lcni_global_rule_text_color[]"]') || {}).value || '',
+                                    icon_class: (row.querySelector('input[name="lcni_global_rule_icon_class[]"]') || {}).value || '',
+                                    icon_position: (row.querySelector('select[name="lcni_global_rule_icon_position[]"]') || {}).value || 'left'
+                                };
+                            });
+
+                            const cellToCellRules = cellToCellRuleRows.map(function(row){
+                                return {
+                                    source_field: (row.querySelector('select[name="lcni_cell_to_cell_source_field[]"]') || {}).value || '',
+                                    operator: (row.querySelector('select[name="lcni_cell_to_cell_operator[]"]') || {}).value || '',
+                                    value: (row.querySelector('input[name="lcni_cell_to_cell_value[]"]') || {}).value || '',
+                                    target_field: (row.querySelector('select[name="lcni_cell_to_cell_target_field[]"]') || {}).value || '',
+                                    text_color: (row.querySelector('input[name="lcni_cell_to_cell_text_color[]"]') || {}).value || '',
+                                    icon_class: (row.querySelector('input[name="lcni_cell_to_cell_icon_class[]"]') || {}).value || '',
+                                    icon_position: (row.querySelector('select[name="lcni_cell_to_cell_icon_position[]"]') || {}).value || 'right',
+                                    icon_size: (row.querySelector('input[name="lcni_cell_to_cell_icon_size[]"]') || {}).value || 12,
+                                    icon_color: (row.querySelector('input[name="lcni_cell_to_cell_icon_color[]"]') || {}).value || ''
+                                };
+                            });
+
+                            globalRulesJsonInput.value = JSON.stringify(globalRules);
+                            cellToCellRulesJsonInput.value = JSON.stringify(cellToCellRules);
+                        });
+                    }
+                })();
+            </script>
+        </div>
+        <?php
+    }
+
+
+    private function get_global_column_label_candidates() {
+        global $wpdb;
+
+        $service = new LCNI_WatchlistService(new LCNI_WatchlistRepository());
+        $columns = $service->get_all_columns();
+
+        $target_tables = [
+            $wpdb->prefix . 'lcni_industry_return',
+            $wpdb->prefix . 'lcni_industry_index',
+            $wpdb->prefix . 'lcni_industry_metrics',
+            $wpdb->prefix . 'lcni_recommend_performance',
+            $wpdb->prefix . 'lcni_recommend_rule',
+            $wpdb->prefix . 'lcni_recommend_signal',
+            $wpdb->prefix . 'lcni_thong_ke_thi_truong',
+            $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2_toan_thi_truong',
+            $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2',
+        ];
+
+        foreach ($target_tables as $table_name) {
+            $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table_name));
+            if ($exists !== $table_name) {
+                continue;
+            }
+
+            $table_columns = $wpdb->get_col("SHOW COLUMNS FROM {$table_name}");
+            foreach ((array) $table_columns as $column) {
+                $column_key = sanitize_key((string) $column);
+                if ($column_key !== '') {
+                    $columns[] = $column_key;
+                }
+            }
+        }
+
+        $columns = array_values(array_unique(array_filter(array_map('sanitize_key', (array) $columns))));
+        sort($columns, SORT_STRING);
+
+        return $columns;
+    }
+
+    private function render_global_column_label_form($module, $tab_id, $watchlist_settings) {
+        $all_columns = $this->get_global_column_label_candidates();
+        $configured = get_option('lcni_column_labels', $watchlist_settings['column_labels'] ?? []);
+        $map = [];
+        foreach ((array) $configured as $key => $item) {
+            if (is_array($item)) {
+                $data_key = sanitize_key($item['data_key'] ?? '');
+                $label = sanitize_text_field((string) ($item['label'] ?? ''));
+            } else {
+                $data_key = sanitize_key($key);
+                $label = sanitize_text_field((string) $item);
+            }
+            if ($data_key !== '' && $label !== '') {
+                $map[$data_key] = $label;
+            }
+        }
+        ?>
+        <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
+                <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                <h3>Global Column Label</h3>
+                <table class="form-table" role="presentation"><tbody>
+                <?php foreach ($all_columns as $column) : ?>
+                    <tr>
+                        <th><?php echo esc_html($column); ?></th>
+                        <td>
+                            <input type="hidden" name="lcni_global_column_label_key[]" value="<?php echo esc_attr($column); ?>">
+                            <input type="text" name="lcni_global_column_label[]" value="<?php echo esc_attr((string) ($map[$column] ?? '')); ?>" class="regular-text" placeholder="<?php echo esc_attr($column); ?>">
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody></table>
+                <?php submit_button('Save'); ?>
+            </form>
+        </div>
+        <?php
+    }
+
+
+    private function get_recommend_signal_column_catalog() {
+        global $wpdb;
+
+        $sources = [
+            'rule' => ['table' => $wpdb->prefix . 'lcni_recommend_rule', 'label' => 'Rule'],
+            'signal' => ['table' => $wpdb->prefix . 'lcni_recommend_signal', 'label' => 'Signal'],
+            'ohlc' => ['table' => $wpdb->prefix . 'lcni_ohlc_latest', 'label' => 'OHLC Latest'],
+            'market' => ['table' => $wpdb->prefix . 'lcni_marketid', 'label' => 'Market'],
+            'icb2' => ['table' => $wpdb->prefix . 'lcni_icb2', 'label' => 'ICB2'],
+        ];
+
+        $catalog = [];
+        foreach ($sources as $source_key => $source) {
+            $table = (string) ($source['table'] ?? '');
+            if ($table === '') {
+                continue;
+            }
+
+            $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+            if ($exists !== $table) {
+                continue;
+            }
+
+            $columns = $wpdb->get_col("SHOW COLUMNS FROM {$table}");
+            if (!is_array($columns)) {
+                continue;
+            }
+
+            foreach ($columns as $column) {
+                $field = sanitize_key((string) $column);
+                if ($field === '') {
+                    continue;
+                }
+
+                $key = $source_key . '__' . $field;
+                $catalog[$key] = [
+                    'source' => $source_key,
+                    'column' => $field,
+                    'label' => ($source['label'] ?? $source_key) . ' · ' . ucwords(str_replace('_', ' ', $field)),
+                ];
+            }
+        }
+
+        $catalog['signal__npl_current'] = [
+            'source' => 'calc',
+            'column' => 'npl_current',
+            'label' => 'Signal · NPL Current (%)',
+        ];
+        $catalog['signal__npl_closed'] = [
+            'source' => 'calc',
+            'column' => 'npl_closed',
+            'label' => 'Signal · NPL Closed (%)',
+        ];
+
+        return $catalog;
+    }
+
+    public function sanitize_recommend_signal_settings($input) {
+        $input = is_array($input) ? $input : [];
+        $catalog = $this->get_recommend_signal_column_catalog();
+        $allowed_keys = array_keys($catalog);
+        $default_columns = array_values(array_filter(['signal__symbol', 'rule__name', 'signal__entry_price', 'signal__current_price', 'signal__r_multiple', 'signal__position_state', 'signal__status'], static function ($column) use ($allowed_keys) {
+            return in_array($column, $allowed_keys, true);
+        }));
+
+        $allowed_columns_raw = [];
+        if (isset($input['allowed_columns'])) {
+            if (is_array($input['allowed_columns'])) {
+                $allowed_columns_raw = $input['allowed_columns'];
+            } elseif (is_string($input['allowed_columns'])) {
+                $allowed_columns_raw = explode(',', $input['allowed_columns']);
+            }
+        }
+
+        $allowed_columns = !empty($allowed_columns_raw)
+            ? array_values(array_intersect($allowed_keys, array_map('sanitize_key', $allowed_columns_raw)))
+            : $default_columns;
+
+        if (empty($allowed_columns)) {
+            $allowed_columns = !empty($default_columns) ? $default_columns : array_slice($allowed_keys, 0, 8);
+        }
+
+        $column_order_raw = [];
+        if (isset($input['column_order'])) {
+            if (is_array($input['column_order'])) {
+                $column_order_raw = $input['column_order'];
+            } elseif (is_string($input['column_order'])) {
+                $column_order_raw = explode(',', $input['column_order']);
+            }
+        }
+        $column_order = array_values(array_filter(array_map('sanitize_key', $column_order_raw), static function ($column) use ($allowed_columns) {
+            return in_array($column, $allowed_columns, true);
+        }));
+        foreach ($allowed_columns as $column) {
+            if (!in_array($column, $column_order, true)) {
+                $column_order[] = $column;
+            }
+        }
+
+        $styles = isset($input['styles']) && is_array($input['styles']) ? $input['styles'] : [];
+        $rule_input = isset($styles['cell_color_rules']) && is_array($styles['cell_color_rules']) ? $styles['cell_color_rules'] : [];
+        $rule_columns = isset($rule_input['columns']) && is_array($rule_input['columns']) ? $rule_input['columns'] : [];
+        $rule_operators = isset($rule_input['operators']) && is_array($rule_input['operators']) ? $rule_input['operators'] : [];
+        $rule_values = isset($rule_input['values']) && is_array($rule_input['values']) ? $rule_input['values'] : [];
+        $rule_bg_colors = isset($rule_input['bg_colors']) && is_array($rule_input['bg_colors']) ? $rule_input['bg_colors'] : [];
+        $rule_text_colors = isset($rule_input['text_colors']) && is_array($rule_input['text_colors']) ? $rule_input['text_colors'] : [];
+
+        // Backward-compatible format: saved as list of rule objects.
+        if (empty($rule_columns) && empty($rule_operators) && empty($rule_values) && !empty($rule_input) && isset($rule_input[0]) && is_array($rule_input[0])) {
+            foreach ($rule_input as $rule) {
+                if (!is_array($rule)) {
+                    continue;
+                }
+                $rule_columns[] = $rule['column'] ?? '';
+                $rule_operators[] = $rule['operator'] ?? '';
+                $rule_values[] = $rule['value'] ?? '';
+                $rule_bg_colors[] = $rule['bg_color'] ?? '';
+                $rule_text_colors[] = $rule['text_color'] ?? '';
+            }
+        }
+        $rule_count = max(count($rule_columns), count($rule_operators), count($rule_values), count($rule_bg_colors), count($rule_text_colors));
+        $allowed_operators = ['>', '>=', '<', '<=', '=', '!=', 'contains', 'not_contains'];
+        $cell_color_rules = [];
+
+        for ($index = 0; $index < $rule_count; $index++) {
+            $column = sanitize_key((string) ($rule_columns[$index] ?? ''));
+            $operator = sanitize_text_field((string) ($rule_operators[$index] ?? ''));
+            $value = trim(sanitize_text_field((string) ($rule_values[$index] ?? '')));
+            $bg_color = sanitize_hex_color((string) ($rule_bg_colors[$index] ?? ''));
+            $text_color = sanitize_hex_color((string) ($rule_text_colors[$index] ?? ''));
+
+            if ($column === '' || !in_array($column, $allowed_keys, true) || !in_array($operator, $allowed_operators, true) || $value === '') {
+                continue;
+            }
+
+            if (!$bg_color && !$text_color) {
+                continue;
+            }
+
+            $cell_color_rules[] = [
+                'column' => $column,
+                'operator' => $operator,
+                'value' => $value,
+                'bg_color' => $bg_color,
+                'text_color' => $text_color,
+            ];
+        }
+
+        return [
+            'allowed_columns' => $allowed_columns,
+            'column_order' => $column_order,
+            'styles' => [
+                'table_max_height' => max(240, min(1600, (int) ($styles['table_max_height'] ?? 560))),
+                'cell_color_rules' => array_slice($cell_color_rules, 0, 100),
+            ],
+        ];
+    }
+
+    private function render_frontend_recommend_signal_form($module, $tab_id) {
+        $settings = $this->sanitize_recommend_signal_settings(get_option('lcni_frontend_settings_recommend_signal', []));
+        $catalog = $this->get_recommend_signal_column_catalog();
+        $allowed_columns = (array) ($settings['allowed_columns'] ?? []);
+        $column_order = (array) ($settings['column_order'] ?? $allowed_columns);
+        ?>
+        <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
+            <div class="lcni-sub-tab-nav" id="lcni-recommend-signal-sub-tabs">
+                <button type="button" data-recommend-signal-sub-tab="lcni-recommend-signal-columns">Columns</button>
+                <button type="button" data-recommend-signal-sub-tab="lcni-recommend-signal-style">Style</button>
+            </div>
+
+            <div id="lcni-recommend-signal-columns" class="lcni-watchlist-pane">
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                    <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                    <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
+                    <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                    <input type="hidden" name="lcni_frontend_recommend_signal_column_order" value="<?php echo esc_attr(implode(',', $column_order)); ?>" data-recommend-signal-selected-order>
+                    <h3>Recommend Signal Columns</h3>
+                    <p>Chọn cột hiển thị cho shortcode <code>[lcni_signals]</code> từ các bảng rule/signal/ohlc_latest.</p>
+                    <div style="display:grid;grid-template-columns:80% 20%;gap:12px;align-items:start;">
+                        <div class="lcni-front-grid" style="margin:0;">
+                            <?php foreach ($catalog as $key => $meta) : ?>
+                                <label><input type="checkbox" name="lcni_frontend_recommend_signal_allowed_columns[]" value="<?php echo esc_attr($key); ?>" data-recommend-signal-columns-checkbox <?php checked(in_array($key, $allowed_columns, true)); ?>> <?php echo esc_html((string) ($meta['label'] ?? $key)); ?></label>
+                            <?php endforeach; ?>
+                        </div>
+                        <div>
+                            <p><strong>Selected order</strong></p>
+                            <ol data-recommend-signal-selected-list style="margin:0;padding-left:18px;max-height:360px;overflow:auto;">
+                                <?php foreach ($column_order as $column) : ?>
+                                    <li draggable="true" data-recommend-signal-selected-column="<?php echo esc_attr($column); ?>" style="cursor:move;padding:4px 0;"><?php echo esc_html((string) ($catalog[$column]['label'] ?? $column)); ?></li>
+                                <?php endforeach; ?>
+                            </ol>
+                        </div>
+                    </div>
+                    <?php submit_button('Save'); ?>
+                </form>
+            </div>
+
+            <div id="lcni-recommend-signal-style" class="lcni-watchlist-pane">
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                    <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                    <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
+                    <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                    <?php foreach ($allowed_columns as $column) : ?><input type="hidden" name="lcni_frontend_recommend_signal_allowed_columns[]" value="<?php echo esc_attr($column); ?>"><?php endforeach; ?>
+                    <input type="hidden" name="lcni_frontend_recommend_signal_column_order" value="<?php echo esc_attr(implode(',', $column_order)); ?>">
+                    <h3>Recommend Signal Style Config</h3>
+                    <p style="color:#6b7280;margin-top:-4px;">Màu sắc, font, chiều cao row/header được quản lý tập trung tại tab <strong>🗂 Bảng dữ liệu</strong> — tránh xung đột cài đặt.</p>
+                    <p><label>Sticky column
+                    <!-- sticky per-module removed: use Bảng dữ liệu tab -->
+                    </label></p>
+                    <!-- sticky_header removed — controlled globally -->
+
+                    <p><label>Chiều cao vùng cuộn bảng <input type="number" min="240" max="1600" name="lcni_frontend_recommend_signal_style_table_max_height" value="<?php echo esc_attr((string) ($settings['styles']['table_max_height'] ?? 560)); ?>"> px</label></p>
+                    <h4>Cell color rules</h4>
+                    <p>Cấu hình màu theo giá trị ô để frontend hiển thị theo điều kiện.</p>
+                    <?php $recommend_rules = (array) ($settings['styles']['cell_color_rules'] ?? []); ?>
+                    <table class="widefat" style="max-width:980px;">
+                        <thead>
+                            <tr>
+                                <th>Cột</th>
+                                <th>Toán tử</th>
+                                <th>Giá trị so sánh</th>
+                                <th>Màu nền</th>
+                                <th>Màu chữ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="lcni-recommend-signal-rule-body">
+                            <?php foreach ($recommend_rules as $rule) :
+                                $rule = is_array($rule) ? $rule : [];
+                            ?>
+                            <tr>
+                                <td>
+                                    <select name="lcni_frontend_recommend_signal_style_rule_column[]">
+                                        <option value="">-- Chọn cột --</option>
+                                        <?php foreach ($allowed_columns as $column) : ?>
+                                            <option value="<?php echo esc_attr($column); ?>" <?php selected((string) ($rule['column'] ?? ''), $column); ?>><?php echo esc_html((string) ($catalog[$column]['label'] ?? $column)); ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </td>
+                                <td>
+                                    <select name="lcni_frontend_recommend_signal_style_rule_operator[]">
+                                        <?php foreach (['>', '>=', '<', '<=', '=', '!=', 'contains', 'not_contains'] as $operator) : ?>
+                                            <option value="<?php echo esc_attr($operator); ?>" <?php selected((string) ($rule['operator'] ?? ''), $operator); ?>><?php echo esc_html($operator); ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </td>
+                                <td><input type="text" name="lcni_frontend_recommend_signal_style_rule_value[]" value="<?php echo esc_attr((string) ($rule['value'] ?? '')); ?>"></td>
+                                <td><input type="color" name="lcni_frontend_recommend_signal_style_rule_bg_color[]" value="<?php echo esc_attr((string) ($rule['bg_color'] ?? '#ffffff')); ?>"></td>
+                                <td><input type="color" name="lcni_frontend_recommend_signal_style_rule_text_color[]" value="<?php echo esc_attr((string) ($rule['text_color'] ?? '#111827')); ?>"></td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                    <p><button type="button" class="button" id="lcni-recommend-signal-add-rule">+ Add rule</button></p>
+                    <template id="lcni-recommend-signal-rule-template">
+                        <tr>
+                            <td>
+                                <select name="lcni_frontend_recommend_signal_style_rule_column[]">
+                                    <option value="">-- Chọn cột --</option>
+                                    <?php foreach ($allowed_columns as $column) : ?>
+                                        <option value="<?php echo esc_attr($column); ?>"><?php echo esc_html((string) ($catalog[$column]['label'] ?? $column)); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </td>
+                            <td>
+                                <select name="lcni_frontend_recommend_signal_style_rule_operator[]">
+                                    <?php foreach (['>', '>=', '<', '<=', '=', '!=', 'contains', 'not_contains'] as $operator) : ?>
+                                        <option value="<?php echo esc_attr($operator); ?>"><?php echo esc_html($operator); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </td>
+                            <td><input type="text" name="lcni_frontend_recommend_signal_style_rule_value[]" value=""></td>
+                            <td><input type="color" name="lcni_frontend_recommend_signal_style_rule_bg_color[]" value="#ffffff"></td>
+                            <td><input type="color" name="lcni_frontend_recommend_signal_style_rule_text_color[]" value="#111827"></td>
+                        </tr>
+                    </template>
+                    <?php submit_button('Save'); ?>
+                </form>
+            </div>
+
+            <script>
+                (function(){
+                    const root = document.getElementById('<?php echo esc_js($tab_id); ?>');
+                    if (!root) return;
+                    const nav = root.querySelector('#lcni-recommend-signal-sub-tabs');
+                    if (!nav) return;
+                    const buttons = nav.querySelectorAll('button[data-recommend-signal-sub-tab]');
+                    const panes = root.querySelectorAll('.lcni-watchlist-pane');
+                    const validTabs = ['lcni-recommend-signal-columns', 'lcni-recommend-signal-style'];
+                    const url = new URL(window.location.href);
+                    const activate = function(tabId) {
+                        const resolved = validTabs.includes(tabId) ? tabId : validTabs[0];
+                        buttons.forEach((btn) => btn.classList.toggle('active', btn.getAttribute('data-recommend-signal-sub-tab') === resolved));
+                        panes.forEach((pane) => pane.classList.toggle('active', pane.id === resolved));
+                        const nextUrl = new URL(window.location.href);
+                        nextUrl.searchParams.set('recommend_signal_tab', resolved);
+                        window.history.replaceState({}, '', nextUrl.toString());
+                    };
+                    buttons.forEach((btn) => btn.addEventListener('click', () => activate(btn.getAttribute('data-recommend-signal-sub-tab'))));
+
+                    const form = root.querySelector('#lcni-recommend-signal-columns form');
+                    if (form) {
+                        const selectedList = form.querySelector('[data-recommend-signal-selected-list]');
+                        const hiddenOrder = form.querySelector('[data-recommend-signal-selected-order]');
+                        const labelMap = {};
+                        form.querySelectorAll('[data-recommend-signal-columns-checkbox]').forEach((checkbox) => {
+                            const parentLabel = checkbox.closest('label');
+                            labelMap[checkbox.value] = parentLabel ? parentLabel.textContent.trim() : checkbox.value;
+                        });
+
+                        const syncOrder = () => {
+                            hiddenOrder.value = Array.from(selectedList.querySelectorAll('[data-recommend-signal-selected-column]')).map((node) => node.getAttribute('data-recommend-signal-selected-column') || '').filter(Boolean).join(',');
+                        };
+
+                        const bindDnD = () => {
+                            let dragging = null;
+                            selectedList.querySelectorAll('[data-recommend-signal-selected-column]').forEach((item) => {
+                                item.addEventListener('dragstart', () => { dragging = item; item.style.opacity = '0.5'; });
+                                item.addEventListener('dragend', () => { item.style.opacity = ''; dragging = null; syncOrder(); });
+                                item.addEventListener('dragover', (event) => event.preventDefault());
+                                item.addEventListener('drop', (event) => {
+                                    event.preventDefault();
+                                    if (!dragging || dragging === item) return;
+                                    const rect = item.getBoundingClientRect();
+                                    const after = (event.clientY - rect.top) > rect.height / 2;
+                                    if (after) item.after(dragging); else item.before(dragging);
+                                    syncOrder();
+                                });
+                            });
+                        };
+
+                        const rebuildSelected = () => {
+                            const checked = Array.from(form.querySelectorAll('[data-recommend-signal-columns-checkbox]:checked')).map((node) => node.value);
+                            const existing = Array.from(selectedList.querySelectorAll('[data-recommend-signal-selected-column]')).map((node) => node.getAttribute('data-recommend-signal-selected-column') || '');
+                            const next = existing.filter((field) => checked.includes(field));
+                            checked.forEach((field) => { if (!next.includes(field)) next.push(field); });
+                            selectedList.innerHTML = next.map((field) => `<li draggable="true" data-recommend-signal-selected-column="${field}" style="cursor:move;padding:4px 0;">${labelMap[field] || field}</li>`).join('');
+                            bindDnD();
+                            syncOrder();
+                        };
+
+                        form.querySelectorAll('[data-recommend-signal-columns-checkbox]').forEach((checkbox) => checkbox.addEventListener('change', rebuildSelected));
+                        rebuildSelected();
+                    }
+
+
+                    const addRuleButton = root.querySelector('#lcni-recommend-signal-add-rule');
+                    const ruleBody = root.querySelector('#lcni-recommend-signal-rule-body');
+                    const ruleTemplate = root.querySelector('#lcni-recommend-signal-rule-template');
+                    if (addRuleButton && ruleBody && ruleTemplate) {
+                        addRuleButton.addEventListener('click', () => {
+                            const row = ruleTemplate.content.firstElementChild.cloneNode(true);
+                            ruleBody.appendChild(row);
+                        });
+                    }
+
+                    activate(url.searchParams.get('recommend_signal_tab') || validTabs[0]);
+                })();
+            </script>
+        </div>
+        <?php
+    }
+
+    private function sanitize_watchlist_settings($input) {
+        $service = new LCNI_WatchlistService(new LCNI_WatchlistRepository());
+        $all_columns = $service->get_all_columns();
+        $default_columns = $service->get_default_columns();
+        $allowed_columns = isset($input['allowed_columns']) && is_array($input['allowed_columns'])
+            ? array_values(array_intersect($all_columns, array_map('sanitize_key', $input['allowed_columns'])))
+            : $default_columns;
+
+        if (empty($allowed_columns)) {
+            $allowed_columns = $default_columns;
+        }
+
+        $default_columns_desktop = isset($input['default_columns_desktop']) && is_array($input['default_columns_desktop'])
+            ? array_values(array_intersect($allowed_columns, array_map('sanitize_key', $input['default_columns_desktop'])))
+            : [];
+        if (empty($default_columns_desktop)) {
+            $default_columns_desktop = array_slice($allowed_columns, 0, 6);
+        }
+
+        $default_columns_mobile = isset($input['default_columns_mobile']) && is_array($input['default_columns_mobile'])
+            ? array_values(array_intersect($allowed_columns, array_map('sanitize_key', $input['default_columns_mobile'])))
+            : [];
+        if (empty($default_columns_mobile)) {
+            $default_columns_mobile = array_slice($default_columns_desktop, 0, 4);
+        }
+
+        $styles = isset($input['styles']) && is_array($input['styles']) ? $input['styles'] : [];
+        $button = isset($input['add_button']) && is_array($input['add_button']) ? $input['add_button'] : [];
+        $add_form_button = isset($input['add_form_button']) && is_array($input['add_form_button']) ? $input['add_form_button'] : [];
+        $label_keys = isset($input['column_label_keys']) && is_array($input['column_label_keys']) ? $input['column_label_keys'] : [];
+        $label_values = isset($input['column_label_values']) && is_array($input['column_label_values']) ? $input['column_label_values'] : [];
+        $rule_columns = isset($input['value_color_rule_columns']) && is_array($input['value_color_rule_columns']) ? $input['value_color_rule_columns'] : [];
+        $rule_operators = isset($input['value_color_rule_operators']) && is_array($input['value_color_rule_operators']) ? $input['value_color_rule_operators'] : [];
+        $rule_values = isset($input['value_color_rule_values']) && is_array($input['value_color_rule_values']) ? $input['value_color_rule_values'] : [];
+        $rule_bg_colors = isset($input['value_color_rule_bg_colors']) && is_array($input['value_color_rule_bg_colors']) ? $input['value_color_rule_bg_colors'] : [];
+        $rule_text_colors = isset($input['value_color_rule_text_colors']) && is_array($input['value_color_rule_text_colors']) ? $input['value_color_rule_text_colors'] : [];
+        $legacy_rules = isset($input['value_color_rules']) && is_array($input['value_color_rules']) ? $input['value_color_rules'] : [];
+        $column_labels = [];
+        $value_color_rules = [];
+        if (empty($rule_columns) && !empty($legacy_rules)) {
+            $rule_columns = wp_list_pluck($legacy_rules, 'column');
+            $rule_operators = wp_list_pluck($legacy_rules, 'operator');
+            $rule_values = wp_list_pluck($legacy_rules, 'value');
+            $rule_bg_colors = wp_list_pluck($legacy_rules, 'bg_color');
+            $rule_text_colors = wp_list_pluck($legacy_rules, 'text_color');
+        }
+        if (empty($label_keys) && empty($label_values) && isset($input['column_labels'])) {
+            $legacy_label_pairs = $this->normalize_watchlist_column_label_pairs($input['column_labels']);
+            $label_keys = wp_list_pluck($legacy_label_pairs, 'data_key');
+            $label_values = wp_list_pluck($legacy_label_pairs, 'label');
+        }
+        $label_count = max(count($label_keys), count($label_values));
+        $allowed_operators = ['>', '>=', '<', '<=', '=', '!=', 'contains', 'not_contains'];
+
+        for ($index = 0; $index < $label_count; $index++) {
+            $key = sanitize_key($label_keys[$index] ?? '');
+            if ($key === '' || !in_array($key, $all_columns, true)) {
+                continue;
+            }
+
+            $label = sanitize_text_field((string) ($label_values[$index] ?? ''));
+            if ($label === '') {
+                continue;
+            }
+
+            $column_labels[] = [
+                'data_key' => $key,
+                'label' => $label,
+            ];
+        }
+
+        $rule_count = max(count($rule_columns), count($rule_operators), count($rule_values), count($rule_bg_colors), count($rule_text_colors));
+        for ($index = 0; $index < $rule_count; $index++) {
+            $column = sanitize_key($rule_columns[$index] ?? '');
+            $operator = sanitize_text_field((string) ($rule_operators[$index] ?? ''));
+            $value = trim(sanitize_text_field((string) ($rule_values[$index] ?? '')));
+            $bg_color = sanitize_hex_color((string) ($rule_bg_colors[$index] ?? ''));
+            $text_color = sanitize_hex_color((string) ($rule_text_colors[$index] ?? ''));
+
+            if ($column === '' || !in_array($column, $all_columns, true) || !in_array($operator, $allowed_operators, true) || $value === '' || !$bg_color || !$text_color) {
+                continue;
+            }
+
+            $value_color_rules[] = [
+                'column' => $column,
+                'operator' => $operator,
+                'value' => is_numeric($value) ? (float) $value : $value,
+                'bg_color' => $bg_color,
+                'text_color' => $text_color,
+            ];
+        }
+
+        $stock_detail_page_id = absint($input['stock_detail_page_id'] ?? get_option('lcni_frontend_stock_detail_page', 0));
+        $stock_detail_page_slug = '';
+        if ($stock_detail_page_id > 0) {
+            $selected_page = get_post($stock_detail_page_id);
+            if ($selected_page instanceof WP_Post && $selected_page->post_type === 'page') {
+                $stock_detail_page_slug = sanitize_title((string) $selected_page->post_name);
+            }
+        }
+
+        return [
+            'allowed_columns' => $allowed_columns,
+            'default_columns_desktop' => $default_columns_desktop,
+            'default_columns_mobile' => $default_columns_mobile,
+            'column_labels' => $column_labels,
+            'stock_detail_page_id' => $stock_detail_page_id,
+            'stock_detail_page_slug' => $stock_detail_page_slug,
+            'guest_mode' => in_array(sanitize_key((string) ($input['guest_mode'] ?? 'link')), ['link', 'page'], true) ? sanitize_key((string) ($input['guest_mode'] ?? 'link')) : 'link',
+            'guest_login_page_id' => absint($input['guest_login_page_id'] ?? 0),
+            'guest_register_page_id' => absint($input['guest_register_page_id'] ?? 0),
+            'styles' => [
+                'font' => sanitize_text_field($styles['font'] ?? 'inherit'),
+                'text_color' => sanitize_hex_color($styles['text_color'] ?? '#111827') ?: '#111827',
+                'background' => sanitize_hex_color($styles['background'] ?? '#ffffff') ?: '#ffffff',
+                'border' => sanitize_text_field($styles['border'] ?? '1px solid #e5e7eb'),
+                'border_radius' => max(0, min(24, (int) ($styles['border_radius'] ?? 8))),
+                'label_font_size' => max(10, min(30, (int) ($styles['label_font_size'] ?? 12))),
+                'row_font_size' => max(10, min(30, (int) ($styles['row_font_size'] ?? 13))),
+                'header_background' => sanitize_hex_color($styles['header_background'] ?? '#ffffff') ?: '#ffffff',
+                'header_text_color' => sanitize_hex_color($styles['header_text_color'] ?? '#111827') ?: '#111827',
+                'value_background' => sanitize_hex_color($styles['value_background'] ?? '#ffffff') ?: '#ffffff',
+                'value_text_color' => sanitize_hex_color($styles['value_text_color'] ?? '#111827') ?: '#111827',
+                'row_divider_color' => sanitize_hex_color($styles['row_divider_color'] ?? '#e5e7eb') ?: '#e5e7eb',
+                'row_divider_width' => max(1, min(6, (int) ($styles['row_divider_width'] ?? 1))),
+                'row_hover_bg' => sanitize_hex_color($styles['row_hover_bg'] ?? '#f3f4f6') ?: '#f3f4f6',
+                'head_height' => max(24, min(240, (int) ($styles['head_height'] ?? 40))),
+                'dropdown_height' => max(28, min(80, (int) ($styles['dropdown_height'] ?? 34))),
+                'dropdown_width' => max(120, min(520, (int) ($styles['dropdown_width'] ?? 220))),
+                'dropdown_font_size' => max(10, min(24, (int) ($styles['dropdown_font_size'] ?? 13))),
+                'dropdown_border_color' => sanitize_hex_color($styles['dropdown_border_color'] ?? '#d1d5db') ?: '#d1d5db',
+                'dropdown_border_radius' => max(0, min(24, (int) ($styles['dropdown_border_radius'] ?? 8))),
+                'input_height' => max(28, min(80, (int) ($styles['input_height'] ?? 34))),
+                'input_width' => max(120, min(520, (int) ($styles['input_width'] ?? 160))),
+                'input_font_size' => max(10, min(24, (int) ($styles['input_font_size'] ?? 13))),
+                'input_border_color' => sanitize_hex_color($styles['input_border_color'] ?? '#d1d5db') ?: '#d1d5db',
+                'input_border_radius' => max(0, min(24, (int) ($styles['input_border_radius'] ?? 8))),
+                'scroll_speed' => max(1, min(5, (int) ($styles['scroll_speed'] ?? 1))),
+                'column_order' => array_values(array_filter(array_map('sanitize_key', is_array($styles['column_order'] ?? null) ? $styles['column_order'] : []), static function ($column) use ($allowed_columns) {
+                    return in_array($column, $allowed_columns, true);
+                })),
+            ],
+            'value_color_rules' => array_slice($value_color_rules, 0, 100),
+            'add_button' => [
+                'icon' => sanitize_text_field($button['icon'] ?? 'fa-solid fa-heart-circle-plus'),
+                'background' => sanitize_hex_color($button['background'] ?? '#dc2626') ?: '#dc2626',
+                'text_color' => sanitize_hex_color($button['text_color'] ?? '#ffffff') ?: '#ffffff',
+                'font_size' => max(10, min(24, (int) ($button['font_size'] ?? 14))),
+                'size' => max(20, min(48, (int) ($button['size'] ?? 26))),
+            ],
+            'add_form_button' => [
+                'icon' => sanitize_text_field($add_form_button['icon'] ?? 'fa-solid fa-heart-circle-plus'),
+                'background' => sanitize_hex_color($add_form_button['background'] ?? '#2563eb') ?: '#2563eb',
+                'text_color' => sanitize_hex_color($add_form_button['text_color'] ?? '#ffffff') ?: '#ffffff',
+                'font_size' => max(10, min(24, (int) ($add_form_button['font_size'] ?? 14))),
+                'height' => max(28, min(56, (int) ($add_form_button['height'] ?? 34))),
+            ],
+        ];
+    }
+
+private function render_frontend_watchlist_form($module, $tab_id, $settings) {
+        $service = new LCNI_WatchlistService(new LCNI_WatchlistRepository());
+        $all_columns = $service->get_all_columns();
+        $pages = get_pages(['sort_column' => 'post_title', 'sort_order' => 'asc']);
+        $configured_labels = [];
+
+        foreach ($this->normalize_watchlist_column_label_pairs($settings['column_labels'] ?? []) as $label_item) {
+            $configured_labels[$label_item['data_key']] = $label_item['label'];
+        }
+
+        ?>
+        <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
+            <div class="lcni-sub-tab-nav" id="lcni-watchlist-sub-tabs">
+                <button type="button" data-watchlist-sub-tab="lcni-watchlist-columns">Columns</button>
+                <button type="button" data-watchlist-sub-tab="lcni-watchlist-stock-detail-page">Stock Detail Page</button>
+                <button type="button" data-watchlist-sub-tab="lcni-watchlist-default-columns">Default Columns for User</button>
+                <button type="button" data-watchlist-sub-tab="lcni-watchlist-style-config">Style Config</button>
+            </div>
+
+            <div id="lcni-watchlist-columns" class="lcni-watchlist-pane">
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                    <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                    <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
+                    <input type="hidden" name="lcni_frontend_watchlist_section" value="columns">
+                    <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                    <h3>Watchlist: danh sách cột cho phép user chọn</h3>
+                    <input type="hidden" name="lcni_frontend_watchlist_column_order" value="<?php echo esc_attr(implode(',', (array) (($settings['styles']['column_order'] ?? []) ?: ($settings['allowed_columns'] ?? [])))); ?>" data-watchlist-columns-selected-order>
+                    <div style="display:grid;grid-template-columns:80% 20%;gap:12px;align-items:start;">
+                        <div>
+                            <p><strong>Available fields</strong></p>
+                            <div class="lcni-front-grid">
+                                <?php foreach ($all_columns as $column) : ?>
+                                    <label><input type="checkbox" name="lcni_frontend_watchlist_allowed_columns[]" data-watchlist-columns-checkbox value="<?php echo esc_attr($column); ?>" <?php checked(in_array($column, (array) ($settings['allowed_columns'] ?? []), true)); ?>> <?php echo esc_html($column); ?></label>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                        <div>
+                            <p><strong>Selected order</strong></p>
+                            <ol data-watchlist-columns-selected-list style="margin:0;padding-left:18px;max-height:320px;overflow:auto;">
+                                <?php foreach ((array) (($settings['styles']['column_order'] ?? []) ?: ($settings['allowed_columns'] ?? [])) as $column) : ?>
+                                    <li draggable="true" data-watchlist-columns-selected-column="<?php echo esc_attr($column); ?>" style="cursor:move;padding:4px 0;"><?php echo esc_html($column); ?></li>
+                                <?php endforeach; ?>
+                            </ol>
+                            <p class="description">Kéo thả để đổi thứ tự cột hiển thị frontend.</p>
+                        </div>
+                    </div>
+                    <?php submit_button('Save'); ?>
+                </form>
+            </div>
+
+            <div id="lcni-watchlist-stock-detail-page" class="lcni-watchlist-pane">
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                    <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                    <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
+                    <input type="hidden" name="lcni_frontend_watchlist_section" value="stock_detail_page">
+                    <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                    <h3>Stock Detail Page</h3>
+                    <p>
+                        <select name="lcni_frontend_stock_detail_page">
+                            <option value="0">-- Chọn page template --</option>
+                            <?php foreach ($pages as $page) : ?>
+                                <option value="<?php echo esc_attr((string) $page->ID); ?>" <?php selected((int) ($settings['stock_detail_page_id'] ?? 0), (int) $page->ID); ?>><?php echo esc_html($page->post_title . ' (#' . $page->ID . ')'); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </p>
+                    <p><strong>Guest behavior:</strong></p>
+                    <p>
+                        <label><input type="radio" name="lcni_watchlist_guest_mode" value="link" <?php checked((string) ($settings['guest_mode'] ?? 'link'), 'link'); ?>> Hiển thị link đăng nhập (mặc định)</label><br>
+                        <label><input type="radio" name="lcni_watchlist_guest_mode" value="page" <?php checked((string) ($settings['guest_mode'] ?? 'link'), 'page'); ?>> Tự động mở trang Login/Register</label>
+                    </p>
+                    <p>
+                        <label>Trang Login
+                            <select name="lcni_watchlist_guest_login_page">
+                                <option value="0">-- Không chọn --</option>
+                                <?php foreach ($pages as $page) : ?>
+                                    <option value="<?php echo esc_attr((string) $page->ID); ?>" <?php selected((int) ($settings['guest_login_page_id'] ?? 0), (int) $page->ID); ?>><?php echo esc_html($page->post_title . ' (#' . $page->ID . ')'); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </label>
+                    </p>
+                    <p>
+                        <label>Trang Register (fallback)
+                            <select name="lcni_watchlist_guest_register_page">
+                                <option value="0">-- Không chọn --</option>
+                                <?php foreach ($pages as $page) : ?>
+                                    <option value="<?php echo esc_attr((string) $page->ID); ?>" <?php selected((int) ($settings['guest_register_page_id'] ?? 0), (int) $page->ID); ?>><?php echo esc_html($page->post_title . ' (#' . $page->ID . ')'); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </label>
+                    </p>
+                    <?php submit_button('Save'); ?>
+                </form>
+            </div>
+
+            <div id="lcni-watchlist-default-columns" class="lcni-watchlist-pane">
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                    <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                    <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
+                    <input type="hidden" name="lcni_frontend_watchlist_section" value="default_columns">
+                    <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                    <h3>Default Columns for User</h3>
+                    <p class="description">Global default (admin) ở đây; user override được lưu riêng qua API /watchlist/settings.</p>
+                    <input type="hidden" name="lcni_frontend_watchlist_column_order" value="<?php echo esc_attr(implode(',', (array) ($settings['styles']['column_order'] ?? $settings['default_columns_desktop'] ?? []))); ?>" data-watchlist-selected-order>
+                    <div style="display:grid;grid-template-columns:80% 20%;gap:12px;align-items:start;">
+                        <div>
+                            <p><strong>Desktop (global default)</strong></p>
+                            <div class="lcni-front-grid">
+                                <?php foreach ((array) ($settings['allowed_columns'] ?? []) as $column) : ?>
+                                    <label><input type="checkbox" data-watchlist-desktop-checkbox name="lcni_frontend_watchlist_default_columns_desktop[]" value="<?php echo esc_attr($column); ?>" <?php checked(in_array($column, (array) ($settings['default_columns_desktop'] ?? []), true)); ?>> <?php echo esc_html($column); ?></label>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                        <div>
+                            <p><strong>Desktop order</strong></p>
+                            <ol data-watchlist-selected-list style="margin:0;padding-left:18px;max-height:320px;overflow:auto;">
+                                <?php foreach ((array) (($settings['styles']['column_order'] ?? []) ?: ($settings['default_columns_desktop'] ?? [])) as $column) : ?>
+                                    <?php if (in_array($column, (array) ($settings['default_columns_desktop'] ?? []), true)) : ?>
+                                        <li draggable="true" data-watchlist-selected-column="<?php echo esc_attr($column); ?>" style="cursor:move;padding:4px 0;"><?php echo esc_html($column); ?></li>
+                                    <?php endif; ?>
+                                <?php endforeach; ?>
+                            </ol>
+                            <p class="description">Kéo thả để sắp xếp thứ tự cột ngoài frontend.</p>
+                        </div>
+                    </div>
+                    <p><strong>Mobile (global default)</strong></p>
+                    <div class="lcni-front-grid">
+                        <?php foreach ((array) ($settings['allowed_columns'] ?? []) as $column) : ?>
+                            <label><input type="checkbox" name="lcni_frontend_watchlist_default_columns_mobile[]" value="<?php echo esc_attr($column); ?>" <?php checked(in_array($column, (array) ($settings['default_columns_mobile'] ?? []), true)); ?>> <?php echo esc_html($column); ?></label>
+                        <?php endforeach; ?>
+                    </div>
+                    <?php submit_button('Save'); ?>
+                </form>
+            </div>
+
+            <div id="lcni-watchlist-column-labels" class="lcni-watchlist-pane">
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                    <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                    <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
+                    <input type="hidden" name="lcni_frontend_watchlist_section" value="column_labels">
+                    <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                    <h3>Column Labels</h3>
+                    <p>Admin có thể đặt label hiển thị cho từng cột (để trống sẽ dùng tên mặc định).</p>
+                    <table class="form-table" role="presentation"><tbody>
+                        <?php foreach ($all_columns as $column) : ?>
+                            <tr>
+                                <th><?php echo esc_html($column); ?></th>
+                                <td>
+                                    <input type="hidden" name="lcni_frontend_watchlist_column_label_key[]" value="<?php echo esc_attr($column); ?>">
+                                    <input type="text" name="lcni_frontend_watchlist_column_label[]" value="<?php echo esc_attr((string) ($configured_labels[$column] ?? '')); ?>" class="regular-text" placeholder="<?php echo esc_attr($column); ?>">
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody></table>
+                    <?php submit_button('Save'); ?>
+                </form>
+            </div>
+
+            <div id="lcni-watchlist-style-config" class="lcni-watchlist-pane">
+                <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                    <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                    <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                    <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
+                    <input type="hidden" name="lcni_frontend_watchlist_section" value="style_config">
+                    <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+
+                    <h3>Style config</h3>
+                    <p><input type="text" name="lcni_frontend_watchlist_style_font" value="<?php echo esc_attr((string) ($settings['styles']['font'] ?? 'inherit')); ?>" placeholder="Font family"></p>
+                    <p><label>Sticky column
+                    <!-- sticky per-module removed: use Bảng dữ liệu tab -->
+                    </label></p>
+                    <!-- sticky_header removed — controlled globally -->
+
+                    <h4>Watchlist dropdown style</h4>
+                    <p><label>Height <input type="number" min="28" max="80" name="lcni_frontend_watchlist_style_dropdown_height" value="<?php echo esc_attr((string) ($settings['styles']['dropdown_height'] ?? 34)); ?>"> px</label></p>
+                    <p><label>Width <input type="number" min="120" max="520" name="lcni_frontend_watchlist_style_dropdown_width" value="<?php echo esc_attr((string) ($settings['styles']['dropdown_width'] ?? 220)); ?>"> px</label></p>
+                    <p><label>Font size <input type="number" min="10" max="24" name="lcni_frontend_watchlist_style_dropdown_font_size" value="<?php echo esc_attr((string) ($settings['styles']['dropdown_font_size'] ?? 13)); ?>"> px</label></p>
+                    <p><label>Border color <input type="color" name="lcni_frontend_watchlist_style_dropdown_border_color" value="<?php echo esc_attr((string) ($settings['styles']['dropdown_border_color'] ?? '#d1d5db')); ?>"></label></p>
+                    <p><label>Border radius <input type="number" min="0" max="24" name="lcni_frontend_watchlist_style_dropdown_border_radius" value="<?php echo esc_attr((string) ($settings['styles']['dropdown_border_radius'] ?? 8)); ?>"> px</label></p>
+                    <h4>Symbol input style</h4>
+                    <p><label>Height <input type="number" min="28" max="80" name="lcni_frontend_watchlist_style_input_height" value="<?php echo esc_attr((string) ($settings['styles']['input_height'] ?? 34)); ?>"> px</label></p>
+                    <p><label>Width <input type="number" min="120" max="520" name="lcni_frontend_watchlist_style_input_width" value="<?php echo esc_attr((string) ($settings['styles']['input_width'] ?? 160)); ?>"> px</label></p>
+                    <p><label>Font size <input type="number" min="10" max="24" name="lcni_frontend_watchlist_style_input_font_size" value="<?php echo esc_attr((string) ($settings['styles']['input_font_size'] ?? 13)); ?>"> px</label></p>
+                    <p><label>Border color <input type="color" name="lcni_frontend_watchlist_style_input_border_color" value="<?php echo esc_attr((string) ($settings['styles']['input_border_color'] ?? '#d1d5db')); ?>"></label></p>
+                    <p><label>Border radius <input type="number" min="0" max="24" name="lcni_frontend_watchlist_style_input_border_radius" value="<?php echo esc_attr((string) ($settings['styles']['input_border_radius'] ?? 8)); ?>"> px</label></p>
+                    <p><label>Table horizontal scroll speed <input type="number" min="1" max="5" name="lcni_frontend_watchlist_style_scroll_speed" value="<?php echo esc_attr((string) ($settings['styles']['scroll_speed'] ?? 1)); ?>"></label></p>
+
+                    <h3>Add to watchlist button style</h3>
+                    <p class="description">Cấu hình nút trong <strong>Bảng dữ liệu (Button Style Config)</strong>.</p>
+
+                    <h3>Shortcode button: [lcni_watchlist_add_form]</h3>
+                    <p><label>Icon <input type="text" name="lcni_frontend_watchlist_form_btn_icon" value="<?php echo esc_attr((string) ($settings['add_form_button']['icon'] ?? 'fa-solid fa-heart-circle-plus')); ?>"></label></p>
+                    <p><label>Background <input type="color" name="lcni_frontend_watchlist_form_btn_background" value="<?php echo esc_attr((string) ($settings['add_form_button']['background'] ?? '#2563eb')); ?>"></label></p>
+                    <p><label>Text color <input type="color" name="lcni_frontend_watchlist_form_btn_text_color" value="<?php echo esc_attr((string) ($settings['add_form_button']['text_color'] ?? '#ffffff')); ?>"></label></p>
+                    <p><label>Font size <input type="number" min="10" max="24" name="lcni_frontend_watchlist_form_btn_font_size" value="<?php echo esc_attr((string) ($settings['add_form_button']['font_size'] ?? 14)); ?>"></label></p>
+                    <p><label>Chiều cao nút <input type="number" min="28" max="56" name="lcni_frontend_watchlist_form_btn_height" value="<?php echo esc_attr((string) ($settings['add_form_button']['height'] ?? 34)); ?>"> px</label></p>
+                    <?php submit_button('Save'); ?>
+                </form>
+            </div>
+
+            <script src="<?php echo esc_url(LCNI_URL . 'assets/vendor/echarts.min.js'); ?>"></script>
+            <script>
+                (function () {
+                    const nav = document.getElementById('lcni-watchlist-sub-tabs');
+                    if (!nav) {
+                        return;
+                    }
+
+                    const buttons = nav.querySelectorAll('button[data-watchlist-sub-tab]');
+                    const panes = document.querySelectorAll('.lcni-watchlist-pane');
+                    const url = new URL(window.location.href);
+                    const current = url.searchParams.get('watchlist_tab') || 'lcni-watchlist-columns';
+                    const validTabs = ['lcni-watchlist-columns', 'lcni-watchlist-stock-detail-page', 'lcni-watchlist-default-columns', 'lcni-watchlist-style-config'];
+                    const stickyColumn = 'symbol'; // controlled globally — first column always sticky
+
+                    const activate = function (tabId) {
+                        const resolvedTab = validTabs.includes(tabId) ? tabId : 'lcni-watchlist-columns';
+                        buttons.forEach((btn) => btn.classList.toggle('active', btn.getAttribute('data-watchlist-sub-tab') === resolvedTab));
+                        panes.forEach((pane) => pane.classList.toggle('active', pane.id === resolvedTab));
+                        const nextUrl = new URL(window.location.href);
+                        nextUrl.searchParams.set('watchlist_tab', resolvedTab);
+                        window.history.replaceState({}, '', nextUrl.toString());
+                    };
+
+                    buttons.forEach((btn) => {
+                        btn.addEventListener('click', function () {
+                            activate(btn.getAttribute('data-watchlist-sub-tab'));
+                        });
+                    });
+
+                    const bindSortableColumnsForm = (form, checkboxSelector, listSelector, itemAttr, hiddenSelector, isLockedColumn) => {
+                        if (!form) return;
+                        const selectedList = form.querySelector(listSelector);
+                        const hiddenOrder = form.querySelector(hiddenSelector);
+                        if (!selectedList || !hiddenOrder) return;
+
+                        const syncOrder = () => {
+                            hiddenOrder.value = Array.from(selectedList.querySelectorAll('[' + itemAttr + ']')).map((node) => node.getAttribute(itemAttr) || '').filter(Boolean).join(',');
+                        };
+
+                        const bindDnD = () => {
+                            let dragging = null;
+                            selectedList.querySelectorAll('[' + itemAttr + ']').forEach((item) => {
+                                const column = item.getAttribute(itemAttr) || '';
+                                const locked = typeof isLockedColumn === 'function' ? isLockedColumn(column, item) : false;
+                                if (locked) {
+                                    item.setAttribute('draggable', 'false');
+                                    item.style.cursor = 'not-allowed';
+                                    if (!String(item.textContent || '').includes('(sticky)')) {
+                                        item.textContent = column + ' (sticky)';
+                                    }
+                                }
+                                item.addEventListener('dragstart', (event) => {
+                                    if (locked) {
+                                        event.preventDefault();
+                                        dragging = null;
+                                        return;
+                                    }
+                                    dragging = item;
+                                    item.style.opacity = '0.5';
+                                });
+                                item.addEventListener('dragend', () => { item.style.opacity = ''; dragging = null; syncOrder(); });
+                                item.addEventListener('dragover', (event) => event.preventDefault());
+                                item.addEventListener('drop', (event) => {
+                                    event.preventDefault();
+                                    if (locked || !dragging || dragging === item) return;
+                                    const rect = item.getBoundingClientRect();
+                                    const after = (event.clientY - rect.top) > rect.height / 2;
+                                    if (after) item.after(dragging); else item.before(dragging);
+                                    syncOrder();
+                                });
+                            });
+                        };
+
+                        const rebuildSelected = () => {
+                            const checked = Array.from(form.querySelectorAll(checkboxSelector + ':checked')).map((node) => node.value);
+                            const existing = Array.from(selectedList.querySelectorAll('[' + itemAttr + ']')).map((node) => node.getAttribute(itemAttr) || '');
+                            const next = existing.filter((col) => checked.includes(col));
+                            checked.forEach((col) => { if (!next.includes(col)) next.push(col); });
+                            selectedList.innerHTML = next.map((col) => `<li draggable="true" ${itemAttr}="${col}" style="cursor:move;padding:4px 0;">${col}</li>`).join('');
+                            bindDnD();
+                            syncOrder();
+                        };
+
+                        form.querySelectorAll(checkboxSelector).forEach((checkbox) => checkbox.addEventListener('change', rebuildSelected));
+                        bindDnD();
+                        syncOrder();
+                    };
+
+                    bindSortableColumnsForm(
+                        document.querySelector('#lcni-watchlist-columns form'),
+                        '[data-watchlist-columns-checkbox]',
+                        '[data-watchlist-columns-selected-list]',
+                        'data-watchlist-columns-selected-column',
+                        '[data-watchlist-columns-selected-order]',
+                        (column) => stickyColumn !== '' && (stickyColumn === 'first' ? column === 'symbol' : column === stickyColumn)
+                    );
+
+                    const defaultForm = document.querySelector('#lcni-watchlist-default-columns form');
+                    bindSortableColumnsForm(
+                        defaultForm,
+                        '[data-watchlist-desktop-checkbox]',
+                        '[data-watchlist-selected-list]',
+                        'data-watchlist-selected-column',
+                        '[data-watchlist-selected-order]',
+                        (column) => stickyColumn !== '' && (stickyColumn === 'first' ? column === 'symbol' : column === stickyColumn)
+                    );
+
+                    activate(current);
+                })();
+            </script>
+        </div>
+        <?php
+    }
+
+    private function normalize_watchlist_column_label_pairs($labels) {
+        if (!is_array($labels)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($labels as $key => $item) {
+            if (is_array($item)) {
+                $data_key = sanitize_key($item['data_key'] ?? '');
+                $label = sanitize_text_field((string) ($item['label'] ?? ''));
+            } else {
+                $data_key = sanitize_key($key);
+                $label = sanitize_text_field((string) $item);
+            }
+
+            if ($data_key === '' || $label === '') {
+                continue;
+            }
+
+            $normalized[] = [
+                'data_key' => $data_key,
+                'label' => $label,
+            ];
+        }
+
+        return $normalized;
+    }
+
+
+    private function render_frontend_module_form($module, $tab_id, $labels, $settings) {
+        $selected_fields = (array) ($settings['allowed_fields'] ?? []);
+        ?>
+        <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form" data-frontend-module-form>
+                <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
+                <input type="hidden" name="lcni_frontend_allowed_field_order" value="<?php echo esc_attr(implode(',', $selected_fields)); ?>" data-frontend-module-selected-order>
+                <h3><?php echo esc_html($module === 'signals' ? 'LCNi Signals' : 'Stock Overview'); ?></h3>
+                <p><label>Tên module <input type="text" name="lcni_frontend_module_title" value="<?php echo esc_attr((string) get_option($module === 'signals' ? 'lcni_frontend_signal_title' : 'lcni_frontend_overview_title', $module === 'signals' ? 'LCNi Signals' : 'Stock Overview')); ?>" class="regular-text"></label></p>
+                <p>Chọn chỉ báo được phép hiển thị để user frontend tùy chọn yêu thích.</p>
+                <div style="display:grid;grid-template-columns:4fr 1fr;gap:16px;align-items:start;">
+                    <div class="lcni-front-grid" style="margin:0;">
+                        <?php foreach ($labels as $key => $label) : ?>
+                            <label><input type="checkbox" name="lcni_frontend_allowed_fields[]" value="<?php echo esc_attr($key); ?>" data-frontend-module-checkbox <?php checked(in_array($key, $selected_fields, true)); ?>> <?php echo esc_html($label); ?></label>
+                        <?php endforeach; ?>
+                    </div>
+                    <div style="border:1px solid #dcdcde;border-radius:6px;padding:8px;background:#f9fafb;">
+                        <p style="margin:0 0 8px;"><strong>Thứ tự hiển thị</strong></p>
+                        <ul style="margin:0;padding-left:16px;max-height:360px;overflow:auto;" data-frontend-module-selected-list>
+                            <?php foreach ($selected_fields as $field_key) : ?>
+                                <?php if (!isset($labels[$field_key])) { continue; } ?>
+                                <li draggable="true" data-frontend-module-selected-field="<?php echo esc_attr($field_key); ?>" style="cursor:move;padding:4px 0;"><?php echo esc_html($labels[$field_key]); ?></li>
+                            <?php endforeach; ?>
+                        </ul>
+                    </div>
+                </div>
+                <table class="form-table" role="presentation"><tbody>
+                    <tr><th>Màu label</th><td><input type="color" name="lcni_frontend_style_label_color" value="<?php echo esc_attr((string) ($settings['styles']['label_color'] ?? '#4b5563')); ?>"></td></tr>
+                    <tr><th>Màu value</th><td><input type="color" name="lcni_frontend_style_value_color" value="<?php echo esc_attr((string) ($settings['styles']['value_color'] ?? '#111827')); ?>"></td></tr>
+                    <tr><th>Màu nền item</th><td><input type="color" name="lcni_frontend_style_item_background" value="<?php echo esc_attr((string) ($settings['styles']['item_background'] ?? '#f9fafb')); ?>"></td></tr>
+                    <tr><th>Màu nền box lớn</th><td><input type="color" name="lcni_frontend_style_container_background" value="<?php echo esc_attr((string) ($settings['styles']['container_background'] ?? '#ffffff')); ?>"></td></tr>
+                    <tr><th>Màu viền box lớn</th><td><input type="color" name="lcni_frontend_style_container_border" value="<?php echo esc_attr((string) ($settings['styles']['container_border'] ?? '#e5e7eb')); ?>"></td></tr>
+                    <tr><th>Chiều cao box</th><td><input type="number" min="40" max="300" name="lcni_frontend_style_item_height" value="<?php echo esc_attr((string) ($settings['styles']['item_height'] ?? 56)); ?>"> px</td></tr>
+                    <tr><th>Cỡ chữ label</th><td><input type="number" min="10" max="40" name="lcni_frontend_style_label_font_size" value="<?php echo esc_attr((string) ($settings['styles']['label_font_size'] ?? 12)); ?>"> px</td></tr>
+                    <tr><th>Cỡ chữ value</th><td><input type="number" min="10" max="40" name="lcni_frontend_style_value_font_size" value="<?php echo esc_attr((string) ($settings['styles']['value_font_size'] ?? 14)); ?>"> px</td></tr>
+                </tbody></table>
+                <?php submit_button('Lưu Frontend Settings'); ?>
+            </form>
+        </div>
+        <?php
+    }
+
+
+    private function render_frontend_chart_form($module, $tab_id, $settings) {
+        $allowed_panels = (array) ($settings['allowed_panels'] ?? []);
+        $default_mode = (string) ($settings['default_mode'] ?? 'line');
+        $compact_mode = !empty($settings['compact_mode']);
+        $chart_sync_enabled = !array_key_exists('chart_sync_enabled', $settings) || !empty($settings['chart_sync_enabled']);
+        $fit_to_screen_on_load = !array_key_exists('fit_to_screen_on_load', $settings) || !empty($settings['fit_to_screen_on_load']);
+        $default_indicators = [
+            'default_ma20' => !array_key_exists('default_ma20', $settings) || !empty($settings['default_ma20']),
+            'default_ma50' => !array_key_exists('default_ma50', $settings) || !empty($settings['default_ma50']),
+            'default_rsi' => !array_key_exists('default_rsi', $settings) || !empty($settings['default_rsi']),
+            'default_macd' => !empty($settings['default_macd']),
+            'default_rs_1w_by_exchange' => !array_key_exists('default_rs_1w_by_exchange', $settings) || !empty($settings['default_rs_1w_by_exchange']),
+            'default_rs_1m_by_exchange' => !array_key_exists('default_rs_1m_by_exchange', $settings) || !empty($settings['default_rs_1m_by_exchange']),
+            'default_rs_3m_by_exchange' => !empty($settings['default_rs_3m_by_exchange']),
+        ];
+        $panel_labels = [
+            'volume' => 'Volume',
+            'macd' => 'MACD',
+            'rsi' => 'RSI',
+            'rs' => 'RS by LCNi',
+        ];
+        ?>
+        <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
+                <h3>Stock Chart</h3>
+                <p><label>Tên module <input type="text" name="lcni_frontend_module_title" value="<?php echo esc_attr((string) get_option('lcni_frontend_chart_title', 'Stock Chart')); ?>" class="regular-text"></label></p>
+                <p>Chọn panel cho phép user bật/tắt, kiểu chart mặc định và chế độ hiển thị gọn.</p>
+                <div class="lcni-front-grid">
+                    <?php foreach ($panel_labels as $key => $label) : ?>
+                        <label><input type="checkbox" name="lcni_frontend_allowed_panels[]" value="<?php echo esc_attr($key); ?>" <?php checked(in_array($key, $allowed_panels, true)); ?>> <?php echo esc_html($label); ?></label>
+                    <?php endforeach; ?>
+                </div>
+                <table class="form-table" role="presentation"><tbody>
+                    <tr>
+                        <th>Kiểu chart mặc định</th>
+                        <td>
+                            <select name="lcni_frontend_default_mode">
+                                <option value="line" <?php selected($default_mode, 'line'); ?>>Line</option>
+                                <option value="candlestick" <?php selected($default_mode, 'candlestick'); ?>>Candlestick</option>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Compact mode</th>
+                        <td><label><input type="checkbox" name="lcni_frontend_compact_mode" value="1" <?php checked($compact_mode); ?>> Bật chế độ gọn (đưa controls vào vùng chart)</label></td>
+                    </tr>
+                    <tr>
+                        <th>Mặc định số nến hiển thị</th>
+                        <td><input type="number" min="20" max="1000" name="lcni_frontend_default_visible_bars" value="<?php echo esc_attr((string) ($settings['default_visible_bars'] ?? 120)); ?>"> bars</td>
+                    </tr>
+                    <tr>
+                        <th>Đồng bộ zoom/scroll giữa các panel</th>
+                        <td><label><input type="checkbox" name="lcni_frontend_chart_sync_enabled" value="1" <?php checked($chart_sync_enabled); ?>> Bật sync visible range</label></td>
+                    </tr>
+                    <tr>
+                        <th>Fit to screen on load</th>
+                        <td><label><input type="checkbox" name="lcni_frontend_fit_to_screen_on_load" value="1" <?php checked($fit_to_screen_on_load); ?>> Enable "Fit to screen on load"</label></td>
+                    </tr>
+                    <tr>
+                        <th>Default enabled indicators</th>
+                        <td>
+                            <div class="lcni-front-grid">
+                                <label><input type="checkbox" name="lcni_frontend_default_ma20" value="1" <?php checked($default_indicators['default_ma20']); ?>> MA20</label>
+                                <label><input type="checkbox" name="lcni_frontend_default_ma50" value="1" <?php checked($default_indicators['default_ma50']); ?>> MA50</label>
+                                <label><input type="checkbox" name="lcni_frontend_default_rsi" value="1" <?php checked($default_indicators['default_rsi']); ?>> RSI</label>
+                                <label><input type="checkbox" name="lcni_frontend_default_macd" value="1" <?php checked($default_indicators['default_macd']); ?>> MACD</label>
+                                <label><input type="checkbox" name="lcni_frontend_default_rs_1w_by_exchange" value="1" <?php checked($default_indicators['default_rs_1w_by_exchange']); ?>> RS 1W</label>
+                                <label><input type="checkbox" name="lcni_frontend_default_rs_1m_by_exchange" value="1" <?php checked($default_indicators['default_rs_1m_by_exchange']); ?>> RS 1M</label>
+                                <label><input type="checkbox" name="lcni_frontend_default_rs_3m_by_exchange" value="1" <?php checked($default_indicators['default_rs_3m_by_exchange']); ?>> RS 3M</label>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody></table>
+                <?php submit_button('Lưu Frontend Settings'); ?>
+            </form>
+        </div>
+        <?php
+    }
+
+
+    private function render_frontend_chart_analyst_form($module, $tab_id, $settings) {
+        $templates = (array) ($settings['templates'] ?? []);
+        $default_template = (array) ($settings['default_template'] ?? []);
+        $indicator_labels = [
+            'ma20' => 'MA20',
+            'ma50' => 'MA50',
+            'ma100' => 'MA100',
+            'ma200' => 'MA200',
+            'rsi' => 'RSI(14)',
+            'macd' => 'MACD(12,26,9)',
+            'rs_1w_by_exchange' => 'RS 1W',
+            'rs_1m_by_exchange' => 'RS 1M',
+            'rs_3m_by_exchange' => 'RS 3M',
+        ];
+        $context_labels = [
+            'stock_detail' => 'Stock Detail',
+            'dashboard' => 'Dashboard',
+            'watchlist' => 'Watchlist',
+        ];
+        ?>
+        <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=lcni-settings')); ?>" class="lcni-front-form">
+                <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                <input type="hidden" name="lcni_redirect_tab" value="<?php echo esc_attr($tab_id); ?>">
+                <input type="hidden" name="lcni_admin_action" value="save_frontend_settings">
+                <input type="hidden" name="lcni_frontend_module" value="<?php echo esc_attr($module); ?>">
+                <h3>Chart Analyst</h3>
+                <p>Thiết lập template chỉ báo mặc định cho các ngữ cảnh hiển thị frontend.</p>
+                <?php foreach ($templates as $template_key => $template_config) :
+                    $template_label = (string) ($template_config['label'] ?? $template_key);
+                    $enabled_indicators = isset($template_config['indicators']) && is_array($template_config['indicators']) ? $template_config['indicators'] : [];
+                    ?>
+                    <h4><?php echo esc_html($template_label); ?></h4>
+                    <p><label>Tên template <input type="text" name="lcni_chart_analyst_template_label[<?php echo esc_attr($template_key); ?>]" value="<?php echo esc_attr($template_label); ?>" class="regular-text"></label></p>
+                    <div class="lcni-front-grid" style="margin-bottom:16px;">
+                        <?php foreach ($indicator_labels as $indicator_key => $indicator_label) : ?>
+                            <label><input type="checkbox" name="lcni_chart_analyst_template_indicators[<?php echo esc_attr($template_key); ?>][]" value="<?php echo esc_attr($indicator_key); ?>" <?php checked(in_array($indicator_key, $enabled_indicators, true)); ?>> <?php echo esc_html($indicator_label); ?></label>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endforeach; ?>
+
+                <h4>Default template by context</h4>
+                <table class="form-table" role="presentation"><tbody>
+                    <?php foreach ($context_labels as $context_key => $context_label) : ?>
+                        <tr>
+                            <th><?php echo esc_html($context_label); ?></th>
+                            <td>
+                                <select name="lcni_chart_analyst_default_template_<?php echo esc_attr($context_key); ?>">
+                                    <?php foreach ($templates as $template_key => $template_config) : ?>
+                                        <option value="<?php echo esc_attr($template_key); ?>" <?php selected((string) ($default_template[$context_key] ?? ''), (string) $template_key); ?>>
+                                            <?php echo esc_html((string) ($template_config['label'] ?? $template_key)); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody></table>
+                <?php submit_button('Lưu Frontend Settings'); ?>
+            </form>
+        </div>
+        <?php
+    }
+
+    private function render_rule_settings_section($rule_settings, $redirect_page = 'lcni-settings') {
+        $rule_rebuild_status = LCNI_DB::get_rule_rebuild_status();
+        ?>
+        <style>
+            .lcni-sub-tab-nav { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; border-bottom: 1px solid #dcdcde; }
+            .lcni-sub-tab-nav button { border: 1px solid #dcdcde; border-bottom: 0; background: #f6f7f7; padding: 6px 10px; cursor: pointer; }
+            .lcni-sub-tab-nav button.active { background: #fff; font-weight: 600; }
+            .lcni-sub-tab-content { display: none; }
+            .lcni-sub-tab-content.active { display: block; }
+            .lcni-rule-form { max-width: 980px; background:#fff; border:1px solid #dcdcde; padding:12px; }
+            .lcni-rule-form .description { margin-top: 0; }
+            .lcni-rule-progress { max-width: 980px; border:1px solid #dcdcde; background:#fff; padding:12px; margin: 10px 0 16px; }
+            .lcni-rule-progress-track { position: relative; width: 100%; height: 16px; border-radius: 999px; background: #f0f0f1; overflow: hidden; }
+            .lcni-rule-progress-fill { position: absolute; top: 0; left: 0; height: 100%; background: #2271b1; transition: width 0.4s ease; }
+            .lcni-rule-progress-text { margin-top: 8px; font-size: 12px; color: #1d2327; }
+        </style>
+        <p>Tùy chỉnh công thức theo từng cột để dễ hiểu, dễ thực thi và hạn chế xung đột giữa các rule.</p>
+        <div class="lcni-rule-progress" id="lcni-rule-progress-wrapper"
+            data-total="<?php echo esc_attr((string) ($rule_rebuild_status['total'] ?? 0)); ?>"
+            data-processed="<?php echo esc_attr((string) ($rule_rebuild_status['processed'] ?? 0)); ?>"
+            data-status="<?php echo esc_attr((string) ($rule_rebuild_status['status'] ?? 'idle')); ?>"
+            data-progress="<?php echo esc_attr((string) ($rule_rebuild_status['progress_percent'] ?? 100)); ?>">
+            <strong>Tiến trình thực thi rule nền:</strong>
+            <div class="lcni-rule-progress-track">
+                <div class="lcni-rule-progress-fill" id="lcni-rule-progress-fill" style="width: <?php echo esc_attr((string) ($rule_rebuild_status['progress_percent'] ?? 100)); ?>%;"></div>
+            </div>
+            <div class="lcni-rule-progress-text" id="lcni-rule-progress-text">
+                <?php echo esc_html(sprintf('%s - %d/%d (%d%%)', strtoupper((string) ($rule_rebuild_status['status'] ?? 'idle')), (int) ($rule_rebuild_status['processed'] ?? 0), (int) ($rule_rebuild_status['total'] ?? 0), (int) ($rule_rebuild_status['progress_percent'] ?? 100))); ?>
+            </div>
+        </div>
+        <div class="lcni-sub-tab-nav" id="lcni-rule-sub-tabs">
+            <button type="button" data-sub-tab="lcni-tab-rule-xay-nen">xay_nen</button>
+            <button type="button" data-sub-tab="lcni-tab-rule-xay-nen-count-30">xay_nen_count_30</button>
+            <button type="button" data-sub-tab="lcni-tab-rule-nen-type">nen_type</button>
+            <button type="button" data-sub-tab="lcni-tab-rule-pha-nen">pha_nen</button>
+            <button type="button" data-sub-tab="lcni-tab-rule-tang-gia-kem-vol">tang_gia_kem_vol</button>
+            <button type="button" data-sub-tab="lcni-tab-rule-rs-exchange">rs_exchange</button>
+        </div>
+
+        <div id="lcni-tab-rule-xay-nen" class="lcni-sub-tab-content">
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=' . $redirect_page)); ?>" class="lcni-rule-form">
+                <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                <input type="hidden" name="lcni_admin_action" value="save_rule_settings">
+                <input type="hidden" name="lcni_rule_execute" value="1">
+                <input type="hidden" name="lcni_redirect_page" value="<?php echo esc_attr($redirect_page); ?>">
+                <input type="hidden" name="lcni_redirect_tab" value="lcni-tab-rule-xay-nen">
+                <p class="description">Thiết lập điều kiện nhận diện cổ phiếu đang xây nền.</p>
+                <table class="form-table" role="presentation"><tbody>
+                    <tr><th scope="row">RSI min / max</th><td><input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_rsi_min]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_rsi_min']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_rsi_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_rsi_max']); ?>"></td></tr>
+                    <tr><th scope="row">|Giá/MA10|, |Giá/MA20|, |Giá/MA50| tối đa</th><td><input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_gia_sv_ma10_abs_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_gia_sv_ma10_abs_max']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_gia_sv_ma20_abs_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_gia_sv_ma20_abs_max']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_gia_sv_ma50_abs_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_gia_sv_ma50_abs_max']); ?>"></td></tr>
+                    <tr><th scope="row">Vol sv Vol MA20 max / Volume min</th><td><input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_vol_sv_vol_ma20_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_vol_sv_vol_ma20_max']); ?>"> / <input type="number" step="1" name="lcni_rule_settings[xay_nen_volume_min]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_volume_min']); ?>"></td></tr>
+                    <tr><th scope="row">Biên độ |%T-1|, |%1W|, |%1M|, |%3M| tối đa</th><td><input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_pct_t_1_abs_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_pct_t_1_abs_max']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_pct_1w_abs_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_pct_1w_abs_max']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_pct_1m_abs_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_pct_1m_abs_max']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[xay_nen_pct_3m_abs_max]" value="<?php echo esc_attr((string) $rule_settings['xay_nen_pct_3m_abs_max']); ?>"></td></tr>
+                </tbody></table>
+                <?php submit_button('Lưu & thực thi rule xay_nen'); ?>
+            </form>
+        </div>
+
+        <div id="lcni-tab-rule-xay-nen-count-30" class="lcni-sub-tab-content">
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=' . $redirect_page)); ?>" class="lcni-rule-form">
+                <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                <input type="hidden" name="lcni_admin_action" value="save_rule_settings">
+                <input type="hidden" name="lcni_rule_execute" value="1">
+                <input type="hidden" name="lcni_redirect_page" value="<?php echo esc_attr($redirect_page); ?>">
+                <input type="hidden" name="lcni_redirect_tab" value="lcni-tab-rule-xay-nen-count-30">
+                <p class="description">xay_nen_count_30 được tính tự động từ kết quả xay_nen trong 30 phiên gần nhất. Tab này dùng để thực thi nhanh sau khi chỉnh xay_nen.</p>
+                <?php submit_button('Thực thi lại xay_nen_count_30'); ?>
+            </form>
+        </div>
+
+        <div id="lcni-tab-rule-nen-type" class="lcni-sub-tab-content">
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=' . $redirect_page)); ?>" class="lcni-rule-form">
+                <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                <input type="hidden" name="lcni_admin_action" value="save_rule_settings">
+                <input type="hidden" name="lcni_rule_execute" value="1">
+                <input type="hidden" name="lcni_redirect_page" value="<?php echo esc_attr($redirect_page); ?>">
+                <input type="hidden" name="lcni_redirect_tab" value="lcni-tab-rule-nen-type">
+                <p class="description">Xếp loại nền theo ngưỡng của xay_nen_count_30.</p>
+                <table class="form-table" role="presentation"><tbody>
+                    <tr><th scope="row">Ngưỡng Nền chặt / Nền vừa (xay_nen_count_30)</th><td><input type="number" step="1" name="lcni_rule_settings[nen_type_chat_min_count_30]" value="<?php echo esc_attr((string) $rule_settings['nen_type_chat_min_count_30']); ?>"> / <input type="number" step="1" name="lcni_rule_settings[nen_type_vua_min_count_30]" value="<?php echo esc_attr((string) $rule_settings['nen_type_vua_min_count_30']); ?>"></td></tr>
+                </tbody></table>
+                <?php submit_button('Lưu & thực thi rule nen_type'); ?>
+            </form>
+        </div>
+
+        <div id="lcni-tab-rule-pha-nen" class="lcni-sub-tab-content">
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=' . $redirect_page)); ?>" class="lcni-rule-form">
+                <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                <input type="hidden" name="lcni_admin_action" value="save_rule_settings">
+                <input type="hidden" name="lcni_rule_execute" value="1">
+                <input type="hidden" name="lcni_redirect_page" value="<?php echo esc_attr($redirect_page); ?>">
+                <input type="hidden" name="lcni_redirect_tab" value="lcni-tab-rule-pha-nen">
+                <p class="description">Điều kiện xác định phá nền dựa theo biến động giá và thanh khoản.</p>
+                <table class="form-table" role="presentation"><tbody>
+                    <tr><th scope="row">Điều kiện phá nền (%T-1 min, Vol sv Vol MA20 min)</th><td><input type="number" step="0.0001" name="lcni_rule_settings[pha_nen_pct_t_1_min]" value="<?php echo esc_attr((string) $rule_settings['pha_nen_pct_t_1_min']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[pha_nen_vol_sv_vol_ma20_min]" value="<?php echo esc_attr((string) $rule_settings['pha_nen_vol_sv_vol_ma20_min']); ?>"></td></tr>
+                </tbody></table>
+                <?php submit_button('Lưu & thực thi rule pha_nen'); ?>
+            </form>
+        </div>
+
+        <div id="lcni-tab-rule-tang-gia-kem-vol" class="lcni-sub-tab-content">
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=' . $redirect_page)); ?>" class="lcni-rule-form">
+                <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                <input type="hidden" name="lcni_admin_action" value="save_rule_settings">
+                <input type="hidden" name="lcni_rule_execute" value="1">
+                <input type="hidden" name="lcni_redirect_page" value="<?php echo esc_attr($redirect_page); ?>">
+                <input type="hidden" name="lcni_redirect_tab" value="lcni-tab-rule-tang-gia-kem-vol">
+                <p class="description">JOIN trực tiếp symbol -&gt; exchange từ bảng lcni_sym_icb_market để gắn nhãn “Tăng giá kèm Vol”.</p>
+                <table class="form-table" role="presentation"><tbody>
+                    <tr><th scope="row">Ngưỡng %T-1 theo sàn (HOSE / HNX / UPCOM)</th><td><input type="number" step="0.0001" name="lcni_rule_settings[tang_gia_kem_vol_hose_pct_t_1_min]" value="<?php echo esc_attr((string) $rule_settings['tang_gia_kem_vol_hose_pct_t_1_min']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[tang_gia_kem_vol_hnx_pct_t_1_min]" value="<?php echo esc_attr((string) $rule_settings['tang_gia_kem_vol_hnx_pct_t_1_min']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[tang_gia_kem_vol_upcom_pct_t_1_min]" value="<?php echo esc_attr((string) $rule_settings['tang_gia_kem_vol_upcom_pct_t_1_min']); ?>"></td></tr>
+                    <tr><th scope="row">Ngưỡng Vol ratio (Vol/VolMA10, Vol/VolMA20)</th><td><input type="number" step="0.0001" name="lcni_rule_settings[tang_gia_kem_vol_vol_ratio_ma10_min]" value="<?php echo esc_attr((string) $rule_settings['tang_gia_kem_vol_vol_ratio_ma10_min']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[tang_gia_kem_vol_vol_ratio_ma20_min]" value="<?php echo esc_attr((string) $rule_settings['tang_gia_kem_vol_vol_ratio_ma20_min']); ?>"></td></tr>
+                </tbody></table>
+                <?php submit_button('Lưu & thực thi rule tang_gia_kem_vol'); ?>
+            </form>
+        </div>
+
+        <div id="lcni-tab-rule-rs-exchange" class="lcni-sub-tab-content">
+            <form method="post" action="<?php echo esc_url(admin_url('admin.php?page=' . $redirect_page)); ?>" class="lcni-rule-form">
+                <?php wp_nonce_field('lcni_admin_actions', 'lcni_action_nonce'); ?>
+                <input type="hidden" name="lcni_admin_action" value="save_rule_settings">
+                <input type="hidden" name="lcni_rule_execute" value="1">
+                <input type="hidden" name="lcni_redirect_page" value="<?php echo esc_attr($redirect_page); ?>">
+                <input type="hidden" name="lcni_redirect_tab" value="lcni-tab-rule-rs-exchange">
+                <p class="description">Thiết lập rule cho <code>rs_exchange_status</code> và <code>rs_exchange_recommend</code>.</p>
+                <table class="form-table" role="presentation"><tbody>
+                    <tr><th scope="row">Vào Sóng Mạnh (1W min / 1M min / 3M max)</th><td><input type="number" step="0.01" name="lcni_rule_settings[rs_exchange_status_song_manh_1w_min]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_status_song_manh_1w_min']); ?>"> / <input type="number" step="0.01" name="lcni_rule_settings[rs_exchange_status_song_manh_1m_min]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_status_song_manh_1m_min']); ?>"> / <input type="number" step="0.01" name="lcni_rule_settings[rs_exchange_status_song_manh_3m_max]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_status_song_manh_3m_max']); ?>"></td></tr>
+                    <tr><th scope="row">Giữ Trend Mạnh (1W min / 1M min / 3M min)</th><td><input type="number" step="0.01" name="lcni_rule_settings[rs_exchange_status_giu_trend_1w_min]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_status_giu_trend_1w_min']); ?>"> / <input type="number" step="0.01" name="lcni_rule_settings[rs_exchange_status_giu_trend_1m_min]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_status_giu_trend_1m_min']); ?>"> / <input type="number" step="0.01" name="lcni_rule_settings[rs_exchange_status_giu_trend_3m_min]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_status_giu_trend_3m_min']); ?>"></td></tr>
+                    <tr><th scope="row">Yếu (1W max / 1M max / 3M max)</th><td><input type="number" step="0.01" name="lcni_rule_settings[rs_exchange_status_yeu_1w_max]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_status_yeu_1w_max']); ?>"> / <input type="number" step="0.01" name="lcni_rule_settings[rs_exchange_status_yeu_1m_max]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_status_yeu_1m_max']); ?>"> / <input type="number" step="0.01" name="lcni_rule_settings[rs_exchange_status_yeu_3m_max]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_status_yeu_3m_max']); ?>"></td></tr>
+                    <tr><th scope="row">Gợi ý mua (Volume min / RS1W min / RS1W-1M min)</th><td><input type="number" step="1" name="lcni_rule_settings[rs_exchange_recommend_volume_min]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_recommend_volume_min']); ?>"> / <input type="number" step="0.01" name="lcni_rule_settings[rs_exchange_recommend_buy_1w_min]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_recommend_buy_1w_min']); ?>"> / <input type="number" step="0.01" name="lcni_rule_settings[rs_exchange_recommend_buy_1w_gain_over_1m]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_recommend_buy_1w_gain_over_1m']); ?>"></td></tr>
+                    <tr><th scope="row">Gợi ý mua (%1W min / %1M max / %3M max)</th><td><input type="number" step="0.0001" name="lcni_rule_settings[rs_exchange_recommend_buy_pct_1w_min]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_recommend_buy_pct_1w_min']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[rs_exchange_recommend_buy_pct_1m_max]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_recommend_buy_pct_1m_max']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[rs_exchange_recommend_buy_pct_3m_max]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_recommend_buy_pct_3m_max']); ?>"></td></tr>
+                    <tr><th scope="row">Gợi ý mua (%T-1 min / Volume boost ratio)</th><td><input type="number" step="0.0001" name="lcni_rule_settings[rs_exchange_recommend_buy_pct_t_1_min]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_recommend_buy_pct_t_1_min']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[rs_exchange_recommend_buy_volume_boost_ratio]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_recommend_buy_volume_boost_ratio']); ?>"></td></tr>
+                    <tr><th scope="row">Gợi ý bán (RS1W max / %1W max)</th><td><input type="number" step="0.01" name="lcni_rule_settings[rs_exchange_recommend_sell_1w_max]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_recommend_sell_1w_max']); ?>"> / <input type="number" step="0.0001" name="lcni_rule_settings[rs_exchange_recommend_sell_pct_1w_max]" value="<?php echo esc_attr((string) $rule_settings['rs_exchange_recommend_sell_pct_1w_max']); ?>"></td></tr>
+                </tbody></table>
+                <?php submit_button('Lưu & thực thi rule rs_exchange'); ?>
+            </form>
+        </div>
+
+        <script>
+            (function() {
+                const ruleSubTabNav = document.getElementById('lcni-rule-sub-tabs');
+                if (!ruleSubTabNav) {
+                    return;
+                }
+
+                const subButtons = ruleSubTabNav.querySelectorAll('button[data-sub-tab]');
+                const subPanes = document.querySelectorAll('.lcni-sub-tab-content');
+                const subTabDefault = (new URLSearchParams(window.location.search).get('tab')) || 'lcni-tab-rule-xay-nen';
+
+                const activateSubTab = function(tabId) {
+                    subButtons.forEach((btn) => btn.classList.toggle('active', btn.getAttribute('data-sub-tab') === tabId));
+                    subPanes.forEach((pane) => pane.classList.toggle('active', pane.id === tabId));
+                };
+
+                subButtons.forEach((button) => {
+                    button.addEventListener('click', () => activateSubTab(button.getAttribute('data-sub-tab')));
+                });
+
+                const hasRequestedSubTab = Array.from(subButtons).some((btn) => btn.getAttribute('data-sub-tab') === subTabDefault);
+                activateSubTab(hasRequestedSubTab ? subTabDefault : 'lcni-tab-rule-xay-nen');
+
+                const progressWrapper = document.getElementById('lcni-rule-progress-wrapper');
+                const progressFill = document.getElementById('lcni-rule-progress-fill');
+                const progressText = document.getElementById('lcni-rule-progress-text');
+
+                if (!progressWrapper || !progressFill || !progressText) {
+                    return;
+                }
+
+                const endpoint = '<?php echo esc_js(admin_url('admin-ajax.php')); ?>';
+                const nonce = '<?php echo esc_js(wp_create_nonce('lcni_rule_rebuild_nonce')); ?>';
+
+                const renderProgress = function(payload) {
+                    const total = Number(payload.total || 0);
+                    const processed = Number(payload.processed || 0);
+                    const status = String(payload.status || 'idle').toUpperCase();
+                    const progress = Number(payload.progress_percent || (total === 0 ? 100 : 0));
+
+                    progressFill.style.width = Math.max(0, Math.min(100, progress)) + '%';
+                    progressText.textContent = status + ' - ' + processed + '/' + total + ' (' + progress + '%)';
+
+                    return status === 'RUNNING';
+                };
+
+                const pollProgress = function() {
+                    const body = new URLSearchParams();
+                    body.set('action', 'lcni_rule_rebuild_status');
+                    body.set('nonce', nonce);
+
+                    fetch(endpoint, {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                        },
+                        body: body.toString(),
+                    })
+                        .then((response) => response.json())
+                        .then((result) => {
+                            if (!result || !result.success || !result.data) {
+                                return;
+                            }
+
+                            const shouldContinue = renderProgress(result.data);
+                            if (shouldContinue) {
+                                window.setTimeout(pollProgress, 2000);
+                            }
+                        })
+                        .catch(() => {
+                            window.setTimeout(pollProgress, 4000);
+                        });
+                };
+
+                const initialStatus = String(progressWrapper.getAttribute('data-status') || '').toLowerCase();
+                if (initialStatus === 'running') {
+                    window.setTimeout(pollProgress, 1200);
+                }
+            })();
+        </script>
+        <?php
+    }
+
 }

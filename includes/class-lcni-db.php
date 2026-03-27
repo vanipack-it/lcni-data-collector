@@ -6,13 +6,243 @@ if (!defined('ABSPATH')) {
 
 class LCNI_DB {
 
+    private static $rule_settings_cache = null;
+    private static $symbol_exchange_cache = [];
+
+    const SYMBOL_BATCH_LIMIT = 50;
+    const RULE_REBUILD_TASKS_OPTION = 'lcni_rule_rebuild_tasks';
+    const RULE_REBUILD_STATUS_OPTION = 'lcni_rule_rebuild_status';
+    const RULE_REBUILD_BATCH_SIZE = 5;
+    const SEED_REBUILD_QUEUE_OPTION = 'lcni_seed_rebuild_queue_v1';
+    const SEED_REBUILD_WATERMARK_OPTION = 'lcni_seed_rebuild_watermark_v1';
+    const SEED_PIPELINE_LOCK_OPTION = 'lcni_seed_pipeline_lock_v1';
+    const SEED_OPTIMIZATION_WATERMARK_OPTION = 'lcni_seed_optimization_watermark_v1';
+    const SCHEMA_ENSURE_LOCK_OPTION = 'lcni_schema_ensure_lock_v1';
+    const SCHEMA_ENSURE_LOCK_TTL = 120;
+    const DEFAULT_MARKETS = [
+        ['market_id' => '1', 'exchange' => 'UPCOM'],
+        ['market_id' => '2', 'exchange' => 'HOSE'],
+        ['market_id' => '3', 'exchange' => 'HNX'],
+    ];
+
+    const DEFAULT_ICB2 = [
+        ['id_icb2' => 1, 'name_icb2' => 'Bán lẻ'],
+        ['id_icb2' => 2, 'name_icb2' => 'Bảo hiểm'],
+        ['id_icb2' => 3, 'name_icb2' => 'Bất động sản'],
+        ['id_icb2' => 4, 'name_icb2' => 'Công nghệ Thông tin'],
+        ['id_icb2' => 5, 'name_icb2' => 'Dầu khí'],
+        ['id_icb2' => 6, 'name_icb2' => 'Dịch vụ tài chính'],
+        ['id_icb2' => 7, 'name_icb2' => 'Du lịch và Giải trí'],
+        ['id_icb2' => 8, 'name_icb2' => 'Điện, nước & xăng dầu khí đốt'],
+        ['id_icb2' => 9, 'name_icb2' => 'Hàng & Dịch vụ Công nghiệp'],
+        ['id_icb2' => 10, 'name_icb2' => 'Hàng cá nhân & Gia dụng'],
+        ['id_icb2' => 11, 'name_icb2' => 'Hóa chất'],
+        ['id_icb2' => 12, 'name_icb2' => 'Ngân hàng'],
+        ['id_icb2' => 13, 'name_icb2' => 'Ô tô và phụ tùng'],
+        ['id_icb2' => 14, 'name_icb2' => 'Tài nguyên Cơ bản'],
+        ['id_icb2' => 15, 'name_icb2' => 'Thực phẩm và đồ uống'],
+        ['id_icb2' => 16, 'name_icb2' => 'Truyền thông'],
+        ['id_icb2' => 17, 'name_icb2' => 'Viễn thông'],
+        ['id_icb2' => 18, 'name_icb2' => 'Xây dựng và Vật liệu'],
+        ['id_icb2' => 19, 'name_icb2' => 'Y tế'],
+    ];
+
+    const INDEX_SYMBOLS = ['HNX30', 'HNXINDEX', 'UPINDEX', 'VN30', 'VNINDEX', 'VNXALL'];
+    const DEFAULT_INDEX_NAMES = [
+        ['id' => 1, 'index_name' => 'VNINDEX', 'marketid' => '0', 'symbol_type' => 'INDEX', 'symbol' => 'VNINDEX'],
+        ['id' => 2, 'index_name' => 'HNX30', 'marketid' => '0', 'symbol_type' => 'INDEX', 'symbol' => 'HNX30'],
+        ['id' => 3, 'index_name' => 'HNXINDEX', 'marketid' => '0', 'symbol_type' => 'INDEX', 'symbol' => 'HNXINDEX'],
+        ['id' => 4, 'index_name' => 'UPINDEX', 'marketid' => '0', 'symbol_type' => 'INDEX', 'symbol' => 'UPINDEX'],
+        ['id' => 5, 'index_name' => 'VN30', 'marketid' => '0', 'symbol_type' => 'INDEX', 'symbol' => 'VN30'],
+        ['id' => 6, 'index_name' => 'VNXALL', 'marketid' => '0', 'symbol_type' => 'INDEX', 'symbol' => 'VNXALL'],
+    ];
+
+    /**
+     * Build standardized symbol/timeframe series list from raw DB rows.
+     *
+     * @param array $series_rows
+     * @return array<int, array{symbol:string,timeframe:string}>
+     */
+    private static function normalize_series_rows($series_rows) {
+        $normalized = [];
+
+        foreach ((array) $series_rows as $series) {
+            $symbol = strtoupper(trim((string) ($series['symbol'] ?? '')));
+            $timeframe = strtoupper(trim((string) ($series['timeframe'] ?? '')));
+            if ($symbol === '' || $timeframe === '') {
+                continue;
+            }
+
+            $normalized[] = [
+                'symbol' => $symbol,
+                'timeframe' => $timeframe,
+            ];
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * Fetch all distinct symbol/timeframe pairs in OHLC table.
+     *
+     * @return array<int, array{symbol:string,timeframe:string}>
+     */
+    private static function get_all_ohlc_series() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $rows = $wpdb->get_results("SELECT DISTINCT symbol, timeframe FROM {$table}", ARRAY_A);
+
+        return self::normalize_series_rows($rows);
+    }
+
+    public static function ensure_tables_exist() {
+        global $wpdb;
+
+        if (!self::acquire_schema_ensure_lock()) {
+            return;
+        }
+
+        try {
+
+            $required_tables = [
+                $wpdb->prefix . 'lcni_ohlc',
+                $wpdb->prefix . 'lcni_security_definition',
+                $wpdb->prefix . 'lcni_symbols',
+                $wpdb->prefix . 'lcni_symbol_tongquan',
+                $wpdb->prefix . 'lcni_change_logs',
+                $wpdb->prefix . 'lcni_seed_tasks',
+                $wpdb->prefix . 'lcni_marketid',
+                $wpdb->prefix . 'lcni_indexname',
+                $wpdb->prefix . 'lcni_icb2',
+                $wpdb->prefix . 'lcni_sym_icb_market',
+                $wpdb->prefix . 'lcni_watchlist',
+                $wpdb->prefix . 'lcni_saved_filters',
+                $wpdb->prefix . 'lcni_watchlists',
+                $wpdb->prefix . 'lcni_watchlist_symbols',
+                $wpdb->prefix . 'lcni_thong_ke_thi_truong',
+                $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2',
+                $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2_toan_thi_truong',
+                $wpdb->prefix . 'lcni_industry_return',
+                $wpdb->prefix . 'lcni_industry_index',
+                $wpdb->prefix . 'lcni_industry_metrics',
+                $wpdb->prefix . 'lcni_charts',
+            ];
+
+            foreach ($required_tables as $table) {
+                $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+                if ($exists !== $table) {
+                    self::create_tables();
+                    return;
+                }
+            }
+
+            self::ensure_ohlc_indicator_columns();
+            self::ensure_ohlc_symbol_type_column();
+            self::ensure_symbol_market_icb_columns();
+            self::ensure_symbol_tongquan_columns();
+            self::ensure_ohlc_indexes();
+            self::ensure_ohlc_latest_snapshot_infrastructure();
+            self::ensure_market_statistics_schema();
+            self::ensure_industry_analysis_schema();
+            self::ensure_chart_builder_schema();
+            self::normalize_ohlc_numeric_columns();
+            self::sync_symbol_market_icb_mapping();
+            self::sync_symbol_tongquan_with_symbols();
+        } catch ( Throwable $e ) {
+            error_log( '[LCNI] ensure_tables_exist failed: ' . $e->getMessage() );
+        } finally {
+            self::release_schema_ensure_lock();
+        }
+    }
+
+    private static function acquire_schema_ensure_lock() {
+        $now = time();
+        $ttl = max(30, (int) self::SCHEMA_ENSURE_LOCK_TTL);
+        $existing = (int) get_option(self::SCHEMA_ENSURE_LOCK_OPTION, 0);
+
+        if ($existing > 0 && ($now - $existing) < $ttl) {
+            return false;
+        }
+
+        delete_option(self::SCHEMA_ENSURE_LOCK_OPTION);
+
+        return add_option(self::SCHEMA_ENSURE_LOCK_OPTION, (string) $now, '', 'no');
+    }
+
+    private static function release_schema_ensure_lock() {
+        delete_option(self::SCHEMA_ENSURE_LOCK_OPTION);
+    }
+
+    public static function run_pending_migrations() {
+        self::normalize_legacy_ratio_columns();
+        self::repair_ohlc_ratio_columns_over_normalized();
+        self::backfill_ohlc_trading_index_and_xay_nen();
+        self::backfill_ohlc_nen_type_metrics();
+        self::backfill_ohlc_pha_nen_metrics();
+        self::backfill_ohlc_tang_gia_kem_vol_metrics();
+        self::backfill_ohlc_smart_money_metrics();
+        self::backfill_ohlc_rs_1m_by_exchange();
+        self::backfill_ohlc_rs_1w_by_exchange();
+        self::backfill_ohlc_rs_3m_by_exchange();
+        self::backfill_ohlc_rs_exchange_signals();
+        self::backfill_ohlc_rs_recommend_status();
+        self::backfill_ohlc_rsi_status_and_hanh_vi_gia();
+        self::backfill_ohlc_hanh_vi_gia_1w();
+        self::backfill_ohlc_macd_flags();
+        self::normalize_ohlc_macd_signal_columns();
+        self::backfill_ohlc_one_candle();
+        self::backfill_ohlc_two_candle_pattern();
+        self::backfill_ohlc_three_candle_pattern();
+        self::backfill_ohlc_breakout_metrics();
+        self::sync_frontend_settings_with_new_ohlc_columns();
+        self::backfill_market_statistics_tables();
+        self::backfill_industry_analysis_tables();
+        self::ensure_industry_analysis_extended_schema();
+        self::backfill_industry_analysis_extended_metrics();
+        self::ensure_ohlc_symbol_type_column();
+        self::ensure_ohlc_indexes();
+        self::ensure_ohlc_latest_snapshot_infrastructure();
+        self::ensure_chart_builder_schema();
+
+        // Backfill market_context history + latest lần đầu (chỉ chạy 1 lần qua migration flag)
+        if ( get_option( 'lcni_market_context_backfilled_v1' ) !== 'yes' ) {
+            if ( class_exists( 'LCNI_MarketDashboardRepository' ) ) {
+                LCNI_MarketDashboardRepository::ensure_context_table();
+                $repo = new LCNI_MarketDashboardRepository();
+                foreach ( [ '1D', '1W', '1M' ] as $tf ) {
+                    $repo->backfill_history( $tf, 200 );
+                }
+                update_option( 'lcni_market_context_backfilled_v1', 'yes' );
+            }
+        }
+    }
+
     public static function create_tables() {
         global $wpdb;
 
         $charset_collate = $wpdb->get_charset_collate();
         $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
         $security_definition_table = $wpdb->prefix . 'lcni_security_definition';
+        $symbol_table = $wpdb->prefix . 'lcni_symbols';
+        $symbol_tongquan_table = $wpdb->prefix . 'lcni_symbol_tongquan';
         $log_table = $wpdb->prefix . 'lcni_change_logs';
+        $seed_task_table = $wpdb->prefix . 'lcni_seed_tasks';
+        $market_table = $wpdb->prefix . 'lcni_marketid';
+        $index_name_table = $wpdb->prefix . 'lcni_indexname';
+        $icb2_table = $wpdb->prefix . 'lcni_icb2';
+        $symbol_market_icb_table = $wpdb->prefix . 'lcni_sym_icb_market';
+        $watchlist_table = $wpdb->prefix . 'lcni_watchlist';
+        $saved_filters_table = $wpdb->prefix . 'lcni_saved_filters';
+        $watchlists_table = $wpdb->prefix . 'lcni_watchlists';
+        $watchlist_symbols_table = $wpdb->prefix . 'lcni_watchlist_symbols';
+        $market_statistics_table = $wpdb->prefix . 'lcni_thong_ke_thi_truong';
+        $icb2_statistics_table = $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2';
+        $icb2_market_statistics_table = $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2_toan_thi_truong';
+        $industry_return_table = $wpdb->prefix . 'lcni_industry_return';
+        $industry_index_table = $wpdb->prefix . 'lcni_industry_index';
+        $industry_metrics_table = $wpdb->prefix . 'lcni_industry_metrics';
+        $charts_table = $wpdb->prefix . 'lcni_charts';
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
@@ -21,19 +251,96 @@ class LCNI_DB {
             symbol VARCHAR(20) NOT NULL,
             timeframe VARCHAR(10) NOT NULL,
             event_time BIGINT UNSIGNED NOT NULL,
-            open_price DECIMAL(20,6) NOT NULL,
-            high_price DECIMAL(20,6) NOT NULL,
-            low_price DECIMAL(20,6) NOT NULL,
-            close_price DECIMAL(20,6) NOT NULL,
+            open_price DECIMAL(20,2) NOT NULL,
+            high_price DECIMAL(20,2) NOT NULL,
+            low_price DECIMAL(20,2) NOT NULL,
+            close_price DECIMAL(20,2) NOT NULL,
+            one_candle VARCHAR(30) DEFAULT NULL,
+            two_candle_pattern VARCHAR(40) DEFAULT NULL,
+            three_candle_pattern VARCHAR(50) DEFAULT NULL,
+            pct_to_h1m DECIMAL(8,2) DEFAULT NULL,
+            pct_to_h3m DECIMAL(8,2) DEFAULT NULL,
+            pct_to_h6m DECIMAL(8,2) DEFAULT NULL,
+            pct_to_h1y DECIMAL(8,2) DEFAULT NULL,
+            trang_thai_h1m VARCHAR(40) DEFAULT NULL,
+            trang_thai_h3m VARCHAR(40) DEFAULT NULL,
+            trang_thai_h6m VARCHAR(40) DEFAULT NULL,
+            trang_thai_h1y VARCHAR(40) DEFAULT NULL,
+            compression_1m DECIMAL(8,2) DEFAULT NULL,
+            position_1m VARCHAR(40) DEFAULT NULL,
+            position_3m VARCHAR(40) DEFAULT NULL,
+            position_6m VARCHAR(40) DEFAULT NULL,
+            position_1y VARCHAR(40) DEFAULT NULL,
+            breakout_potential_score INT DEFAULT NULL,
             volume BIGINT UNSIGNED NOT NULL DEFAULT 0,
-            value_traded DECIMAL(24,4) NOT NULL DEFAULT 0,
+            value_traded DECIMAL(24,2) NOT NULL DEFAULT 0,
+            pct_t_1 DECIMAL(12,6) DEFAULT NULL,
+            pct_t_3 DECIMAL(12,6) DEFAULT NULL,
+            pct_1w DECIMAL(12,6) DEFAULT NULL,
+            pct_1m DECIMAL(12,6) DEFAULT NULL,
+            rs_1m_by_exchange DECIMAL(6,2) DEFAULT NULL,
+            rs_1w_by_exchange DECIMAL(6,2) DEFAULT NULL,
+            rs_3m_by_exchange DECIMAL(6,2) DEFAULT NULL,
+            rs_exchange_status VARCHAR(50) DEFAULT NULL,
+            rs_exchange_recommend VARCHAR(50) DEFAULT NULL,
+            rs_recommend_status VARCHAR(80) DEFAULT NULL,
+            pct_3m DECIMAL(12,6) DEFAULT NULL,
+            pct_6m DECIMAL(12,6) DEFAULT NULL,
+            pct_1y DECIMAL(12,6) DEFAULT NULL,
+            ma10 DECIMAL(20,2) DEFAULT NULL,
+            ma20 DECIMAL(20,2) DEFAULT NULL,
+            ma50 DECIMAL(20,2) DEFAULT NULL,
+            ma100 DECIMAL(20,2) DEFAULT NULL,
+            ma200 DECIMAL(20,2) DEFAULT NULL,
+            h1m DECIMAL(20,2) DEFAULT NULL,
+            h3m DECIMAL(20,2) DEFAULT NULL,
+            h6m DECIMAL(20,2) DEFAULT NULL,
+            h1y DECIMAL(20,2) DEFAULT NULL,
+            l1m DECIMAL(20,2) DEFAULT NULL,
+            l3m DECIMAL(20,2) DEFAULT NULL,
+            l6m DECIMAL(20,2) DEFAULT NULL,
+            l1y DECIMAL(20,2) DEFAULT NULL,
+            vol_ma10 DECIMAL(24,4) DEFAULT NULL,
+            vol_ma20 DECIMAL(24,4) DEFAULT NULL,
+            gia_sv_ma10 DECIMAL(12,6) DEFAULT NULL,
+            gia_sv_ma20 DECIMAL(12,6) DEFAULT NULL,
+            gia_sv_ma50 DECIMAL(12,6) DEFAULT NULL,
+            gia_sv_ma100 DECIMAL(12,6) DEFAULT NULL,
+            gia_sv_ma200 DECIMAL(12,6) DEFAULT NULL,
+            vol_sv_vol_ma10 DECIMAL(12,6) DEFAULT NULL,
+            vol_sv_vol_ma20 DECIMAL(12,6) DEFAULT NULL,
+            macd DECIMAL(16,8) DEFAULT NULL,
+            macd_signal DECIMAL(16,8) DEFAULT NULL,
+            macd_histogram DOUBLE DEFAULT NULL,
+            macd_cat VARCHAR(30) DEFAULT 'Không cắt signal',
+            macd_tren_0 VARCHAR(20) DEFAULT 'Không trên 0',
+            macd_hist_tang VARCHAR(20) DEFAULT 'Không tăng',
+            macd_manh TINYINT DEFAULT 0,
+            macd_diem_dong_luong INT DEFAULT 0,
+            rsi DECIMAL(12,6) DEFAULT NULL,
+            rsi_status VARCHAR(30) DEFAULT NULL,
+            trading_index BIGINT UNSIGNED DEFAULT NULL,
+            xay_nen VARCHAR(50) DEFAULT NULL,
+            xay_nen_count_30 SMALLINT UNSIGNED DEFAULT NULL,
+            nen_type VARCHAR(30) DEFAULT NULL,
+            pha_nen VARCHAR(30) DEFAULT NULL,
+            tang_gia_kem_vol VARCHAR(50) DEFAULT NULL,
+            hanh_vi_gia VARCHAR(50) DEFAULT NULL,
+            hanh_vi_gia_1w VARCHAR(50) DEFAULT NULL,
+            smart_money VARCHAR(30) DEFAULT NULL,
+            symbol_type VARCHAR(20) NOT NULL DEFAULT 'STOCK',
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            indicators_ready TINYINT NOT NULL DEFAULT 0,
             PRIMARY KEY  (id),
             UNIQUE KEY unique_ohlc (symbol, timeframe, event_time),
             KEY idx_symbol_timeframe (symbol, timeframe),
-            KEY idx_event_time (event_time)
+            KEY idx_symbol_tf_time (symbol, timeframe, event_time),
+            KEY idx_event_time (event_time),
+            KEY idx_symbol_index (symbol, trading_index),
+            KEY idx_ready_tf_et (indicators_ready, timeframe, event_time)
         ) {$charset_collate};";
 
+        // Legacy table for backward compatibility.
         $sql_security_definition = "CREATE TABLE {$security_definition_table} (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             symbol VARCHAR(20) NOT NULL,
@@ -51,6 +358,121 @@ class LCNI_DB {
             KEY idx_exchange (exchange)
         ) {$charset_collate};";
 
+        $sql_symbols = "CREATE TABLE {$symbol_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            symbol VARCHAR(20) NOT NULL,
+            market_id VARCHAR(20) DEFAULT NULL,
+            board_id VARCHAR(20) DEFAULT NULL,
+            isin VARCHAR(30) DEFAULT NULL,
+            product_grp_id VARCHAR(20) DEFAULT NULL,
+            security_group_id VARCHAR(20) DEFAULT NULL,
+            id_icb2 SMALLINT UNSIGNED DEFAULT NULL,
+            basic_price DECIMAL(20,6) DEFAULT NULL,
+            ceiling_price DECIMAL(20,6) DEFAULT NULL,
+            floor_price DECIMAL(20,6) DEFAULT NULL,
+            open_interest_quantity BIGINT DEFAULT NULL,
+            security_status VARCHAR(20) DEFAULT NULL,
+            symbol_admin_status_code VARCHAR(20) DEFAULT NULL,
+            symbol_trading_method_status_code VARCHAR(20) DEFAULT NULL,
+            symbol_trading_sanction_status_code VARCHAR(20) DEFAULT NULL,
+            source VARCHAR(20) NOT NULL DEFAULT 'manual',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            UNIQUE KEY unique_symbol (symbol),
+            KEY idx_market_board (market_id, board_id),
+            KEY idx_id_icb2 (id_icb2),
+            KEY idx_source (source)
+        ) {$charset_collate};";
+
+        $sql_symbol_market_icb = "CREATE TABLE {$symbol_market_icb_table} (
+            symbol VARCHAR(20) NOT NULL,
+            market_id VARCHAR(20) DEFAULT NULL,
+            id_icb2 SMALLINT UNSIGNED DEFAULT NULL,
+            exchange VARCHAR(20) DEFAULT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (symbol),
+            KEY idx_market_id (market_id),
+            KEY idx_id_icb2 (id_icb2)
+        ) {$charset_collate};";
+
+        $sql_seed_tasks = "CREATE TABLE {$seed_task_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            symbol VARCHAR(20) NOT NULL,
+            timeframe VARCHAR(10) NOT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            failed_attempts INT UNSIGNED NOT NULL DEFAULT 0,
+            last_error TEXT NULL,
+            last_to_time BIGINT NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            UNIQUE KEY unique_symbol_timeframe (symbol, timeframe),
+            KEY idx_status (status),
+            KEY idx_failed_attempts (failed_attempts),
+            KEY idx_updated_at (updated_at)
+        ) {$charset_collate};";
+
+        $sql_market = "CREATE TABLE {$market_table} (
+            market_id VARCHAR(20) NOT NULL,
+            exchange VARCHAR(100) NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (market_id)
+        ) {$charset_collate};";
+
+        $sql_icb2 = "CREATE TABLE {$icb2_table} (
+            id_icb2 SMALLINT UNSIGNED NOT NULL,
+            name_icb2 VARCHAR(255) NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id_icb2),
+            KEY idx_name_icb2 (name_icb2)
+        ) {$charset_collate};";
+
+        $sql_indexname = "CREATE TABLE {$index_name_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            index_name VARCHAR(50) NOT NULL,
+            marketid VARCHAR(20) NOT NULL DEFAULT '0',
+            symbol_type VARCHAR(20) NOT NULL DEFAULT 'INDEX',
+            symbol VARCHAR(20) NOT NULL,
+            PRIMARY KEY  (id),
+            UNIQUE KEY uniq_index_symbol (symbol),
+            KEY idx_marketid (marketid),
+            KEY idx_symbol_type (symbol_type),
+            KEY idx_index_name (index_name)
+        ) {$charset_collate};";
+
+        $sql_symbol_tongquan = "CREATE TABLE {$symbol_tongquan_table} (
+            symbol VARCHAR(20) NOT NULL,
+            eps DECIMAL(20,4) DEFAULT NULL,
+            eps_1y_pct DECIMAL(12,6) DEFAULT NULL,
+            dt_1y_pct DECIMAL(12,6) DEFAULT NULL,
+            bien_ln_gop DECIMAL(12,6) DEFAULT NULL,
+            bien_ln_rong DECIMAL(12,6) DEFAULT NULL,
+            roe DECIMAL(12,6) DEFAULT NULL,
+            de_ratio DECIMAL(12,6) DEFAULT NULL,
+            pe_ratio DECIMAL(12,6) DEFAULT NULL,
+            pb_ratio DECIMAL(12,6) DEFAULT NULL,
+            ev_ebitda DECIMAL(12,6) DEFAULT NULL,
+            tcbs_khuyen_nghi VARCHAR(255) DEFAULT NULL,
+            co_tuc_pct DECIMAL(12,6) DEFAULT NULL,
+            tc_rating DECIMAL(12,6) DEFAULT NULL,
+            xep_hang VARCHAR(30) DEFAULT 'Chưa xếp hạng',
+            so_huu_nn_pct DECIMAL(12,6) DEFAULT NULL,
+            tien_mat_rong_von_hoa DECIMAL(12,6) DEFAULT NULL,
+            tien_mat_rong_tong_tai_san DECIMAL(12,6) DEFAULT NULL,
+            loi_nhuan_4_quy_gan_nhat DECIMAL(20,4) DEFAULT NULL,
+            tang_truong_dt_quy_gan_nhat DECIMAL(12,6) DEFAULT NULL,
+            tang_truong_dt_quy_gan_nhi DECIMAL(12,6) DEFAULT NULL,
+            tang_truong_ln_quy_gan_nhat DECIMAL(12,6) DEFAULT NULL,
+            tang_truong_ln_quy_gan_nhi DECIMAL(12,6) DEFAULT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (symbol)
+        ) {$charset_collate};";
+
         $sql_change_logs = "CREATE TABLE {$log_table} (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             action VARCHAR(100) NOT NULL,
@@ -62,11 +484,6117 @@ class LCNI_DB {
             KEY idx_created_at (created_at)
         ) {$charset_collate};";
 
+
+
+        $sql_saved_filters = "CREATE TABLE {$saved_filters_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            user_id BIGINT UNSIGNED NOT NULL,
+            filter_name VARCHAR(191) NOT NULL,
+            filter_config LONGTEXT NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            KEY idx_user_id (user_id),
+            KEY idx_user_name (user_id, filter_name)
+        ) {$charset_collate};";
+
+        $sql_watchlists = "CREATE TABLE {$watchlists_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            user_id BIGINT UNSIGNED NOT NULL,
+            name VARCHAR(191) NOT NULL,
+            is_default TINYINT(1) NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            KEY idx_user_id (user_id),
+            KEY idx_user_default (user_id, is_default)
+        ) {$charset_collate};";
+
+        $sql_watchlist_symbols = "CREATE TABLE {$watchlist_symbols_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            watchlist_id BIGINT UNSIGNED NOT NULL,
+            symbol VARCHAR(20) NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            UNIQUE KEY uniq_watchlist_symbol (watchlist_id, symbol),
+            KEY idx_watchlist_id (watchlist_id),
+            KEY idx_symbol (symbol)
+        ) {$charset_collate};";
+
+        $sql_watchlist = "CREATE TABLE {$watchlist_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            user_id BIGINT UNSIGNED NOT NULL,
+            symbol VARCHAR(20) NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            UNIQUE KEY uniq_user_symbol (user_id, symbol),
+            KEY idx_user_id (user_id),
+            KEY idx_symbol (symbol)
+        ) {$charset_collate};";
+
+
+        $sql_market_statistics = "CREATE TABLE {$market_statistics_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            thong_ke_thi_truong_index BIGINT UNSIGNED NOT NULL DEFAULT 0,
+            event_time BIGINT UNSIGNED NOT NULL,
+            marketid SMALLINT UNSIGNED NOT NULL,
+            timeframe VARCHAR(10) NOT NULL,
+            so_ma_tang_gia INT UNSIGNED NOT NULL DEFAULT 0,
+            so_ma_giam_gia INT UNSIGNED NOT NULL DEFAULT 0,
+            so_rsi_qua_mua INT UNSIGNED NOT NULL DEFAULT 0,
+            so_rsi_qua_ban INT UNSIGNED NOT NULL DEFAULT 0,
+            so_rsi_tham_lam INT UNSIGNED NOT NULL DEFAULT 0,
+            so_rsi_so_hai INT UNSIGNED NOT NULL DEFAULT 0,
+            so_smart_money INT UNSIGNED NOT NULL DEFAULT 0,
+            so_tang_gia_kem_vol INT UNSIGNED NOT NULL DEFAULT 0,
+            so_pha_nen INT UNSIGNED NOT NULL DEFAULT 0,
+            pct_so_ma_tren_ma20 DECIMAL(12,6) NOT NULL DEFAULT 0,
+            pct_so_ma_tren_ma50 DECIMAL(12,6) NOT NULL DEFAULT 0,
+            pct_so_ma_tren_ma100 DECIMAL(12,6) NOT NULL DEFAULT 0,
+            tong_value_traded DECIMAL(24,2) NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            UNIQUE KEY uniq_event_market_timeframe (event_time, marketid, timeframe),
+            KEY idx_market_timeframe (marketid, timeframe),
+            KEY idx_event_time (event_time, timeframe),
+            KEY idx_thong_ke_thi_truong_index (thong_ke_thi_truong_index)
+        ) {$charset_collate};";
+
+        $sql_icb2_statistics = "CREATE TABLE {$icb2_statistics_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            thong_ke_icb2_index BIGINT UNSIGNED NOT NULL DEFAULT 0,
+            event_time BIGINT UNSIGNED NOT NULL,
+            timeframe VARCHAR(10) NOT NULL,
+            marketid SMALLINT UNSIGNED NOT NULL,
+            icb_level2 VARCHAR(255) NOT NULL,
+            so_ma_tang_gia INT UNSIGNED NOT NULL DEFAULT 0,
+            so_ma_giam_gia INT UNSIGNED NOT NULL DEFAULT 0,
+            so_smart_money INT UNSIGNED NOT NULL DEFAULT 0,
+            so_tang_gia_kem_vol INT UNSIGNED NOT NULL DEFAULT 0,
+            so_pha_nen INT UNSIGNED NOT NULL DEFAULT 0,
+            pct_so_ma_tren_ma20 DECIMAL(12,6) NOT NULL DEFAULT 0,
+            pct_so_ma_tren_ma50 DECIMAL(12,6) NOT NULL DEFAULT 0,
+            pct_so_ma_tren_ma100 DECIMAL(12,6) NOT NULL DEFAULT 0,
+            tong_value_traded DECIMAL(24,2) NOT NULL DEFAULT 0,
+            so_rsi_qua_mua INT UNSIGNED NOT NULL DEFAULT 0,
+            so_rsi_qua_ban INT UNSIGNED NOT NULL DEFAULT 0,
+            so_rsi_tham_lam INT UNSIGNED NOT NULL DEFAULT 0,
+            so_rsi_so_hai INT UNSIGNED NOT NULL DEFAULT 0,
+            so_macd_cat_len INT UNSIGNED NOT NULL DEFAULT 0,
+            so_macd_cat_xuong INT UNSIGNED NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            UNIQUE KEY uniq_event_timeframe_market_icb (event_time, timeframe, marketid, icb_level2),
+            KEY idx_market_timeframe_icb (marketid, timeframe, icb_level2),
+            KEY idx_event_time (event_time, timeframe),
+            KEY idx_thong_ke_icb2_index (thong_ke_icb2_index)
+        ) {$charset_collate};";
+
+        $sql_icb2_market_statistics = "CREATE TABLE {$icb2_market_statistics_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            icb_level2 VARCHAR(255) NOT NULL,
+            event_time BIGINT UNSIGNED NOT NULL,
+            timeframe VARCHAR(10) NOT NULL,
+            icb2_thi_truong_index BIGINT UNSIGNED NOT NULL DEFAULT 0,
+            so_ma_tang_gia INT UNSIGNED NOT NULL DEFAULT 0,
+            so_ma_giam_gia INT UNSIGNED NOT NULL DEFAULT 0,
+            so_rsi_qua_mua INT UNSIGNED NOT NULL DEFAULT 0,
+            so_rsi_qua_ban INT UNSIGNED NOT NULL DEFAULT 0,
+            so_rsi_tham_lam INT UNSIGNED NOT NULL DEFAULT 0,
+            so_rsi_so_hai INT UNSIGNED NOT NULL DEFAULT 0,
+            so_smart_money INT UNSIGNED NOT NULL DEFAULT 0,
+            so_tang_gia_kem_vol INT UNSIGNED NOT NULL DEFAULT 0,
+            so_pha_nen INT UNSIGNED NOT NULL DEFAULT 0,
+            pct_so_ma_tren_ma20 DECIMAL(12,6) NOT NULL DEFAULT 0,
+            pct_so_ma_tren_ma50 DECIMAL(12,6) NOT NULL DEFAULT 0,
+            pct_so_ma_tren_ma100 DECIMAL(12,6) NOT NULL DEFAULT 0,
+            tong_value_traded DECIMAL(24,2) NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            UNIQUE KEY uniq_icb_level2_event_timeframe (icb_level2, event_time, timeframe),
+            KEY idx_event_time (event_time, timeframe),
+            KEY idx_icb2_thi_truong_index (icb2_thi_truong_index)
+        ) {$charset_collate};";
+
+
+        $sql_industry_return = "CREATE TABLE {$industry_return_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            event_time BIGINT UNSIGNED NOT NULL,
+            timeframe VARCHAR(10) NOT NULL,
+            id_icb2 INT UNSIGNED NOT NULL,
+            industry_return DECIMAL(16,8) NOT NULL DEFAULT 0,
+            industry_value DECIMAL(24,2) NOT NULL DEFAULT 0,
+            stocks_up INT UNSIGNED NOT NULL DEFAULT 0,
+            total_stocks INT UNSIGNED NOT NULL DEFAULT 0,
+            breadth DECIMAL(12,8) NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            UNIQUE KEY uniq_event_icb2_timeframe (event_time, id_icb2, timeframe),
+            KEY idx_timeframe_event (timeframe, event_time),
+            KEY idx_icb2_event (id_icb2, event_time)
+        ) {$charset_collate};";
+
+        $sql_industry_index = "CREATE TABLE {$industry_index_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            event_time BIGINT UNSIGNED NOT NULL,
+            timeframe VARCHAR(10) NOT NULL,
+            id_icb2 INT UNSIGNED NOT NULL,
+            industry_index DECIMAL(24,8) NOT NULL DEFAULT 1000,
+            industry_return DECIMAL(16,8) NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            UNIQUE KEY uniq_event_icb2_timeframe (event_time, id_icb2, timeframe),
+            KEY idx_timeframe_event (timeframe, event_time),
+            KEY idx_icb2_event (id_icb2, event_time)
+        ) {$charset_collate};";
+
+        $sql_industry_metrics = "CREATE TABLE {$industry_metrics_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            event_time BIGINT UNSIGNED NOT NULL,
+            timeframe VARCHAR(10) NOT NULL,
+            id_icb2 INT UNSIGNED NOT NULL,
+            industry_return DECIMAL(16,8) NOT NULL DEFAULT 0,
+            industry_value DECIMAL(24,2) NOT NULL DEFAULT 0,
+            stocks_up INT UNSIGNED NOT NULL DEFAULT 0,
+            total_stocks INT UNSIGNED NOT NULL DEFAULT 0,
+            return_5d DECIMAL(16,8) NOT NULL DEFAULT 0,
+            return_10d DECIMAL(16,8) NOT NULL DEFAULT 0,
+            return_20d DECIMAL(16,8) NOT NULL DEFAULT 0,
+            momentum DECIMAL(16,8) NOT NULL DEFAULT 0,
+            relative_strength DECIMAL(16,8) NOT NULL DEFAULT 0,
+            money_flow_share DECIMAL(16,8) NOT NULL DEFAULT 0,
+            breadth DECIMAL(16,8) NOT NULL DEFAULT 0,
+            industry_score_raw DECIMAL(16,8) NOT NULL DEFAULT 0,
+            industry_rating_vi VARCHAR(60) NOT NULL DEFAULT 'Ngành trung tính',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            UNIQUE KEY uniq_event_icb2_timeframe (event_time, id_icb2, timeframe),
+            KEY idx_timeframe_event (timeframe, event_time),
+            KEY idx_score (industry_score_raw),
+            KEY idx_rating (industry_rating_vi)
+        ) {$charset_collate};";
+
+        $sql_charts = "CREATE TABLE {$charts_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            name VARCHAR(191) NOT NULL,
+            slug VARCHAR(191) NOT NULL,
+            chart_type VARCHAR(60) NOT NULL DEFAULT 'multi_line',
+            data_source VARCHAR(100) NOT NULL,
+            config_json LONGTEXT NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY unique_slug (slug),
+            KEY idx_data_source (data_source)
+        ) {$charset_collate};";
+
         dbDelta($sql_ohlc);
         dbDelta($sql_security_definition);
+        dbDelta($sql_symbols);
         dbDelta($sql_change_logs);
+        dbDelta($sql_seed_tasks);
+        dbDelta($sql_market);
+        dbDelta($sql_indexname);
+        dbDelta($sql_icb2);
+        dbDelta($sql_symbol_market_icb);
+        dbDelta($sql_symbol_tongquan);
+        dbDelta($sql_watchlist);
+        dbDelta($sql_saved_filters);
+        dbDelta($sql_watchlists);
+        dbDelta($sql_watchlist_symbols);
+        dbDelta($sql_market_statistics);
+        dbDelta($sql_icb2_statistics);
+        dbDelta($sql_icb2_market_statistics);
+        dbDelta($sql_industry_return);
+        dbDelta($sql_industry_index);
+        dbDelta($sql_industry_metrics);
+        dbDelta($sql_charts);
 
-        self::log_change('activation', 'Created/updated OHLC, security definition and change log tables.');
+        self::seed_market_reference_data($market_table);
+        self::seed_index_name_reference_data($index_name_table);
+        self::seed_icb2_reference_data($icb2_table);
+        self::sync_symbol_market_icb_mapping();
+        self::ensure_ohlc_indicator_columns();
+        self::ensure_ohlc_symbol_type_column();
+        self::ensure_symbol_market_icb_columns();
+        self::ensure_symbol_tongquan_columns();
+        self::ensure_ohlc_indexes();
+        self::ensure_ohlc_latest_snapshot_infrastructure();
+        self::ensure_market_statistics_schema();
+        self::ensure_industry_analysis_schema();
+        self::ensure_industry_analysis_extended_schema();
+        self::ensure_chart_builder_schema();
+        self::normalize_ohlc_numeric_columns();
+        self::normalize_legacy_ratio_columns();
+        self::sync_symbol_tongquan_with_symbols();
+
+        self::log_change('activation', 'Created/updated OHLC, lcni_symbols, lcni_symbol_tongquan, seed task, market, indexname, icb2, sym_icb_market and change log tables.');
+    }
+
+    public static function ensure_ohlc_latest_snapshot_infrastructure($enabled = null, $interval_minutes = null) {
+        global $wpdb;
+
+        // Suppress $wpdb errors so any MySQL permission issue (e.g. missing SUPER
+        // privilege for SET GLOBAL / CREATE PROCEDURE / CREATE EVENT) does not
+        // bubble up as a PHP fatal error and crash unrelated admin pages like
+        // wp-admin/user-edit.php.
+        $wpdb->hide_errors();
+
+        try {
+            self::_do_ensure_ohlc_latest_snapshot_infrastructure($enabled, $interval_minutes);
+        } catch ( Throwable $e ) {
+            error_log( '[LCNI] ensure_ohlc_latest_snapshot_infrastructure failed: ' . $e->getMessage() );
+        }
+
+        $wpdb->show_errors();
+    }
+
+    private static function _do_ensure_ohlc_latest_snapshot_infrastructure($enabled = null, $interval_minutes = null) {
+        global $wpdb;
+
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $latest_table = $wpdb->prefix . 'lcni_ohlc_latest';
+        $event_name = $wpdb->prefix . 'ev_sync_ohlc_latest';
+        $sync_proc_name = $wpdb->prefix . 'sync_ohlc_latest_structure';
+        $refresh_proc_name = $wpdb->prefix . 'refresh_ohlc_latest';
+
+        $ohlc_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $ohlc_table));
+        if ($ohlc_exists !== $ohlc_table) {
+            return;
+        }
+
+        $latest_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $latest_table));
+        if ($latest_exists !== $latest_table) {
+            $wpdb->query("CREATE TABLE {$latest_table} LIKE {$ohlc_table}");
+        }
+
+        $id_column = $wpdb->get_row("SHOW COLUMNS FROM {$latest_table} LIKE 'id'", ARRAY_A);
+        if (is_array($id_column) && isset($id_column['Extra']) && strpos((string) $id_column['Extra'], 'auto_increment') !== false) {
+            $wpdb->query("ALTER TABLE {$latest_table} MODIFY COLUMN id BIGINT UNSIGNED DEFAULT NULL");
+        }
+
+        $primary_key_columns = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT COLUMN_NAME
+                FROM information_schema.statistics
+                WHERE table_schema = DATABASE()
+                    AND table_name = %s
+                    AND index_name = %s
+                ORDER BY seq_in_index ASC",
+                $latest_table,
+                'PRIMARY'
+            ),
+            ARRAY_A
+        );
+        $current_primary_columns = [];
+        foreach ((array) $primary_key_columns as $primary_key_column) {
+            if (isset($primary_key_column['COLUMN_NAME'])) {
+                $current_primary_columns[] = (string) $primary_key_column['COLUMN_NAME'];
+            }
+        }
+
+        if ($current_primary_columns !== ['symbol', 'timeframe']) {
+            if (!empty($current_primary_columns)) {
+                $wpdb->query("ALTER TABLE {$latest_table} DROP PRIMARY KEY");
+            }
+            $wpdb->query("ALTER TABLE {$latest_table} ADD PRIMARY KEY (symbol, timeframe)");
+        }
+
+        self::sync_ohlc_symbol_type_values($ohlc_table);
+        self::sync_ohlc_symbol_type_values($latest_table);
+
+        $wpdb->query("DROP PROCEDURE IF EXISTS {$sync_proc_name}");
+        $wpdb->query(
+            "CREATE PROCEDURE {$sync_proc_name}()
+            BEGIN
+                DECLARE done INT DEFAULT FALSE;
+                DECLARE col_name VARCHAR(100);
+                DECLARE col_type TEXT;
+
+                DECLARE cur CURSOR FOR
+                    SELECT column_name, column_type
+                    FROM information_schema.columns
+                    WHERE table_name = '{$wpdb->prefix}lcni_ohlc'
+                        AND table_schema = DATABASE()
+                        AND column_name NOT IN (
+                            SELECT column_name
+                            FROM information_schema.columns
+                            WHERE table_name = '{$wpdb->prefix}lcni_ohlc_latest'
+                                AND table_schema = DATABASE()
+                        );
+
+                DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
+
+                OPEN cur;
+                read_loop: LOOP
+                    FETCH cur INTO col_name, col_type;
+                    IF done THEN
+                        LEAVE read_loop;
+                    END IF;
+
+                    SET @sql = CONCAT('ALTER TABLE {$latest_table} ADD COLUMN `', REPLACE(col_name, '`', '``'), '` ', col_type);
+                    PREPARE stmt FROM @sql;
+                    EXECUTE stmt;
+                    DEALLOCATE PREPARE stmt;
+                END LOOP;
+                CLOSE cur;
+            END"
+        );
+
+        $wpdb->query("DROP PROCEDURE IF EXISTS {$refresh_proc_name}");
+        $wpdb->query(
+            "CREATE PROCEDURE {$refresh_proc_name}()
+            BEGIN
+                DECLARE v_max_event_time BIGINT DEFAULT NULL;
+
+                SELECT MAX(event_time) INTO v_max_event_time
+                FROM {$ohlc_table};
+
+                IF v_max_event_time IS NULL THEN
+                    TRUNCATE TABLE {$latest_table};
+                ELSE
+                    DELETE FROM {$latest_table};
+
+                    INSERT INTO {$latest_table}
+                    SELECT t.*
+                    FROM {$ohlc_table} t
+                    JOIN (
+                        SELECT symbol, timeframe, MAX(id) AS max_id
+                        FROM {$ohlc_table}
+                        WHERE event_time = v_max_event_time
+                        GROUP BY symbol, timeframe
+                    ) latest
+                        ON latest.max_id = t.id;
+                END IF;
+            END"
+        );
+
+        $should_enable = is_null($enabled) ? !empty(get_option('lcni_ohlc_latest_enabled', false)) : (bool) $enabled;
+        $interval = is_null($interval_minutes) ? (int) get_option('lcni_ohlc_latest_interval_minutes', 5) : (int) $interval_minutes;
+        $interval = max(1, $interval);
+
+        $wpdb->query("DROP EVENT IF EXISTS {$event_name}");
+        if ($should_enable) {
+            $wpdb->query('SET GLOBAL event_scheduler = ON');
+            $wpdb->query(
+                "CREATE EVENT {$event_name}
+                ON SCHEDULE EVERY {$interval} MINUTE
+                DO
+                BEGIN
+                    CALL {$sync_proc_name}();
+                    CALL {$refresh_proc_name}();
+                END"
+            );
+        }
+
+        $ohlc_count = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$ohlc_table}");
+        $latest_count = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$latest_table}");
+        if ($ohlc_count > 0 && $latest_count === 0) {
+            self::perform_refresh_ohlc_latest_snapshot();
+        }
+    } // end _do_ensure_ohlc_latest_snapshot_infrastructure
+
+
+    public static function get_mysql_event_scheduler_status() {
+        global $wpdb;
+
+        $row = $wpdb->get_row("SHOW VARIABLES LIKE 'event_scheduler'", ARRAY_A);
+        if (!is_array($row)) {
+            return [
+                'available' => false,
+                'value' => 'unknown',
+                'enabled' => false,
+            ];
+        }
+
+        $value = isset($row['Value']) ? strtolower((string) $row['Value']) : 'unknown';
+
+        return [
+            'available' => true,
+            'value' => $value,
+            'enabled' => in_array($value, ['on', '1'], true),
+        ];
+    }
+
+    public static function refresh_ohlc_latest_snapshot() {
+        global $wpdb;
+
+        self::ensure_ohlc_latest_snapshot_infrastructure();
+
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $latest_table = $wpdb->prefix . 'lcni_ohlc_latest';
+        $missing_columns = $wpdb->get_results(
+            "SELECT column_name, column_type
+            FROM information_schema.columns
+            WHERE table_name = '{$wpdb->prefix}lcni_ohlc'
+                AND table_schema = DATABASE()
+                AND column_name NOT IN (
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = '{$wpdb->prefix}lcni_ohlc_latest'
+                        AND table_schema = DATABASE()
+                )",
+            ARRAY_A
+        );
+
+        foreach ((array) $missing_columns as $column) {
+            $column_name = isset($column['column_name']) ? str_replace('`', '``', (string) $column['column_name']) : '';
+            $column_type = isset($column['column_type']) ? (string) $column['column_type'] : '';
+            if ($column_name === '' || $column_type === '') {
+                continue;
+            }
+
+            $wpdb->query("ALTER TABLE {$latest_table} ADD COLUMN `{$column_name}` {$column_type}");
+        }
+
+        self::sync_ohlc_symbol_type_values($ohlc_table);
+        $result = self::perform_refresh_ohlc_latest_snapshot();
+
+        return [
+            'success' => $result !== false,
+            'rows_affected' => (int) $result,
+            'error' => $result === false ? $wpdb->last_error : '',
+        ];
+    }
+
+    private static function perform_refresh_ohlc_latest_snapshot($symbols = []) {
+        global $wpdb;
+
+        // Hook cho external modules / cache invalidation
+        do_action('lcni_before_ohlc_latest_refresh', $symbols);
+
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $latest_table = $wpdb->prefix . 'lcni_ohlc_latest';
+        $where_clause = '';
+        $where_symbol_clause = '';
+        $where_latest_symbol_clause = '';
+
+        if (!empty($symbols)) {
+            $symbols = array_values(array_filter(array_unique(array_map('strtoupper', (array) $symbols))));
+            if (!empty($symbols)) {
+                $placeholders = implode(', ', array_fill(0, count($symbols), '%s'));
+                $where_clause = $wpdb->prepare("WHERE symbol IN ({$placeholders})", ...$symbols);
+                $where_symbol_clause = $wpdb->prepare("AND t.symbol IN ({$placeholders})", ...$symbols);
+                $where_latest_symbol_clause = $wpdb->prepare("AND symbol IN ({$placeholders})", ...$symbols);
+            }
+        }
+
+        $max_event_time = (int) $wpdb->get_var(
+            "SELECT MAX(event_time)
+            FROM {$ohlc_table}
+            {$where_clause}"
+        );
+
+        if ($max_event_time <= 0) {
+            if (empty($symbols)) {
+                return $wpdb->query("TRUNCATE TABLE {$latest_table}");
+            }
+
+            return $wpdb->query("DELETE FROM {$latest_table} WHERE 1=1 {$where_latest_symbol_clause}");
+        }
+
+        if (empty($symbols)) {
+            $wpdb->query("DELETE FROM {$latest_table}");
+        } else {
+            $wpdb->query("DELETE FROM {$latest_table} WHERE 1=1 {$where_latest_symbol_clause}");
+        }
+
+        return $wpdb->query(
+            $wpdb->prepare(
+                "INSERT INTO {$latest_table}
+                SELECT t.*
+                FROM {$ohlc_table} t
+                JOIN (
+                    SELECT symbol, timeframe, MAX(id) AS max_id
+                    FROM {$ohlc_table}
+                    WHERE event_time = %d {$where_symbol_clause}
+                    GROUP BY symbol, timeframe
+                ) latest ON latest.max_id = t.id",
+                $max_event_time
+            )
+        );
+    }
+
+    private static function ensure_ohlc_symbol_type_column() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+        if ($exists !== $table) {
+            return;
+        }
+
+        $column = $wpdb->get_row("SHOW COLUMNS FROM {$table} LIKE 'symbol_type'", ARRAY_A);
+        if (!is_array($column)) {
+            $wpdb->query("ALTER TABLE {$table} ADD COLUMN symbol_type VARCHAR(20) NOT NULL DEFAULT 'STOCK' AFTER smart_money");
+        }
+
+        self::sync_ohlc_symbol_type_values($table);
+    }
+
+    private static function sync_ohlc_symbol_type_values($table) {
+        global $wpdb;
+
+        $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+        if ($exists !== $table) {
+            return;
+        }
+
+        $column = $wpdb->get_row("SHOW COLUMNS FROM {$table} LIKE 'symbol_type'", ARRAY_A);
+        if (!is_array($column)) {
+            return;
+        }
+
+        $index_symbols = self::INDEX_SYMBOLS;
+        $placeholders = implode(', ', array_fill(0, count($index_symbols), '%s'));
+        $sql = $wpdb->prepare(
+            "UPDATE {$table}
+            SET symbol_type = CASE
+                WHEN symbol IN ({$placeholders}) THEN 'INDEX'
+                ELSE 'STOCK'
+            END",
+            ...$index_symbols
+        );
+
+        $wpdb->query($sql);
+    }
+
+    private static function ensure_ohlc_indicator_columns() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+        if ($exists !== $table) {
+            return;
+        }
+
+        $columns = $wpdb->get_col("SHOW COLUMNS FROM {$table}", 0);
+        if (!is_array($columns) || empty($columns)) {
+            return;
+        }
+
+        $required_columns = [
+            'pct_t_1' => 'DECIMAL(12,6) DEFAULT NULL',
+            'pct_t_3' => 'DECIMAL(12,6) DEFAULT NULL',
+            'pct_1w' => 'DECIMAL(12,6) DEFAULT NULL',
+            'pct_1m' => 'DECIMAL(12,6) DEFAULT NULL',
+            'rs_1m_by_exchange' => 'DECIMAL(6,2) DEFAULT NULL',
+            'rs_1w_by_exchange' => 'DECIMAL(6,2) DEFAULT NULL',
+            'rs_3m_by_exchange' => 'DECIMAL(6,2) DEFAULT NULL',
+            'rs_exchange_status' => 'VARCHAR(50) DEFAULT NULL',
+            'rs_exchange_recommend' => 'VARCHAR(50) DEFAULT NULL',
+            'rs_recommend_status' => 'VARCHAR(80) DEFAULT NULL',
+            'pct_3m' => 'DECIMAL(12,6) DEFAULT NULL',
+            'pct_6m' => 'DECIMAL(12,6) DEFAULT NULL',
+            'pct_1y' => 'DECIMAL(12,6) DEFAULT NULL',
+            'ma10' => 'DECIMAL(20,2) DEFAULT NULL',
+            'ma20' => 'DECIMAL(20,2) DEFAULT NULL',
+            'ma50' => 'DECIMAL(20,2) DEFAULT NULL',
+            'ma100' => 'DECIMAL(20,2) DEFAULT NULL',
+            'ma200' => 'DECIMAL(20,2) DEFAULT NULL',
+            'h1m' => 'DECIMAL(20,2) DEFAULT NULL',
+            'h3m' => 'DECIMAL(20,2) DEFAULT NULL',
+            'h6m' => 'DECIMAL(20,2) DEFAULT NULL',
+            'h1y' => 'DECIMAL(20,2) DEFAULT NULL',
+            'l1m' => 'DECIMAL(20,2) DEFAULT NULL',
+            'l3m' => 'DECIMAL(20,2) DEFAULT NULL',
+            'l6m' => 'DECIMAL(20,2) DEFAULT NULL',
+            'l1y' => 'DECIMAL(20,2) DEFAULT NULL',
+            'vol_ma10' => 'DECIMAL(24,4) DEFAULT NULL',
+            'vol_ma20' => 'DECIMAL(24,4) DEFAULT NULL',
+            'gia_sv_ma10' => 'DECIMAL(12,6) DEFAULT NULL',
+            'gia_sv_ma20' => 'DECIMAL(12,6) DEFAULT NULL',
+            'gia_sv_ma50' => 'DECIMAL(12,6) DEFAULT NULL',
+            'gia_sv_ma100' => 'DECIMAL(12,6) DEFAULT NULL',
+            'gia_sv_ma200' => 'DECIMAL(12,6) DEFAULT NULL',
+            'vol_sv_vol_ma10' => 'DECIMAL(12,6) DEFAULT NULL',
+            'vol_sv_vol_ma20' => 'DECIMAL(12,6) DEFAULT NULL',
+            'macd' => 'DECIMAL(16,8) DEFAULT NULL',
+            'macd_signal' => 'DECIMAL(16,8) DEFAULT NULL',
+            'macd_histogram' => 'DOUBLE DEFAULT NULL',
+            'macd_cat' => "VARCHAR(30) DEFAULT 'Không cắt signal'",
+            'macd_tren_0' => "VARCHAR(20) DEFAULT 'Không trên 0'",
+            'macd_hist_tang' => "VARCHAR(20) DEFAULT 'Không tăng'",
+            'macd_manh' => 'TINYINT DEFAULT 0',
+            'macd_diem_dong_luong' => 'INT DEFAULT 0',
+            'rsi' => 'DECIMAL(12,6) DEFAULT NULL',
+            'rsi_status' => 'VARCHAR(30) DEFAULT NULL',
+            'trading_index' => 'BIGINT UNSIGNED DEFAULT NULL',
+            'xay_nen' => 'VARCHAR(50) DEFAULT NULL',
+            'xay_nen_count_30' => 'SMALLINT UNSIGNED DEFAULT NULL',
+            'nen_type' => 'VARCHAR(30) DEFAULT NULL',
+            'pha_nen' => 'VARCHAR(30) DEFAULT NULL',
+            'tang_gia_kem_vol' => 'VARCHAR(50) DEFAULT NULL',
+            'hanh_vi_gia' => 'VARCHAR(50) DEFAULT NULL',
+            'hanh_vi_gia_1w' => 'VARCHAR(50) DEFAULT NULL',
+            'smart_money' => 'VARCHAR(30) DEFAULT NULL',
+            'one_candle' => 'VARCHAR(30) DEFAULT NULL',
+            'two_candle_pattern' => 'VARCHAR(40) DEFAULT NULL',
+            'three_candle_pattern' => 'VARCHAR(50) DEFAULT NULL',
+            'pct_to_h1m' => 'DECIMAL(8,2) DEFAULT NULL',
+            'pct_to_h3m' => 'DECIMAL(8,2) DEFAULT NULL',
+            'pct_to_h6m' => 'DECIMAL(8,2) DEFAULT NULL',
+            'pct_to_h1y' => 'DECIMAL(8,2) DEFAULT NULL',
+            'trang_thai_h1m' => 'VARCHAR(40) DEFAULT NULL',
+            'trang_thai_h3m' => 'VARCHAR(40) DEFAULT NULL',
+            'trang_thai_h6m' => 'VARCHAR(40) DEFAULT NULL',
+            'trang_thai_h1y' => 'VARCHAR(40) DEFAULT NULL',
+            'compression_1m' => 'DECIMAL(8,2) DEFAULT NULL',
+            'position_1m' => 'VARCHAR(40) DEFAULT NULL',
+            'position_3m' => 'VARCHAR(40) DEFAULT NULL',
+            'position_6m' => 'VARCHAR(40) DEFAULT NULL',
+            'position_1y' => 'VARCHAR(40) DEFAULT NULL',
+            'breakout_potential_score' => 'INT DEFAULT NULL',
+            // Snapshot consistency flag.
+            // 0 = row chưa có đủ indicators (Python chưa sync xong batch).
+            // 1 = đã có đầy đủ: OHLC + tất cả indicators kể cả rs_*_by_exchange.
+            // Được set = 1 bởi sync_lcni_v4.php SAU khi commit toàn bộ batch.
+            // RuleRepository::find_candidate_symbols_by_window lọc AND o.indicators_ready = 1
+            // để Recommend không đọc row chưa hoàn chỉnh giữa chừng sync.
+            'indicators_ready' => 'TINYINT NOT NULL DEFAULT 0',
+        ];
+
+        foreach ($required_columns as $column_name => $column_definition) {
+            if (in_array($column_name, $columns, true)) {
+                continue;
+            }
+
+            $wpdb->query("ALTER TABLE {$table} ADD COLUMN {$column_name} {$column_definition}");
+        }
+    }
+
+    private static function ensure_symbol_market_icb_columns() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_sym_icb_market';
+        $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+        if ($exists !== $table) {
+            return;
+        }
+
+        $columns = $wpdb->get_col("SHOW COLUMNS FROM {$table}", 0);
+        if (!is_array($columns) || empty($columns)) {
+            return;
+        }
+
+        if (!in_array('exchange', $columns, true)) {
+            $wpdb->query("ALTER TABLE {$table} ADD COLUMN exchange VARCHAR(20) DEFAULT NULL AFTER id_icb2");
+        }
+    }
+
+    private static function ensure_symbol_tongquan_columns() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_symbol_tongquan';
+        $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+        if ($exists !== $table) {
+            return;
+        }
+
+        $columns = $wpdb->get_col("SHOW COLUMNS FROM {$table}", 0);
+        if (!is_array($columns) || empty($columns)) {
+            return;
+        }
+
+        $required_columns = [
+            'eps' => 'DECIMAL(20,4) DEFAULT NULL',
+            'eps_1y_pct' => 'DECIMAL(12,6) DEFAULT NULL',
+            'dt_1y_pct' => 'DECIMAL(12,6) DEFAULT NULL',
+            'bien_ln_gop' => 'DECIMAL(12,6) DEFAULT NULL',
+            'bien_ln_rong' => 'DECIMAL(12,6) DEFAULT NULL',
+            'roe' => 'DECIMAL(12,6) DEFAULT NULL',
+            'de_ratio' => 'DECIMAL(12,6) DEFAULT NULL',
+            'pe_ratio' => 'DECIMAL(12,6) DEFAULT NULL',
+            'pb_ratio' => 'DECIMAL(12,6) DEFAULT NULL',
+            'ev_ebitda' => 'DECIMAL(12,6) DEFAULT NULL',
+            'tcbs_khuyen_nghi' => 'VARCHAR(255) DEFAULT NULL',
+            'co_tuc_pct' => 'DECIMAL(12,6) DEFAULT NULL',
+            'tc_rating' => 'DECIMAL(12,6) DEFAULT NULL',
+            'xep_hang' => "VARCHAR(30) DEFAULT 'Chưa xếp hạng'",
+            'so_huu_nn_pct' => 'DECIMAL(12,6) DEFAULT NULL',
+            'tien_mat_rong_von_hoa' => 'DECIMAL(12,6) DEFAULT NULL',
+            'tien_mat_rong_tong_tai_san' => 'DECIMAL(12,6) DEFAULT NULL',
+            'loi_nhuan_4_quy_gan_nhat' => 'DECIMAL(20,4) DEFAULT NULL',
+            'tang_truong_dt_quy_gan_nhat' => 'DECIMAL(12,6) DEFAULT NULL',
+            'tang_truong_dt_quy_gan_nhi' => 'DECIMAL(12,6) DEFAULT NULL',
+            'tang_truong_ln_quy_gan_nhat' => 'DECIMAL(12,6) DEFAULT NULL',
+            'tang_truong_ln_quy_gan_nhi' => 'DECIMAL(12,6) DEFAULT NULL',
+        ];
+
+        foreach ($required_columns as $column_name => $column_definition) {
+            if (in_array($column_name, $columns, true)) {
+                continue;
+            }
+
+            $wpdb->query("ALTER TABLE {$table} ADD COLUMN {$column_name} {$column_definition}");
+        }
+
+        self::refresh_symbol_tongquan_rankings();
+    }
+
+
+    private static function normalize_ohlc_numeric_columns() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $columns = [
+            'open_price' => 'DECIMAL(20,2) NOT NULL',
+            'high_price' => 'DECIMAL(20,2) NOT NULL',
+            'low_price' => 'DECIMAL(20,2) NOT NULL',
+            'close_price' => 'DECIMAL(20,2) NOT NULL',
+            'value_traded' => 'DECIMAL(24,2) NOT NULL DEFAULT 0',
+            'ma10' => 'DECIMAL(20,2) NULL',
+            'ma20' => 'DECIMAL(20,2) NULL',
+            'ma50' => 'DECIMAL(20,2) NULL',
+            'ma100' => 'DECIMAL(20,2) NULL',
+            'ma200' => 'DECIMAL(20,2) NULL',
+            'h1m' => 'DECIMAL(20,2) NULL',
+            'h3m' => 'DECIMAL(20,2) NULL',
+            'h6m' => 'DECIMAL(20,2) NULL',
+            'h1y' => 'DECIMAL(20,2) NULL',
+            'l1m' => 'DECIMAL(20,2) NULL',
+            'l3m' => 'DECIMAL(20,2) NULL',
+            'l6m' => 'DECIMAL(20,2) NULL',
+            'l1y' => 'DECIMAL(20,2) NULL',
+        ];
+
+        foreach ($columns as $column_name => $column_definition) {
+            $column = $wpdb->get_row($wpdb->prepare("SHOW COLUMNS FROM {$table} LIKE %s", $column_name), ARRAY_A);
+            if (!is_array($column)) {
+                continue;
+            }
+
+            $is_matching_type = isset($column['Type']) && strtolower((string) $column['Type']) === strtolower(str_replace([' NOT NULL', ' NULL', ' DEFAULT 0'], '', $column_definition));
+            if ($is_matching_type) {
+                continue;
+            }
+
+            $wpdb->query("ALTER TABLE {$table} MODIFY COLUMN {$column_name} {$column_definition}");
+        }
+    }
+
+    private static function ensure_ohlc_indexes() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $index_name = 'idx_symbol_index';
+        $index_exists = $wpdb->get_var($wpdb->prepare("SHOW INDEX FROM {$table} WHERE Key_name = %s", $index_name));
+
+        if ($index_exists === null) {
+            $wpdb->query("CREATE INDEX {$index_name} ON {$table} (symbol, trading_index)");
+        }
+
+        $alt_index_name = 'idx_symbol_trading';
+        $alt_index_exists = $wpdb->get_var($wpdb->prepare("SHOW INDEX FROM {$table} WHERE Key_name = %s", $alt_index_name));
+        if ($alt_index_exists === null) {
+            $wpdb->query("CREATE INDEX {$alt_index_name} ON {$table} (symbol, trading_index)");
+        }
+
+        $latest_event_index_name = 'idx_symbol_tf_time';
+        $latest_event_index_exists = $wpdb->get_var($wpdb->prepare("SHOW INDEX FROM {$table} WHERE Key_name = %s", $latest_event_index_name));
+        if ($latest_event_index_exists === null) {
+            $wpdb->query("CREATE INDEX {$latest_event_index_name} ON {$table} (symbol, timeframe, event_time)");
+        }
+
+        $symbol_tf_ti_index_name = 'idx_symbol_tf_ti';
+        $symbol_tf_ti_index_exists = $wpdb->get_var($wpdb->prepare("SHOW INDEX FROM {$table} WHERE Key_name = %s", $symbol_tf_ti_index_name));
+        if ($symbol_tf_ti_index_exists === null) {
+            $wpdb->query("CREATE INDEX {$symbol_tf_ti_index_name} ON {$table} (symbol, timeframe, trading_index)");
+        }
+
+        $macd_filter_index_name = 'idx_macd_loc';
+        $macd_filter_index_exists = $wpdb->get_var($wpdb->prepare("SHOW INDEX FROM {$table} WHERE Key_name = %s", $macd_filter_index_name));
+        if ($macd_filter_index_exists === null) {
+            $wpdb->query("CREATE INDEX {$macd_filter_index_name} ON {$table} (timeframe, macd_cat, macd_manh, macd_diem_dong_luong)");
+        }
+
+        foreach (['h1m', 'h3m', 'h6m', 'h1y'] as $high_column) {
+            $index_name = 'idx_' . $high_column;
+            $index_exists = $wpdb->get_var($wpdb->prepare("SHOW INDEX FROM {$table} WHERE Key_name = %s", $index_name));
+            if ($index_exists === null) {
+                $wpdb->query("CREATE INDEX {$index_name} ON {$table} ({$high_column})");
+            }
+        }
+    }
+
+    public static function get_default_rule_settings() {
+        return [
+            'xay_nen_rsi_min' => 38.5,
+            'xay_nen_rsi_max' => 75.8,
+            'xay_nen_gia_sv_ma10_abs_max' => 0.05,
+            'xay_nen_gia_sv_ma20_abs_max' => 0.07,
+            'xay_nen_gia_sv_ma50_abs_max' => 0.1,
+            'xay_nen_vol_sv_vol_ma20_max' => 0.1,
+            'xay_nen_volume_min' => 100000,
+            'xay_nen_pct_t_1_abs_max' => 0.03,
+            'xay_nen_pct_1w_abs_max' => 0.05,
+            'xay_nen_pct_1m_abs_max' => 0.1,
+            'xay_nen_pct_3m_abs_max' => 0.15,
+            'nen_type_chat_min_count_30' => 24,
+            'nen_type_vua_min_count_30' => 15,
+            'pha_nen_pct_t_1_min' => 0.03,
+            'pha_nen_vol_sv_vol_ma20_min' => 0.5,
+            'tang_gia_kem_vol_hose_pct_t_1_min' => 0.03,
+            'tang_gia_kem_vol_hnx_pct_t_1_min' => 0.06,
+            'tang_gia_kem_vol_upcom_pct_t_1_min' => 0.10,
+            'tang_gia_kem_vol_vol_ratio_ma10_min' => 1,
+            'tang_gia_kem_vol_vol_ratio_ma20_min' => 1.5,
+            'rs_exchange_status_song_manh_1w_min' => 80,
+            'rs_exchange_status_song_manh_1m_min' => 70,
+            'rs_exchange_status_song_manh_3m_max' => 50,
+            'rs_exchange_status_giu_trend_1w_min' => 60,
+            'rs_exchange_status_giu_trend_1m_min' => 70,
+            'rs_exchange_status_giu_trend_3m_min' => 70,
+            'rs_exchange_status_yeu_1w_max' => 50,
+            'rs_exchange_status_yeu_1m_max' => 50,
+            'rs_exchange_status_yeu_3m_max' => 50,
+            'rs_exchange_recommend_volume_min' => 50000,
+            'rs_exchange_recommend_buy_1w_min' => 70,
+            'rs_exchange_recommend_buy_1w_gain_over_1m' => 0,
+            'rs_exchange_recommend_buy_pct_1w_min' => 0.03,
+            'rs_exchange_recommend_buy_pct_1m_max' => 0.2,
+            'rs_exchange_recommend_buy_pct_3m_max' => 0.4,
+            'rs_exchange_recommend_buy_pct_t_1_min' => 0.02,
+            'rs_exchange_recommend_buy_volume_boost_ratio' => 1.5,
+            'rs_exchange_recommend_sell_1w_max' => 50,
+            'rs_exchange_recommend_sell_pct_1w_max' => -0.03,
+        ];
+    }
+
+    public static function get_rule_settings() {
+        if (is_array(self::$rule_settings_cache)) {
+            return self::$rule_settings_cache;
+        }
+
+        $stored = get_option('lcni_rule_settings', []);
+        self::$rule_settings_cache = self::sanitize_rule_settings($stored);
+
+        return self::$rule_settings_cache;
+    }
+
+    public static function sanitize_rule_settings($raw_settings) {
+        $defaults = self::get_default_rule_settings();
+        $raw = is_array($raw_settings) ? $raw_settings : [];
+        $settings = [];
+
+        foreach ($defaults as $key => $default_value) {
+            $candidate = array_key_exists($key, $raw) ? $raw[$key] : $default_value;
+            $normalized_value = self::normalize_rule_setting_numeric_value($candidate);
+
+            if ($normalized_value === null || !is_numeric($normalized_value)) {
+                $normalized_value = $default_value;
+            }
+
+            if (is_int($default_value)) {
+                $settings[$key] = max(0, (int) $normalized_value);
+            } else {
+                $settings[$key] = (float) $normalized_value;
+            }
+        }
+
+        if ($settings['nen_type_vua_min_count_30'] > $settings['nen_type_chat_min_count_30']) {
+            $settings['nen_type_vua_min_count_30'] = $settings['nen_type_chat_min_count_30'];
+        }
+
+        return $settings;
+    }
+
+    public static function validate_rule_settings_input($raw_settings) {
+        $defaults = self::get_default_rule_settings();
+        $raw = is_array($raw_settings) ? $raw_settings : [];
+        $normalized = [];
+        $errors = [];
+
+        foreach ($raw as $key => $value) {
+            if (!array_key_exists($key, $defaults)) {
+                continue;
+            }
+
+            $normalized_value = self::normalize_rule_setting_numeric_value($value);
+            if ($normalized_value === null || !is_numeric($normalized_value)) {
+                $errors[] = $key;
+                continue;
+            }
+
+            if (is_int($defaults[$key])) {
+                $normalized[$key] = max(0, (int) $normalized_value);
+            } else {
+                $normalized[$key] = (float) $normalized_value;
+            }
+        }
+
+        if (!empty($errors)) {
+            return new WP_Error(
+                'invalid_rule_settings',
+                sprintf('Giá trị Rule Setting không hợp lệ ở các trường: %s. Vui lòng nhập số theo định dạng 0.05 hoặc 0,05.', implode(', ', $errors))
+            );
+        }
+
+        return $normalized;
+    }
+
+    private static function normalize_rule_setting_numeric_value($value) {
+        if (is_int($value) || is_float($value)) {
+            return $value;
+        }
+
+        $normalized = trim((string) $value);
+        if ($normalized === '') {
+            return null;
+        }
+
+        $normalized = str_replace([' ', '%'], '', $normalized);
+        $normalized = str_replace(',', '.', $normalized);
+
+        return is_numeric($normalized) ? $normalized : null;
+    }
+
+    public static function update_rule_settings($raw_settings, $force_recalculate = false) {
+        $current = self::get_rule_settings();
+        $incoming = is_array($raw_settings) ? $raw_settings : [];
+        $sanitized = self::sanitize_rule_settings(array_merge($current, $incoming));
+
+        update_option('lcni_rule_settings', $sanitized);
+        self::$rule_settings_cache = $sanitized;
+
+        if ($current === $sanitized && !$force_recalculate) {
+            return ['updated' => false, 'recalculated_series' => 0];
+        }
+
+        $queued = self::enqueue_rule_rebuild();
+        self::log_change('rule_settings_updated', sprintf('Rule settings %s and queued %d symbol/timeframe series for background recalculation.', $current === $sanitized ? 'executed' : 'updated', $queued));
+
+        return ['updated' => $current !== $sanitized, 'recalculated_series' => $queued, 'queued' => $queued];
+    }
+
+    public static function get_rule_rebuild_status() {
+        $status = get_option(self::RULE_REBUILD_STATUS_OPTION, []);
+        if (!is_array($status)) {
+            $status = [];
+        }
+
+        $defaults = [
+            'status' => 'idle',
+            'total' => 0,
+            'processed' => 0,
+            'updated_at' => current_time('mysql'),
+        ];
+
+        $normalized = array_merge($defaults, $status);
+        $normalized['total'] = max(0, (int) $normalized['total']);
+        $normalized['processed'] = max(0, min((int) $normalized['processed'], (int) $normalized['total']));
+        $normalized['progress_percent'] = self::calculate_rule_rebuild_progress($normalized['processed'], $normalized['total']);
+
+        return $normalized;
+    }
+
+    public static function enqueue_rule_rebuild() {
+        $tasks = self::get_all_ohlc_series();
+
+        update_option(self::RULE_REBUILD_TASKS_OPTION, $tasks, false);
+        update_option(
+            self::RULE_REBUILD_STATUS_OPTION,
+            [
+                'status' => empty($tasks) ? 'done' : 'running',
+                'total' => count($tasks),
+                'processed' => 0,
+                'updated_at' => current_time('mysql'),
+            ],
+            false
+        );
+
+        if (!empty($tasks) && defined('LCNI_RULE_REBUILD_CRON_HOOK')) {
+            wp_clear_scheduled_hook(LCNI_RULE_REBUILD_CRON_HOOK);
+            wp_schedule_single_event(current_time('timestamp') + 1, LCNI_RULE_REBUILD_CRON_HOOK);
+        }
+
+        return count($tasks);
+    }
+
+
+    private static function get_seed_rebuild_queue() {
+        $queue = get_option(self::SEED_REBUILD_QUEUE_OPTION, []);
+
+        return is_array($queue) ? $queue : [];
+    }
+
+    private static function normalize_seed_rebuild_group_item($item, $group) {
+        $normalized = [
+            'keys' => [],
+            'priority' => 100,
+            'retry_count' => 0,
+            'updated_at' => current_time('mysql'),
+        ];
+
+        if (is_array($item)) {
+            $normalized['keys'] = isset($item['keys']) && is_array($item['keys']) ? $item['keys'] : [];
+            $normalized['priority'] = isset($item['priority']) ? (int) $item['priority'] : 100;
+            $normalized['retry_count'] = isset($item['retry_count']) ? max(0, (int) $item['retry_count']) : 0;
+            $normalized['updated_at'] = !empty($item['updated_at']) ? (string) $item['updated_at'] : current_time('mysql');
+        }
+
+        if ($group === 'series_metrics') {
+            $normalized['keys']['symbol'] = strtoupper(trim((string) ($normalized['keys']['symbol'] ?? '')));
+            $normalized['keys']['timeframe'] = strtoupper(trim((string) ($normalized['keys']['timeframe'] ?? '')));
+            if ($normalized['keys']['symbol'] === '' || $normalized['keys']['timeframe'] === '') {
+                return null;
+            }
+        } elseif ($group === 'rs_metrics') {
+            $normalized['keys']['event_time'] = (int) ($normalized['keys']['event_time'] ?? 0);
+            $normalized['keys']['timeframe'] = strtoupper(trim((string) ($normalized['keys']['timeframe'] ?? '')));
+            if ($normalized['keys']['event_time'] <= 0 || $normalized['keys']['timeframe'] === '') {
+                return null;
+            }
+        } elseif ($group === 'market_stats') {
+            $normalized['keys']['event_time'] = (int) ($normalized['keys']['event_time'] ?? 0);
+            $normalized['keys']['timeframe'] = strtoupper(trim((string) ($normalized['keys']['timeframe'] ?? '')));
+            if ($normalized['keys']['event_time'] <= 0 || $normalized['keys']['timeframe'] === '') {
+                return null;
+            }
+            if (isset($normalized['keys']['market_id']) && $normalized['keys']['market_id'] !== '') {
+                $normalized['keys']['market_id'] = (int) $normalized['keys']['market_id'];
+            }
+            if (isset($normalized['keys']['icb2']) && $normalized['keys']['icb2'] !== '') {
+                $normalized['keys']['icb2'] = trim((string) $normalized['keys']['icb2']);
+            }
+        } else {
+            return null;
+        }
+
+        return $normalized;
+    }
+
+    private static function enqueue_seed_rebuild_tasks($touched_series = [], $touched_event_times = [], $touched_timeframes = []) {
+        $series = self::normalize_series_rows($touched_series);
+        $event_times = array_values(array_unique(array_map('intval', (array) $touched_event_times)));
+        $timeframes = array_values(array_unique(array_filter(array_map(static function ($timeframe) {
+            return strtoupper(trim((string) $timeframe));
+        }, (array) $touched_timeframes))));
+
+        if (empty($series) && empty($event_times) && empty($timeframes)) {
+            return;
+        }
+
+        $queue = self::get_seed_rebuild_queue();
+        if (!isset($queue['series_metrics']) || !is_array($queue['series_metrics'])) {
+            $queue['series_metrics'] = [];
+        }
+        if (!isset($queue['rs_metrics']) || !is_array($queue['rs_metrics'])) {
+            $queue['rs_metrics'] = [];
+        }
+        if (!isset($queue['market_stats']) || !is_array($queue['market_stats'])) {
+            $queue['market_stats'] = [];
+        }
+
+        foreach ($series as $series_item) {
+            $key = $series_item['symbol'] . '|' . $series_item['timeframe'];
+            $queue['series_metrics'][$key] = [
+                'keys' => [
+                    'symbol' => $series_item['symbol'],
+                    'timeframe' => $series_item['timeframe'],
+                ],
+                'priority' => 10,
+                'retry_count' => 0,
+                'updated_at' => current_time('mysql'),
+            ];
+        }
+
+        foreach ($event_times as $event_time) {
+            foreach ($timeframes as $timeframe) {
+                $rs_key = $event_time . '|' . $timeframe;
+                $queue['rs_metrics'][$rs_key] = [
+                    'keys' => [
+                        'event_time' => $event_time,
+                        'timeframe' => $timeframe,
+                    ],
+                    'priority' => 20,
+                    'retry_count' => 0,
+                    'updated_at' => current_time('mysql'),
+                ];
+
+                $market_key = $event_time . '|' . $timeframe;
+                $queue['market_stats'][$market_key] = [
+                    'keys' => [
+                        'event_time' => $event_time,
+                        'timeframe' => $timeframe,
+                    ],
+                    'priority' => 30,
+                    'retry_count' => 0,
+                    'updated_at' => current_time('mysql'),
+                ];
+            }
+        }
+
+        update_option(self::SEED_REBUILD_QUEUE_OPTION, $queue, false);
+    }
+
+    public static function process_seed_rebuild_pipeline($batch_sizes = []) {
+        $queue = self::get_seed_rebuild_queue();
+
+        $groups = [
+            'series_metrics' => isset($queue['series_metrics']) && is_array($queue['series_metrics']) ? $queue['series_metrics'] : [],
+            'rs_metrics' => isset($queue['rs_metrics']) && is_array($queue['rs_metrics']) ? $queue['rs_metrics'] : [],
+            'market_stats' => isset($queue['market_stats']) && is_array($queue['market_stats']) ? $queue['market_stats'] : [],
+        ];
+
+        $defaults = [
+            'series_metrics' => max(1, (int) get_option('lcni_seed_rebuild_series_batch_size', 120)),
+            'rs_metrics' => max(1, (int) get_option('lcni_seed_rebuild_rs_batch_size', 200)),
+            'market_stats' => max(1, (int) get_option('lcni_seed_rebuild_market_batch_size', 120)),
+        ];
+        $batch_limits = array_merge($defaults, is_array($batch_sizes) ? $batch_sizes : []);
+        $serial_groups = !isset($batch_limits['serial_groups']) ? true : (bool) $batch_limits['serial_groups'];
+
+        if ($serial_groups) {
+            $active_group = '';
+            foreach (['series_metrics', 'rs_metrics', 'market_stats'] as $group_name) {
+                if (!empty($groups[$group_name])) {
+                    $active_group = $group_name;
+                    break;
+                }
+            }
+
+            if ($active_group !== '') {
+                foreach (['series_metrics', 'rs_metrics', 'market_stats'] as $group_name) {
+                    if ($group_name !== $active_group) {
+                        $batch_limits[$group_name] = 0;
+                    }
+                }
+            }
+        }
+
+        $processed = [
+            'series_metrics' => 0,
+            'rs_metrics' => 0,
+            'market_stats' => 0,
+        ];
+
+        $series_batch = [];
+        foreach ($groups['series_metrics'] as $task_key => $task_item) {
+            if ($processed['series_metrics'] >= (int) $batch_limits['series_metrics']) {
+                break;
+            }
+            $normalized = self::normalize_seed_rebuild_group_item($task_item, 'series_metrics');
+            if ($normalized === null) {
+                unset($groups['series_metrics'][$task_key]);
+                continue;
+            }
+            $series_batch[$task_key] = $normalized;
+            unset($groups['series_metrics'][$task_key]);
+            $processed['series_metrics']++;
+        }
+
+        foreach ($series_batch as $task_item) {
+            self::rebuild_ohlc_series_metrics($task_item['keys']['symbol'], $task_item['keys']['timeframe']);
+        }
+
+        if ($processed['series_metrics'] > 0 && self::is_peak_hours_mode()) {
+            $batch_limits['rs_metrics'] = max(1, (int) floor((int) $batch_limits['rs_metrics'] / 2));
+            $batch_limits['market_stats'] = 0;
+        }
+
+        $rs_event_times = [];
+        $rs_timeframes = [];
+        foreach ($groups['rs_metrics'] as $task_key => $task_item) {
+            if ($processed['rs_metrics'] >= (int) $batch_limits['rs_metrics']) {
+                break;
+            }
+            $normalized = self::normalize_seed_rebuild_group_item($task_item, 'rs_metrics');
+            if ($normalized === null) {
+                unset($groups['rs_metrics'][$task_key]);
+                continue;
+            }
+            $rs_event_times[(int) $normalized['keys']['event_time']] = true;
+            $rs_timeframes[(string) $normalized['keys']['timeframe']] = true;
+            unset($groups['rs_metrics'][$task_key]);
+            $processed['rs_metrics']++;
+        }
+
+        if (!empty($rs_timeframes)) {
+            self::rebuild_rs_1m_by_exchange(array_keys($rs_event_times), array_keys($rs_timeframes));
+            self::rebuild_rs_1w_by_exchange(array_keys($rs_event_times), array_keys($rs_timeframes));
+            self::rebuild_rs_3m_by_exchange(array_keys($rs_event_times), array_keys($rs_timeframes));
+            self::rebuild_rs_exchange_signals(array_keys($rs_event_times), array_keys($rs_timeframes));
+        }
+
+        if ((int) $batch_limits['market_stats'] > 0) {
+            $market_event_times = [];
+            $market_timeframes = [];
+            foreach ($groups['market_stats'] as $task_key => $task_item) {
+                if ($processed['market_stats'] >= (int) $batch_limits['market_stats']) {
+                    break;
+                }
+                $normalized = self::normalize_seed_rebuild_group_item($task_item, 'market_stats');
+                if ($normalized === null) {
+                    unset($groups['market_stats'][$task_key]);
+                    continue;
+                }
+                $market_event_times[(int) $normalized['keys']['event_time']] = true;
+                $market_timeframes[(string) $normalized['keys']['timeframe']] = true;
+                unset($groups['market_stats'][$task_key]);
+                $processed['market_stats']++;
+            }
+
+            if (!empty($market_timeframes)) {
+                self::rebuild_market_statistics_incremental(array_keys($market_event_times), array_keys($market_timeframes));
+                self::rebuild_industry_analysis_incremental(array_keys($market_event_times), array_keys($market_timeframes));
+            }
+        }
+
+        $new_queue = [
+            'series_metrics' => $groups['series_metrics'],
+            'rs_metrics' => $groups['rs_metrics'],
+            'market_stats' => $groups['market_stats'],
+        ];
+        update_option(self::SEED_REBUILD_QUEUE_OPTION, $new_queue, false);
+
+        $remaining = [
+            'series_metrics' => count($new_queue['series_metrics']),
+            'rs_metrics' => count($new_queue['rs_metrics']),
+            'market_stats' => count($new_queue['market_stats']),
+        ];
+
+        if (array_sum($processed) > 0) {
+            $watermark = get_option(self::SEED_REBUILD_WATERMARK_OPTION, []);
+            if (!is_array($watermark)) {
+                $watermark = [];
+            }
+            $now = current_time('mysql');
+            foreach ($processed as $group => $count) {
+                if ($count > 0) {
+                    $watermark[$group] = [
+                        'last_processed_at' => $now,
+                        'processed' => (int) $count,
+                    ];
+                }
+            }
+            update_option(self::SEED_REBUILD_WATERMARK_OPTION, $watermark, false);
+        }
+
+        return [
+            'processed' => $processed,
+            'remaining' => $remaining,
+            'done' => array_sum($remaining) === 0,
+            'degraded_mode' => self::is_peak_hours_mode(),
+            'serial_groups' => $serial_groups,
+        ];
+    }
+
+    private static function is_peak_hours_mode() {
+        $degraded = get_option('lcni_seed_rebuild_degraded_mode', 'auto');
+        if ($degraded === 'always') {
+            return true;
+        }
+        if ($degraded === 'off') {
+            return false;
+        }
+
+        $hour = (int) wp_date('G', current_time('timestamp'));
+
+        return $hour >= 8 && $hour <= 14;
+    }
+
+    private static function rebuild_market_statistics_incremental($event_times = [], $timeframes = []) {
+        if (empty($event_times) || empty($timeframes)) {
+            return 0;
+        }
+
+        global $wpdb;
+
+        $event_times = array_values(array_unique(array_filter(array_map('intval', (array) $event_times), static function ($value) {
+            return $value > 0;
+        })));
+        $timeframes = array_values(array_unique(array_filter(array_map(static function ($timeframe) {
+            return strtoupper(trim((string) $timeframe));
+        }, (array) $timeframes))));
+
+        if (empty($event_times) || empty($timeframes)) {
+            return 0;
+        }
+
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $mapping_table = $wpdb->prefix . 'lcni_sym_icb_market';
+        $market_statistics_table = $wpdb->prefix . 'lcni_thong_ke_thi_truong';
+        $icb2_statistics_table = $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2';
+        $icb2_market_statistics_table = $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2_toan_thi_truong';
+        $icb2_table = $wpdb->prefix . 'lcni_icb2';
+
+        $event_placeholders = implode(', ', array_fill(0, count($event_times), '%d'));
+        $timeframe_placeholders = implode(', ', array_fill(0, count($timeframes), '%s'));
+
+        $where_sql = "o.event_time IN ({$event_placeholders}) AND o.timeframe IN ({$timeframe_placeholders})";
+        $where_params = array_merge($event_times, $timeframes);
+
+        $delete_market_sql = "DELETE FROM {$market_statistics_table} WHERE event_time IN ({$event_placeholders}) AND timeframe IN ({$timeframe_placeholders})";
+        $wpdb->query($wpdb->prepare($delete_market_sql, $where_params));
+        $delete_icb2_sql = "DELETE FROM {$icb2_statistics_table} WHERE event_time IN ({$event_placeholders}) AND timeframe IN ({$timeframe_placeholders})";
+        $wpdb->query($wpdb->prepare($delete_icb2_sql, $where_params));
+        $delete_icb2_market_sql = "DELETE FROM {$icb2_market_statistics_table} WHERE event_time IN ({$event_placeholders}) AND timeframe IN ({$timeframe_placeholders})";
+        $wpdb->query($wpdb->prepare($delete_icb2_market_sql, $where_params));
+
+        $insert_market_sql = "INSERT INTO {$market_statistics_table}
+            (event_time, marketid, timeframe, so_ma_tang_gia, so_ma_giam_gia, so_rsi_qua_mua, so_rsi_qua_ban, so_rsi_tham_lam, so_rsi_so_hai, so_smart_money, so_tang_gia_kem_vol, so_pha_nen, pct_so_ma_tren_ma20, pct_so_ma_tren_ma50, pct_so_ma_tren_ma100, tong_value_traded)
+            SELECT
+                o.event_time,
+                CAST(COALESCE(NULLIF(TRIM(m.market_id), ''), '0') AS UNSIGNED) AS marketid,
+                o.timeframe,
+                SUM(CASE WHEN COALESCE(o.pct_t_1, 0) > 0 THEN 1 ELSE 0 END) AS so_ma_tang_gia,
+                SUM(CASE WHEN COALESCE(o.pct_t_1, 0) < 0 THEN 1 ELSE 0 END) AS so_ma_giam_gia,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Quá mua' THEN 1 ELSE 0 END) AS so_rsi_qua_mua,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Quá bán' THEN 1 ELSE 0 END) AS so_rsi_qua_ban,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Tham lam' THEN 1 ELSE 0 END) AS so_rsi_tham_lam,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Sợ hãi' THEN 1 ELSE 0 END) AS so_rsi_so_hai,
+                SUM(CASE WHEN COALESCE(o.smart_money, '') = 'Smart Money' THEN 1 ELSE 0 END) AS so_smart_money,
+                SUM(CASE WHEN COALESCE(o.tang_gia_kem_vol, '') = 'Tăng giá kèm Vol' THEN 1 ELSE 0 END) AS so_tang_gia_kem_vol,
+                SUM(CASE WHEN COALESCE(o.pha_nen, '') = 'Phá nền' THEN 1 ELSE 0 END) AS so_pha_nen,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma20, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma20,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma50, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma50,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma100, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma100,
+                COALESCE(SUM(o.value_traded), 0) AS tong_value_traded
+            FROM {$ohlc_table} o
+            LEFT JOIN {$mapping_table} m ON UPPER(TRIM(m.symbol)) = UPPER(TRIM(o.symbol))
+            WHERE {$where_sql}
+            GROUP BY o.event_time, CAST(COALESCE(NULLIF(TRIM(m.market_id), ''), '0') AS UNSIGNED), o.timeframe";
+        $wpdb->query($wpdb->prepare($insert_market_sql, $where_params));
+
+        $insert_icb2_sql = "INSERT INTO {$icb2_statistics_table}
+            (event_time, timeframe, marketid, icb_level2, so_ma_tang_gia, so_ma_giam_gia, so_smart_money, so_tang_gia_kem_vol, so_pha_nen, pct_so_ma_tren_ma20, pct_so_ma_tren_ma50, pct_so_ma_tren_ma100, tong_value_traded, so_rsi_qua_mua, so_rsi_qua_ban, so_rsi_tham_lam, so_rsi_so_hai, so_macd_cat_len, so_macd_cat_xuong)
+            SELECT
+                o.event_time,
+                o.timeframe,
+                CAST(COALESCE(NULLIF(TRIM(m.market_id), ''), '0') AS UNSIGNED) AS marketid,
+                COALESCE(i.name_icb2, 'Chưa phân loại') AS icb_level2,
+                SUM(CASE WHEN COALESCE(o.pct_t_1, 0) > 0 THEN 1 ELSE 0 END) AS so_ma_tang_gia,
+                SUM(CASE WHEN COALESCE(o.pct_t_1, 0) < 0 THEN 1 ELSE 0 END) AS so_ma_giam_gia,
+                SUM(CASE WHEN COALESCE(o.smart_money, '') = 'Smart Money' THEN 1 ELSE 0 END) AS so_smart_money,
+                SUM(CASE WHEN COALESCE(o.tang_gia_kem_vol, '') = 'Tăng giá kèm Vol' THEN 1 ELSE 0 END) AS so_tang_gia_kem_vol,
+                SUM(CASE WHEN COALESCE(o.pha_nen, '') = 'Phá nền' THEN 1 ELSE 0 END) AS so_pha_nen,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma20, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma20,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma50, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma50,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma100, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma100,
+                COALESCE(SUM(o.value_traded), 0) AS tong_value_traded,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Quá mua' THEN 1 ELSE 0 END) AS so_rsi_qua_mua,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Quá bán' THEN 1 ELSE 0 END) AS so_rsi_qua_ban,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Tham lam' THEN 1 ELSE 0 END) AS so_rsi_tham_lam,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Sợ hãi' THEN 1 ELSE 0 END) AS so_rsi_so_hai,
+                SUM(CASE WHEN COALESCE(o.macd_cat, '') IN ('Cắt lên signal', 'Cat len signal') THEN 1 ELSE 0 END) AS so_macd_cat_len,
+                SUM(CASE WHEN COALESCE(o.macd_cat, '') IN ('Cắt xuống signal', 'Cat xuong signal') THEN 1 ELSE 0 END) AS so_macd_cat_xuong
+            FROM {$ohlc_table} o
+            INNER JOIN {$mapping_table} m ON m.symbol = o.symbol
+            LEFT JOIN {$icb2_table} i ON i.id_icb2 = m.id_icb2
+            WHERE {$where_sql}
+            GROUP BY o.event_time, o.timeframe, CAST(COALESCE(NULLIF(TRIM(m.market_id), ''), '0') AS UNSIGNED), COALESCE(i.name_icb2, 'Chưa phân loại')";
+        $wpdb->query($wpdb->prepare($insert_icb2_sql, $where_params));
+
+        $insert_icb2_market_sql = "INSERT INTO {$icb2_market_statistics_table}
+            (icb_level2, event_time, timeframe, so_ma_tang_gia, so_ma_giam_gia, so_rsi_qua_mua, so_rsi_qua_ban, so_rsi_tham_lam, so_rsi_so_hai, so_smart_money, so_tang_gia_kem_vol, so_pha_nen, pct_so_ma_tren_ma20, pct_so_ma_tren_ma50, pct_so_ma_tren_ma100, tong_value_traded)
+            SELECT
+                COALESCE(i.name_icb2, 'Chưa phân loại') AS icb_level2,
+                o.event_time,
+                o.timeframe,
+                SUM(CASE WHEN COALESCE(o.pct_t_1, 0) > 0 THEN 1 ELSE 0 END) AS so_ma_tang_gia,
+                SUM(CASE WHEN COALESCE(o.pct_t_1, 0) < 0 THEN 1 ELSE 0 END) AS so_ma_giam_gia,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Quá mua' THEN 1 ELSE 0 END) AS so_rsi_qua_mua,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Quá bán' THEN 1 ELSE 0 END) AS so_rsi_qua_ban,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Tham lam' THEN 1 ELSE 0 END) AS so_rsi_tham_lam,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Sợ hãi' THEN 1 ELSE 0 END) AS so_rsi_so_hai,
+                SUM(CASE WHEN COALESCE(o.smart_money, '') = 'Smart Money' THEN 1 ELSE 0 END) AS so_smart_money,
+                SUM(CASE WHEN COALESCE(o.tang_gia_kem_vol, '') = 'Tăng giá kèm Vol' THEN 1 ELSE 0 END) AS so_tang_gia_kem_vol,
+                SUM(CASE WHEN COALESCE(o.pha_nen, '') = 'Phá nền' THEN 1 ELSE 0 END) AS so_pha_nen,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma20, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma20,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma50, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma50,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma100, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma100,
+                COALESCE(SUM(o.value_traded), 0) AS tong_value_traded
+            FROM {$ohlc_table} o
+            INNER JOIN {$mapping_table} m ON m.symbol = o.symbol
+            LEFT JOIN {$icb2_table} i ON i.id_icb2 = m.id_icb2
+            WHERE {$where_sql}
+            GROUP BY COALESCE(i.name_icb2, 'Chưa phân loại'), o.event_time, o.timeframe";
+        $wpdb->query($wpdb->prepare($insert_icb2_market_sql, $where_params));
+
+        self::reindex_market_statistics_tables();
+        self::log_change('backfill_market_statistics_incremental', sprintf('Incremental rebuild done for %d event_times x %d timeframes.', count($event_times), count($timeframes)));
+
+        // Sync market_context history + latest sau khi tính xong market statistics
+        self::sync_market_context_after_rebuild( $event_times, $timeframes );
+
+        return count($event_times) * count($timeframes);
+    }
+
+    private static function reindex_market_statistics_tables() {
+        global $wpdb;
+
+        $market_statistics_table = $wpdb->prefix . 'lcni_thong_ke_thi_truong';
+        $icb2_statistics_table = $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2';
+        $icb2_market_statistics_table = $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2_toan_thi_truong';
+
+        $wpdb->query(
+            "UPDATE {$market_statistics_table} target
+            INNER JOIN (
+                SELECT ranked.id, ranked.market_index AS computed_index
+                FROM (
+                    SELECT src.id,
+                           (@market_rank := IF(@current_market = CONCAT(src.marketid, '|', src.timeframe), @market_rank + 1, 1)) AS market_index,
+                           (@current_market := CONCAT(src.marketid, '|', src.timeframe)) AS current_market_marker
+                    FROM {$market_statistics_table} src
+                    CROSS JOIN (SELECT @market_rank := 0, @current_market := '') vars
+                    ORDER BY src.marketid ASC, src.timeframe ASC, src.event_time ASC, src.id ASC
+                ) ranked
+            ) calc ON calc.id = target.id
+            SET target.thong_ke_thi_truong_index = calc.computed_index"
+        );
+
+        $wpdb->query(
+            "UPDATE {$icb2_statistics_table} target
+            INNER JOIN (
+                SELECT ranked.id, ranked.icb2_index AS computed_index
+                FROM (
+                    SELECT src.id,
+                           (@icb2_rank := IF(@current_icb2 = CONCAT(src.icb_level2, '|', src.marketid), @icb2_rank + 1, 1)) AS icb2_index,
+                           (@current_icb2 := CONCAT(src.icb_level2, '|', src.marketid)) AS current_icb2_marker
+                    FROM {$icb2_statistics_table} src
+                    CROSS JOIN (SELECT @icb2_rank := 0, @current_icb2 := '') vars
+                    ORDER BY src.icb_level2 ASC, src.marketid ASC, src.event_time ASC, src.id ASC
+                ) ranked
+            ) calc ON calc.id = target.id
+            SET target.thong_ke_icb2_index = calc.computed_index"
+        );
+
+        $wpdb->query(
+            "UPDATE {$icb2_market_statistics_table} target
+            INNER JOIN (
+                SELECT ranked.id, ranked.market_index AS computed_index
+                FROM (
+                    SELECT src.id,
+                           (@icb2_market_rank := IF(@current_icb2_market = CONCAT(src.icb_level2, '|', src.timeframe), @icb2_market_rank + 1, 1)) AS market_index,
+                           (@current_icb2_market := CONCAT(src.icb_level2, '|', src.timeframe)) AS current_icb2_market_marker
+                    FROM {$icb2_market_statistics_table} src
+                    CROSS JOIN (SELECT @icb2_market_rank := 0, @current_icb2_market := '') vars
+                    ORDER BY src.icb_level2 ASC, src.timeframe ASC, src.event_time ASC, src.id ASC
+                ) ranked
+            ) calc ON calc.id = target.id
+            SET target.icb2_thi_truong_index = calc.computed_index"
+        );
+    }
+
+    /**
+     * Sau khi rebuild market statistics xong, tính và ghi snapshot vào
+     * wp_lcni_market_context (history) và wp_lcni_market_context_latest.
+     *
+     * @param array $event_times Danh sách event_time vừa rebuild
+     * @param array $timeframes  Danh sách timeframe vừa rebuild
+     */
+    private static function sync_market_context_after_rebuild( array $event_times, array $timeframes ): void {
+        if ( empty( $event_times ) || empty( $timeframes ) ) {
+            return;
+        }
+
+        // Đảm bảo class MarketDashboardRepository đã được load
+        if ( ! class_exists( 'LCNI_MarketDashboardRepository' ) ) {
+            $path = __DIR__ . '/MarketDashboard/MarketDashboardRepository.php';
+            if ( file_exists( $path ) ) {
+                require_once $path;
+            } else {
+                return;
+            }
+        }
+
+        // Đảm bảo 2 bảng tồn tại
+        LCNI_MarketDashboardRepository::ensure_context_table();
+
+        $repo = new LCNI_MarketDashboardRepository();
+
+        foreach ( $timeframes as $tf ) {
+            $tf = strtoupper( (string) $tf );
+            if ( ! in_array( $tf, [ '1D', '1W', '1M' ], true ) ) {
+                continue;
+            }
+            foreach ( $event_times as $et ) {
+                $et = (int) $et;
+                if ( $et <= 0 ) {
+                    continue;
+                }
+                // Force recalculate + save (bỏ qua cache)
+                $repo->get_snapshot( $tf, $et, false );
+            }
+        }
+    }
+
+    public static function process_rule_rebuild_batch($batch_size = self::RULE_REBUILD_BATCH_SIZE) {
+        $batch_size = max(1, (int) $batch_size);
+        $tasks = get_option(self::RULE_REBUILD_TASKS_OPTION, []);
+        if (!is_array($tasks)) {
+            $tasks = [];
+        }
+
+        if (empty($tasks)) {
+            update_option(
+                self::RULE_REBUILD_STATUS_OPTION,
+                [
+                    'status' => 'done',
+                    'total' => 0,
+                    'processed' => 0,
+                    'updated_at' => current_time('mysql'),
+                ],
+                false
+            );
+
+            return ['processed_in_batch' => 0, 'remaining' => 0, 'done' => true];
+        }
+
+        $status = self::get_rule_rebuild_status();
+        $processed = (int) $status['processed'];
+        $processed_in_batch = 0;
+        $touched_timeframes = [];
+
+        while ($processed_in_batch < $batch_size && !empty($tasks)) {
+            $task = array_shift($tasks);
+            self::rebuild_ohlc_series_metrics($task['symbol'], $task['timeframe']);
+            $touched_timeframes[(string) $task['timeframe']] = true;
+            $processed_in_batch++;
+            $processed++;
+        }
+
+        if (!empty($touched_timeframes)) {
+            $timeframes = array_keys($touched_timeframes);
+            self::rebuild_rs_1m_by_exchange([], $timeframes);
+            self::rebuild_rs_1w_by_exchange([], $timeframes);
+            self::rebuild_rs_3m_by_exchange([], $timeframes);
+            self::rebuild_rs_exchange_signals([], $timeframes);
+        }
+
+        update_option(self::RULE_REBUILD_TASKS_OPTION, $tasks, false);
+
+        $done = empty($tasks);
+        update_option(
+            self::RULE_REBUILD_STATUS_OPTION,
+            [
+                'status' => $done ? 'done' : 'running',
+                'total' => max((int) $status['total'], $processed + count($tasks)),
+                'processed' => $processed,
+                'updated_at' => current_time('mysql'),
+            ],
+            false
+        );
+
+        if ($done) {
+            self::log_change('rule_rebuild_completed', sprintf('Background rule rebuild completed for %d symbol/timeframe series.', $processed));
+            wp_clear_scheduled_hook(LCNI_RULE_REBUILD_CRON_HOOK);
+        } elseif (defined('LCNI_RULE_REBUILD_CRON_HOOK')) {
+            wp_schedule_single_event(current_time('timestamp') + 1, LCNI_RULE_REBUILD_CRON_HOOK);
+        }
+
+        return ['processed_in_batch' => $processed_in_batch, 'remaining' => count($tasks), 'done' => $done];
+    }
+
+    private static function calculate_rule_rebuild_progress($processed, $total) {
+        $total = max(0, (int) $total);
+        $processed = max(0, (int) $processed);
+        if ($total === 0) {
+            return 100;
+        }
+
+        return (int) floor(($processed / $total) * 100);
+    }
+
+    public static function rebuild_all_ohlc_metrics() {
+        $all_series = self::get_all_ohlc_series();
+
+        if (empty($all_series)) {
+            return 0;
+        }
+
+        foreach ($all_series as $series) {
+            self::rebuild_ohlc_series_metrics($series['symbol'], $series['timeframe']);
+        }
+
+        self::rebuild_rs_1m_by_exchange();
+        self::rebuild_rs_1w_by_exchange();
+        self::rebuild_rs_3m_by_exchange();
+        self::rebuild_rs_exchange_signals();
+
+        return count($all_series);
+    }
+
+    /**
+     * @param string $table
+     * @param array<int, array{symbol:string,timeframe:string}> $series_list
+     * @return array<int, int>
+     */
+    private static function collect_distinct_event_times_for_series($table, $series_list) {
+        global $wpdb;
+
+        if (empty($series_list)) {
+            return [];
+        }
+
+        $clauses = [];
+        $params = [];
+
+        foreach ($series_list as $series) {
+            $symbol = strtoupper(trim((string) ($series['symbol'] ?? '')));
+            $timeframe = strtoupper(trim((string) ($series['timeframe'] ?? '')));
+            if ($symbol === '' || $timeframe === '') {
+                continue;
+            }
+
+            $clauses[] = '(symbol = %s AND timeframe = %s)';
+            $params[] = $symbol;
+            $params[] = $timeframe;
+        }
+
+        if (empty($clauses)) {
+            return [];
+        }
+
+        $sql = "SELECT DISTINCT event_time FROM {$table} WHERE " . implode(' OR ', $clauses);
+        $event_times = $wpdb->get_col($wpdb->prepare($sql, $params));
+
+        return array_values(array_unique(array_map('intval', (array) $event_times)));
+    }
+
+    private static function ensure_market_statistics_schema() {
+        global $wpdb;
+
+        $market_statistics_table = $wpdb->prefix . 'lcni_thong_ke_thi_truong';
+        $icb2_statistics_table = $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2';
+        $icb2_market_statistics_table = $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2_toan_thi_truong';
+
+        $market_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $market_statistics_table));
+        if ($market_exists === $market_statistics_table) {
+            if (!self::table_has_column($market_statistics_table, 'id')) {
+                if (self::table_has_primary_key($market_statistics_table)) {
+                    $wpdb->query("ALTER TABLE {$market_statistics_table} DROP PRIMARY KEY");
+                }
+                $wpdb->query("ALTER TABLE {$market_statistics_table} ADD COLUMN id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY FIRST");
+            }
+
+            if (!self::table_has_column($market_statistics_table, 'thong_ke_thi_truong_index')) {
+                $wpdb->query("ALTER TABLE {$market_statistics_table} ADD COLUMN thong_ke_thi_truong_index BIGINT UNSIGNED NOT NULL DEFAULT 0 AFTER id");
+            }
+
+            $wpdb->query("ALTER TABLE {$market_statistics_table} MODIFY COLUMN pct_so_ma_tren_ma20 DECIMAL(12,6) NOT NULL DEFAULT 0");
+            $wpdb->query("ALTER TABLE {$market_statistics_table} MODIFY COLUMN pct_so_ma_tren_ma50 DECIMAL(12,6) NOT NULL DEFAULT 0");
+            $wpdb->query("ALTER TABLE {$market_statistics_table} MODIFY COLUMN pct_so_ma_tren_ma100 DECIMAL(12,6) NOT NULL DEFAULT 0");
+            $wpdb->query("ALTER TABLE {$market_statistics_table} MODIFY COLUMN tong_value_traded DECIMAL(24,2) NOT NULL DEFAULT 0");
+
+            self::add_unique_key_if_missing($market_statistics_table, 'uniq_event_market_timeframe', '(event_time, marketid, timeframe)');
+            self::add_index_if_missing($market_statistics_table, 'idx_event_time', '(event_time, timeframe)');
+            self::add_index_if_missing($market_statistics_table, 'idx_thong_ke_thi_truong_index', '(thong_ke_thi_truong_index)');
+        }
+
+        $icb2_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $icb2_statistics_table));
+        if ($icb2_exists === $icb2_statistics_table) {
+            if (!self::table_has_column($icb2_statistics_table, 'id')) {
+                if (self::table_has_primary_key($icb2_statistics_table)) {
+                    $wpdb->query("ALTER TABLE {$icb2_statistics_table} DROP PRIMARY KEY");
+                }
+                $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD COLUMN id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY FIRST");
+            }
+
+            if (!self::table_has_column($icb2_statistics_table, 'thong_ke_icb2_index')) {
+                $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD COLUMN thong_ke_icb2_index BIGINT UNSIGNED NOT NULL DEFAULT 0 AFTER id");
+            }
+
+            if (!self::table_has_column($icb2_statistics_table, 'so_ma_tang_gia')) {
+                $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD COLUMN so_ma_tang_gia INT UNSIGNED NOT NULL DEFAULT 0 AFTER icb_level2");
+            }
+            if (!self::table_has_column($icb2_statistics_table, 'so_ma_giam_gia')) {
+                $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD COLUMN so_ma_giam_gia INT UNSIGNED NOT NULL DEFAULT 0 AFTER so_ma_tang_gia");
+            }
+            if (!self::table_has_column($icb2_statistics_table, 'pct_so_ma_tren_ma20')) {
+                $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD COLUMN pct_so_ma_tren_ma20 DECIMAL(12,6) NOT NULL DEFAULT 0 AFTER so_pha_nen");
+            }
+            if (!self::table_has_column($icb2_statistics_table, 'pct_so_ma_tren_ma50')) {
+                $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD COLUMN pct_so_ma_tren_ma50 DECIMAL(12,6) NOT NULL DEFAULT 0 AFTER pct_so_ma_tren_ma20");
+            }
+            if (!self::table_has_column($icb2_statistics_table, 'pct_so_ma_tren_ma100')) {
+                $wpdb->query("ALTER TABLE {$icb2_statistics_table} ADD COLUMN pct_so_ma_tren_ma100 DECIMAL(12,6) NOT NULL DEFAULT 0 AFTER pct_so_ma_tren_ma50");
+            }
+
+            $wpdb->query("ALTER TABLE {$icb2_statistics_table} MODIFY COLUMN tong_value_traded DECIMAL(24,2) NOT NULL DEFAULT 0");
+            self::add_unique_key_if_missing($icb2_statistics_table, 'uniq_event_timeframe_market_icb', '(event_time, timeframe, marketid, icb_level2)');
+            self::add_index_if_missing($icb2_statistics_table, 'idx_event_time', '(event_time, timeframe)');
+            self::add_index_if_missing($icb2_statistics_table, 'idx_thong_ke_icb2_index', '(thong_ke_icb2_index)');
+        }
+
+        $icb2_market_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $icb2_market_statistics_table));
+        if ($icb2_market_exists === $icb2_market_statistics_table) {
+            self::add_unique_key_if_missing($icb2_market_statistics_table, 'uniq_icb_level2_event_timeframe', '(icb_level2, event_time, timeframe)');
+            self::add_index_if_missing($icb2_market_statistics_table, 'idx_event_time', '(event_time, timeframe)');
+            self::add_index_if_missing($icb2_market_statistics_table, 'idx_icb2_thi_truong_index', '(icb2_thi_truong_index)');
+        }
+    }
+
+    private static function table_has_column($table, $column_name) {
+        global $wpdb;
+
+        $count = (int) $wpdb->get_var(
+            $wpdb->prepare(
+                'SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = %s AND column_name = %s',
+                $table,
+                $column_name
+            )
+        );
+
+        return $count > 0;
+    }
+
+    private static function table_has_primary_key($table) {
+        global $wpdb;
+
+        $primary_index_rows = $wpdb->get_results(
+            $wpdb->prepare(
+                'SELECT index_name FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = %s AND index_name = %s LIMIT 1',
+                $table,
+                'PRIMARY'
+            ),
+            ARRAY_A
+        );
+
+        return !empty($primary_index_rows);
+    }
+
+    private static function table_has_index($table, $index_name) {
+        global $wpdb;
+
+        $count = (int) $wpdb->get_var(
+            $wpdb->prepare(
+                'SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = %s AND index_name = %s',
+                $table,
+                $index_name
+            )
+        );
+
+        return $count > 0;
+    }
+
+    private static function add_index_if_missing($table, $index_name, $columns_sql) {
+        global $wpdb;
+
+        if (!self::table_has_index($table, $index_name)) {
+            $wpdb->query("ALTER TABLE {$table} ADD KEY {$index_name} {$columns_sql}");
+        }
+    }
+
+    private static function add_unique_key_if_missing($table, $index_name, $columns_sql) {
+        global $wpdb;
+
+        if (!self::table_has_index($table, $index_name)) {
+            $wpdb->query("ALTER TABLE {$table} ADD UNIQUE KEY {$index_name} {$columns_sql}");
+        }
+    }
+
+    private static function backfill_market_statistics_tables($force_rebuild = false) {
+        global $wpdb;
+
+        $migration_flag = 'lcni_market_statistics_backfilled_v6';
+
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $mapping_table = $wpdb->prefix . 'lcni_sym_icb_market';
+        $market_statistics_table = $wpdb->prefix . 'lcni_thong_ke_thi_truong';
+        $icb2_statistics_table = $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2';
+        $icb2_market_statistics_table = $wpdb->prefix . 'lcni_thong_ke_nganh_icb_2_toan_thi_truong';
+        $icb2_table = $wpdb->prefix . 'lcni_icb2';
+
+        $existing_rows = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$market_statistics_table}");
+        if (!$force_rebuild && get_option($migration_flag) === 'yes' && $existing_rows > 0) {
+            return;
+        }
+
+        $wpdb->query("TRUNCATE TABLE {$market_statistics_table}");
+        $wpdb->query("TRUNCATE TABLE {$icb2_statistics_table}");
+        $wpdb->query("TRUNCATE TABLE {$icb2_market_statistics_table}");
+
+        $wpdb->query(
+            "INSERT INTO {$market_statistics_table}
+            (event_time, marketid, timeframe, so_ma_tang_gia, so_ma_giam_gia, so_rsi_qua_mua, so_rsi_qua_ban, so_rsi_tham_lam, so_rsi_so_hai, so_smart_money, so_tang_gia_kem_vol, so_pha_nen, pct_so_ma_tren_ma20, pct_so_ma_tren_ma50, pct_so_ma_tren_ma100, tong_value_traded)
+            SELECT
+                o.event_time,
+                CAST(COALESCE(NULLIF(TRIM(m.market_id), ''), '0') AS UNSIGNED) AS marketid,
+                o.timeframe,
+                SUM(CASE WHEN COALESCE(o.pct_t_1, 0) > 0 THEN 1 ELSE 0 END) AS so_ma_tang_gia,
+                SUM(CASE WHEN COALESCE(o.pct_t_1, 0) < 0 THEN 1 ELSE 0 END) AS so_ma_giam_gia,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Quá mua' THEN 1 ELSE 0 END) AS so_rsi_qua_mua,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Quá bán' THEN 1 ELSE 0 END) AS so_rsi_qua_ban,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Tham lam' THEN 1 ELSE 0 END) AS so_rsi_tham_lam,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Sợ hãi' THEN 1 ELSE 0 END) AS so_rsi_so_hai,
+                SUM(CASE WHEN COALESCE(o.smart_money, '') = 'Smart Money' THEN 1 ELSE 0 END) AS so_smart_money,
+                SUM(CASE WHEN COALESCE(o.tang_gia_kem_vol, '') = 'Tăng giá kèm Vol' THEN 1 ELSE 0 END) AS so_tang_gia_kem_vol,
+                SUM(CASE WHEN COALESCE(o.pha_nen, '') = 'Phá nền' THEN 1 ELSE 0 END) AS so_pha_nen,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma20, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma20,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma50, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma50,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma100, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma100,
+                COALESCE(SUM(o.value_traded), 0) AS tong_value_traded
+            FROM {$ohlc_table} o
+            INNER JOIN {$mapping_table} m ON m.symbol = o.symbol
+            GROUP BY o.event_time, CAST(COALESCE(NULLIF(TRIM(m.market_id), ''), '0') AS UNSIGNED), o.timeframe"
+        );
+
+        $wpdb->query(
+            "UPDATE {$market_statistics_table} target
+            INNER JOIN (
+                SELECT
+                    ranked.id,
+                    ranked.market_index AS computed_index
+                FROM (
+                    SELECT
+                        src.id,
+                        src.marketid,
+                        src.timeframe,
+                        (@market_rank := IF(@current_market = CONCAT(src.marketid, '|', src.timeframe), @market_rank + 1, 1)) AS market_index,
+                        (@current_market := CONCAT(src.marketid, '|', src.timeframe)) AS current_market_marker
+                    FROM {$market_statistics_table} src
+                    CROSS JOIN (SELECT @market_rank := 0, @current_market := '') vars
+                    ORDER BY src.marketid ASC, src.timeframe ASC, src.event_time ASC, src.id ASC
+                ) ranked
+            ) calc ON calc.id = target.id
+            SET target.thong_ke_thi_truong_index = calc.computed_index"
+        );
+
+        $wpdb->query(
+            "INSERT INTO {$icb2_statistics_table}
+            (event_time, timeframe, marketid, icb_level2, so_ma_tang_gia, so_ma_giam_gia, so_smart_money, so_tang_gia_kem_vol, so_pha_nen, pct_so_ma_tren_ma20, pct_so_ma_tren_ma50, pct_so_ma_tren_ma100, tong_value_traded, so_rsi_qua_mua, so_rsi_qua_ban, so_rsi_tham_lam, so_rsi_so_hai, so_macd_cat_len, so_macd_cat_xuong)
+            SELECT
+                o.event_time,
+                o.timeframe,
+                CAST(COALESCE(NULLIF(TRIM(m.market_id), ''), '0') AS UNSIGNED) AS marketid,
+                COALESCE(i.name_icb2, 'Chưa phân loại') AS icb_level2,
+                SUM(CASE WHEN COALESCE(o.pct_t_1, 0) > 0 THEN 1 ELSE 0 END) AS so_ma_tang_gia,
+                SUM(CASE WHEN COALESCE(o.pct_t_1, 0) < 0 THEN 1 ELSE 0 END) AS so_ma_giam_gia,
+                SUM(CASE WHEN COALESCE(o.smart_money, '') = 'Smart Money' THEN 1 ELSE 0 END) AS so_smart_money,
+                SUM(CASE WHEN COALESCE(o.tang_gia_kem_vol, '') = 'Tăng giá kèm Vol' THEN 1 ELSE 0 END) AS so_tang_gia_kem_vol,
+                SUM(CASE WHEN COALESCE(o.pha_nen, '') = 'Phá nền' THEN 1 ELSE 0 END) AS so_pha_nen,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma20, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma20,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma50, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma50,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma100, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma100,
+                COALESCE(SUM(o.value_traded), 0) AS tong_value_traded,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Quá mua' THEN 1 ELSE 0 END) AS so_rsi_qua_mua,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Quá bán' THEN 1 ELSE 0 END) AS so_rsi_qua_ban,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Tham lam' THEN 1 ELSE 0 END) AS so_rsi_tham_lam,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Sợ hãi' THEN 1 ELSE 0 END) AS so_rsi_so_hai,
+                SUM(CASE WHEN COALESCE(o.macd_cat, '') IN ('Cắt lên', 'Cắt lên signal') THEN 1 ELSE 0 END) AS so_macd_cat_len,
+                SUM(CASE WHEN COALESCE(o.macd_cat, '') IN ('Cắt xuống', 'Cắt xuống signal') THEN 1 ELSE 0 END) AS so_macd_cat_xuong
+            FROM {$ohlc_table} o
+            INNER JOIN {$mapping_table} m ON m.symbol = o.symbol
+            LEFT JOIN {$icb2_table} i ON i.id_icb2 = m.id_icb2
+            GROUP BY o.event_time, o.timeframe, CAST(COALESCE(NULLIF(TRIM(m.market_id), ''), '0') AS UNSIGNED), COALESCE(i.name_icb2, 'Chưa phân loại')"
+        );
+
+        $wpdb->query(
+            "UPDATE {$icb2_statistics_table} target
+            INNER JOIN (
+                SELECT
+                    ranked.id,
+                    ranked.icb2_index AS computed_index
+                FROM (
+                    SELECT
+                        src.id,
+                        src.icb_level2,
+                        src.marketid,
+                        (@icb2_rank := IF(@current_icb2 = CONCAT(src.icb_level2, '|', src.marketid), @icb2_rank + 1, 1)) AS icb2_index,
+                        (@current_icb2 := CONCAT(src.icb_level2, '|', src.marketid)) AS current_icb2_marker
+                    FROM {$icb2_statistics_table} src
+                    CROSS JOIN (SELECT @icb2_rank := 0, @current_icb2 := '') vars
+                    ORDER BY src.icb_level2 ASC, src.marketid ASC, src.event_time ASC, src.id ASC
+                ) ranked
+            ) calc ON calc.id = target.id
+            SET target.thong_ke_icb2_index = calc.computed_index"
+        );
+
+        $wpdb->query(
+            "INSERT INTO {$icb2_market_statistics_table}
+            (icb_level2, event_time, timeframe, so_ma_tang_gia, so_ma_giam_gia, so_rsi_qua_mua, so_rsi_qua_ban, so_rsi_tham_lam, so_rsi_so_hai, so_smart_money, so_tang_gia_kem_vol, so_pha_nen, pct_so_ma_tren_ma20, pct_so_ma_tren_ma50, pct_so_ma_tren_ma100, tong_value_traded)
+            SELECT
+                COALESCE(i.name_icb2, 'Chưa phân loại') AS icb_level2,
+                o.event_time,
+                o.timeframe,
+                SUM(CASE WHEN COALESCE(o.pct_t_1, 0) > 0 THEN 1 ELSE 0 END) AS so_ma_tang_gia,
+                SUM(CASE WHEN COALESCE(o.pct_t_1, 0) < 0 THEN 1 ELSE 0 END) AS so_ma_giam_gia,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Quá mua' THEN 1 ELSE 0 END) AS so_rsi_qua_mua,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Quá bán' THEN 1 ELSE 0 END) AS so_rsi_qua_ban,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Tham lam' THEN 1 ELSE 0 END) AS so_rsi_tham_lam,
+                SUM(CASE WHEN COALESCE(o.rsi_status, '') = 'Sợ hãi' THEN 1 ELSE 0 END) AS so_rsi_so_hai,
+                SUM(CASE WHEN COALESCE(o.smart_money, '') = 'Smart Money' THEN 1 ELSE 0 END) AS so_smart_money,
+                SUM(CASE WHEN COALESCE(o.tang_gia_kem_vol, '') = 'Tăng giá kèm Vol' THEN 1 ELSE 0 END) AS so_tang_gia_kem_vol,
+                SUM(CASE WHEN COALESCE(o.pha_nen, '') = 'Phá nền' THEN 1 ELSE 0 END) AS so_pha_nen,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma20, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma20,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma50, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma50,
+                SUM(CASE WHEN COALESCE(o.gia_sv_ma100, 0) > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS pct_so_ma_tren_ma100,
+                COALESCE(SUM(o.value_traded), 0) AS tong_value_traded
+            FROM {$ohlc_table} o
+            INNER JOIN {$mapping_table} m ON m.symbol = o.symbol
+            LEFT JOIN {$icb2_table} i ON i.id_icb2 = m.id_icb2
+            GROUP BY COALESCE(i.name_icb2, 'Chưa phân loại'), o.event_time, o.timeframe"
+        );
+
+        $wpdb->query(
+            "UPDATE {$icb2_market_statistics_table} target
+            INNER JOIN (
+                SELECT
+                    ranked.id,
+                    ranked.market_index AS computed_index
+                FROM (
+                    SELECT
+                        src.id,
+                        src.icb_level2,
+                        src.timeframe,
+                        (@icb2_market_rank := IF(@current_icb2_market = CONCAT(src.icb_level2, '|', src.timeframe), @icb2_market_rank + 1, 1)) AS market_index,
+                        (@current_icb2_market := CONCAT(src.icb_level2, '|', src.timeframe)) AS current_icb2_market_marker
+                    FROM {$icb2_market_statistics_table} src
+                    CROSS JOIN (SELECT @icb2_market_rank := 0, @current_icb2_market := '') vars
+                    ORDER BY src.icb_level2 ASC, src.timeframe ASC, src.event_time ASC, src.id ASC
+                ) ranked
+            ) calc ON calc.id = target.id
+            SET target.icb2_thi_truong_index = calc.computed_index"
+        );
+
+        update_option($migration_flag, 'yes');
+        self::log_change('backfill_market_statistics_tables', 'Rebuilt market statistics, ICB2 statistics and ICB2 market-wide statistics from OHLC source.');
+    }
+
+    private static function normalize_legacy_ratio_columns() {
+        global $wpdb;
+
+        $migration_flag = 'lcni_ohlc_ratio_columns_normalized_v1';
+        if (get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $ratio_columns = [
+            'pct_t_1', 'pct_t_3', 'pct_1w', 'pct_1m', 'pct_3m', 'pct_6m', 'pct_1y',
+            'gia_sv_ma10', 'gia_sv_ma20', 'gia_sv_ma50', 'gia_sv_ma100', 'gia_sv_ma200',
+            'vol_sv_vol_ma10', 'vol_sv_vol_ma20',
+        ];
+
+        $has_percent_scale_values = false;
+        foreach ($ratio_columns as $column_name) {
+            $max_abs_value = (float) $wpdb->get_var("SELECT MAX(ABS({$column_name})) FROM {$table}");
+            if ($max_abs_value >= 10) {
+                $has_percent_scale_values = true;
+                break;
+            }
+        }
+
+        if ($has_percent_scale_values) {
+            $set_clauses = [];
+            foreach ($ratio_columns as $column_name) {
+                $set_clauses[] = "{$column_name} = CASE
+                    WHEN {$column_name} IS NULL THEN NULL
+                    WHEN ABS({$column_name}) >= 10 THEN {$column_name} / 100
+                    ELSE {$column_name}
+                END";
+            }
+
+            $wpdb->query("UPDATE {$table} SET " . implode(', ', $set_clauses));
+            self::log_change('normalize_ohlc_ratio_columns', 'Normalized ratio indicator columns from percent scale to decimal scale (divide by 100).');
+        }
+
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function repair_ohlc_ratio_columns_over_normalized() {
+        global $wpdb;
+
+        $migration_flag = 'lcni_ohlc_ratio_columns_repaired_v1';
+        if (get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $all_series = $wpdb->get_results(
+            "SELECT DISTINCT symbol, timeframe FROM {$table}",
+            ARRAY_A
+        );
+
+        if (empty($all_series)) {
+            update_option($migration_flag, 'yes');
+
+            return;
+        }
+
+        foreach ($all_series as $series) {
+            self::rebuild_ohlc_series_metrics($series['symbol'], $series['timeframe']);
+        }
+
+        self::log_change(
+            'repair_ohlc_ratio_columns',
+            sprintf('Rebuilt indicators for %d symbol/timeframe series to repair over-normalized ratio columns.', count($all_series))
+        );
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function backfill_ohlc_trading_index_and_xay_nen() {
+        global $wpdb;
+
+        $migration_flag = 'lcni_ohlc_trading_index_xay_nen_backfilled_v1';
+        if (get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $series_with_missing_values = $wpdb->get_results(
+            "SELECT DISTINCT symbol, timeframe
+            FROM {$table}
+            WHERE trading_index IS NULL
+                OR xay_nen IS NULL",
+            ARRAY_A
+        );
+
+        if (empty($series_with_missing_values)) {
+            update_option($migration_flag, 'yes');
+
+            return;
+        }
+
+        foreach ($series_with_missing_values as $series) {
+            self::rebuild_ohlc_series_metrics($series['symbol'], $series['timeframe']);
+        }
+
+        self::log_change(
+            'backfill_ohlc_trading_index_xay_nen',
+            sprintf('Backfilled trading_index/xay_nen for %d symbol/timeframe series with missing values.', count($series_with_missing_values))
+        );
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function backfill_ohlc_nen_type_metrics() {
+        global $wpdb;
+
+        $migration_flag = 'lcni_ohlc_nen_type_metrics_backfilled_v3';
+        if (get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $series_with_missing_values = $wpdb->get_results(
+            "SELECT DISTINCT symbol, timeframe
+            FROM {$table}
+            WHERE xay_nen_count_30 IS NULL
+                OR nen_type IS NULL
+                OR pha_nen IS NULL",
+            ARRAY_A
+        );
+
+        if (empty($series_with_missing_values)) {
+            update_option($migration_flag, 'yes');
+
+            return;
+        }
+
+        foreach ($series_with_missing_values as $series) {
+            self::rebuild_ohlc_series_metrics($series['symbol'], $series['timeframe']);
+        }
+
+        self::log_change(
+            'backfill_ohlc_nen_type_metrics',
+            sprintf('Backfilled xay_nen_count_30/nen_type for %d symbol/timeframe series with missing values.', count($series_with_missing_values))
+        );
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function backfill_ohlc_pha_nen_metrics() {
+        $migration_flag = 'lcni_ohlc_pha_nen_metrics_backfilled_v1';
+        if (get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        $recalculated_series = self::rebuild_all_ohlc_metrics();
+        self::log_change('backfill_ohlc_pha_nen_metrics', sprintf('Backfilled pha_nen for %d symbol/timeframe series.', $recalculated_series));
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function backfill_ohlc_tang_gia_kem_vol_metrics() {
+        $migration_flag = 'lcni_ohlc_tang_gia_kem_vol_metrics_backfilled_v2';
+        if (get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        $recalculated_series = self::rebuild_all_ohlc_metrics();
+        self::log_change('backfill_ohlc_tang_gia_kem_vol_metrics', sprintf('Backfilled tang_gia_kem_vol for %d symbol/timeframe series.', $recalculated_series));
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function backfill_ohlc_smart_money_metrics() {
+        $migration_flag = 'lcni_ohlc_smart_money_metrics_backfilled_v1';
+        if (get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        $recalculated_series = self::rebuild_all_ohlc_metrics();
+        self::log_change('backfill_ohlc_smart_money_metrics', sprintf('Backfilled smart_money for %d symbol/timeframe series.', $recalculated_series));
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function backfill_ohlc_rs_1m_by_exchange() {
+        $migration_flag = 'lcni_ohlc_rs_1m_by_exchange_backfilled_v1';
+        if (get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        self::rebuild_rs_1m_by_exchange();
+        self::log_change('backfill_ohlc_rs_1m_by_exchange', 'Backfilled rs_1m_by_exchange for OHLC rows by exchange ranking.');
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function backfill_ohlc_rs_1w_by_exchange() {
+        $migration_flag = 'lcni_ohlc_rs_1w_by_exchange_backfilled_v1';
+        if (get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        self::rebuild_rs_1w_by_exchange();
+        self::log_change('backfill_ohlc_rs_1w_by_exchange', 'Backfilled rs_1w_by_exchange for OHLC rows by exchange ranking.');
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function backfill_ohlc_rs_3m_by_exchange() {
+        $migration_flag = 'lcni_ohlc_rs_3m_by_exchange_backfilled_v2';
+        if (get_option($migration_flag) === 'yes' && !self::has_missing_rs_3m_by_exchange_rows()) {
+            return;
+        }
+
+        self::rebuild_rs_3m_by_exchange();
+        self::log_change('backfill_ohlc_rs_3m_by_exchange', 'Backfilled rs_3m_by_exchange for OHLC rows by exchange ranking.');
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function backfill_ohlc_rs_exchange_signals() {
+        $migration_flag = 'lcni_ohlc_rs_exchange_signals_backfilled_v2';
+        if (get_option($migration_flag) === 'yes' && !self::has_missing_rs_exchange_signal_rows()) {
+            return;
+        }
+
+        self::rebuild_rs_exchange_signals();
+        self::log_change('backfill_ohlc_rs_exchange_signals', 'Backfilled rs_exchange_status and rs_exchange_recommend for OHLC rows.');
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function backfill_ohlc_rs_recommend_status() {
+        $migration_flag = 'lcni_ohlc_rs_recommend_status_backfilled_v1';
+        if (get_option($migration_flag) === 'yes' && !self::has_missing_rs_recommend_status_rows()) {
+            return;
+        }
+
+        self::rebuild_rs_recommend_status();
+        self::log_change('backfill_ohlc_rs_recommend_status', 'Backfilled rs_recommend_status from rs_exchange_status and rs_exchange_recommend.');
+        update_option($migration_flag, 'yes');
+    }
+
+
+    private static function backfill_ohlc_rsi_status_and_hanh_vi_gia() {
+        $migration_flag = 'lcni_ohlc_rsi_status_hanh_vi_gia_backfilled_v1';
+        if (get_option($migration_flag) === 'yes' && !self::has_missing_rsi_status_or_hanh_vi_gia_rows()) {
+            return;
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'lcni_ohlc';
+
+        $wpdb->query(
+            "UPDATE {$table}
+            SET rsi_status = CASE
+                WHEN rsi >= 80 THEN 'Tham lam'
+                WHEN rsi <= 20 THEN 'Sợ hãi'
+                WHEN rsi >= 70 THEN 'Quá mua'
+                WHEN rsi <= 30 THEN 'Quá bán'
+                WHEN rsi IS NULL THEN NULL
+                ELSE 'Trung tính'
+            END"
+        );
+
+        $wpdb->query(
+            "UPDATE {$table} cur
+            LEFT JOIN {$table} prev
+                ON prev.symbol = cur.symbol
+                AND prev.timeframe = cur.timeframe
+                AND prev.trading_index = cur.trading_index - 1
+            SET cur.hanh_vi_gia =
+                CASE
+                    WHEN prev.close_price IS NULL OR prev.close_price = 0 OR prev.volume IS NULL OR prev.volume = 0
+                        THEN 'Không rõ xu hướng'
+                    WHEN
+                        (cur.close_price - prev.close_price) / NULLIF(prev.close_price, 0) >
+                            (CASE WHEN cur.symbol IN ('VNINDEX', 'UPCOMINDEX', 'UPINDEX', 'HNXINDEX') THEN 0.01 ELSE 0.05 END)
+                        AND
+                        (cur.volume - prev.volume) / NULLIF(prev.volume, 0) >
+                            (CASE WHEN cur.symbol IN ('VNINDEX', 'UPCOMINDEX', 'UPINDEX', 'HNXINDEX') THEN 0.05 ELSE 0.5 END)
+                        THEN 'Bứt phá – Cầu mạnh'
+                    WHEN
+                        (cur.close_price - prev.close_price) / NULLIF(prev.close_price, 0) >
+                            (CASE WHEN cur.symbol IN ('VNINDEX', 'UPCOMINDEX', 'UPINDEX', 'HNXINDEX') THEN 0.01 ELSE 0.05 END)
+                        AND
+                        (cur.volume - prev.volume) / NULLIF(prev.volume, 0) < 0
+                        THEN 'Siết cung – Tăng mạnh'
+                    WHEN
+                        (cur.close_price - prev.close_price) / NULLIF(prev.close_price, 0) <
+                            -(CASE WHEN cur.symbol IN ('VNINDEX', 'UPCOMINDEX', 'UPINDEX', 'HNXINDEX') THEN 0.01 ELSE 0.05 END)
+                        AND
+                        (cur.volume - prev.volume) / NULLIF(prev.volume, 0) >
+                            (CASE WHEN cur.symbol IN ('VNINDEX', 'UPCOMINDEX', 'UPINDEX', 'HNXINDEX') THEN 0.05 ELSE 0.5 END)
+                        THEN 'Bán tháo – Cung mạnh'
+                    WHEN
+                        ABS((cur.close_price - prev.close_price) / NULLIF(prev.close_price, 0)) <=
+                            (CASE WHEN cur.symbol IN ('VNINDEX', 'UPCOMINDEX', 'UPINDEX', 'HNXINDEX') THEN 0.005 ELSE 0.02 END)
+                        AND
+                        (cur.volume - prev.volume) / NULLIF(prev.volume, 0) >
+                            (CASE WHEN cur.symbol IN ('VNINDEX', 'UPCOMINDEX', 'UPINDEX', 'HNXINDEX') THEN 0.05 ELSE 0.5 END)
+                        THEN 'Phân phối – Cung lớn'
+                    WHEN
+                        ABS((cur.close_price - prev.close_price) / NULLIF(prev.close_price, 0)) <=
+                            (CASE WHEN cur.symbol IN ('VNINDEX', 'UPCOMINDEX', 'UPINDEX', 'HNXINDEX') THEN 0.005 ELSE 0.02 END)
+                        AND
+                        (cur.volume - prev.volume) / NULLIF(prev.volume, 0) < 0
+                        THEN 'Tích lũy – Cạn cung'
+                    ELSE 'Không rõ xu hướng'
+                END"
+        );
+
+        self::log_change('backfill_ohlc_rsi_status_hanh_vi_gia', 'Backfilled rsi_status and hanh_vi_gia for existing OHLC rows.');
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function backfill_ohlc_hanh_vi_gia_1w() {
+        $migration_flag = 'lcni_ohlc_hanh_vi_gia_1w_backfilled_v1';
+        if (get_option($migration_flag) === 'yes' && !self::has_missing_hanh_vi_gia_1w_rows()) {
+            return;
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'lcni_ohlc';
+
+        $wpdb->query(
+            "UPDATE {$table} cur
+            LEFT JOIN {$table} prev
+                ON prev.symbol = cur.symbol
+                AND prev.timeframe = cur.timeframe
+                AND prev.trading_index = cur.trading_index - 5
+            SET cur.hanh_vi_gia_1w =
+                CASE
+                    WHEN prev.close_price IS NULL OR prev.volume IS NULL OR prev.close_price = 0 OR prev.volume = 0
+                        THEN 'Không rõ xu hướng'
+                    WHEN
+                        (cur.close_price - prev.close_price) / NULLIF(prev.close_price, 0) >
+                            (CASE WHEN cur.symbol IN ('VNINDEX', 'UPINDEX', 'HNXINDEX') THEN 0.025 ELSE 0.10 END)
+                        AND
+                        (cur.volume - prev.volume) / NULLIF(prev.volume, 0) >
+                            (CASE WHEN cur.symbol IN ('VNINDEX', 'UPINDEX', 'HNXINDEX') THEN 0.10 ELSE 1.0 END)
+                        THEN 'Bứt phá – Cầu mạnh'
+                    WHEN
+                        (cur.close_price - prev.close_price) / NULLIF(prev.close_price, 0) >
+                            (CASE WHEN cur.symbol IN ('VNINDEX', 'UPINDEX', 'HNXINDEX') THEN 0.025 ELSE 0.10 END)
+                        AND
+                        (cur.volume - prev.volume) / NULLIF(prev.volume, 0) < 0
+                        THEN 'Siết cung – Tăng mạnh'
+                    WHEN
+                        (cur.close_price - prev.close_price) / NULLIF(prev.close_price, 0) <
+                            -(CASE WHEN cur.symbol IN ('VNINDEX', 'UPINDEX', 'HNXINDEX') THEN 0.025 ELSE 0.10 END)
+                        AND
+                        (cur.volume - prev.volume) / NULLIF(prev.volume, 0) >
+                            (CASE WHEN cur.symbol IN ('VNINDEX', 'UPINDEX', 'HNXINDEX') THEN 0.10 ELSE 1.0 END)
+                        THEN 'Bán tháo – Cung mạnh'
+                    WHEN
+                        ABS((cur.close_price - prev.close_price) / NULLIF(prev.close_price, 0)) <=
+                            (CASE WHEN cur.symbol IN ('VNINDEX', 'UPINDEX', 'HNXINDEX') THEN 0.0125 ELSE 0.04 END)
+                        AND
+                        (cur.volume - prev.volume) / NULLIF(prev.volume, 0) >
+                            (CASE WHEN cur.symbol IN ('VNINDEX', 'UPINDEX', 'HNXINDEX') THEN 0.10 ELSE 1.0 END)
+                        THEN 'Phân phối – Cung lớn'
+                    WHEN
+                        ABS((cur.close_price - prev.close_price) / NULLIF(prev.close_price, 0)) <=
+                            (CASE WHEN cur.symbol IN ('VNINDEX', 'UPINDEX', 'HNXINDEX') THEN 0.0125 ELSE 0.04 END)
+                        AND
+                        (cur.volume - prev.volume) / NULLIF(prev.volume, 0) < 0
+                        THEN 'Tích lũy – Cạn cung'
+                    ELSE 'Không rõ xu hướng'
+                END"
+        );
+
+        self::log_change('backfill_ohlc_hanh_vi_gia_1w', 'Backfilled hanh_vi_gia_1w for existing OHLC rows.');
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function backfill_ohlc_macd_flags() {
+        global $wpdb;
+
+        $migration_flag = 'lcni_ohlc_macd_flags_backfilled_v1';
+        if (get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $series_with_missing_values = $wpdb->get_results(
+            "SELECT DISTINCT symbol, timeframe
+            FROM {$table}
+            WHERE macd_histogram IS NULL
+                OR macd_cat IS NULL
+                OR macd_tren_0 IS NULL
+                OR macd_hist_tang IS NULL
+                OR macd_manh IS NULL
+                OR macd_diem_dong_luong IS NULL",
+            ARRAY_A
+        );
+
+        if (empty($series_with_missing_values)) {
+            update_option($migration_flag, 'yes');
+
+            return;
+        }
+
+        foreach ($series_with_missing_values as $series) {
+            self::rebuild_ohlc_series_metrics($series['symbol'], $series['timeframe']);
+        }
+
+        self::log_change(
+            'backfill_ohlc_macd_flags',
+            sprintf('Backfilled MACD realtime filter flags for %d symbol/timeframe series.', count($series_with_missing_values))
+        );
+
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function has_missing_rs_exchange_signal_rows() {
+        global $wpdb;
+
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $missing_count = (int) $wpdb->get_var(
+            "SELECT COUNT(*)
+            FROM {$ohlc_table}
+            WHERE rs_exchange_status IS NULL
+                OR rs_exchange_recommend IS NULL"
+        );
+
+        return $missing_count > 0;
+    }
+
+    private static function has_missing_rs_recommend_status_rows() {
+        global $wpdb;
+
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $missing_count = (int) $wpdb->get_var(
+            "SELECT COUNT(*)
+            FROM {$ohlc_table}
+            WHERE rs_recommend_status IS NULL
+                OR TRIM(rs_recommend_status) = ''"
+        );
+
+        return $missing_count > 0;
+    }
+
+
+    private static function has_missing_rsi_status_or_hanh_vi_gia_rows() {
+        global $wpdb;
+
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $missing_count = (int) $wpdb->get_var(
+            "SELECT COUNT(*)
+            FROM {$ohlc_table}
+            WHERE rsi_status IS NULL
+                OR TRIM(IFNULL(rsi_status, '')) = ''
+                OR hanh_vi_gia IS NULL
+                OR TRIM(IFNULL(hanh_vi_gia, '')) = ''"
+        );
+
+        return $missing_count > 0;
+    }
+
+    private static function has_missing_hanh_vi_gia_1w_rows() {
+        global $wpdb;
+
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $missing_count = (int) $wpdb->get_var(
+            "SELECT COUNT(*)
+            FROM {$ohlc_table}
+            WHERE hanh_vi_gia_1w IS NULL
+                OR TRIM(IFNULL(hanh_vi_gia_1w, '')) = ''"
+        );
+
+        return $missing_count > 0;
+    }
+
+    private static function backfill_ohlc_breakout_metrics() {
+        global $wpdb;
+
+        $migration_flag = 'lcni_ohlc_breakout_metrics_backfilled_v2';
+        if (get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $updated_rows = (int) $wpdb->query(
+            "UPDATE {$table}
+            SET
+                pct_to_h1m = (close_price - h1m) / NULLIF(h1m, 0) * 100,
+                pct_to_h3m = (close_price - h3m) / NULLIF(h3m, 0) * 100,
+                pct_to_h6m = (close_price - h6m) / NULLIF(h6m, 0) * 100,
+                pct_to_h1y = (close_price - h1y) / NULLIF(h1y, 0) * 100,
+                trang_thai_h1m = CASE
+                    WHEN h1m IS NULL OR h1m = 0 THEN NULL
+                    WHEN close_price > h1m * 1.03 THEN 'Vượt mạnh'
+                    WHEN close_price > h1m THEN 'Vượt đỉnh'
+                    WHEN close_price >= h1m * 0.97 THEN 'Rất gần đỉnh'
+                    WHEN close_price >= h1m * 0.95 THEN 'Gần đỉnh'
+                    ELSE 'Xa đỉnh'
+                END,
+                trang_thai_h3m = CASE
+                    WHEN h3m IS NULL OR h3m = 0 THEN NULL
+                    WHEN close_price > h3m * 1.03 THEN 'Vượt mạnh'
+                    WHEN close_price > h3m THEN 'Vượt đỉnh'
+                    WHEN close_price >= h3m * 0.97 THEN 'Rất gần đỉnh'
+                    WHEN close_price >= h3m * 0.95 THEN 'Gần đỉnh'
+                    ELSE 'Xa đỉnh'
+                END,
+                trang_thai_h6m = CASE
+                    WHEN h6m IS NULL OR h6m = 0 THEN NULL
+                    WHEN close_price > h6m * 1.03 THEN 'Vượt mạnh'
+                    WHEN close_price > h6m THEN 'Vượt đỉnh'
+                    WHEN close_price >= h6m * 0.97 THEN 'Rất gần đỉnh'
+                    WHEN close_price >= h6m * 0.95 THEN 'Gần đỉnh'
+                    ELSE 'Xa đỉnh'
+                END,
+                trang_thai_h1y = CASE
+                    WHEN h1y IS NULL OR h1y = 0 THEN NULL
+                    WHEN close_price > h1y * 1.03 THEN 'Vượt mạnh'
+                    WHEN close_price > h1y THEN 'Vượt đỉnh'
+                    WHEN close_price >= h1y * 0.97 THEN 'Rất gần đỉnh'
+                    WHEN close_price >= h1y * 0.95 THEN 'Gần đỉnh'
+                    ELSE 'Xa đỉnh'
+                END,
+                compression_1m = (h1m - l1m) / NULLIF(h1m, 0) * 100,
+                position_1m = CASE
+                    WHEN h1m IS NULL OR l1m IS NULL OR NULLIF((h1m - l1m), 0) IS NULL THEN NULL
+                    WHEN ((close_price - l1m) / NULLIF((h1m - l1m), 0) * 100) <= 20 THEN 'Sát đáy'
+                    WHEN ((close_price - l1m) / NULLIF((h1m - l1m), 0) * 100) <= 50 THEN 'Dưới trung vị'
+                    WHEN ((close_price - l1m) / NULLIF((h1m - l1m), 0) * 100) <= 80 THEN 'Trên trung vị'
+                    ELSE 'Sát đỉnh'
+                END,
+                position_3m = CASE
+                    WHEN h3m IS NULL OR l3m IS NULL OR NULLIF((h3m - l3m), 0) IS NULL THEN NULL
+                    WHEN ((close_price - l3m) / NULLIF((h3m - l3m), 0) * 100) <= 20 THEN 'Sát đáy'
+                    WHEN ((close_price - l3m) / NULLIF((h3m - l3m), 0) * 100) <= 50 THEN 'Dưới trung vị'
+                    WHEN ((close_price - l3m) / NULLIF((h3m - l3m), 0) * 100) <= 80 THEN 'Trên trung vị'
+                    ELSE 'Sát đỉnh'
+                END,
+                position_6m = CASE
+                    WHEN h6m IS NULL OR l6m IS NULL OR NULLIF((h6m - l6m), 0) IS NULL THEN NULL
+                    WHEN ((close_price - l6m) / NULLIF((h6m - l6m), 0) * 100) <= 20 THEN 'Sát đáy'
+                    WHEN ((close_price - l6m) / NULLIF((h6m - l6m), 0) * 100) <= 50 THEN 'Dưới trung vị'
+                    WHEN ((close_price - l6m) / NULLIF((h6m - l6m), 0) * 100) <= 80 THEN 'Trên trung vị'
+                    ELSE 'Sát đỉnh'
+                END,
+                position_1y = CASE
+                    WHEN h1y IS NULL OR l1y IS NULL OR NULLIF((h1y - l1y), 0) IS NULL THEN NULL
+                    WHEN ((close_price - l1y) / NULLIF((h1y - l1y), 0) * 100) <= 20 THEN 'Sát đáy'
+                    WHEN ((close_price - l1y) / NULLIF((h1y - l1y), 0) * 100) <= 50 THEN 'Dưới trung vị'
+                    WHEN ((close_price - l1y) / NULLIF((h1y - l1y), 0) * 100) <= 80 THEN 'Trên trung vị'
+                    ELSE 'Sát đỉnh'
+                END,
+                breakout_potential_score = LEAST(10,
+                    (CASE WHEN (CASE
+                        WHEN h1m IS NULL OR h1m = 0 THEN NULL
+                        WHEN close_price > h1m * 1.03 THEN 'Vượt mạnh'
+                        WHEN close_price > h1m THEN 'Vượt đỉnh'
+                        WHEN close_price >= h1m * 0.97 THEN 'Rất gần đỉnh'
+                        WHEN close_price >= h1m * 0.95 THEN 'Gần đỉnh'
+                        ELSE 'Xa đỉnh'
+                    END) = 'Rất gần đỉnh' THEN 2 ELSE 0 END)
+                    + (CASE WHEN ((h1m - l1m) / NULLIF(h1m, 0) * 100) < 10 THEN 2 ELSE 0 END)
+                    + (CASE WHEN rsi >= 60 THEN 1 ELSE 0 END)
+                    + (CASE WHEN ma20 IS NOT NULL AND close_price > ma20 THEN 1 ELSE 0 END)
+                    + (CASE WHEN tang_gia_kem_vol = 'Tăng giá kèm Vol' THEN 1 ELSE 0 END)
+                    + (CASE WHEN smart_money = 'Smart Money' THEN 2 ELSE 0 END)
+                    + (CASE WHEN (CASE
+                        WHEN h3m IS NULL OR h3m = 0 THEN NULL
+                        WHEN close_price > h3m * 1.03 THEN 'Vượt mạnh'
+                        WHEN close_price > h3m THEN 'Vượt đỉnh'
+                        WHEN close_price >= h3m * 0.97 THEN 'Rất gần đỉnh'
+                        WHEN close_price >= h3m * 0.95 THEN 'Gần đỉnh'
+                        ELSE 'Xa đỉnh'
+                    END) = 'Rất gần đỉnh' THEN 1 ELSE 0 END)
+                )
+            WHERE UPPER(symbol_type) = 'STOCK'
+                AND (
+                    pct_to_h1m IS NULL
+                    OR pct_to_h3m IS NULL
+                    OR pct_to_h6m IS NULL
+                    OR pct_to_h1y IS NULL
+                    OR trang_thai_h1m IS NULL
+                    OR trang_thai_h3m IS NULL
+                    OR trang_thai_h6m IS NULL
+                    OR trang_thai_h1y IS NULL
+                    OR compression_1m IS NULL
+                    OR position_1m IS NULL
+                    OR position_3m IS NULL
+                    OR position_6m IS NULL
+                    OR position_1y IS NULL
+                    OR breakout_potential_score IS NULL
+                )"
+        );
+
+        if ($updated_rows > 0) {
+            self::log_change(
+                'backfill_ohlc_breakout_metrics',
+                sprintf('Backfilled breakout metric columns for %d OHLC rows.', $updated_rows)
+            );
+        }
+
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function backfill_ohlc_one_candle() {
+        global $wpdb;
+
+        $migration_flag = 'lcni_ohlc_one_candle_backfilled_v2';
+        if (get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $series_with_missing_values = $wpdb->get_results(
+            "SELECT DISTINCT symbol, timeframe
+            FROM {$table}
+            WHERE one_candle IS NULL
+                OR TRIM(IFNULL(one_candle, '')) = ''",
+            ARRAY_A
+        );
+
+        if (empty($series_with_missing_values)) {
+            update_option($migration_flag, 'yes');
+
+            return;
+        }
+
+        foreach ($series_with_missing_values as $series) {
+            self::rebuild_ohlc_series_metrics($series['symbol'], $series['timeframe']);
+        }
+
+        self::log_change(
+            'backfill_ohlc_one_candle',
+            sprintf('Backfilled one_candle for %d symbol/timeframe series with missing values.', count($series_with_missing_values))
+        );
+        update_option($migration_flag, 'yes');
+    }
+
+
+    private static function backfill_ohlc_two_candle_pattern() {
+        global $wpdb;
+
+        $migration_flag = 'lcni_ohlc_two_candle_pattern_backfilled_v1';
+        if (get_option($migration_flag) === 'yes' && !self::has_missing_two_candle_pattern_rows()) {
+            return;
+        }
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $updated_rows = (int) $wpdb->query(
+            "WITH candle_lag AS (
+                SELECT
+                    symbol,
+                    timeframe,
+                    trading_index,
+                    open_price,
+                    close_price,
+                    LAG(open_price) OVER (
+                        PARTITION BY symbol, timeframe
+                        ORDER BY trading_index
+                    ) AS prev_open,
+                    LAG(close_price) OVER (
+                        PARTITION BY symbol, timeframe
+                        ORDER BY trading_index
+                    ) AS prev_close,
+                    LAG(high_price) OVER (
+                        PARTITION BY symbol, timeframe
+                        ORDER BY trading_index
+                    ) AS prev_high,
+                    LAG(low_price) OVER (
+                        PARTITION BY symbol, timeframe
+                        ORDER BY trading_index
+                    ) AS prev_low
+                FROM {$table}
+                WHERE UPPER(symbol_type) = 'STOCK'
+            )
+            UPDATE {$table} o
+            JOIN candle_lag c
+                ON o.symbol = c.symbol
+                AND o.timeframe = c.timeframe
+                AND o.trading_index = c.trading_index
+            SET o.two_candle_pattern = CASE
+                WHEN
+                    c.prev_close < c.prev_open
+                    AND c.close_price > c.open_price
+                    AND c.close_price > c.prev_open
+                    AND c.open_price < c.prev_close
+                THEN 'BULLISH_ENGULFING'
+                WHEN
+                    c.prev_close > c.prev_open
+                    AND c.close_price < c.open_price
+                    AND c.close_price < c.prev_open
+                    AND c.open_price > c.prev_close
+                THEN 'BEARISH_ENGULFING'
+                WHEN
+                    c.prev_close < c.prev_open
+                    AND c.close_price > c.open_price
+                    AND c.open_price < c.prev_low
+                    AND c.close_price > (c.prev_open + c.prev_close) / 2
+                    AND c.close_price < c.prev_open
+                THEN 'PIERCING_LINE'
+                WHEN
+                    c.prev_close > c.prev_open
+                    AND c.close_price < c.open_price
+                    AND c.open_price > c.prev_high
+                    AND c.close_price < (c.prev_open + c.prev_close) / 2
+                    AND c.close_price > c.prev_open
+                THEN 'DARK_CLOUD'
+                ELSE 'NONE'
+            END
+            WHERE UPPER(o.symbol_type) = 'STOCK'
+                AND (o.two_candle_pattern IS NULL OR TRIM(IFNULL(o.two_candle_pattern, '')) = '')"
+        );
+
+        if ($updated_rows > 0) {
+            self::log_change(
+                'backfill_ohlc_two_candle_pattern',
+                sprintf('Backfilled two_candle_pattern for %d OHLC rows using window-function lag.', $updated_rows)
+            );
+        }
+
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function backfill_ohlc_three_candle_pattern() {
+        global $wpdb;
+
+        $migration_flag = 'lcni_ohlc_three_candle_pattern_backfilled_v1';
+        if (get_option($migration_flag) === 'yes' && !self::has_missing_three_candle_pattern_rows()) {
+            return;
+        }
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $updated_rows = (int) $wpdb->query(
+            "WITH candle_lag AS (
+                SELECT
+                    symbol,
+                    timeframe,
+                    trading_index,
+                    open_price,
+                    close_price,
+                    LAG(open_price, 1) OVER (
+                        PARTITION BY symbol, timeframe
+                        ORDER BY trading_index
+                    ) AS prev1_open,
+                    LAG(close_price, 1) OVER (
+                        PARTITION BY symbol, timeframe
+                        ORDER BY trading_index
+                    ) AS prev1_close,
+                    LAG(high_price, 1) OVER (
+                        PARTITION BY symbol, timeframe
+                        ORDER BY trading_index
+                    ) AS prev1_high,
+                    LAG(low_price, 1) OVER (
+                        PARTITION BY symbol, timeframe
+                        ORDER BY trading_index
+                    ) AS prev1_low,
+                    LAG(open_price, 2) OVER (
+                        PARTITION BY symbol, timeframe
+                        ORDER BY trading_index
+                    ) AS prev2_open,
+                    LAG(close_price, 2) OVER (
+                        PARTITION BY symbol, timeframe
+                        ORDER BY trading_index
+                    ) AS prev2_close,
+                    LAG(high_price, 2) OVER (
+                        PARTITION BY symbol, timeframe
+                        ORDER BY trading_index
+                    ) AS prev2_high,
+                    LAG(low_price, 2) OVER (
+                        PARTITION BY symbol, timeframe
+                        ORDER BY trading_index
+                    ) AS prev2_low
+                FROM {$table}
+                WHERE UPPER(symbol_type) = 'STOCK'
+            )
+            UPDATE {$table} o
+            JOIN candle_lag c
+                ON o.symbol = c.symbol
+                AND o.timeframe = c.timeframe
+                AND o.trading_index = c.trading_index
+            SET o.three_candle_pattern = CASE
+                WHEN
+                    c.prev2_close < c.prev2_open
+                    AND ABS(c.prev1_close - c.prev1_open) < ABS(c.prev2_close - c.prev2_open) * 0.5
+                    AND c.close_price > c.open_price
+                    AND c.close_price > (c.prev2_open + c.prev2_close) / 2
+                THEN 'MORNING_STAR'
+                WHEN
+                    c.prev2_close > c.prev2_open
+                    AND ABS(c.prev1_close - c.prev1_open) < ABS(c.prev2_close - c.prev2_open) * 0.5
+                    AND c.close_price < c.open_price
+                    AND c.close_price < (c.prev2_open + c.prev2_close) / 2
+                THEN 'EVENING_STAR'
+                WHEN
+                    c.prev2_close > c.prev2_open
+                    AND c.prev1_close > c.prev1_open
+                    AND c.close_price > c.open_price
+                    AND c.prev1_close > c.prev2_close
+                    AND c.close_price > c.prev1_close
+                THEN 'THREE_WHITE_SOLDIERS'
+                WHEN
+                    c.prev2_close < c.prev2_open
+                    AND c.prev1_close < c.prev1_open
+                    AND c.close_price < c.open_price
+                    AND c.prev1_close < c.prev2_close
+                    AND c.close_price < c.prev1_close
+                THEN 'THREE_BLACK_CROWS'
+                ELSE 'NONE'
+            END
+            WHERE UPPER(o.symbol_type) = 'STOCK'
+                AND (o.three_candle_pattern IS NULL OR TRIM(IFNULL(o.three_candle_pattern, '')) = '')"
+        );
+
+        if ($updated_rows > 0) {
+            self::log_change(
+                'backfill_ohlc_three_candle_pattern',
+                sprintf('Backfilled three_candle_pattern for %d OHLC rows using window-function lag.', $updated_rows)
+            );
+        }
+
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function has_missing_three_candle_pattern_rows() {
+        global $wpdb;
+
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $missing_count = (int) $wpdb->get_var(
+            "SELECT COUNT(*)
+            FROM {$ohlc_table}
+            WHERE UPPER(symbol_type) = 'STOCK'
+                AND (three_candle_pattern IS NULL OR TRIM(IFNULL(three_candle_pattern, '')) = '')"
+        );
+
+        return $missing_count > 0;
+    }
+
+    private static function has_missing_two_candle_pattern_rows() {
+        global $wpdb;
+
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $missing_count = (int) $wpdb->get_var(
+            "SELECT COUNT(*)
+            FROM {$ohlc_table}
+            WHERE UPPER(symbol_type) = 'STOCK'
+                AND (two_candle_pattern IS NULL OR TRIM(IFNULL(two_candle_pattern, '')) = '')"
+        );
+
+        return $missing_count > 0;
+    }
+
+    private static function normalize_ohlc_macd_signal_columns() {
+        global $wpdb;
+
+        $migration_flag = 'lcni_ohlc_macd_signal_labels_migrated_v2';
+        if (get_option($migration_flag) === 'yes' && !self::has_legacy_macd_signal_values()) {
+            return;
+        }
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $wpdb->query("ALTER TABLE {$table} MODIFY COLUMN macd_cat VARCHAR(30) DEFAULT 'Không cắt signal'");
+        $wpdb->query("ALTER TABLE {$table} MODIFY COLUMN macd_tren_0 VARCHAR(20) DEFAULT 'Không trên 0'");
+        $wpdb->query("ALTER TABLE {$table} MODIFY COLUMN macd_hist_tang VARCHAR(20) DEFAULT 'Không tăng'");
+
+        $normalized_rows = $wpdb->query(
+            "UPDATE {$table}
+            SET
+                macd_cat = CASE
+                    WHEN CAST(macd_cat AS CHAR) IN ('1', 'Cắt lên', 'Cắt lên signal') THEN 'Cắt lên signal'
+                    WHEN CAST(macd_cat AS CHAR) IN ('-1', 'Cắt xuống', 'Cắt xuống signal') THEN 'Cắt xuống signal'
+                    ELSE 'Không cắt signal'
+                END,
+                macd_tren_0 = CASE
+                    WHEN CAST(macd_tren_0 AS CHAR) IN ('1', 'Trên 0') THEN 'Trên 0'
+                    ELSE 'Không trên 0'
+                END,
+                macd_hist_tang = CASE
+                    WHEN CAST(macd_hist_tang AS CHAR) IN ('1', 'Đang tăng') THEN 'Đang tăng'
+                    ELSE 'Không tăng'
+                END"
+        );
+
+        self::log_change(
+            'normalize_ohlc_macd_signal_columns',
+            sprintf('Normalized MACD signal label columns in wp_lcni_ohlc; affected rows: %d.', (int) $normalized_rows)
+        );
+
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function has_legacy_macd_signal_values() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $legacy_count = (int) $wpdb->get_var(
+            "SELECT COUNT(*)
+            FROM {$table}
+            WHERE CAST(macd_cat AS CHAR) IN ('1', '-1', '0', 'Cắt lên', 'Cắt xuống')
+                OR CAST(macd_tren_0 AS CHAR) IN ('1', '0')
+                OR CAST(macd_hist_tang AS CHAR) IN ('1', '0')"
+        );
+
+        return $legacy_count > 0;
+    }
+
+    private static function sync_frontend_settings_with_new_ohlc_columns() {
+        $migration_flag = 'lcni_frontend_columns_sync_v233b';
+        if (get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        $new_columns = ['one_candle', 'macd_cat', 'macd_tren_0', 'macd_hist_tang'];
+
+        $criteria_columns = (array) get_option('lcni_filter_criteria_columns', []);
+        if (!empty($criteria_columns)) {
+            update_option('lcni_filter_criteria_columns', self::append_missing_columns($criteria_columns, $new_columns));
+        }
+
+        $table_columns = (array) get_option('lcni_filter_table_columns', []);
+        if (!empty($table_columns)) {
+            update_option('lcni_filter_table_columns', self::append_missing_columns($table_columns, $new_columns));
+        }
+
+        $signals_settings = get_option('lcni_frontend_settings_signals', []);
+        if (is_array($signals_settings)) {
+            $allowed_fields = isset($signals_settings['allowed_fields']) && is_array($signals_settings['allowed_fields']) ? $signals_settings['allowed_fields'] : [];
+            if (!empty($allowed_fields)) {
+                $signals_settings['allowed_fields'] = self::append_missing_columns($allowed_fields, $new_columns);
+                update_option('lcni_frontend_settings_signals', $signals_settings);
+            }
+        }
+
+        $watchlist_settings = get_option('lcni_frontend_settings_watchlist', []);
+        if (is_array($watchlist_settings)) {
+            $allowed_columns = isset($watchlist_settings['allowed_columns']) && is_array($watchlist_settings['allowed_columns']) ? $watchlist_settings['allowed_columns'] : [];
+            if (!empty($allowed_columns)) {
+                $watchlist_settings['allowed_columns'] = self::append_missing_columns($allowed_columns, $new_columns);
+            }
+
+            $default_desktop = isset($watchlist_settings['default_columns_desktop']) && is_array($watchlist_settings['default_columns_desktop']) ? $watchlist_settings['default_columns_desktop'] : [];
+            if (!empty($default_desktop)) {
+                $watchlist_settings['default_columns_desktop'] = self::append_missing_columns($default_desktop, $new_columns);
+            }
+
+            $default_mobile = isset($watchlist_settings['default_columns_mobile']) && is_array($watchlist_settings['default_columns_mobile']) ? $watchlist_settings['default_columns_mobile'] : [];
+            if (!empty($default_mobile)) {
+                $watchlist_settings['default_columns_mobile'] = self::append_missing_columns($default_mobile, $new_columns);
+            }
+
+            if (isset($watchlist_settings['styles']) && is_array($watchlist_settings['styles'])) {
+                $column_order = isset($watchlist_settings['styles']['column_order']) && is_array($watchlist_settings['styles']['column_order']) ? $watchlist_settings['styles']['column_order'] : [];
+                if (!empty($column_order)) {
+                    $watchlist_settings['styles']['column_order'] = self::append_missing_columns($column_order, $new_columns);
+                }
+            }
+
+            update_option('lcni_frontend_settings_watchlist', $watchlist_settings);
+        }
+
+        update_option($migration_flag, 'yes');
+    }
+
+    private static function append_missing_columns($columns, $new_columns) {
+        $normalized = array_values(array_filter(array_map('sanitize_key', (array) $columns)));
+        foreach ((array) $new_columns as $column) {
+            $column = sanitize_key((string) $column);
+            if ($column === '' || in_array($column, $normalized, true)) {
+                continue;
+            }
+            $normalized[] = $column;
+        }
+
+        return $normalized;
+    }
+
+    private static function has_missing_rs_3m_by_exchange_rows() {
+        global $wpdb;
+
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $mapping_table = $wpdb->prefix . 'lcni_sym_icb_market';
+        $missing_count = (int) $wpdb->get_var(
+            "SELECT COUNT(*)
+            FROM {$ohlc_table} o
+            INNER JOIN {$mapping_table} m
+                ON o.symbol = m.symbol
+            WHERE o.volume >= 50000
+                AND o.pct_3m IS NOT NULL
+                AND o.rs_3m_by_exchange IS NULL"
+        );
+
+        return $missing_count > 0;
+    }
+
+    private static function seed_market_reference_data($market_table) {
+        global $wpdb;
+
+        foreach (self::DEFAULT_MARKETS as $market) {
+            $wpdb->query(
+                $wpdb->prepare(
+                    "INSERT INTO {$market_table} (market_id, exchange)
+                    VALUES (%s, %s)
+                    ON DUPLICATE KEY UPDATE exchange = VALUES(exchange), updated_at = CURRENT_TIMESTAMP",
+                    (string) $market['market_id'],
+                    (string) $market['exchange']
+                )
+            );
+        }
+    }
+
+    private static function seed_icb2_reference_data($icb2_table) {
+        global $wpdb;
+
+        foreach (self::DEFAULT_ICB2 as $icb2_row) {
+            $wpdb->query(
+                $wpdb->prepare(
+                    "INSERT INTO {$icb2_table} (id_icb2, name_icb2)
+                    VALUES (%d, %s)
+                    ON DUPLICATE KEY UPDATE name_icb2 = VALUES(name_icb2), updated_at = CURRENT_TIMESTAMP",
+                    (int) $icb2_row['id_icb2'],
+                    (string) $icb2_row['name_icb2']
+                )
+            );
+        }
+    }
+
+    private static function seed_index_name_reference_data($index_name_table) {
+        global $wpdb;
+
+        foreach (self::DEFAULT_INDEX_NAMES as $index_row) {
+            $wpdb->query(
+                $wpdb->prepare(
+                    "INSERT INTO {$index_name_table} (id, index_name, marketid, symbol_type, symbol)
+                    VALUES (%d, %s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        index_name = VALUES(index_name),
+                        marketid = VALUES(marketid),
+                        symbol_type = VALUES(symbol_type)",
+                    (int) $index_row['id'],
+                    (string) $index_row['index_name'],
+                    (string) $index_row['marketid'],
+                    (string) $index_row['symbol_type'],
+                    (string) $index_row['symbol']
+                )
+            );
+        }
+    }
+
+    public static function collect_all_data($latest_only = false, $offset = 0, $batch_limit = self::SYMBOL_BATCH_LIMIT) {
+        self::ensure_tables_exist();
+
+        $security_summary = self::collect_security_definitions();
+        $ohlc_summary = self::collect_ohlc_data($latest_only, $offset, $batch_limit);
+
+        return [
+            'security' => $security_summary,
+            'ohlc' => $ohlc_summary,
+        ];
+    }
+
+    public static function collect_security_definitions() {
+        self::ensure_tables_exist();
+
+        $payload = LCNI_API::get_security_definitions();
+        $cached_symbols = self::count_cached_security_symbols();
+
+        if (!is_array($payload)) {
+            $error_message = LCNI_API::get_last_request_error();
+            $log_message = 'Unable to collect security definitions: invalid payload.';
+
+            if ($error_message !== '') {
+                $log_message .= ' ' . $error_message;
+            }
+
+            if ($cached_symbols > 0) {
+                self::log_change('sync_security_cached', $log_message . sprintf(' Using %d cached symbols.', $cached_symbols));
+
+                return [
+                    'updated' => 0,
+                    'cached_symbols' => $cached_symbols,
+                    'used_cache' => true,
+                ];
+            }
+
+            self::log_change('sync_failed', $log_message);
+
+            return new WP_Error('invalid_payload', $error_message !== '' ? $error_message : 'Invalid security definitions payload.');
+        }
+
+        $rows = self::extract_items($payload, ['data', 'items', 'secDefs', 'secdefs', 'securities', 'symbols']);
+
+        if (empty($rows)) {
+            if ($cached_symbols > 0) {
+                self::log_change('sync_security_cached', sprintf('No remote security definitions returned. Using %d cached symbols.', $cached_symbols));
+
+                return [
+                    'updated' => 0,
+                    'cached_symbols' => $cached_symbols,
+                    'used_cache' => true,
+                ];
+            }
+
+            self::log_change('sync_skipped', 'No security definitions returned from DNSE API.');
+
+            return new WP_Error('empty_payload', 'Security definitions payload is empty.');
+        }
+
+        $upsert_summary = self::upsert_symbol_rows($rows, 'api');
+
+        self::log_change('sync_security_definition', sprintf('Upserted %d symbols from Security Definition.', (int) $upsert_summary['updated']));
+
+        return [
+            'updated' => (int) $upsert_summary['updated'],
+            'total' => count($rows),
+        ];
+    }
+
+    public static function get_csv_import_targets() {
+        return [
+            'lcni_symbols' => [
+                'label' => 'LCNI Symbols',
+                'primary_key' => 'symbol',
+                'columns' => [
+                    'symbol' => 'text',
+                    'market_id' => 'text',
+                    'board_id' => 'text',
+                    'isin' => 'text',
+                    'product_grp_id' => 'text',
+                    'security_group_id' => 'text',
+                    'id_icb2' => 'int',
+                    'basic_price' => 'float',
+                    'ceiling_price' => 'float',
+                    'floor_price' => 'float',
+                    'open_interest_quantity' => 'int',
+                    'security_status' => 'text',
+                    'symbol_admin_status_code' => 'text',
+                    'symbol_trading_method_status_code' => 'text',
+                    'symbol_trading_sanction_status_code' => 'text',
+                    'source' => 'text',
+                ],
+            ],
+            'lcni_marketid' => [
+                'label' => 'LCNI Market',
+                'primary_key' => 'market_id',
+                'columns' => [
+                    'market_id' => 'text',
+                    'exchange' => 'text',
+                ],
+            ],
+            'lcni_icb2' => [
+                'label' => 'LCNI ICB2',
+                'primary_key' => 'id_icb2',
+                'columns' => [
+                    'id_icb2' => 'int',
+                    'name_icb2' => 'text',
+                ],
+            ],
+            'lcni_indexname' => [
+                'label' => 'LCNI Index Name',
+                'primary_key' => 'symbol',
+                'columns' => [
+                    'index_name' => 'text',
+                    'marketid' => 'text',
+                    'symbol_type' => 'text',
+                    'symbol' => 'text',
+                ],
+            ],
+            'lcni_sym_icb_market' => [
+                'label' => 'LCNI Symbol-Market-ICB Mapping',
+                'primary_key' => 'symbol',
+                'columns' => [
+                    'symbol' => 'text',
+                    'market_id' => 'text',
+                    'id_icb2' => 'int',
+                    'exchange' => 'text',
+                ],
+            ],
+            'lcni_symbol_tongquan' => [
+                'label' => 'LCNI Symbol Tổng quan',
+                'primary_key' => 'symbol',
+                'columns' => [
+                    'symbol' => 'text',
+                    'eps' => 'float',
+                    'eps_1y_pct' => 'float',
+                    'dt_1y_pct' => 'float',
+                    'bien_ln_gop' => 'float',
+                    'bien_ln_rong' => 'float',
+                    'roe' => 'float',
+                    'de_ratio' => 'float',
+                    'pe_ratio' => 'float',
+                    'pb_ratio' => 'float',
+                    'ev_ebitda' => 'float',
+                    'tcbs_khuyen_nghi' => 'text',
+                    'co_tuc_pct' => 'float',
+                    'tc_rating' => 'float',
+                    'xep_hang' => 'text',
+                    'so_huu_nn_pct' => 'float',
+                    'tien_mat_rong_von_hoa' => 'float',
+                    'tien_mat_rong_tong_tai_san' => 'float',
+                    'loi_nhuan_4_quy_gan_nhat' => 'float',
+                    'tang_truong_dt_quy_gan_nhat' => 'float',
+                    'tang_truong_dt_quy_gan_nhi' => 'float',
+                    'tang_truong_ln_quy_gan_nhat' => 'float',
+                    'tang_truong_ln_quy_gan_nhi' => 'float',
+                ],
+            ],
+            'lcni_ohlc' => [
+                'label' => 'LCNI OHLC',
+                'primary_key' => 'id',
+                'insert_mode' => 'append',
+                'columns' => [
+                    'symbol' => 'text',
+                    'event_time' => 'int',
+                    'open_price' => 'float',
+                    'high_price' => 'float',
+                    'low_price' => 'float',
+                    'close_price' => 'float',
+                    'volume' => 'int',
+                    'value_traded' => 'float',
+                ],
+            ],
+        ];
+    }
+
+    public static function detect_csv_columns($file_path) {
+        if (!is_readable($file_path)) {
+            return new WP_Error('csv_not_readable', 'Không thể đọc file CSV đã upload.');
+        }
+
+        $handle = fopen($file_path, 'r');
+        if ($handle === false) {
+            return new WP_Error('csv_open_failed', 'Không thể mở file CSV.');
+        }
+
+        $header = fgetcsv($handle);
+        fclose($handle);
+
+        if (!is_array($header) || empty($header)) {
+            return new WP_Error('csv_empty', 'CSV không có dòng tiêu đề hợp lệ.');
+        }
+
+        $headers = [];
+        foreach ($header as $index => $name) {
+            $headers[] = [
+                'index' => $index,
+                'raw' => trim((string) $name),
+                'normalized' => self::normalize_csv_header($name),
+            ];
+        }
+
+        return $headers;
+    }
+
+    public static function suggest_csv_mapping($table_key, $headers) {
+        $targets = self::get_csv_import_targets();
+        if (!isset($targets[$table_key])) {
+            return [];
+        }
+
+        $target_columns = array_keys($targets[$table_key]['columns']);
+        $mapping = [];
+
+        foreach ($headers as $header) {
+            $source = (string) ($header['normalized'] ?? '');
+            if ($source === '') {
+                continue;
+            }
+
+            if (in_array($source, $target_columns, true)) {
+                $mapping[$source] = $source;
+                continue;
+            }
+
+            if ($table_key === 'lcni_symbol_tongquan') {
+                $aliases = [
+                    'mck' => 'symbol',
+                    'ma_ck' => 'symbol',
+                    'pe' => 'pe_ratio',
+                    'p_e' => 'pe_ratio',
+                    'pb' => 'pb_ratio',
+                    'p_b' => 'pb_ratio',
+                    'de' => 'de_ratio',
+                    'd_e' => 'de_ratio',
+                    'evebitda' => 'ev_ebitda',
+                    'ev_ebitda' => 'ev_ebitda',
+                    'tcbs_khuyen_nghi' => 'tcbs_khuyen_nghi',
+                    'tcbskhuyennghi' => 'tcbs_khuyen_nghi',
+                    'tc_rating' => 'tc_rating',
+                    'xep_hang' => 'xep_hang',
+                    'eps_1_nam' => 'eps_1y_pct',
+                    'eps_1y' => 'eps_1y_pct',
+                    'dt_1_nam' => 'dt_1y_pct',
+                    'doanh_thu_1_nam' => 'dt_1y_pct',
+                    'bien_ln_gop' => 'bien_ln_gop',
+                    'bien_ln_rong' => 'bien_ln_rong',
+                    'co_tuc' => 'co_tuc_pct',
+                    'co_tuc_pct' => 'co_tuc_pct',
+                    'so_huu_nn' => 'so_huu_nn_pct',
+                    'so_huu_nn_pct' => 'so_huu_nn_pct',
+                    'tien_mat_rong_von_hoa' => 'tien_mat_rong_von_hoa',
+                    'tien_mat_rong_tong_tai_san' => 'tien_mat_rong_tong_tai_san',
+                    'loi_nhuan_4_quy_gan_nhat' => 'loi_nhuan_4_quy_gan_nhat',
+                    'tang_truong_doanh_thu_quy_gan_nhat' => 'tang_truong_dt_quy_gan_nhat',
+                    'tang_truong_doanh_thu_quy_gan_nhi' => 'tang_truong_dt_quy_gan_nhi',
+                    'tang_truong_loi_nhuan_quy_gan_nhat' => 'tang_truong_ln_quy_gan_nhat',
+                    'tang_truong_loi_nhuan_quy_gan_nhi' => 'tang_truong_ln_quy_gan_nhi',
+                ];
+
+                if (isset($aliases[$source])) {
+                    $mapping[$source] = $aliases[$source];
+                }
+            }
+        }
+
+        return $mapping;
+    }
+
+    public static function import_csv_with_mapping($file_path, $table_key, $mapping, $options = []) {
+        self::ensure_tables_exist();
+
+        $targets = self::get_csv_import_targets();
+        if (!isset($targets[$table_key])) {
+            return new WP_Error('invalid_table', 'Bảng import không hợp lệ.');
+        }
+
+        if (!is_readable($file_path)) {
+            return new WP_Error('csv_not_readable', 'Không thể đọc file CSV đã upload.');
+        }
+
+        $target = $targets[$table_key];
+        if (($target['insert_mode'] ?? '') === 'append') {
+            return self::import_csv_append_only($file_path, $table_key, $mapping, $target, $options);
+        }
+
+        $columns = $target['columns'];
+        $primary_key = $target['primary_key'];
+        $primary_key_format = self::get_wpdb_format_for_type((string) ($columns[$primary_key] ?? 'text'));
+
+        $handle = fopen($file_path, 'r');
+        if ($handle === false) {
+            return new WP_Error('csv_open_failed', 'Không thể mở file CSV.');
+        }
+
+        $header = fgetcsv($handle);
+        if (!is_array($header) || empty($header)) {
+            fclose($handle);
+            return new WP_Error('csv_empty', 'CSV không có dòng tiêu đề hợp lệ.');
+        }
+
+        $header_lookup = [];
+        foreach ($header as $index => $name) {
+            $normalized = self::normalize_csv_header($name);
+            if ($normalized !== '') {
+                $header_lookup[$normalized] = $index;
+            }
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . $table_key;
+        $updated = 0;
+        $total = 0;
+
+        $progress_callback = isset($options['progress_callback']) && is_callable($options['progress_callback']) ? $options['progress_callback'] : null;
+        $max_rows = isset($options['max_rows']) ? max(1, (int) $options['max_rows']) : 0;
+        $offset_rows = isset($options['offset_rows']) ? max(0, (int) $options['offset_rows']) : 0;
+        $processed = 0;
+        $seen_rows = 0;
+        $has_more = false;
+
+        $buffered_rows = [];
+
+        while (($line = fgetcsv($handle)) !== false) {
+            if (!is_array($line) || empty($line)) {
+                continue;
+            }
+
+            if ($seen_rows < $offset_rows) {
+                $seen_rows++;
+                continue;
+            }
+
+            if ($max_rows > 0 && $processed >= $max_rows) {
+                $has_more = true;
+                break;
+            }
+
+            $processed++;
+            $seen_rows++;
+
+            $record = [];
+            $formats = [];
+
+            foreach ((array) $mapping as $csv_column => $db_column) {
+                $csv_column = self::normalize_csv_header($csv_column);
+                $db_column = sanitize_key((string) $db_column);
+
+                if ($csv_column === '' || $db_column === '' || !isset($columns[$db_column]) || !isset($header_lookup[$csv_column])) {
+                    continue;
+                }
+
+                $value = trim((string) ($line[$header_lookup[$csv_column]] ?? ''));
+                $parsed = self::cast_import_value($value, $columns[$db_column]);
+                if ($db_column === 'symbol' && $parsed['value'] !== null) {
+                    $parsed['value'] = strtoupper((string) $parsed['value']);
+                }
+                $record[$db_column] = $parsed['value'];
+                $formats[$db_column] = $parsed['format'];
+            }
+
+            if (!isset($record[$primary_key]) || $record[$primary_key] === '' || $record[$primary_key] === null) {
+                continue;
+            }
+
+            $existing_key = $wpdb->get_var(
+                $wpdb->prepare(
+                    "SELECT {$primary_key} FROM {$table} WHERE {$primary_key} = {$primary_key_format} LIMIT 1",
+                    $record[$primary_key]
+                )
+            );
+
+            if ($existing_key !== null) {
+                $record_to_update = $record;
+                $formats_to_update = $formats;
+                unset($record_to_update[$primary_key], $formats_to_update[$primary_key]);
+
+                if (empty($record_to_update)) {
+                    $updated++;
+                    continue;
+                }
+
+                $result = $wpdb->update(
+                    $table,
+                    $record_to_update,
+                    [$primary_key => $record[$primary_key]],
+                    array_values($formats_to_update),
+                    [$primary_key_format]
+                );
+            } else {
+                $result = $wpdb->insert($table, $record, array_values($formats));
+            }
+
+            if ($result !== false) {
+                $updated++;
+            }
+            $total++;
+
+            if ($progress_callback !== null && (($processed % 50) === 0)) {
+                call_user_func($progress_callback, $processed, $updated);
+            }
+        }
+
+        fclose($handle);
+
+        if ($progress_callback !== null) {
+            call_user_func($progress_callback, $processed, $updated);
+        }
+
+        if ($table_key === 'lcni_symbols') {
+            self::sync_symbol_market_icb_mapping();
+        }
+
+        if ($table_key === 'lcni_symbols' || $table_key === 'lcni_symbol_tongquan') {
+            self::sync_symbol_tongquan_with_symbols();
+        }
+
+        if ($table_key === 'lcni_symbol_tongquan') {
+            self::refresh_symbol_tongquan_rankings();
+        }
+
+        self::log_change('import_csv_generic', sprintf('Imported %d/%d rows into %s.', $updated, $total, $table_key), [
+            'table' => $table_key,
+            'mapping' => $mapping,
+        ]);
+
+        return [
+            'updated' => $updated,
+            'total' => $total,
+            'processed' => $processed,
+            'has_more' => $has_more,
+            'table' => $table_key,
+        ];
+    }
+
+    private static function import_csv_append_only($file_path, $table_key, $mapping, $target, $options = []) {
+        if ($table_key !== 'lcni_ohlc') {
+            return new WP_Error('append_import_unsupported', 'Bảng append import chưa được hỗ trợ.');
+        }
+
+        $columns = $target['columns'];
+        $required_fields = ['symbol', 'open_price', 'high_price', 'low_price', 'close_price', 'event_time'];
+        $timeframe = strtoupper(sanitize_text_field((string) ($options['timeframe'] ?? '1D')));
+        if (!in_array($timeframe, ['1D', '1W', '1M'], true)) {
+            return new WP_Error('invalid_timeframe', 'Timeframe import cho LCNI OHLC không hợp lệ.');
+        }
+
+        $handle = fopen($file_path, 'r');
+        if ($handle === false) {
+            return new WP_Error('csv_open_failed', 'Không thể mở file CSV.');
+        }
+
+        $header = fgetcsv($handle);
+        if (!is_array($header) || empty($header)) {
+            fclose($handle);
+            return new WP_Error('csv_empty', 'CSV không có dòng tiêu đề hợp lệ.');
+        }
+
+        $header_lookup = [];
+        foreach ($header as $index => $name) {
+            $normalized = self::normalize_csv_header($name);
+            if ($normalized !== '') {
+                $header_lookup[$normalized] = $index;
+            }
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . $table_key;
+        $updated = 0;
+        $total = 0;
+        $skipped_invalid = 0;
+        $upsert_updated = 0;
+        $failed_inserts = 0;
+        $last_error_message = '';
+        $touched_series = [];
+        $touched_event_times = [];
+        $touched_timeframes = [];
+
+        $progress_callback = isset($options['progress_callback']) && is_callable($options['progress_callback']) ? $options['progress_callback'] : null;
+        $max_rows = isset($options['max_rows']) ? max(1, (int) $options['max_rows']) : 0;
+        $offset_rows = isset($options['offset_rows']) ? max(0, (int) $options['offset_rows']) : 0;
+        $processed = 0;
+        $seen_rows = 0;
+        $has_more = false;
+
+        while (($line = fgetcsv($handle)) !== false) {
+            if (!is_array($line) || empty($line)) {
+                continue;
+            }
+
+            if ($seen_rows < $offset_rows) {
+                $seen_rows++;
+                continue;
+            }
+
+            if ($max_rows > 0 && $processed >= $max_rows) {
+                $has_more = true;
+                break;
+            }
+
+            $processed++;
+            $seen_rows++;
+
+            $record = [];
+            $formats = [];
+
+            foreach ((array) $mapping as $csv_column => $db_column) {
+                $csv_column = self::normalize_csv_header($csv_column);
+                $db_column = sanitize_key((string) $db_column);
+
+                if ($csv_column === '' || $db_column === '' || !isset($columns[$db_column]) || !isset($header_lookup[$csv_column])) {
+                    continue;
+                }
+
+                $value = trim((string) ($line[$header_lookup[$csv_column]] ?? ''));
+                if ($db_column === 'event_time') {
+                    $record[$db_column] = $value;
+                    $formats[$db_column] = '%d';
+                    continue;
+                }
+
+                $parsed = self::cast_import_value($value, $columns[$db_column]);
+                if ($db_column === 'symbol' && $parsed['value'] !== null) {
+                    $parsed['value'] = strtoupper((string) $parsed['value']);
+                }
+                $record[$db_column] = $parsed['value'];
+                $formats[$db_column] = $parsed['format'];
+            }
+
+            $total++;
+
+            $record['timeframe'] = $timeframe;
+            $formats['timeframe'] = '%s';
+
+            if (isset($record['event_time'])) {
+                $record['event_time'] = self::normalize_import_event_time($record['event_time']);
+            }
+
+            $is_valid = true;
+            foreach ($required_fields as $field) {
+                if (!isset($record[$field]) || $record[$field] === '' || $record[$field] === null) {
+                    $is_valid = false;
+                    break;
+                }
+            }
+            if (!$is_valid) {
+                $skipped_invalid++;
+                continue;
+            }
+
+            if (!isset($record['volume']) || $record['volume'] === null) {
+                $record['volume'] = 0;
+                $formats['volume'] = '%d';
+            }
+            if (!isset($record['value_traded']) || $record['value_traded'] === null) {
+                $record['value_traded'] = 0;
+                $formats['value_traded'] = '%f';
+            }
+
+            $buffered_rows[] = [
+                'record' => $record,
+                'formats' => $formats,
+            ];
+        }
+
+        if (!empty($buffered_rows)) {
+            usort($buffered_rows, static function ($left, $right) {
+                $left_event_time = (int) (($left['record']['event_time'] ?? 0));
+                $right_event_time = (int) (($right['record']['event_time'] ?? 0));
+
+                if ($left_event_time === $right_event_time) {
+                    return strcmp((string) ($left['record']['symbol'] ?? ''), (string) ($right['record']['symbol'] ?? ''));
+                }
+
+                return $right_event_time <=> $left_event_time;
+            });
+
+            foreach ($buffered_rows as $index => $buffered_row) {
+                $record = (array) ($buffered_row['record'] ?? []);
+                $formats = (array) ($buffered_row['formats'] ?? []);
+
+                if (empty($record)) {
+                    continue;
+                }
+
+                $columns_sql = [];
+                $placeholders_sql = [];
+                $update_assignments = [];
+                $values = [];
+
+                foreach ($record as $column_name => $column_value) {
+                    $columns_sql[] = "`{$column_name}`";
+                    $placeholders_sql[] = $formats[$column_name] ?? '%s';
+                    $values[] = $column_value;
+                    if (!in_array($column_name, ['symbol', 'timeframe', 'event_time'], true)) {
+                        $update_assignments[] = "`{$column_name}` = VALUES(`{$column_name}`)";
+                    }
+                }
+
+                if (empty($update_assignments)) {
+                    $update_assignments[] = '`event_time` = VALUES(`event_time`)';
+                }
+
+                $sql = "INSERT INTO {$table} (" . implode(', ', $columns_sql) . ") VALUES (" . implode(', ', $placeholders_sql) . ")"
+                    . " ON DUPLICATE KEY UPDATE " . implode(', ', $update_assignments);
+
+                $prepared_sql = $wpdb->prepare($sql, $values);
+                $result = $wpdb->query($prepared_sql);
+
+                if ($result === 1) {
+                    $updated++;
+                } elseif ($result === 2 || $result === 0) {
+                    $updated++;
+                    $upsert_updated++;
+                }
+
+                if ($result !== false) {
+                    $series_key = $record['symbol'] . '|' . $record['timeframe'];
+                    $touched_series[$series_key] = [
+                        'symbol' => $record['symbol'],
+                        'timeframe' => $record['timeframe'],
+                    ];
+                    $touched_event_times[(int) $record['event_time']] = true;
+                    $touched_timeframes[$record['timeframe']] = true;
+                } else {
+                    $failed_inserts++;
+                    if ($last_error_message === '' && !empty($wpdb->last_error)) {
+                        $last_error_message = sanitize_text_field((string) $wpdb->last_error);
+                    }
+                }
+
+                if ($progress_callback !== null && ((($index + 1) % 50) === 0)) {
+                    call_user_func($progress_callback, $processed, $updated);
+                }
+            }
+        }
+
+        fclose($handle);
+
+        if ($progress_callback !== null) {
+            call_user_func($progress_callback, $processed, $updated);
+        }
+
+        $touched_series_values = array_values($touched_series);
+        $touched_event_times_values = array_map('intval', array_keys($touched_event_times));
+        $touched_timeframes_values = array_values(array_keys($touched_timeframes));
+
+        self::log_change('import_csv_generic', sprintf('Imported %d/%d rows into %s (upsert mode).', $updated, $total, $table_key), [
+            'table' => $table_key,
+            'mapping' => $mapping,
+            'timeframe' => $timeframe,
+        ]);
+
+        return [
+            'updated' => $updated,
+            'total' => $total,
+            'processed' => $processed,
+            'has_more' => $has_more,
+            'table' => $table_key,
+            'skipped_invalid' => $skipped_invalid,
+            'skipped_existing' => 0,
+            'upsert_updated' => $upsert_updated,
+            'failed_inserts' => $failed_inserts,
+            'last_error' => $last_error_message,
+            'touched_series' => $touched_series_values,
+            'touched_event_times' => $touched_event_times_values,
+            'touched_timeframes' => $touched_timeframes_values,
+        ];
+    }
+
+    public static function finalize_ohlc_import_post_process($series_list = [], $event_times = [], $timeframes = []) {
+        $normalized_series = [];
+        foreach ((array) $series_list as $series) {
+            if (!is_array($series)) {
+                continue;
+            }
+            $symbol = isset($series['symbol']) ? strtoupper(sanitize_text_field((string) $series['symbol'])) : '';
+            $timeframe = isset($series['timeframe']) ? strtoupper(sanitize_text_field((string) $series['timeframe'])) : '';
+            if ($symbol === '' || $timeframe === '') {
+                continue;
+            }
+            $normalized_series[$symbol . '|' . $timeframe] = [
+                'symbol' => $symbol,
+                'timeframe' => $timeframe,
+            ];
+        }
+
+        $normalized_event_times = [];
+        foreach ((array) $event_times as $event_time) {
+            $event_time = (int) $event_time;
+            if ($event_time > 0) {
+                $normalized_event_times[$event_time] = true;
+            }
+        }
+
+        $normalized_timeframes = [];
+        foreach ((array) $timeframes as $timeframe) {
+            $timeframe = strtoupper(sanitize_text_field((string) $timeframe));
+            if ($timeframe !== '') {
+                $normalized_timeframes[$timeframe] = true;
+            }
+        }
+
+        if (empty($normalized_series)) {
+            return;
+        }
+
+        self::enqueue_seed_rebuild_tasks(
+            array_values($normalized_series),
+            array_keys($normalized_event_times),
+            array_keys($normalized_timeframes)
+        );
+
+        self::log_change(
+            'csv_import_post_process_queued',
+            sprintf(
+                'Queued post-import rebuild pipeline: series=%d, event_times=%d, timeframes=%d.',
+                count($normalized_series),
+                count($normalized_event_times),
+                count($normalized_timeframes)
+            )
+        );
+    }
+
+    public static function run_seed_serial_pipeline($context = 'cron', $batch_sizes = []) {
+        $now = time();
+        $lock_until = (int) get_option(self::SEED_PIPELINE_LOCK_OPTION, 0);
+        if ($lock_until > $now) {
+            return [
+                'status' => 'skipped_locked',
+                'context' => sanitize_key((string) $context),
+                'lock_until' => $lock_until,
+            ];
+        }
+
+        update_option(self::SEED_PIPELINE_LOCK_OPTION, $now + 55, false);
+
+        try {
+            $import_lock_until = (int) get_option('lcni_csv_import_lock_until', 0);
+            $import_running = $import_lock_until > $now;
+
+            $seed_stats = LCNI_SeedRepository::get_dashboard_stats();
+            $seed_in_progress = ((int) ($seed_stats['total'] ?? 0) > 0) && ((int) ($seed_stats['done'] ?? 0) < (int) ($seed_stats['total'] ?? 0));
+
+            $optimization = self::optimize_seed_dataset();
+            $pipeline = self::process_seed_rebuild_pipeline(array_merge((array) $batch_sizes, ['serial_groups' => true]));
+
+            $snapshot = [
+                'status' => 'skipped',
+                'reason' => 'pipeline_not_done',
+            ];
+
+            if (!empty($pipeline['done']) && !$seed_in_progress && !$import_running) {
+                $snapshot = self::refresh_ohlc_latest_snapshot();
+            } elseif ($import_running) {
+                $snapshot = [
+                    'status' => 'skipped',
+                    'reason' => 'import_running',
+                ];
+            } elseif ($seed_in_progress) {
+                $snapshot = [
+                    'status' => 'skipped',
+                    'reason' => 'seed_running',
+                ];
+            }
+
+            return [
+                'status' => 'ok',
+                'context' => sanitize_key((string) $context),
+                'seed_in_progress' => $seed_in_progress,
+                'import_running' => $import_running,
+                'optimization' => $optimization,
+                'pipeline' => $pipeline,
+                'snapshot' => $snapshot,
+            ];
+        } finally {
+            delete_option(self::SEED_PIPELINE_LOCK_OPTION);
+        }
+    }
+
+    public static function count_csv_rows($file_path) {
+        if (!is_readable($file_path)) {
+            return new WP_Error('csv_not_readable', 'Không thể đọc file CSV đã upload.');
+        }
+
+        $handle = fopen($file_path, 'r');
+        if ($handle === false) {
+            return new WP_Error('csv_open_failed', 'Không thể mở file CSV.');
+        }
+
+        $header = fgetcsv($handle);
+        if (!is_array($header) || empty($header)) {
+            fclose($handle);
+            return new WP_Error('csv_empty', 'CSV không có dòng tiêu đề hợp lệ.');
+        }
+
+        $rows = 0;
+        while (fgetcsv($handle) !== false) {
+            $rows++;
+        }
+
+        fclose($handle);
+        return $rows;
+    }
+
+    public static function import_symbols_from_csv($file_path) {
+        $headers = self::detect_csv_columns($file_path);
+        if (is_wp_error($headers)) {
+            return $headers;
+        }
+
+        $mapping = self::suggest_csv_mapping('lcni_symbols', $headers);
+
+        return self::import_csv_with_mapping($file_path, 'lcni_symbols', $mapping);
+    }
+
+
+    private static function cast_import_value($value, $type) {
+        $value = trim((string) $value);
+        if ($value === '') {
+            return ['value' => null, 'format' => '%s'];
+        }
+
+        if ($type === 'text') {
+            return ['value' => sanitize_text_field($value), 'format' => '%s'];
+        }
+
+        if ($type === 'int') {
+            $normalized = preg_replace('/[^0-9\-]/', '', $value);
+            return ['value' => $normalized === '' ? null : (int) $normalized, 'format' => '%d'];
+        }
+
+        $normalized = str_replace([' ', '%'], '', $value);
+        if (strpos($normalized, ',') !== false && strpos($normalized, '.') !== false) {
+            $normalized = str_replace(',', '', $normalized);
+        } elseif (strpos($normalized, ',') !== false) {
+            $normalized = str_replace(',', '.', $normalized);
+        }
+
+        return ['value' => is_numeric($normalized) ? (float) $normalized : null, 'format' => '%f'];
+    }
+
+    private static function normalize_import_event_time($value) {
+        $raw_value = trim((string) $value);
+        if ($raw_value === '') {
+            return 0;
+        }
+
+        if (is_numeric($raw_value)) {
+            $timestamp = (int) round((float) $raw_value);
+            if ($timestamp > 1000000000000) {
+                $timestamp = (int) floor($timestamp / 1000);
+            }
+
+            return max(0, $timestamp);
+        }
+
+        $parsed = strtotime($raw_value);
+        if ($parsed === false) {
+            return 0;
+        }
+
+        return max(0, (int) $parsed);
+    }
+
+    private static function get_wpdb_format_for_type($type) {
+        if ($type === 'int') {
+            return '%d';
+        }
+
+        if ($type === 'float') {
+            return '%f';
+        }
+
+        return '%s';
+    }
+
+    private static function sync_symbol_tongquan_with_symbols() {
+        global $wpdb;
+
+        $symbols_table = $wpdb->prefix . 'lcni_symbols';
+        $tongquan_table = $wpdb->prefix . 'lcni_symbol_tongquan';
+
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $tongquan_table)) !== $tongquan_table) {
+            return;
+        }
+
+        $wpdb->query(
+            "INSERT INTO {$tongquan_table} (symbol)
+            SELECT s.symbol
+            FROM {$symbols_table} s
+            WHERE s.symbol <> ''
+            ON DUPLICATE KEY UPDATE updated_at = {$tongquan_table}.updated_at"
+        );
+
+        self::refresh_symbol_tongquan_rankings();
+    }
+
+    private static function refresh_symbol_tongquan_rankings() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_symbol_tongquan';
+        $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+        if ($exists !== $table) {
+            return;
+        }
+
+        $wpdb->query(
+            "UPDATE {$table}
+            SET xep_hang =
+                CASE
+                    WHEN tc_rating >= 4 THEN 'A++'
+                    WHEN tc_rating >= 3.5 THEN 'A+'
+                    WHEN tc_rating >= 3 THEN 'A'
+                    WHEN tc_rating >= 2.5 THEN 'B+'
+                    WHEN tc_rating >= 2 THEN 'B'
+                    WHEN tc_rating >= 1.5 THEN 'C+'
+                    WHEN tc_rating >= 1 THEN 'C'
+                    WHEN tc_rating >= 0.3 THEN 'D'
+                    ELSE 'Chưa xếp hạng'
+                END"
+        );
+    }
+
+    public static function collect_ohlc_data($latest_only = false, $offset = 0, $batch_limit = self::SYMBOL_BATCH_LIMIT) {
+        self::ensure_tables_exist();
+
+        global $wpdb;
+
+        $timeframe = strtoupper((string) get_option('lcni_timeframe', '1D'));
+        $days = max(1, (int) get_option('lcni_days_to_load', 365));
+
+        $batch_limit = max(1, (int) $batch_limit);
+        $offset = max(0, (int) $offset);
+
+        $symbol_table = $wpdb->prefix . 'lcni_symbols';
+        $total_symbols = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$symbol_table}");
+
+        $symbols = $wpdb->get_col(
+            $wpdb->prepare(
+                "SELECT symbol FROM {$symbol_table} ORDER BY symbol ASC LIMIT %d OFFSET %d",
+                $batch_limit,
+                $offset
+            )
+        );
+
+        if (empty($symbols)) {
+            self::log_change('sync_skipped', 'No symbols available in lcni_symbols table for OHLC sync.');
+
+            return [
+                'inserted' => 0,
+                'updated' => 0,
+                'processed_symbols' => 0,
+                'total_symbols' => $total_symbols,
+                'next_offset' => $offset,
+                'has_more' => false,
+            ];
+        }
+
+        $inserted = 0;
+        $updated = 0;
+        $processed_symbols = 0;
+
+        foreach ($symbols as $symbol) {
+            $symbol = strtoupper((string) $symbol);
+
+            if ($latest_only) {
+                $latest_event_time = self::get_latest_event_time($symbol, $timeframe);
+
+                if ($latest_event_time > 0) {
+                    $from_timestamp = max(1, $latest_event_time - DAY_IN_SECONDS);
+                    $to_timestamp = current_time('timestamp');
+                    $payload = LCNI_API::get_candles_by_range($symbol, $timeframe, $from_timestamp, $to_timestamp);
+                } else {
+                    $payload = LCNI_API::get_candles($symbol, $timeframe, $days);
+                }
+            } else {
+                $payload = LCNI_API::get_candles($symbol, $timeframe, $days);
+            }
+
+            if (!is_array($payload)) {
+                self::log_change('sync_symbol_failed', sprintf('OHLC request failed for symbol=%s timeframe=%s latest_only=%s.', $symbol, $timeframe, $latest_only ? 'yes' : 'no'));
+                continue;
+            }
+
+            $processed_symbols++;
+
+            $rows = lcni_convert_candles($payload, $symbol, $timeframe);
+            if ($latest_only && !empty($rows)) {
+                $latest_db_event_time = self::get_latest_event_time($symbol, $timeframe);
+                $rows = array_filter(
+                    $rows,
+                    static function ($row) use ($latest_db_event_time) {
+                        $event_time = false;
+                        if (!empty($row['candle_time'])) {
+                            try {
+                                $event_time = (new DateTimeImmutable((string) $row['candle_time'], wp_timezone()))->getTimestamp();
+                            } catch (Exception $e) {
+                                $event_time = false;
+                            }
+                        }
+
+                        return $event_time !== false && $event_time > $latest_db_event_time;
+                    }
+                );
+            }
+
+            $upsert_summary = self::upsert_ohlc_rows($rows);
+            $inserted += (int) $upsert_summary['inserted'];
+            $updated += (int) $upsert_summary['updated'];
+
+        }
+
+        self::rebuild_missing_ohlc_indicators();
+
+        self::log_change('sync_ohlc', sprintf('OHLC sync done. inserted=%d updated=%d latest_only=%s timeframe=%s days=%d.', $inserted, $updated, $latest_only ? 'yes' : 'no', $timeframe, $days));
+
+        $next_offset = $offset + count($symbols);
+
+        return [
+            'inserted' => $inserted,
+            'updated' => $updated,
+            'processed_symbols' => $processed_symbols,
+            'total_symbols' => $total_symbols,
+            'next_offset' => $next_offset,
+            'has_more' => $next_offset < $total_symbols,
+            'batch_limit' => $batch_limit,
+        ];
+    }
+
+    public static function collect_intraday_data() {
+        self::ensure_tables_exist();
+
+        $started_at_ts = current_time('timestamp');
+        $started_at_mysql = current_time('mysql');
+
+        global $wpdb;
+
+        $timeframe = strtoupper((string) get_option('lcni_timeframe', '1D'));
+        $symbols = $wpdb->get_col("SELECT symbol FROM {$wpdb->prefix}lcni_symbol_tongquan");
+
+        $symbols = array_values(array_unique(array_filter(array_map(static function ($symbol) {
+            $value = strtoupper(trim((string) $symbol));
+            return $value;
+        }, (array) $symbols))));
+
+        $total_symbols = count($symbols);
+        if ($total_symbols === 0) {
+            return [
+                'processed_symbols' => 0,
+                'success_symbols' => 0,
+                'error_symbols' => 0,
+                'pending_symbols' => 0,
+                'total_symbols' => 0,
+                'changed_symbols' => 0,
+                'indicators_done' => true,
+                'message' => 'Không có symbol để cập nhật.',
+                'started_at' => $started_at_mysql,
+                'ended_at' => current_time('mysql'),
+                'execution_seconds' => max(0, current_time('timestamp') - $started_at_ts),
+            ];
+        }
+
+        $current_timestamp = current_time('timestamp');
+        $from_timestamp = max(1, $current_timestamp - DAY_IN_SECONDS);
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $processed_symbols = 0;
+        $success_symbols = 0;
+        $error_symbols = 0;
+
+        foreach ($symbols as $symbol) {
+            $url = add_query_arg(
+                [
+                    'symbol' => $symbol,
+                    'resolution' => $timeframe,
+                    'from' => $from_timestamp,
+                    'to' => $current_timestamp,
+                ],
+                LCNI_API::CANDLE_URL
+            );
+
+            $response = wp_remote_get($url, [
+                'timeout' => 20,
+                'headers' => [
+                    'Accept' => 'application/json',
+                ],
+            ]);
+
+            if (is_wp_error($response)) {
+                $error_symbols++;
+                $processed_symbols++;
+                usleep(100000);
+                continue;
+            }
+
+            $status_code = (int) wp_remote_retrieve_response_code($response);
+            if ($status_code !== 200) {
+                $error_symbols++;
+                $processed_symbols++;
+                usleep(100000);
+                continue;
+            }
+
+            $decoded = json_decode((string) wp_remote_retrieve_body($response), true);
+            if (!is_array($decoded) || !isset($decoded['s']) || $decoded['s'] !== 'ok') {
+                $error_symbols++;
+                $processed_symbols++;
+                usleep(100000);
+                continue;
+            }
+
+            $rows = lcni_convert_candles($decoded, $symbol, $timeframe);
+            if (empty($rows)) {
+                $error_symbols++;
+                $processed_symbols++;
+                usleep(100000);
+                continue;
+            }
+
+            $latest_row = end($rows);
+            if (!is_array($latest_row) || empty($latest_row['event_time'])) {
+                $error_symbols++;
+                $processed_symbols++;
+                usleep(100000);
+                continue;
+            }
+
+            $wpdb->update(
+                $ohlc_table,
+                [
+                    'open_price' => self::normalize_price($latest_row['open'] ?? 0),
+                    'high_price' => self::normalize_price($latest_row['high'] ?? 0),
+                    'low_price' => self::normalize_price($latest_row['low'] ?? 0),
+                    'close_price' => self::normalize_price($latest_row['close'] ?? 0),
+                    'updated_at' => current_time('mysql'),
+                ],
+                [
+                    'symbol' => $symbol,
+                    'timeframe' => $timeframe,
+                    'event_time' => (int) $latest_row['event_time'],
+                ],
+                ['%f', '%f', '%f', '%f', '%s'],
+                ['%s', '%s', '%d']
+            );
+
+            if ((int) $wpdb->rows_affected > 0) {
+                $success_symbols++;
+            } else {
+                $error_symbols++;
+            }
+
+            $processed_symbols++;
+            usleep(100000);
+        }
+
+        return [
+            'processed_symbols' => $processed_symbols,
+            'success_symbols' => $success_symbols,
+            'error_symbols' => $error_symbols,
+            'pending_symbols' => max(0, $total_symbols - $processed_symbols),
+            'total_symbols' => $total_symbols,
+            'changed_symbols' => $success_symbols,
+            'indicators_done' => true,
+            'message' => 'Cập nhật dữ liệu trong phiên hoàn tất.',
+            'started_at' => $started_at_mysql,
+            'ended_at' => current_time('mysql'),
+            'execution_seconds' => max(0, current_time('timestamp') - $started_at_ts),
+        ];
+    }
+
+    public static function is_trading_session_open() {
+        return lcni_is_trading_time();
+    }
+
+    public static function get_latest_event_time($symbol, $timeframe) {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $latest_event_time = (int) $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT MAX(event_time) FROM {$table} WHERE symbol = %s AND timeframe = %s",
+                strtoupper((string) $symbol),
+                strtoupper((string) $timeframe)
+            )
+        );
+
+        return max(0, $latest_event_time);
+    }
+
+    public static function get_all_symbols() {
+        global $wpdb;
+
+        return LCNI_RedisCache::remember(
+            'all_symbols',
+            LCNI_RedisCache::GRP_REF,
+            function() use ($wpdb) {
+                $table = $wpdb->prefix . 'lcni_symbols';
+                return $wpdb->get_col("SELECT symbol FROM {$table} ORDER BY symbol ASC");
+            },
+            LCNI_RedisCache::TTL_REF
+        );
+    }
+
+    public static function upsert_ohlc_rows($rows, $options = []) {
+        global $wpdb;
+
+        $defaults = [
+            'process_seed_pipeline' => true,
+            'refresh_latest_snapshot' => true,
+        ];
+        $options = wp_parse_args(is_array($options) ? $options : [], $defaults);
+        $process_seed_pipeline = !empty($options['process_seed_pipeline']);
+        $refresh_latest_snapshot = !empty($options['refresh_latest_snapshot']);
+
+        if (empty($rows) || !is_array($rows)) {
+            return [
+                'inserted' => 0,
+                'updated' => 0,
+            ];
+        }
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $inserted = 0;
+        $updated = 0;
+        $touched_series = [];
+        $touched_event_times = [];
+        $touched_timeframes = [];
+
+        foreach ($rows as $row) {
+            $event_time = isset($row['event_time']) ? (int) $row['event_time'] : 0;
+            if ($event_time <= 0) {
+                continue;
+            }
+
+            $record = [
+                'symbol' => strtoupper((string) ($row['symbol'] ?? '')),
+                'timeframe' => strtoupper((string) ($row['timeframe'] ?? '1D')),
+                'symbol_type' => in_array(strtoupper((string) ($row['symbol'] ?? '')), self::INDEX_SYMBOLS, true) ? 'INDEX' : 'STOCK',
+                'event_time' => $event_time,
+                'open_price' => self::normalize_price($row['open'] ?? 0),
+                'high_price' => self::normalize_price($row['high'] ?? 0),
+                'low_price' => self::normalize_price($row['low'] ?? 0),
+                'close_price' => self::normalize_price($row['close'] ?? 0),
+                'volume' => (int) ($row['volume'] ?? 0),
+                'value_traded' => self::normalize_price((($row['close'] ?? 0) * ($row['volume'] ?? 0))),
+            ];
+
+            if ($record['symbol'] === '') {
+                continue;
+            }
+
+            $series_key = $record['symbol'] . '|' . $record['timeframe'];
+            $touched_series[$series_key] = [
+                'symbol' => $record['symbol'],
+                'timeframe' => $record['timeframe'],
+            ];
+            $touched_event_times[$record['event_time']] = true;
+            $touched_timeframes[$record['timeframe']] = true;
+
+            $query = $wpdb->prepare(
+                "INSERT INTO {$table}
+                (symbol, timeframe, symbol_type, event_time, open_price, high_price, low_price, close_price, volume, value_traded)
+                VALUES (%s, %s, %s, %d, %f, %f, %f, %f, %d, %f)
+                ON DUPLICATE KEY UPDATE
+                    symbol_type = VALUES(symbol_type),
+                    open_price = VALUES(open_price),
+                    high_price = VALUES(high_price),
+                    low_price = VALUES(low_price),
+                    close_price = VALUES(close_price),
+                    volume = VALUES(volume),
+                    value_traded = VALUES(value_traded)",
+                $record['symbol'],
+                $record['timeframe'],
+                $record['symbol_type'],
+                $record['event_time'],
+                $record['open_price'],
+                $record['high_price'],
+                $record['low_price'],
+                $record['close_price'],
+                $record['volume'],
+                $record['value_traded']
+            );
+
+            $result = $wpdb->query($query);
+
+            if ($result === 1) {
+                $inserted++;
+            } elseif ($result === 2 || $result === 0) {
+                $updated++;
+            }
+        }
+
+        if (!empty($touched_series)) {
+            self::enqueue_seed_rebuild_tasks(
+                array_values($touched_series),
+                array_keys($touched_event_times),
+                array_keys($touched_timeframes)
+            );
+
+            if ($process_seed_pipeline) {
+                self::process_seed_rebuild_pipeline();
+            }
+
+            self::repair_incomplete_latest_metrics_for_series(
+                array_values($touched_series),
+                array_keys($touched_event_times),
+                array_keys($touched_timeframes)
+            );
+
+            if ($refresh_latest_snapshot) {
+                $touched_symbols = array_column($touched_series, 'symbol');
+                self::perform_refresh_ohlc_latest_snapshot($touched_symbols);
+                // Invalidate Redis — snapshot đã cập nhật, các cache cũ không còn hợp lệ
+                LCNI_RedisCache::invalidate_ohlc_latest($touched_symbols);
+            }
+        }
+
+        return [
+            'inserted' => $inserted,
+            'updated' => $updated,
+        ];
+    }
+
+    public static function rebuild_missing_ohlc_indicators($limit = 20) {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $limit = max(1, (int) $limit);
+
+        $missing_series = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT latest.symbol, latest.timeframe
+                FROM (
+                    SELECT symbol, timeframe, MAX(event_time) AS max_event_time
+                    FROM {$table}
+                    GROUP BY symbol, timeframe
+                ) grouped
+                INNER JOIN {$table} latest
+                    ON latest.symbol = grouped.symbol
+                    AND latest.timeframe = grouped.timeframe
+                    AND latest.event_time = grouped.max_event_time
+                WHERE latest.ma10 IS NULL
+                    OR latest.ma20 IS NULL
+                    OR latest.ma50 IS NULL
+                    OR latest.macd IS NULL
+                    OR latest.rsi IS NULL
+                    OR latest.xay_nen IS NULL
+                    OR latest.xay_nen_count_30 IS NULL
+                    OR latest.nen_type IS NULL
+                    OR latest.pha_nen IS NULL
+                    OR latest.tang_gia_kem_vol IS NULL
+                    OR latest.smart_money IS NULL
+                    OR latest.rsi_status IS NULL
+                    OR latest.hanh_vi_gia IS NULL
+                    OR latest.hanh_vi_gia_1w IS NULL
+                    OR latest.one_candle IS NULL
+                    OR latest.pct_to_h1m IS NULL
+                    OR latest.pct_to_h3m IS NULL
+                    OR latest.pct_to_h6m IS NULL
+                    OR latest.pct_to_h1y IS NULL
+                    OR latest.trang_thai_h1m IS NULL
+                    OR latest.trang_thai_h3m IS NULL
+                    OR latest.trang_thai_h6m IS NULL
+                    OR latest.trang_thai_h1y IS NULL
+                    OR latest.compression_1m IS NULL
+                    OR latest.position_1m IS NULL
+                    OR latest.position_3m IS NULL
+                    OR latest.position_6m IS NULL
+                    OR latest.position_1y IS NULL
+                    OR latest.breakout_potential_score IS NULL
+                    OR latest.rs_exchange_status IS NULL
+                    OR latest.rs_exchange_recommend IS NULL
+                LIMIT %d",
+                $limit
+            ),
+            ARRAY_A
+        );
+
+        if (empty($missing_series)) {
+            return 0;
+        }
+
+        $event_times = [];
+        $timeframes = [];
+
+        foreach ($missing_series as $series) {
+            self::rebuild_ohlc_series_metrics($series['symbol'], $series['timeframe']);
+            $timeframes[$series['timeframe']] = true;
+        }
+
+        $series_event_times = self::collect_distinct_event_times_for_series($table, $missing_series);
+        foreach ($series_event_times as $event_time) {
+            $event_times[(int) $event_time] = true;
+        }
+
+        if (!empty($timeframes)) {
+            self::rebuild_rs_1m_by_exchange(array_keys($event_times), array_keys($timeframes));
+            self::rebuild_rs_1w_by_exchange(array_keys($event_times), array_keys($timeframes));
+            self::rebuild_rs_3m_by_exchange(array_keys($event_times), array_keys($timeframes));
+            self::rebuild_rs_exchange_signals(array_keys($event_times), array_keys($timeframes));
+        }
+
+        return count($missing_series);
+    }
+
+    /**
+     * Auto-repair latest OHLC metrics for recently touched symbol/timeframe series.
+     *
+     * This integrity guard ensures that when a new event_time is seeded, the latest row
+     * does not remain with partially-calculated columns because of temporary queue pressure.
+     *
+     * @param array<int, array{symbol:string,timeframe:string}> $series_list
+     * @param array<int, int|string> $event_times
+     * @param array<int, string> $timeframes
+     * @return array{checked:int,repaired:int}
+     */
+    public static function repair_incomplete_latest_metrics_for_series($series_list = [], $event_times = [], $timeframes = []) {
+        global $wpdb;
+
+        $series = self::normalize_series_rows($series_list);
+        if (empty($series)) {
+            return ['checked' => 0, 'repaired' => 0];
+        }
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+
+        $series_filters = [];
+        $params = [];
+        foreach ($series as $item) {
+            $series_filters[] = '(symbol = %s AND timeframe = %s)';
+            $params[] = $item['symbol'];
+            $params[] = $item['timeframe'];
+        }
+
+        if (empty($series_filters)) {
+            return ['checked' => 0, 'repaired' => 0];
+        }
+
+        $sql = "SELECT latest.symbol, latest.timeframe, latest.event_time
+            FROM (
+                SELECT symbol, timeframe, MAX(event_time) AS max_event_time
+                FROM {$table}
+                WHERE " . implode(' OR ', $series_filters) . "
+                GROUP BY symbol, timeframe
+            ) grouped
+            INNER JOIN {$table} latest
+                ON latest.symbol = grouped.symbol
+                AND latest.timeframe = grouped.timeframe
+                AND latest.event_time = grouped.max_event_time
+            WHERE latest.ma20 IS NULL
+                OR latest.ma50 IS NULL
+                OR latest.macd IS NULL
+                OR latest.rsi IS NULL
+                OR latest.xay_nen IS NULL
+                OR latest.nen_type IS NULL
+                OR latest.pha_nen IS NULL
+                OR latest.tang_gia_kem_vol IS NULL
+                OR latest.smart_money IS NULL
+                OR latest.rsi_status IS NULL
+                OR latest.hanh_vi_gia IS NULL
+                OR latest.one_candle IS NULL
+                OR latest.pct_to_h1m IS NULL
+                OR latest.pct_to_h3m IS NULL
+                OR latest.pct_to_h6m IS NULL
+                OR latest.pct_to_h1y IS NULL
+                OR latest.trang_thai_h1m IS NULL
+                OR latest.trang_thai_h3m IS NULL
+                OR latest.trang_thai_h6m IS NULL
+                OR latest.trang_thai_h1y IS NULL
+                OR latest.compression_1m IS NULL
+                OR latest.position_1m IS NULL
+                OR latest.position_3m IS NULL
+                OR latest.position_6m IS NULL
+                OR latest.position_1y IS NULL
+                OR latest.breakout_potential_score IS NULL
+                OR latest.rs_exchange_status IS NULL
+                OR latest.rs_exchange_recommend IS NULL";
+
+        $candidates = $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
+        if (empty($candidates)) {
+            return ['checked' => count($series), 'repaired' => 0];
+        }
+
+        $repair_event_times = [];
+        $repair_timeframes = [];
+        $repaired = 0;
+
+        foreach ($candidates as $candidate) {
+            $symbol = strtoupper((string) ($candidate['symbol'] ?? ''));
+            $timeframe = strtoupper((string) ($candidate['timeframe'] ?? ''));
+            $event_time = (int) ($candidate['event_time'] ?? 0);
+
+            if ($symbol === '' || $timeframe === '' || $event_time <= 0) {
+                continue;
+            }
+
+            self::rebuild_ohlc_series_metrics($symbol, $timeframe);
+            $repair_event_times[$event_time] = true;
+            $repair_timeframes[$timeframe] = true;
+            $repaired++;
+        }
+
+        foreach ((array) $event_times as $event_time) {
+            $event_time = (int) $event_time;
+            if ($event_time > 0) {
+                $repair_event_times[$event_time] = true;
+            }
+        }
+
+        foreach ((array) $timeframes as $timeframe) {
+            $timeframe = strtoupper(trim((string) $timeframe));
+            if ($timeframe !== '') {
+                $repair_timeframes[$timeframe] = true;
+            }
+        }
+
+        if (!empty($repair_event_times) && !empty($repair_timeframes)) {
+            self::rebuild_rs_1m_by_exchange(array_keys($repair_event_times), array_keys($repair_timeframes));
+            self::rebuild_rs_1w_by_exchange(array_keys($repair_event_times), array_keys($repair_timeframes));
+            self::rebuild_rs_3m_by_exchange(array_keys($repair_event_times), array_keys($repair_timeframes));
+            self::rebuild_rs_exchange_signals(array_keys($repair_event_times), array_keys($repair_timeframes));
+            self::rebuild_market_statistics_incremental(array_keys($repair_event_times), array_keys($repair_timeframes));
+        }
+
+        return [
+            'checked' => count($series),
+            'repaired' => $repaired,
+        ];
+    }
+
+
+    private static function rebuild_ohlc_series_metrics($symbol, $timeframe) {
+        self::rebuild_ohlc_trading_index($symbol, $timeframe);
+        self::rebuild_ohlc_indicators($symbol, $timeframe);
+    }
+
+    private static function rebuild_ohlc_indicators($symbol, $timeframe) {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT id, trading_index, open_price, close_price, high_price, low_price, volume FROM {$table} WHERE symbol = %s AND timeframe = %s ORDER BY trading_index ASC, event_time ASC, id ASC",
+                strtoupper((string) $symbol),
+                strtoupper((string) $timeframe)
+            ),
+            ARRAY_A
+        );
+
+        if (empty($rows)) {
+            return;
+        }
+
+        $closes = [];
+        $highs = [];
+        $lows = [];
+        $volumes = [];
+
+        $ema12 = null;
+        $ema26 = null;
+        $signal = null;
+        $avg_gain = null;
+        $avg_loss = null;
+
+        $ema12_multiplier = 2 / (12 + 1);
+        $ema26_multiplier = 2 / (26 + 1);
+        $signal_multiplier = 2 / (9 + 1);
+        $xay_nen_flags = [];
+        $nen_types = [];
+        $rules = self::get_rule_settings();
+        $exchange = self::get_exchange_by_symbol($symbol);
+
+        for ($i = 0; $i < count($rows); $i++) {
+            $close = (float) $rows[$i]['close_price'];
+            $high = (float) $rows[$i]['high_price'];
+            $low = (float) $rows[$i]['low_price'];
+            $volume = (float) $rows[$i]['volume'];
+
+            $closes[] = $close;
+            $highs[] = $high;
+            $lows[] = $low;
+            $volumes[] = $volume;
+
+            if ($ema12 === null) {
+                $ema12 = $close;
+                $ema26 = $close;
+            } else {
+                $ema12 = ($close - $ema12) * $ema12_multiplier + $ema12;
+                $ema26 = ($close - $ema26) * $ema26_multiplier + $ema26;
+            }
+
+            $macd = $ema12 - $ema26;
+            if ($signal === null) {
+                $signal = $macd;
+            } else {
+                $signal = ($macd - $signal) * $signal_multiplier + $signal;
+            }
+
+            $macd_histogram = $macd - $signal;
+            $prev_macd = $i > 0 ? (float) ($rows[$i - 1]['macd'] ?? 0.0) : null;
+            $prev_macd_signal = $i > 0 ? (float) ($rows[$i - 1]['macd_signal'] ?? 0.0) : null;
+            $prev_macd_histogram = $i > 0 ? ($prev_macd - $prev_macd_signal) : null;
+
+            $macd_cat = 'Không cắt signal';
+            if ($i > 0 && $macd > $signal && $prev_macd <= $prev_macd_signal) {
+                $macd_cat = 'Cắt lên signal';
+            } elseif ($i > 0 && $macd < $signal && $prev_macd >= $prev_macd_signal) {
+                $macd_cat = 'Cắt xuống signal';
+            }
+
+            $macd_tren_0 = $macd > 0 ? 'Trên 0' : 'Không trên 0';
+            $macd_hist_tang_flag = ($i > 0 && $prev_macd_histogram !== null && $macd_histogram > $prev_macd_histogram);
+            $macd_hist_tang = $macd_hist_tang_flag ? 'Đang tăng' : 'Không tăng';
+            $macd_manh = ($macd > $signal && $macd > 0 && $macd_hist_tang_flag) ? 1 : 0;
+            $macd_diem_dong_luong = 0;
+            if ($macd > $signal) {
+                $macd_diem_dong_luong += 30;
+            }
+            if ($macd > 0) {
+                $macd_diem_dong_luong += 30;
+            }
+            if ($macd_histogram > 0) {
+                $macd_diem_dong_luong += 20;
+            }
+            if ($macd_hist_tang_flag) {
+                $macd_diem_dong_luong += 20;
+            }
+
+            $rsi = null;
+            if ($i > 0) {
+                $change = $close - (float) $closes[$i - 1];
+                $gain = max($change, 0);
+                $loss = max(-$change, 0);
+
+                if ($i <= 14) {
+                    $avg_gain = ($avg_gain ?? 0) + $gain;
+                    $avg_loss = ($avg_loss ?? 0) + $loss;
+
+                    if ($i === 14) {
+                        $avg_gain /= 14;
+                        $avg_loss /= 14;
+                    }
+                } else {
+                    $avg_gain = (($avg_gain * 13) + $gain) / 14;
+                    $avg_loss = (($avg_loss * 13) + $loss) / 14;
+                }
+
+                if ($i >= 14) {
+                    if ($avg_loss == 0.0) {
+                        $rsi = 100.0;
+                    } else {
+                        $rs = $avg_gain / $avg_loss;
+                        $rsi = 100 - (100 / (1 + $rs));
+                    }
+                }
+            }
+
+            $ma10 = self::window_average($closes, $i, 10);
+            $ma20 = self::window_average($closes, $i, 20);
+            $ma50 = self::window_average($closes, $i, 50);
+            $ma100 = self::window_average($closes, $i, 100);
+            $ma200 = self::window_average($closes, $i, 200);
+            $vol_ma10 = self::window_average($volumes, $i, 10);
+            $vol_ma20 = self::window_average($volumes, $i, 20);
+
+            $xay_nen = self::is_xay_nen(
+                $rsi,
+                self::safe_ratio_pct($close, $ma10),
+                self::safe_ratio_pct($close, $ma20),
+                self::safe_ratio_pct($close, $ma50),
+                self::safe_ratio_pct($volume, $vol_ma20),
+                $volume,
+                self::change_pct($closes, $i, 1),
+                self::change_pct($closes, $i, 5),
+                self::change_pct($closes, $i, 21),
+                self::change_pct($closes, $i, 63),
+                $rules
+            );
+
+            $xay_nen_flags[] = $xay_nen === 'xây nền' ? 1 : 0;
+            $window_start = max(0, count($xay_nen_flags) - 30);
+            $xay_nen_count_30 = array_sum(array_slice($xay_nen_flags, $window_start));
+            $nen_type = self::determine_nen_type($xay_nen_count_30, $rules);
+            $previous_nen_type = $i > 0 && isset($nen_types[$i - 1]) ? $nen_types[$i - 1] : null;
+            $pct_t_1 = self::change_pct($closes, $i, 1);
+            $vol_sv_vol_ma10 = self::safe_ratio_pct($volume, $vol_ma10);
+            $vol_sv_vol_ma20 = self::safe_ratio_pct($volume, $vol_ma20);
+            $pha_nen = self::determine_pha_nen($previous_nen_type, $pct_t_1, $vol_sv_vol_ma20, $rules);
+            $tang_gia_kem_vol = self::determine_tang_gia_kem_vol(
+                $exchange,
+                $pct_t_1,
+                self::ratio_from_ratio_pct($vol_sv_vol_ma10),
+                self::ratio_from_ratio_pct($vol_sv_vol_ma20),
+                $rules
+            );
+            $smart_money = self::determine_smart_money($symbol, $pha_nen, $tang_gia_kem_vol);
+            $rsi_status = self::determine_rsi_status($rsi);
+            $previous_close = $i > 0 ? (float) $rows[$i - 1]['close_price'] : null;
+            $previous_volume = $i > 0 ? (float) $rows[$i - 1]['volume'] : null;
+            $hanh_vi_gia = self::determine_hanh_vi_gia($symbol, $close, $previous_close, $volume, $previous_volume);
+            $previous_close_1w = $i >= 5 ? (float) $rows[$i - 5]['close_price'] : null;
+            $previous_volume_1w = $i >= 5 ? (float) $rows[$i - 5]['volume'] : null;
+            $hanh_vi_gia_1w = self::determine_hanh_vi_gia_1w($symbol, $close, $previous_close_1w, $volume, $previous_volume_1w);
+            $one_candle = self::determine_one_candle(
+                (float) ($rows[$i]['open_price'] ?? 0),
+                (float) ($rows[$i]['high_price'] ?? 0),
+                (float) ($rows[$i]['low_price'] ?? 0),
+                (float) ($rows[$i]['close_price'] ?? 0)
+            );
+            $two_candle_pattern = self::determine_two_candle_pattern(
+                $i > 0 ? (float) ($rows[$i - 1]['open_price'] ?? 0) : null,
+                $i > 0 ? (float) ($rows[$i - 1]['close_price'] ?? 0) : null,
+                $i > 0 ? (float) ($rows[$i - 1]['high_price'] ?? 0) : null,
+                $i > 0 ? (float) ($rows[$i - 1]['low_price'] ?? 0) : null,
+                (float) ($rows[$i]['open_price'] ?? 0),
+                (float) ($rows[$i]['close_price'] ?? 0)
+            );
+            $three_candle_pattern = self::determine_three_candle_pattern(
+                $i > 1 ? (float) ($rows[$i - 2]['open_price'] ?? 0) : null,
+                $i > 1 ? (float) ($rows[$i - 2]['close_price'] ?? 0) : null,
+                $i > 0 ? (float) ($rows[$i - 1]['open_price'] ?? 0) : null,
+                $i > 0 ? (float) ($rows[$i - 1]['close_price'] ?? 0) : null,
+                (float) ($rows[$i]['open_price'] ?? 0),
+                (float) ($rows[$i]['close_price'] ?? 0)
+            );
+
+            $h1m = self::window_max($highs, $i, 21);
+            $h3m = self::window_max($highs, $i, 63);
+            $h6m = self::window_max($highs, $i, 126);
+            $h1y = self::window_max($highs, $i, 252);
+            $l1m = self::window_min($lows, $i, 21);
+            $l3m = self::window_min($lows, $i, 63);
+            $l6m = self::window_min($lows, $i, 126);
+            $l1y = self::window_min($lows, $i, 252);
+            $pct_to_h1m = self::safe_ratio_pct($close, $h1m);
+            $pct_to_h3m = self::safe_ratio_pct($close, $h3m);
+            $pct_to_h6m = self::safe_ratio_pct($close, $h6m);
+            $pct_to_h1y = self::safe_ratio_pct($close, $h1y);
+            $trang_thai_h1m = self::determine_peak_status($close, $h1m);
+            $trang_thai_h3m = self::determine_peak_status($close, $h3m);
+            $trang_thai_h6m = self::determine_peak_status($close, $h6m);
+            $trang_thai_h1y = self::determine_peak_status($close, $h1y);
+            $compression_1m = ($h1m !== null && $l1m !== null && (float) $h1m != 0.0) ? (($h1m - $l1m) / $h1m) : null;
+
+            $nen_types[] = $nen_type;
+
+            $wpdb->update(
+                $table,
+                [
+                    'pct_t_1' => $pct_t_1,
+                    'pct_t_3' => self::change_pct($closes, $i, 3),
+                    'pct_1w' => self::change_pct($closes, $i, 5),
+                    'pct_1m' => self::change_pct($closes, $i, 21),
+                    'pct_3m' => self::change_pct($closes, $i, 63),
+                    'pct_6m' => self::change_pct($closes, $i, 126),
+                    'pct_1y' => self::change_pct($closes, $i, 252),
+                    'ma10' => self::normalize_nullable_price($ma10),
+                    'ma20' => self::normalize_nullable_price($ma20),
+                    'ma50' => self::normalize_nullable_price($ma50),
+                    'ma100' => self::normalize_nullable_price($ma100),
+                    'ma200' => self::normalize_nullable_price($ma200),
+                    'h1m' => self::normalize_nullable_price($h1m),
+                    'h3m' => self::normalize_nullable_price($h3m),
+                    'h6m' => self::normalize_nullable_price($h6m),
+                    'h1y' => self::normalize_nullable_price($h1y),
+                    'l1m' => self::normalize_nullable_price($l1m),
+                    'l3m' => self::normalize_nullable_price($l3m),
+                    'l6m' => self::normalize_nullable_price($l6m),
+                    'l1y' => self::normalize_nullable_price($l1y),
+                    'vol_ma10' => $vol_ma10,
+                    'vol_ma20' => $vol_ma20,
+                    'gia_sv_ma10' => self::safe_ratio_pct($close, $ma10),
+                    'gia_sv_ma20' => self::safe_ratio_pct($close, $ma20),
+                    'gia_sv_ma50' => self::safe_ratio_pct($close, $ma50),
+                    'gia_sv_ma100' => self::safe_ratio_pct($close, $ma100),
+                    'gia_sv_ma200' => self::safe_ratio_pct($close, $ma200),
+                    'vol_sv_vol_ma10' => $vol_sv_vol_ma10,
+                    'vol_sv_vol_ma20' => $vol_sv_vol_ma20,
+                    'macd' => $macd,
+                    'macd_signal' => $signal,
+                    'macd_histogram' => $macd_histogram,
+                    'macd_cat' => $macd_cat,
+                    'macd_tren_0' => $macd_tren_0,
+                    'macd_hist_tang' => $macd_hist_tang,
+                    'macd_manh' => $macd_manh,
+                    'macd_diem_dong_luong' => $macd_diem_dong_luong,
+                    'rsi' => $rsi,
+                    'rsi_status' => $rsi_status,
+                    'xay_nen' => $xay_nen,
+                    'xay_nen_count_30' => $xay_nen_count_30,
+                    'nen_type' => $nen_type,
+                    'pha_nen' => $pha_nen,
+                    'tang_gia_kem_vol' => $tang_gia_kem_vol,
+                    'hanh_vi_gia' => $hanh_vi_gia,
+                    'hanh_vi_gia_1w' => $hanh_vi_gia_1w,
+                    'smart_money' => $smart_money,
+                    'one_candle' => $one_candle,
+                    'two_candle_pattern' => $two_candle_pattern,
+                    'three_candle_pattern' => $three_candle_pattern,
+                    'pct_to_h1m' => $pct_to_h1m !== null ? $pct_to_h1m * 100 : null,
+                    'pct_to_h3m' => $pct_to_h3m !== null ? $pct_to_h3m * 100 : null,
+                    'pct_to_h6m' => $pct_to_h6m !== null ? $pct_to_h6m * 100 : null,
+                    'pct_to_h1y' => $pct_to_h1y !== null ? $pct_to_h1y * 100 : null,
+                    'trang_thai_h1m' => $trang_thai_h1m,
+                    'trang_thai_h3m' => $trang_thai_h3m,
+                    'trang_thai_h6m' => $trang_thai_h6m,
+                    'trang_thai_h1y' => $trang_thai_h1y,
+                    'compression_1m' => $compression_1m !== null ? $compression_1m * 100 : null,
+                    'position_1m' => self::determine_range_position($close, $l1m, $h1m),
+                    'position_3m' => self::determine_range_position($close, $l3m, $h3m),
+                    'position_6m' => self::determine_range_position($close, $l6m, $h6m),
+                    'position_1y' => self::determine_range_position($close, $l1y, $h1y),
+                    'breakout_potential_score' => self::calculate_breakout_potential_score(
+                        $trang_thai_h1m,
+                        $compression_1m !== null ? $compression_1m * 100 : null,
+                        $rsi,
+                        $close,
+                        $ma20,
+                        $tang_gia_kem_vol,
+                        $smart_money,
+                        $trang_thai_h3m
+                    ),
+                ],
+                ['id' => (int) $rows[$i]['id']]
+            );
+        }
+    }
+
+
+    private static function determine_peak_status($close_price, $high_value) {
+        if ($high_value === null || (float) $high_value <= 0) {
+            return null;
+        }
+
+        $close = (float) $close_price;
+        $high = (float) $high_value;
+
+        if ($close > $high * 1.03) {
+            return 'Vượt mạnh';
+        }
+
+        if ($close > $high) {
+            return 'Vượt đỉnh';
+        }
+
+        if ($close >= $high * 0.97) {
+            return 'Rất gần đỉnh';
+        }
+
+        if ($close >= $high * 0.95) {
+            return 'Gần đỉnh';
+        }
+
+        return 'Xa đỉnh';
+    }
+
+    private static function determine_range_position($close_price, $low_value, $high_value) {
+        if ($low_value === null || $high_value === null) {
+            return null;
+        }
+
+        $range = (float) $high_value - (float) $low_value;
+        if ($range == 0.0) {
+            return null;
+        }
+
+        $pos = (((float) $close_price - (float) $low_value) / $range) * 100;
+        if ($pos <= 20) {
+            return 'Sát đáy';
+        }
+
+        if ($pos <= 50) {
+            return 'Dưới trung vị';
+        }
+
+        if ($pos <= 80) {
+            return 'Trên trung vị';
+        }
+
+        return 'Sát đỉnh';
+    }
+
+    private static function calculate_breakout_potential_score($trang_thai_h1m, $compression_1m, $rsi, $close_price, $ma20, $tang_gia_kem_vol, $smart_money, $trang_thai_h3m) {
+        $score = 0;
+
+        if ($trang_thai_h1m === 'Rất gần đỉnh') {
+            $score += 2;
+        }
+
+        if ($compression_1m !== null && (float) $compression_1m < 10) {
+            $score += 2;
+        }
+
+        if ($rsi !== null && (float) $rsi >= 60) {
+            $score += 1;
+        }
+
+        if ($ma20 !== null && (float) $close_price > (float) $ma20) {
+            $score += 1;
+        }
+
+        if ($tang_gia_kem_vol === 'Tăng giá kèm Vol') {
+            $score += 1;
+        }
+
+        if ($smart_money === 'Smart Money') {
+            $score += 2;
+        }
+
+        if ($trang_thai_h3m === 'Rất gần đỉnh') {
+            $score += 1;
+        }
+
+        return max(0, min(10, $score));
+    }
+
+    private static function determine_two_candle_pattern($prev_open, $prev_close, $prev_high, $prev_low, $open_price, $close_price) {
+        if ($prev_open === null || $prev_close === null || $prev_high === null || $prev_low === null) {
+            return 'NONE';
+        }
+
+        $prev_open = (float) $prev_open;
+        $prev_close = (float) $prev_close;
+        $prev_high = (float) $prev_high;
+        $prev_low = (float) $prev_low;
+        $open = (float) $open_price;
+        $close = (float) $close_price;
+
+        if (
+            $prev_close < $prev_open
+            && $close > $open
+            && $close > $prev_open
+            && $open < $prev_close
+        ) {
+            return 'BULLISH_ENGULFING';
+        }
+
+        if (
+            $prev_close > $prev_open
+            && $close < $open
+            && $close < $prev_open
+            && $open > $prev_close
+        ) {
+            return 'BEARISH_ENGULFING';
+        }
+
+        if (
+            $prev_close < $prev_open
+            && $close > $open
+            && $open < $prev_low
+            && $close > (($prev_open + $prev_close) / 2)
+            && $close < $prev_open
+        ) {
+            return 'PIERCING_LINE';
+        }
+
+        if (
+            $prev_close > $prev_open
+            && $close < $open
+            && $open > $prev_high
+            && $close < (($prev_open + $prev_close) / 2)
+            && $close > $prev_open
+        ) {
+            return 'DARK_CLOUD';
+        }
+
+        return 'NONE';
+    }
+
+    private static function determine_three_candle_pattern($prev2_open, $prev2_close, $prev1_open, $prev1_close, $open_price, $close_price) {
+        if ($prev2_open === null || $prev2_close === null || $prev1_open === null || $prev1_close === null) {
+            return 'NONE';
+        }
+
+        $prev2_open = (float) $prev2_open;
+        $prev2_close = (float) $prev2_close;
+        $prev1_open = (float) $prev1_open;
+        $prev1_close = (float) $prev1_close;
+        $open = (float) $open_price;
+        $close = (float) $close_price;
+
+        if (
+            $prev2_close < $prev2_open
+            && abs($prev1_close - $prev1_open) < abs($prev2_close - $prev2_open) * 0.5
+            && $close > $open
+            && $close > (($prev2_open + $prev2_close) / 2)
+        ) {
+            return 'MORNING_STAR';
+        }
+
+        if (
+            $prev2_close > $prev2_open
+            && abs($prev1_close - $prev1_open) < abs($prev2_close - $prev2_open) * 0.5
+            && $close < $open
+            && $close < (($prev2_open + $prev2_close) / 2)
+        ) {
+            return 'EVENING_STAR';
+        }
+
+        if (
+            $prev2_close > $prev2_open
+            && $prev1_close > $prev1_open
+            && $close > $open
+            && $prev1_close > $prev2_close
+            && $close > $prev1_close
+        ) {
+            return 'THREE_WHITE_SOLDIERS';
+        }
+
+        if (
+            $prev2_close < $prev2_open
+            && $prev1_close < $prev1_open
+            && $close < $open
+            && $prev1_close < $prev2_close
+            && $close < $prev1_close
+        ) {
+            return 'THREE_BLACK_CROWS';
+        }
+
+        return 'NONE';
+    }
+
+    private static function determine_one_candle($open_price, $high_price, $low_price, $close_price) {
+        $open = (float) $open_price;
+        $high = (float) $high_price;
+        $low = (float) $low_price;
+        $close = (float) $close_price;
+
+        $real_body = abs($close - $open);
+        $range_total = $high - $low;
+
+        if ($range_total <= 0) {
+            return 'NONE';
+        }
+
+        $upper_shadow = $high - max($open, $close);
+        $lower_shadow = min($open, $close) - $low;
+
+        if ($real_body <= $range_total * 0.1) {
+            return 'DOJI';
+        }
+
+        if ($lower_shadow >= $real_body * 2 && $upper_shadow <= $real_body) {
+            return 'HAMMER';
+        }
+
+        if ($upper_shadow >= $real_body * 2 && $lower_shadow <= $real_body) {
+            return 'SHOOTING_STAR';
+        }
+
+        if ($close > $open && $upper_shadow <= $range_total * 0.05 && $lower_shadow <= $range_total * 0.05) {
+            return 'MARUBOZU_BULL';
+        }
+
+        if ($close < $open && $upper_shadow <= $range_total * 0.05 && $lower_shadow <= $range_total * 0.05) {
+            return 'MARUBOZU_BEAR';
+        }
+
+        if ($real_body <= $range_total * 0.3 && $real_body > $range_total * 0.1) {
+            return 'SPINNING_TOP';
+        }
+
+        return 'NONE';
+    }
+
+    private static function determine_rsi_status($rsi) {
+        if ($rsi === null || !is_numeric($rsi)) {
+            return null;
+        }
+
+        $rsi_value = (float) $rsi;
+        if ($rsi_value >= 80) {
+            return 'Tham lam';
+        }
+
+        if ($rsi_value <= 20) {
+            return 'Sợ hãi';
+        }
+
+        if ($rsi_value >= 70) {
+            return 'Quá mua';
+        }
+
+        if ($rsi_value <= 30) {
+            return 'Quá bán';
+        }
+
+        return 'Trung tính';
+    }
+
+    private static function determine_hanh_vi_gia($symbol, $close_price, $prev_close_price, $volume, $prev_volume) {
+        if ($prev_close_price === null || $prev_volume === null || (float) $prev_close_price == 0.0 || (float) $prev_volume == 0.0) {
+            return 'Không rõ xu hướng';
+        }
+
+        $symbol = strtoupper((string) $symbol);
+        $is_index_symbol = in_array($symbol, ['VNINDEX', 'UPCOMINDEX', 'UPINDEX', 'HNXINDEX'], true);
+        $price_up_threshold = $is_index_symbol ? 0.01 : 0.05;
+        $volume_up_threshold = $is_index_symbol ? 0.05 : 0.5;
+        $sideway_threshold = $is_index_symbol ? 0.005 : 0.02;
+
+        $price_change_ratio = ((float) $close_price - (float) $prev_close_price) / (float) $prev_close_price;
+        $volume_change_ratio = ((float) $volume - (float) $prev_volume) / (float) $prev_volume;
+
+        if ($price_change_ratio > $price_up_threshold && $volume_change_ratio > $volume_up_threshold) {
+            return 'Bứt phá – Cầu mạnh';
+        }
+
+        if ($price_change_ratio > $price_up_threshold && $volume_change_ratio < 0) {
+            return 'Siết cung – Tăng mạnh';
+        }
+
+        if ($price_change_ratio < -$price_up_threshold && $volume_change_ratio > $volume_up_threshold) {
+            return 'Bán tháo – Cung mạnh';
+        }
+
+        if (abs($price_change_ratio) <= $sideway_threshold && $volume_change_ratio > $volume_up_threshold) {
+            return 'Phân phối – Cung lớn';
+        }
+
+        if (abs($price_change_ratio) <= $sideway_threshold && $volume_change_ratio < 0) {
+            return 'Tích lũy – Cạn cung';
+        }
+
+        return 'Không rõ xu hướng';
+    }
+
+    private static function determine_hanh_vi_gia_1w($symbol, $close_price, $prev_close_price, $volume, $prev_volume) {
+        if ($prev_close_price === null || $prev_volume === null || (float) $prev_close_price == 0.0 || (float) $prev_volume == 0.0) {
+            return 'Không rõ xu hướng';
+        }
+
+        $symbol = strtoupper((string) $symbol);
+        $is_index_symbol = in_array($symbol, ['VNINDEX', 'UPINDEX', 'HNXINDEX'], true);
+        $price_up_threshold = $is_index_symbol ? 0.025 : 0.10;
+        $volume_up_threshold = $is_index_symbol ? 0.10 : 1.0;
+        $sideway_threshold = $is_index_symbol ? 0.0125 : 0.04;
+
+        $price_change_ratio = ((float) $close_price - (float) $prev_close_price) / (float) $prev_close_price;
+        $volume_change_ratio = ((float) $volume - (float) $prev_volume) / (float) $prev_volume;
+
+        if ($price_change_ratio > $price_up_threshold && $volume_change_ratio > $volume_up_threshold) {
+            return 'Bứt phá – Cầu mạnh';
+        }
+
+        if ($price_change_ratio > $price_up_threshold && $volume_change_ratio < 0) {
+            return 'Siết cung – Tăng mạnh';
+        }
+
+        if ($price_change_ratio < -$price_up_threshold && $volume_change_ratio > $volume_up_threshold) {
+            return 'Bán tháo – Cung mạnh';
+        }
+
+        if (abs($price_change_ratio) <= $sideway_threshold && $volume_change_ratio > $volume_up_threshold) {
+            return 'Phân phối – Cung lớn';
+        }
+
+        if (abs($price_change_ratio) <= $sideway_threshold && $volume_change_ratio < 0) {
+            return 'Tích lũy – Cạn cung';
+        }
+
+        return 'Không rõ xu hướng';
+    }
+
+
+    private static function rebuild_rs_1m_by_exchange($event_times = [], $timeframes = []) {
+        self::rebuild_rs_by_exchange('pct_1m', 'rs_1m_by_exchange', $event_times, $timeframes);
+    }
+
+    private static function rebuild_rs_1w_by_exchange($event_times = [], $timeframes = []) {
+        self::rebuild_rs_by_exchange('pct_1w', 'rs_1w_by_exchange', $event_times, $timeframes);
+    }
+
+    private static function rebuild_rs_3m_by_exchange($event_times = [], $timeframes = []) {
+        self::rebuild_rs_by_exchange('pct_3m', 'rs_3m_by_exchange', $event_times, $timeframes);
+    }
+
+    private static function rebuild_rs_exchange_signals($event_times = [], $timeframes = []) {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $rules = self::get_rule_settings();
+        $params = [
+            (float) $rules['rs_exchange_status_song_manh_1w_min'],
+            (float) $rules['rs_exchange_status_song_manh_1m_min'],
+            (float) $rules['rs_exchange_status_song_manh_3m_max'],
+            (float) $rules['rs_exchange_status_giu_trend_1w_min'],
+            (float) $rules['rs_exchange_status_giu_trend_1m_min'],
+            (float) $rules['rs_exchange_status_giu_trend_3m_min'],
+            (float) $rules['rs_exchange_status_yeu_1w_max'],
+            (float) $rules['rs_exchange_status_yeu_1m_max'],
+            (float) $rules['rs_exchange_status_yeu_3m_max'],
+            (float) $rules['rs_exchange_recommend_volume_min'],
+            (float) $rules['rs_exchange_recommend_buy_1w_min'],
+            (float) $rules['rs_exchange_recommend_buy_1w_gain_over_1m'],
+            (float) $rules['rs_exchange_recommend_buy_pct_1w_min'],
+            (float) $rules['rs_exchange_recommend_buy_pct_1m_max'],
+            (float) $rules['rs_exchange_recommend_buy_pct_3m_max'],
+            (float) $rules['rs_exchange_recommend_buy_pct_t_1_min'],
+            (float) $rules['rs_exchange_recommend_buy_volume_boost_ratio'],
+            (float) $rules['rs_exchange_recommend_sell_1w_max'],
+            (float) $rules['rs_exchange_recommend_sell_pct_1w_max'],
+        ];
+
+        $where_clause = '';
+        if (!empty($event_times) || !empty($timeframes)) {
+            $filters = [];
+            if (!empty($event_times)) {
+                $filters[] = 'cur.event_time IN (' . implode(', ', array_fill(0, count($event_times), '%d')) . ')';
+                $params = array_merge($params, array_map('intval', $event_times));
+            }
+
+            if (!empty($timeframes)) {
+                $filters[] = 'cur.timeframe IN (' . implode(', ', array_fill(0, count($timeframes), '%s')) . ')';
+                $params = array_merge($params, $timeframes);
+            }
+
+            if (!empty($filters)) {
+                $where_clause = ' WHERE ' . implode(' AND ', $filters);
+            }
+        }
+
+        $sql = "UPDATE {$table} cur
+            LEFT JOIN {$table} prev
+                ON prev.symbol = cur.symbol
+                AND prev.timeframe = cur.timeframe
+                AND prev.trading_index = cur.trading_index - 1
+            SET
+                cur.rs_exchange_status =
+                    CASE
+                        WHEN cur.rs_1w_by_exchange >= %f
+                            AND cur.rs_1m_by_exchange >= %f
+                            AND cur.rs_3m_by_exchange < %f
+                            THEN 'RS -> Vào Sóng Mạnh'
+                        WHEN cur.rs_1w_by_exchange >= %f
+                            AND cur.rs_1m_by_exchange >= %f
+                            AND cur.rs_3m_by_exchange >= %f
+                            THEN 'RS -> Giữ Trend Mạnh'
+                        WHEN cur.rs_1w_by_exchange > cur.rs_1m_by_exchange
+                            AND cur.rs_1m_by_exchange > cur.rs_3m_by_exchange
+                            THEN 'RS -> Tăng dần ổn'
+                        WHEN cur.rs_1w_by_exchange < cur.rs_1m_by_exchange
+                            AND cur.rs_1m_by_exchange < cur.rs_3m_by_exchange
+                            THEN 'RS -> Đảo chiều giảm'
+                        WHEN cur.rs_1w_by_exchange < %f
+                            AND cur.rs_1m_by_exchange < %f
+                            AND cur.rs_3m_by_exchange < %f
+                            THEN 'RS -> Yếu'
+                        ELSE 'RS -> Theo dõi'
+                    END,
+                cur.rs_exchange_recommend =
+                    CASE
+                        WHEN cur.volume >= %f
+                            AND cur.rs_1w_by_exchange > %f
+                            AND cur.rs_1w_by_exchange > cur.rs_1m_by_exchange + %f
+                            AND cur.rs_1w_by_exchange > IFNULL(prev.rs_1w_by_exchange, 0)
+                            AND cur.rs_1m_by_exchange > IFNULL(prev.rs_1m_by_exchange, 0)
+                            AND cur.pct_1w >= %f
+                            AND NOT (cur.pct_1m > %f OR cur.pct_3m > %f)
+                            AND (
+                                cur.pct_t_1 > %f
+                                OR cur.volume > (%f * cur.vol_ma20)
+                            )
+                            THEN 'RS -> Gợi ý Mua'
+                        WHEN cur.rs_1w_by_exchange < cur.rs_1m_by_exchange
+                            AND cur.rs_1w_by_exchange < %f
+                            AND cur.pct_1w < %f
+                            THEN 'RS->Gợi ý Bán'
+                        ELSE 'RS->Theo dõi'
+                    END{$where_clause}";
+
+        $wpdb->query($wpdb->prepare($sql, $params));
+        self::rebuild_rs_recommend_status($event_times, $timeframes);
+    }
+
+    private static function rebuild_rs_recommend_status($event_times = [], $timeframes = []) {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+
+        $event_times = array_values(array_filter(array_map('intval', (array) $event_times), function ($value) {
+            return $value > 0;
+        }));
+        $timeframes = array_values(array_filter(array_map(function ($timeframe) {
+            return strtoupper(sanitize_text_field((string) $timeframe));
+        }, (array) $timeframes)));
+
+        $params = [];
+        $filters = [];
+
+        if (!empty($event_times)) {
+            $filters[] = 'event_time IN (' . implode(', ', array_fill(0, count($event_times), '%d')) . ')';
+            $params = array_merge($params, array_map('intval', $event_times));
+        }
+
+        if (!empty($timeframes)) {
+            $filters[] = 'timeframe IN (' . implode(', ', array_fill(0, count($timeframes), '%s')) . ')';
+            $params = array_merge($params, $timeframes);
+        }
+
+        $where_clause = !empty($filters) ? ' WHERE ' . implode(' AND ', $filters) : '';
+
+        $sql = "UPDATE {$table}
+            SET rs_recommend_status =
+                CASE
+                    WHEN LOWER(REPLACE(IFNULL(rs_exchange_status, ''), ' ', '')) IN ('rs->vaosongmanh', 'rs->vàosóngmạnh')
+                        AND LOWER(REPLACE(IFNULL(rs_exchange_recommend, ''), ' ', '')) IN ('rs->goiymua', 'rs->gợiýmua')
+                        THEN 'Dẫn dắt – Vào sóng sớm'
+                    WHEN LOWER(REPLACE(IFNULL(rs_exchange_status, ''), ' ', '')) IN ('rs->giutrendmanh', 'rs->giữtrendmạnh')
+                        AND LOWER(REPLACE(IFNULL(rs_exchange_recommend, ''), ' ', '')) IN ('rs->goiymua', 'rs->gợiýmua')
+                        THEN 'Dẫn dắt – Tiếp diễn xu hướng'
+                    WHEN LOWER(REPLACE(IFNULL(rs_exchange_status, ''), ' ', '')) IN ('rs->tangdanon', 'rs->tăngdầnổn')
+                        AND LOWER(REPLACE(IFNULL(rs_exchange_recommend, ''), ' ', '')) IN ('rs->goiymua', 'rs->gợiýmua')
+                        THEN 'Cơ hội mua – Đang hình thành'
+                    WHEN LOWER(REPLACE(IFNULL(rs_exchange_status, ''), ' ', '')) IN ('rs->daochieugiam', 'rs->đảochiềugiảm')
+                        AND LOWER(REPLACE(IFNULL(rs_exchange_recommend, ''), ' ', '')) IN ('rs->goiyban', 'rs->gợiýbán')
+                        THEN 'Suy yếu – Mất sức mạnh'
+                    WHEN LOWER(REPLACE(IFNULL(rs_exchange_status, ''), ' ', '')) IN ('rs->yeu', 'rs->yếu')
+                        AND LOWER(REPLACE(IFNULL(rs_exchange_recommend, ''), ' ', '')) IN ('rs->goiyban', 'rs->gợiýbán')
+                        THEN 'Tránh – Rất yếu'
+                    ELSE 'Theo dõi'
+                END{$where_clause}";
+
+        if (empty($params)) {
+            $wpdb->query($sql);
+
+            return;
+        }
+
+        $wpdb->query($wpdb->prepare($sql, $params));
+    }
+
+    private static function rebuild_rs_by_exchange($source_column, $target_column, $event_times = [], $timeframes = []) {
+        global $wpdb;
+
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $mapping_table = $wpdb->prefix . 'lcni_sym_icb_market';
+        $source_column = sanitize_key((string) $source_column);
+        $target_column = sanitize_key((string) $target_column);
+
+        if (!in_array($source_column, ['pct_1m', 'pct_1w', 'pct_3m'], true)) {
+            return;
+        }
+
+        if (!in_array($target_column, ['rs_1m_by_exchange', 'rs_1w_by_exchange', 'rs_3m_by_exchange'], true)) {
+            return;
+        }
+
+        $event_times = array_values(array_filter(array_map('intval', (array) $event_times), function ($value) {
+            return $value > 0;
+        }));
+        $timeframes = array_values(array_filter(array_map(function ($timeframe) {
+            return strtoupper(sanitize_text_field((string) $timeframe));
+        }, (array) $timeframes)));
+
+        $filters = [];
+        $params = [];
+
+        if (!empty($event_times)) {
+            $filters[] = 'o2.event_time IN (' . implode(', ', array_fill(0, count($event_times), '%d')) . ')';
+            $params = array_merge($params, $event_times);
+        }
+
+        if (!empty($timeframes)) {
+            $filters[] = 'o2.timeframe IN (' . implode(', ', array_fill(0, count($timeframes), '%s')) . ')';
+            $params = array_merge($params, $timeframes);
+        }
+
+        $where_clause = empty($filters) ? '' : (' AND ' . implode(' AND ', $filters));
+
+        $sql = "UPDATE {$ohlc_table} o
+            JOIN {$mapping_table} m
+                ON o.symbol = m.symbol
+            LEFT JOIN (
+                SELECT
+                    o2.event_time,
+                    o2.timeframe,
+                    m2.exchange,
+                    o2.symbol,
+                    RANK() OVER (
+                        PARTITION BY o2.event_time, o2.timeframe, m2.exchange
+                        ORDER BY o2.{$source_column} DESC
+                    ) AS rank_val,
+                    COUNT(*) OVER (
+                        PARTITION BY o2.event_time, o2.timeframe, m2.exchange
+                    ) AS total_rows
+                FROM {$ohlc_table} o2
+                JOIN {$mapping_table} m2
+                    ON o2.symbol = m2.symbol
+                WHERE o2.volume >= 50000
+                  AND o2.{$source_column} IS NOT NULL{$where_clause}
+            ) r
+                ON o.event_time = r.event_time
+                AND o.timeframe = r.timeframe
+                AND o.symbol = r.symbol
+                AND m.exchange = r.exchange
+            SET o.{$target_column} =
+                CASE
+                    WHEN o.volume >= 50000 THEN
+                        CASE
+                            WHEN r.total_rows <= 1 THEN 100
+                            ELSE ROUND((1 - ((r.rank_val - 1) / (r.total_rows - 1))) * 100)
+                        END
+                    ELSE NULL
+                END";
+
+        if (!empty($event_times) || !empty($timeframes)) {
+            $outer_filters = [];
+
+            if (!empty($event_times)) {
+                $outer_filters[] = 'o.event_time IN (' . implode(', ', array_fill(0, count($event_times), '%d')) . ')';
+                $params = array_merge($params, $event_times);
+            }
+
+            if (!empty($timeframes)) {
+                $outer_filters[] = 'o.timeframe IN (' . implode(', ', array_fill(0, count($timeframes), '%s')) . ')';
+                $params = array_merge($params, $timeframes);
+            }
+
+            if (!empty($outer_filters)) {
+                $sql .= ' WHERE ' . implode(' AND ', $outer_filters);
+            }
+        }
+
+        if (empty($params)) {
+            $wpdb->query($sql);
+
+            return;
+        }
+
+        $wpdb->query($wpdb->prepare($sql, $params));
+    }
+
+    private static function rebuild_ohlc_trading_index($symbol, $timeframe) {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $symbol = strtoupper((string) $symbol);
+        $timeframe = strtoupper((string) $timeframe);
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT id FROM {$table} WHERE symbol = %s AND timeframe = %s ORDER BY event_time ASC, id ASC",
+                $symbol,
+                $timeframe
+            ),
+            ARRAY_A
+        );
+
+        if (empty($rows)) {
+            return;
+        }
+
+        foreach ($rows as $index => $row) {
+            $wpdb->update(
+                $table,
+                ['trading_index' => $index + 1],
+                ['id' => (int) $row['id']],
+                ['%d'],
+                ['%d']
+            );
+        }
+    }
+
+    private static function is_xay_nen($rsi, $gia_sv_ma10, $gia_sv_ma20, $gia_sv_ma50, $vol_sv_vol_ma20, $volume, $pct_t_1, $pct_1w, $pct_1m, $pct_3m, $rules) {
+        if ($rsi === null || $gia_sv_ma10 === null || $gia_sv_ma20 === null || $gia_sv_ma50 === null || $vol_sv_vol_ma20 === null || $pct_t_1 === null || $pct_1w === null || $pct_1m === null || $pct_3m === null) {
+            return 'chưa đủ dữ liệu';
+        }
+
+        if (
+            $rsi >= $rules['xay_nen_rsi_min'] && $rsi <= $rules['xay_nen_rsi_max']
+            && abs((float) $gia_sv_ma10) <= $rules['xay_nen_gia_sv_ma10_abs_max']
+            && abs((float) $gia_sv_ma20) <= $rules['xay_nen_gia_sv_ma20_abs_max']
+            && abs((float) $gia_sv_ma50) <= $rules['xay_nen_gia_sv_ma50_abs_max']
+            && (float) $vol_sv_vol_ma20 <= $rules['xay_nen_vol_sv_vol_ma20_max']
+            && (float) $volume >= $rules['xay_nen_volume_min']
+            && (float) $pct_t_1 >= -$rules['xay_nen_pct_t_1_abs_max'] && (float) $pct_t_1 <= $rules['xay_nen_pct_t_1_abs_max']
+            && (float) $pct_1w >= -$rules['xay_nen_pct_1w_abs_max'] && (float) $pct_1w <= $rules['xay_nen_pct_1w_abs_max']
+            && (float) $pct_1m >= -$rules['xay_nen_pct_1m_abs_max'] && (float) $pct_1m <= $rules['xay_nen_pct_1m_abs_max']
+            && (float) $pct_3m >= -$rules['xay_nen_pct_3m_abs_max'] && (float) $pct_3m <= $rules['xay_nen_pct_3m_abs_max']
+        ) {
+            return 'xây nền';
+        }
+
+        return 'không xây nền';
+    }
+
+    private static function determine_nen_type($xay_nen_count_30, $rules) {
+        if ($xay_nen_count_30 >= $rules['nen_type_chat_min_count_30']) {
+            return 'Nền chặt';
+        }
+
+        if ($xay_nen_count_30 >= $rules['nen_type_vua_min_count_30']) {
+            return 'Nền vừa';
+        }
+
+        return 'Nền lỏng';
+    }
+
+    private static function determine_pha_nen($previous_nen_type, $pct_t_1, $vol_sv_vol_ma20, $rules) {
+        if (!in_array($previous_nen_type, ['Nền vừa', 'Nền chặt'], true)) {
+            return null;
+        }
+
+        if ($pct_t_1 === null || $vol_sv_vol_ma20 === null) {
+            return null;
+        }
+
+        if ((float) $pct_t_1 > $rules['pha_nen_pct_t_1_min'] && (float) $vol_sv_vol_ma20 >= $rules['pha_nen_vol_sv_vol_ma20_min']) {
+            return 'Phá nền';
+        }
+
+        return null;
+    }
+
+    private static function determine_tang_gia_kem_vol($exchange, $pct_t_1, $vol_ratio_ma10, $vol_ratio_ma20, $rules) {
+        if ($exchange === '' || $pct_t_1 === null || $vol_ratio_ma10 === null || $vol_ratio_ma20 === null) {
+            return null;
+        }
+
+        $pct_threshold_by_exchange = [
+            'HOSE' => (float) $rules['tang_gia_kem_vol_hose_pct_t_1_min'],
+            'HNX' => (float) $rules['tang_gia_kem_vol_hnx_pct_t_1_min'],
+            'UPCOM' => (float) $rules['tang_gia_kem_vol_upcom_pct_t_1_min'],
+        ];
+
+        if (!array_key_exists($exchange, $pct_threshold_by_exchange)) {
+            return null;
+        }
+
+        if (
+            (float) $pct_t_1 >= $pct_threshold_by_exchange[$exchange]
+            && (float) $vol_ratio_ma10 > (float) $rules['tang_gia_kem_vol_vol_ratio_ma10_min']
+            && (float) $vol_ratio_ma20 > (float) $rules['tang_gia_kem_vol_vol_ratio_ma20_min']
+        ) {
+            return 'Tăng giá kèm Vol';
+        }
+
+        return null;
+    }
+
+    private static function ratio_from_ratio_pct($ratio_pct) {
+        if ($ratio_pct === null) {
+            return null;
+        }
+
+        return (float) $ratio_pct + 1;
+    }
+
+    private static function determine_smart_money($symbol, $pha_nen, $tang_gia_kem_vol) {
+        if ($pha_nen !== 'Phá nền' || $tang_gia_kem_vol !== 'Tăng giá kèm Vol') {
+            return null;
+        }
+
+        $xep_hang = self::get_symbol_xep_hang($symbol);
+        if (in_array($xep_hang, ['A++', 'A+', 'A', 'B+'], true)) {
+            return 'Smart Money';
+        }
+
+        return null;
+    }
+
+    private static function get_symbol_xep_hang($symbol) {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_symbol_tongquan';
+        $symbol = strtoupper((string) $symbol);
+        if ($symbol === '') {
+            return '';
+        }
+
+        $xep_hang = (string) $wpdb->get_var(
+            $wpdb->prepare("SELECT xep_hang FROM {$table} WHERE symbol = %s LIMIT 1", $symbol)
+        );
+
+        return strtoupper(trim($xep_hang));
+    }
+
+    private static function get_exchange_by_symbol($symbol) {
+        global $wpdb;
+
+        $symbol = strtoupper((string) $symbol);
+        if ($symbol === '') {
+            return '';
+        }
+
+        if (array_key_exists($symbol, self::$symbol_exchange_cache)) {
+            return self::$symbol_exchange_cache[$symbol];
+        }
+
+        // Redis cache — cross-request, TTL 1h
+        $cache_key = 'exchange:' . $symbol;
+        $cached = LCNI_RedisCache::get($cache_key, LCNI_RedisCache::GRP_REF);
+        if ($cached !== false) {
+            self::$symbol_exchange_cache[$symbol] = $cached;
+            return $cached;
+        }
+
+        $mapping_table = $wpdb->prefix . 'lcni_sym_icb_market';
+        $exchange = (string) $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT exchange FROM {$mapping_table} WHERE symbol = %s LIMIT 1",
+                $symbol
+            )
+        );
+
+        if (trim($exchange) === '') {
+            $symbols_table = $wpdb->prefix . 'lcni_symbols';
+            $market_table = $wpdb->prefix . 'lcni_marketid';
+
+            $exchange = (string) $wpdb->get_var(
+                $wpdb->prepare(
+                    "SELECT m.exchange
+                    FROM {$symbols_table} s
+                    LEFT JOIN {$market_table} m ON m.market_id = s.market_id
+                    WHERE s.symbol = %s
+                    LIMIT 1",
+                    $symbol
+                )
+            );
+        }
+
+        if (trim($exchange) === '') {
+            $market_id = (string) $wpdb->get_var(
+                $wpdb->prepare(
+                    "SELECT market_id FROM {$wpdb->prefix}lcni_symbols WHERE symbol = %s LIMIT 1",
+                    $symbol
+                )
+            );
+
+            foreach (self::DEFAULT_MARKETS as $market) {
+                if ((string) $market['market_id'] === $market_id) {
+                    $exchange = (string) $market['exchange'];
+                    break;
+                }
+            }
+        }
+
+        $exchange = self::normalize_exchange($exchange);
+        self::$symbol_exchange_cache[$symbol] = $exchange;
+        LCNI_RedisCache::set($cache_key, $exchange, LCNI_RedisCache::GRP_REF);
+
+        return $exchange;
+    }
+
+    private static function normalize_exchange($exchange) {
+        $exchange = strtoupper(trim((string) $exchange));
+        if ($exchange === '') {
+            return '';
+        }
+
+        $compact_exchange = str_replace([' ', '-', '_'], '', $exchange);
+        $aliases = [
+            'HSX' => 'HOSE',
+            'HOSE' => 'HOSE',
+            'HNX' => 'HNX',
+            'HASTC' => 'HNX',
+            'UPCOM' => 'UPCOM',
+        ];
+
+        if (array_key_exists($compact_exchange, $aliases)) {
+            return $aliases[$compact_exchange];
+        }
+
+        return $exchange;
+    }
+
+    private static function change_pct($series, $index, $lookback) {
+        if ($index - $lookback < 0) {
+            return null;
+        }
+
+        $base = (float) $series[$index - $lookback];
+        if ($base == 0.0) {
+            return null;
+        }
+
+        return ((float) $series[$index] / $base) - 1;
+    }
+
+    private static function normalize_price($value) {
+        return round((float) $value, 2);
+    }
+
+    private static function normalize_nullable_price($value) {
+        if ($value === null) {
+            return null;
+        }
+
+        return self::normalize_price($value);
+    }
+
+    private static function window_average($series, $index, $window) {
+        if ($index + 1 < $window) {
+            return null;
+        }
+
+        $slice = array_slice($series, $index - $window + 1, $window);
+
+        return array_sum($slice) / $window;
+    }
+
+    private static function window_max($series, $index, $window) {
+        if ($index + 1 < $window) {
+            return null;
+        }
+
+        return max(array_slice($series, $index - $window + 1, $window));
+    }
+
+    private static function window_min($series, $index, $window) {
+        if ($index + 1 < $window) {
+            return null;
+        }
+
+        return min(array_slice($series, $index - $window + 1, $window));
+    }
+
+    private static function safe_ratio_pct($value, $base) {
+        if ($base === null || (float) $base == 0.0) {
+            return null;
+        }
+
+        return ((float) $value / (float) $base) - 1;
+    }
+
+    private static function upsert_symbol_rows($rows, $source = 'manual') {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_symbols';
+        $updated = 0;
+
+        foreach ($rows as $row) {
+            $symbol = strtoupper((string) self::pick($row, ['symbol', 's']));
+            if ($symbol === '') {
+                continue;
+            }
+
+            $record = [
+                'symbol' => $symbol,
+                'market_id' => self::nullable_text(self::pick($row, ['marketId', 'market_id'])),
+                'board_id' => self::nullable_text(self::pick($row, ['boardId', 'board_id'])),
+                'isin' => self::nullable_text(self::pick($row, ['isin', 'ISIN'])),
+                'product_grp_id' => self::nullable_text(self::pick($row, ['productGrpId', 'product_grp_id'])),
+                'security_group_id' => self::nullable_text(self::pick($row, ['securityGroupId', 'security_group_id'])),
+                'id_icb2' => self::nullable_int(self::pick($row, ['idIcb2', 'id_icb2', 'icb2', 'industryId'])),
+                'basic_price' => self::nullable_float(self::pick($row, ['basicPrice', 'basic_price', 'referencePrice', 'reference_price'])),
+                'ceiling_price' => self::nullable_float(self::pick($row, ['ceilingPrice', 'ceiling_price'])),
+                'floor_price' => self::nullable_float(self::pick($row, ['floorPrice', 'floor_price'])),
+                'open_interest_quantity' => self::nullable_int(self::pick($row, ['openInterestQuantity', 'open_interest_quantity'])),
+                'security_status' => self::nullable_text(self::pick($row, ['securityStatus', 'security_status'])),
+                'symbol_admin_status_code' => self::nullable_text(self::pick($row, ['symbolAdminStatusCode', 'symbol_admin_status_code'])),
+                'symbol_trading_method_status_code' => self::nullable_text(self::pick($row, ['symbolTradingMethodStatusCode', 'symbol_trading_method_status_code'])),
+                'symbol_trading_sanction_status_code' => self::nullable_text(self::pick($row, ['symbolTradingSanctionStatusCode', 'symbol_trading_sanction_status_code'])),
+                'source' => sanitize_text_field($source),
+            ];
+
+            $result = $wpdb->replace(
+                $table,
+                $record,
+                ['%s', '%s', '%s', '%s', '%s', '%s', '%d', '%f', '%f', '%f', '%d', '%s', '%s', '%s', '%s', '%s']
+            );
+
+            if ($result !== false) {
+                $updated++;
+            }
+        }
+
+        self::sync_symbol_market_icb_mapping();
+        self::sync_symbol_tongquan_with_symbols();
+
+        return ['updated' => $updated];
+    }
+
+    private static function sync_symbol_market_icb_mapping() {
+        global $wpdb;
+
+        $symbols_table = $wpdb->prefix . 'lcni_symbols';
+        $mapping_table = $wpdb->prefix . 'lcni_sym_icb_market';
+        $market_table = $wpdb->prefix . 'lcni_marketid';
+
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $mapping_table)) !== $mapping_table) {
+            return;
+        }
+
+        self::ensure_symbol_market_icb_columns();
+
+        $wpdb->query(
+            "INSERT INTO {$mapping_table} (symbol, market_id, id_icb2, exchange)
+            SELECT s.symbol, s.market_id, s.id_icb2, UPPER(TRIM(COALESCE(m.exchange, '')))
+            FROM {$symbols_table} s
+            LEFT JOIN {$market_table} m ON m.market_id = s.market_id
+            ON DUPLICATE KEY UPDATE
+                market_id = CASE
+                    WHEN VALUES(market_id) IS NULL OR VALUES(market_id) = '' THEN {$mapping_table}.market_id
+                    ELSE VALUES(market_id)
+                END,
+                id_icb2 = COALESCE(VALUES(id_icb2), {$mapping_table}.id_icb2),
+                exchange = CASE
+                    WHEN VALUES(exchange) IS NULL OR VALUES(exchange) = '' THEN {$mapping_table}.exchange
+                    ELSE VALUES(exchange)
+                END,
+                updated_at = CURRENT_TIMESTAMP"
+        );
+
+        self::$symbol_exchange_cache = [];
+    }
+
+    private static function count_cached_security_symbols() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_symbols';
+
+        return (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table}");
+    }
+
+    private static function extract_items($payload, $preferred_keys = []) {
+        if (!is_array($payload)) {
+            return [];
+        }
+
+        if (self::looks_like_security_definition($payload)) {
+            return [$payload];
+        }
+
+        if (self::is_list_array($payload)) {
+            return $payload;
+        }
+
+        $keys = array_merge($preferred_keys, ['data', 'items', 'rows', 'result', 'results', 'content', 'candles', 'secDefs', 'secdefs']);
+
+        foreach (array_unique($keys) as $key) {
+            if (!array_key_exists($key, $payload) || !is_array($payload[$key])) {
+                continue;
+            }
+
+            $items = self::extract_items($payload[$key]);
+            if (!empty($items)) {
+                return $items;
+            }
+        }
+
+        foreach ($payload as $value) {
+            if (!is_array($value)) {
+                continue;
+            }
+
+            $items = self::extract_items($value);
+            if (!empty($items)) {
+                return $items;
+            }
+        }
+
+        return [];
+    }
+
+    private static function is_list_array($array) {
+        if (!is_array($array)) {
+            return false;
+        }
+
+        return array_keys($array) === range(0, count($array) - 1);
+    }
+
+    private static function pick($row, $keys, $default = null) {
+        foreach ($keys as $key) {
+            if (isset($row[$key])) {
+                return $row[$key];
+            }
+        }
+
+        return $default;
+    }
+
+    private static function nullable_text($value) {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return sanitize_text_field((string) $value);
+    }
+
+    private static function nullable_float($value) {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return (float) $value;
+    }
+
+    private static function nullable_int($value) {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return (int) $value;
+    }
+
+    private static function normalize_csv_header($value) {
+        $value = (string) $value;
+        $value = preg_replace('/^\xEF\xBB\xBF/', '', $value);
+
+        if (function_exists('remove_accents')) {
+            $value = remove_accents($value);
+        }
+
+        $normalized = strtolower(trim($value));
+        $normalized = str_replace([' ', '-', '.', '/', '\\'], '_', $normalized);
+        $normalized = preg_replace('/[^a-z0-9_]/', '', $normalized);
+        $normalized = preg_replace('/_+/', '_', (string) $normalized);
+
+        return trim((string) $normalized, '_');
+    }
+
+    private static function csv_col($line, $header_map, $keys) {
+        foreach ($keys as $key) {
+            if (isset($header_map[$key])) {
+                return trim((string) ($line[$header_map[$key]] ?? ''));
+            }
+        }
+
+        return null;
+    }
+
+    private static function looks_like_security_definition($row) {
+        if (!is_array($row)) {
+            return false;
+        }
+
+        $keys = ['symbol', 's', 'isin', 'marketId', 'boardId', 'referencePrice', 'basicPrice'];
+        foreach ($keys as $key) {
+            if (array_key_exists($key, $row)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static function get_ohlc_change_watermark() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $stats = $wpdb->get_row(
+            "SELECT COALESCE(MAX(id), 0) AS max_id, COUNT(*) AS total_rows FROM {$table}",
+            ARRAY_A
+        );
+
+        $max_id = (int) ($stats['max_id'] ?? 0);
+        $total_rows = (int) ($stats['total_rows'] ?? 0);
+
+        return $max_id . ':' . $total_rows;
+    }
+
+    public static function optimize_seed_dataset() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_ohlc';
+        $retention_enabled = (int) get_option('lcni_seed_retention_enabled', 1) === 1;
+        $volume_filter_enabled = (int) get_option('lcni_seed_eod_volume_filter_enabled', 1) === 1;
+        $retention_limit = max(10, (int) get_option('lcni_seed_retention_candles', 260));
+        $eod_min_volume = max(0, (int) get_option('lcni_seed_eod_min_volume', 10000));
+        $import_lock_until = (int) get_option('lcni_csv_import_lock_until', 0);
+
+        if ($import_lock_until > time()) {
+            self::log_change(
+                'seed_data_optimized',
+                'Skipped seed optimization while CSV import is running.',
+                [
+                    'status' => 'skipped_import_running',
+                    'lock_until' => $import_lock_until,
+                    'retention_limit' => $retention_limit,
+                    'eod_min_volume' => $eod_min_volume,
+                    'retention_enabled' => $retention_enabled,
+                    'volume_filter_enabled' => $volume_filter_enabled,
+                ]
+            );
+
+            return [
+                'status' => 'skipped_import_running',
+                'retention_limit' => $retention_limit,
+                'eod_min_volume' => $eod_min_volume,
+                'retention_enabled' => $retention_enabled,
+                'volume_filter_enabled' => $volume_filter_enabled,
+                'filtered_rows' => 0,
+                'pruned_rows' => 0,
+            ];
+        }
+
+        $seed_stats = LCNI_SeedRepository::get_dashboard_stats();
+        $seed_in_progress = ((int) ($seed_stats['total'] ?? 0) > 0) && ((int) ($seed_stats['done'] ?? 0) < (int) ($seed_stats['total'] ?? 0));
+        if ($seed_in_progress) {
+            self::log_change(
+                'seed_data_optimized',
+                'Skipped seed optimization while seed tasks are still running.',
+                [
+                    'status' => 'skipped_seed_running',
+                    'retention_limit' => $retention_limit,
+                    'eod_min_volume' => $eod_min_volume,
+                    'retention_enabled' => $retention_enabled,
+                    'volume_filter_enabled' => $volume_filter_enabled,
+                    'seed_total' => (int) ($seed_stats['total'] ?? 0),
+                    'seed_done' => (int) ($seed_stats['done'] ?? 0),
+                    'seed_running' => (int) ($seed_stats['running'] ?? 0),
+                ]
+            );
+
+            return [
+                'status' => 'skipped_seed_running',
+                'retention_limit' => $retention_limit,
+                'eod_min_volume' => $eod_min_volume,
+                'retention_enabled' => $retention_enabled,
+                'volume_filter_enabled' => $volume_filter_enabled,
+                'filtered_rows' => 0,
+                'pruned_rows' => 0,
+            ];
+        }
+
+        $current_watermark = self::get_ohlc_change_watermark();
+        $last_watermark = (string) get_option(self::SEED_OPTIMIZATION_WATERMARK_OPTION, '');
+        if ($last_watermark !== '' && hash_equals($last_watermark, $current_watermark)) {
+            return [
+                'status' => 'skipped_no_ohlc_changes',
+                'retention_limit' => $retention_limit,
+                'eod_min_volume' => $eod_min_volume,
+                'retention_enabled' => $retention_enabled,
+                'volume_filter_enabled' => $volume_filter_enabled,
+                'filtered_rows' => 0,
+                'pruned_rows' => 0,
+            ];
+        }
+
+        self::ensure_ohlc_indexes();
+
+        $filtered_rows = 0;
+        if ($volume_filter_enabled && $eod_min_volume > 0) {
+            $filter_sql = $wpdb->prepare(
+                "DELETE o
+                FROM {$table} o
+                INNER JOIN (
+                    SELECT symbol, MAX(event_time) AS max_event_time
+                    FROM {$table}
+                    WHERE timeframe = '1D'
+                    GROUP BY symbol
+                ) latest ON latest.symbol = o.symbol
+                INNER JOIN {$table} latest_row
+                    ON latest_row.symbol = latest.symbol
+                    AND latest_row.timeframe = '1D'
+                    AND latest_row.event_time = latest.max_event_time
+                WHERE o.timeframe = '1D'
+                    AND latest_row.volume < %d",
+                $eod_min_volume
+            );
+
+            $wpdb->query($filter_sql);
+            $filtered_rows = max(0, (int) $wpdb->rows_affected);
+        }
+
+        $pruned_rows = 0;
+        if ($retention_enabled) {
+            $prune_sql = $wpdb->prepare(
+                "DELETE stale
+                FROM {$table} stale
+                INNER JOIN (
+                    SELECT id
+                    FROM (
+                        SELECT id,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY symbol, timeframe
+                                ORDER BY event_time DESC, id DESC
+                            ) AS rn
+                        FROM {$table}
+                    ) ranked
+                    WHERE rn > %d
+                ) prune_ids ON prune_ids.id = stale.id",
+                $retention_limit
+            );
+
+            $wpdb->query($prune_sql);
+            $pruned_rows = max(0, (int) $wpdb->rows_affected);
+        }
+
+        self::log_change(
+            'seed_data_optimized',
+            sprintf(
+                'Applied seed optimization: volume_filter_enabled=%d, volume_threshold=%d, retention_enabled=%d, retention=%d, filtered_rows=%d, pruned_rows=%d.',
+                $volume_filter_enabled ? 1 : 0,
+                $eod_min_volume,
+                $retention_enabled ? 1 : 0,
+                $retention_limit,
+                $filtered_rows,
+                $pruned_rows
+            )
+        );
+
+        update_option(self::SEED_OPTIMIZATION_WATERMARK_OPTION, self::get_ohlc_change_watermark(), false);
+
+        return [
+            'retention_limit' => $retention_limit,
+            'eod_min_volume' => $eod_min_volume,
+            'retention_enabled' => $retention_enabled,
+            'volume_filter_enabled' => $volume_filter_enabled,
+            'filtered_rows' => $filtered_rows,
+            'pruned_rows' => $pruned_rows,
+        ];
     }
 
     public static function log_change($action, $message, $context = null) {
@@ -89,5 +6617,783 @@ class LCNI_DB {
             ],
             ['%s', '%s', '%s']
         );
+    }
+
+    private static function ensure_chart_builder_schema() {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'lcni_charts';
+        $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+        if ($exists !== $table) {
+            self::create_tables();
+            return;
+        }
+
+        $columns = $wpdb->get_col("SHOW COLUMNS FROM {$table}");
+        $required_columns = ['id', 'name', 'slug', 'chart_type', 'data_source', 'config_json', 'created_at', 'updated_at'];
+        foreach ($required_columns as $column) {
+            if (!in_array($column, (array) $columns, true)) {
+                self::create_tables();
+                return;
+            }
+        }
+    }
+
+
+    private static function ensure_industry_analysis_schema() {
+        global $wpdb;
+
+        $return_table = $wpdb->prefix . 'lcni_industry_return';
+        $index_table = $wpdb->prefix . 'lcni_industry_index';
+        $metrics_table = $wpdb->prefix . 'lcni_industry_metrics';
+
+        $return_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $return_table));
+        if ($return_exists === $return_table) {
+            self::cleanup_industry_duplicate_rows($return_table, "CASE WHEN COALESCE(t1.industry_value, 0) > 0 OR COALESCE(t1.industry_return, 0) <> 0 OR COALESCE(t1.stocks_up, 0) > 0 OR COALESCE(t1.total_stocks, 0) > 0 OR COALESCE(t1.breadth, 0) <> 0 THEN 1 ELSE 0 END", "CASE WHEN COALESCE(t2.industry_value, 0) > 0 OR COALESCE(t2.industry_return, 0) <> 0 OR COALESCE(t2.stocks_up, 0) > 0 OR COALESCE(t2.total_stocks, 0) > 0 OR COALESCE(t2.breadth, 0) <> 0 THEN 1 ELSE 0 END");
+            self::add_unique_key_if_missing($return_table, 'uniq_event_icb2_timeframe', '(event_time, id_icb2, timeframe)');
+            self::add_index_if_missing($return_table, 'idx_timeframe_event', '(timeframe, event_time)');
+            self::add_index_if_missing($return_table, 'idx_icb2_event', '(id_icb2, event_time)');
+        }
+
+        $index_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $index_table));
+        if ($index_exists === $index_table) {
+            self::cleanup_industry_duplicate_rows($index_table, "CASE WHEN COALESCE(t1.industry_index, 0) <> 1000 OR COALESCE(t1.industry_return, 0) <> 0 THEN 1 ELSE 0 END", "CASE WHEN COALESCE(t2.industry_index, 0) <> 1000 OR COALESCE(t2.industry_return, 0) <> 0 THEN 1 ELSE 0 END");
+            self::add_unique_key_if_missing($index_table, 'uniq_event_icb2_timeframe', '(event_time, id_icb2, timeframe)');
+            self::add_index_if_missing($index_table, 'idx_timeframe_event', '(timeframe, event_time)');
+            self::add_index_if_missing($index_table, 'idx_icb2_event', '(id_icb2, event_time)');
+        }
+
+        $metrics_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $metrics_table));
+        if ($metrics_exists === $metrics_table) {
+            self::cleanup_industry_duplicate_rows($metrics_table, "CASE WHEN COALESCE(t1.return_5d, 0) <> 0 OR COALESCE(t1.return_10d, 0) <> 0 OR COALESCE(t1.return_20d, 0) <> 0 OR COALESCE(t1.momentum, 0) <> 0 OR COALESCE(t1.relative_strength, 0) <> 0 OR COALESCE(t1.industry_score_raw, 0) <> 0 OR COALESCE(t1.money_flow_share, 0) <> 0 OR COALESCE(t1.breadth, 0) <> 0 OR COALESCE(t1.industry_rating_vi, '') <> '' THEN 1 ELSE 0 END", "CASE WHEN COALESCE(t2.return_5d, 0) <> 0 OR COALESCE(t2.return_10d, 0) <> 0 OR COALESCE(t2.return_20d, 0) <> 0 OR COALESCE(t2.momentum, 0) <> 0 OR COALESCE(t2.relative_strength, 0) <> 0 OR COALESCE(t2.industry_score_raw, 0) <> 0 OR COALESCE(t2.money_flow_share, 0) <> 0 OR COALESCE(t2.breadth, 0) <> 0 OR COALESCE(t2.industry_rating_vi, '') <> '' THEN 1 ELSE 0 END");
+            self::add_unique_key_if_missing($metrics_table, 'uniq_event_icb2_timeframe', '(event_time, id_icb2, timeframe)');
+            self::add_index_if_missing($metrics_table, 'idx_timeframe_event', '(timeframe, event_time)');
+            self::add_index_if_missing($metrics_table, 'idx_score', '(industry_score_raw)');
+        }
+    }
+
+    private static function cleanup_industry_duplicate_rows($table, $left_score_sql, $right_score_sql) {
+        global $wpdb;
+
+        if ($table === '' || $left_score_sql === '' || $right_score_sql === '') {
+            return;
+        }
+
+        $has_duplicates = (int) $wpdb->get_var("SELECT COUNT(*) FROM (
+            SELECT 1
+            FROM {$table}
+            GROUP BY event_time, id_icb2, timeframe
+            HAVING COUNT(*) > 1
+        ) dup");
+
+        if ($has_duplicates <= 0) {
+            return;
+        }
+
+        $wpdb->query("DELETE t1 FROM {$table} t1
+            INNER JOIN {$table} t2
+                ON t1.event_time = t2.event_time
+                AND t1.id_icb2 = t2.id_icb2
+                AND t1.timeframe = t2.timeframe
+                AND (
+                    ({$left_score_sql}) < ({$right_score_sql})
+                    OR (({$left_score_sql}) = ({$right_score_sql}) AND t1.id < t2.id)
+                )");
+    }
+
+    private static function ensure_industry_analysis_extended_schema() {
+        global $wpdb;
+
+        $return_table = $wpdb->prefix . 'lcni_industry_return';
+        $index_table = $wpdb->prefix . 'lcni_industry_index';
+        $metrics_table = $wpdb->prefix . 'lcni_industry_metrics';
+
+        $return_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $return_table));
+        if ($return_exists === $return_table) {
+            if (!self::table_has_column($return_table, 'industry_volume')) {
+                $wpdb->query("ALTER TABLE {$return_table} ADD COLUMN industry_volume BIGINT NULL");
+            }
+            if (!self::table_has_column($return_table, 'value_ma20')) {
+                $wpdb->query("ALTER TABLE {$return_table} ADD COLUMN value_ma20 DECIMAL(20,2) NULL");
+            }
+            if (!self::table_has_column($return_table, 'money_flow_ratio')) {
+                $wpdb->query("ALTER TABLE {$return_table} ADD COLUMN money_flow_ratio DECIMAL(10,4) NULL");
+            }
+        }
+
+        $index_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $index_table));
+        if ($index_exists === $index_table) {
+            if (!self::table_has_column($index_table, 'index_ma50')) {
+                $wpdb->query("ALTER TABLE {$index_table} ADD COLUMN index_ma50 DECIMAL(14,4) NULL");
+            }
+            if (!self::table_has_column($index_table, 'industry_trend')) {
+                $wpdb->query("ALTER TABLE {$index_table} ADD COLUMN industry_trend VARCHAR(30) NULL");
+            }
+        }
+
+        $metrics_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $metrics_table));
+        if ($metrics_exists === $metrics_table) {
+            if (!self::table_has_column($metrics_table, 'leader_stock_ratio')) {
+                $wpdb->query("ALTER TABLE {$metrics_table} ADD COLUMN leader_stock_ratio DECIMAL(10,4) NULL");
+            }
+            if (!self::table_has_column($metrics_table, 'updown_ratio')) {
+                $wpdb->query("ALTER TABLE {$metrics_table} ADD COLUMN updown_ratio DECIMAL(10,4) NULL");
+            }
+            if (!self::table_has_column($metrics_table, 'industry_phase')) {
+                $wpdb->query("ALTER TABLE {$metrics_table} ADD COLUMN industry_phase VARCHAR(30) NULL");
+            }
+        }
+    }
+
+    private static function backfill_industry_analysis_extended_metrics() {
+        global $wpdb;
+
+        $migration_flag = 'lcni_industry_analysis_extended_metrics_backfilled_v1';
+        if (get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        $return_table = $wpdb->prefix . 'lcni_industry_return';
+        $index_table = $wpdb->prefix . 'lcni_industry_index';
+        $metrics_table = $wpdb->prefix . 'lcni_industry_metrics';
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $mapping_table = $wpdb->prefix . 'lcni_sym_icb_market';
+
+        if (
+            $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $return_table)) !== $return_table
+            || $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $index_table)) !== $index_table
+            || $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $metrics_table)) !== $metrics_table
+        ) {
+            return;
+        }
+
+        self::refresh_industry_analysis_extended_metrics([], [], true);
+
+        update_option($migration_flag, 'yes');
+        self::log_change('backfill_industry_analysis_extended_metrics', 'Backfilled industry extended columns via 8-step SQL pipeline.');
+    }
+
+    private static function refresh_industry_analysis_extended_metrics($event_times = [], $timeframes = ['1D'], $full_rebuild = false) {
+        global $wpdb;
+
+        $return_table = $wpdb->prefix . 'lcni_industry_return';
+        $index_table = $wpdb->prefix . 'lcni_industry_index';
+        $metrics_table = $wpdb->prefix . 'lcni_industry_metrics';
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $mapping_table = $wpdb->prefix . 'lcni_sym_icb_market';
+
+        $timeframes = array_values(array_unique(array_filter(array_map(static function ($timeframe) {
+            return strtoupper(trim((string) $timeframe));
+        }, (array) $timeframes))));
+
+        if (empty($timeframes)) {
+            $timeframes = ['1D'];
+        }
+
+        $event_times = array_values(array_unique(array_filter(array_map('intval', (array) $event_times), static function ($v) {
+            return $v > 0;
+        })));
+
+        if ($full_rebuild || empty($event_times)) {
+            $event_times = $wpdb->get_col(
+                $wpdb->prepare(
+                    "SELECT DISTINCT event_time FROM {$return_table} WHERE timeframe = %s ORDER BY event_time ASC",
+                    $timeframes[0]
+                )
+            );
+            $event_times = array_values(array_unique(array_filter(array_map('intval', (array) $event_times), static function ($v) {
+                return $v > 0;
+            })));
+        }
+
+        if (empty($event_times)) {
+            return;
+        }
+
+        $event_placeholders = implode(', ', array_fill(0, count($event_times), '%d'));
+        $timeframe_placeholders = implode(', ', array_fill(0, count($timeframes), '%s'));
+        $params = array_merge($event_times, $timeframes);
+        $scope_sql = "event_time IN ({$event_placeholders}) AND timeframe IN ({$timeframe_placeholders})";
+        $scope_sql_return = "r.event_time IN ({$event_placeholders}) AND r.timeframe IN ({$timeframe_placeholders})";
+        $scope_sql_index = "i.event_time IN ({$event_placeholders}) AND i.timeframe IN ({$timeframe_placeholders})";
+        $scope_sql_metrics = "m.event_time IN ({$event_placeholders}) AND m.timeframe IN ({$timeframe_placeholders})";
+
+        // Step 1: update industry_volume
+        $wpdb->query($wpdb->prepare("UPDATE {$return_table} r
+            INNER JOIN (
+                SELECT
+                    o.event_time,
+                    o.timeframe,
+                    COALESCE(m.id_icb2, 0) AS id_icb2,
+                    SUM(COALESCE(o.volume, 0)) AS industry_volume
+                FROM {$ohlc_table} o
+                LEFT JOIN {$mapping_table} m ON UPPER(TRIM(m.symbol)) = UPPER(TRIM(o.symbol))
+                WHERE o.event_time IN ({$event_placeholders}) AND o.timeframe IN ({$timeframe_placeholders})
+                GROUP BY o.event_time, o.timeframe, COALESCE(m.id_icb2, 0)
+            ) v ON v.event_time = r.event_time AND v.timeframe = r.timeframe AND v.id_icb2 = r.id_icb2
+            SET r.industry_volume = v.industry_volume
+            WHERE {$scope_sql_return}", $params));
+
+        // Step 2: update value_ma20
+        $wpdb->query($wpdb->prepare("UPDATE {$return_table} r
+            INNER JOIN (
+                SELECT id, AVG(industry_value) OVER(
+                    PARTITION BY id_icb2, timeframe
+                    ORDER BY event_time
+                    ROWS BETWEEN 19 PRECEDING AND CURRENT ROW
+                ) AS value_ma20
+                FROM {$return_table}
+            ) rolling ON rolling.id = r.id
+            SET r.value_ma20 = rolling.value_ma20
+            WHERE {$scope_sql_return}", $params));
+
+        // Step 3: update money_flow_ratio
+        $wpdb->query($wpdb->prepare("UPDATE {$return_table}
+            SET money_flow_ratio = CASE
+                WHEN COALESCE(value_ma20, 0) <= 0 THEN NULL
+                ELSE industry_value / value_ma20
+            END
+            WHERE {$scope_sql}", $params));
+
+        // Step 4: update index_ma50
+        $wpdb->query($wpdb->prepare("UPDATE {$index_table} i
+            INNER JOIN (
+                SELECT id, AVG(industry_index) OVER(
+                    PARTITION BY id_icb2, timeframe
+                    ORDER BY event_time
+                    ROWS BETWEEN 49 PRECEDING AND CURRENT ROW
+                ) AS index_ma50
+                FROM {$index_table}
+            ) rolling ON rolling.id = i.id
+            SET i.index_ma50 = rolling.index_ma50
+            WHERE {$scope_sql_index}", $params));
+
+        // Step 5: update industry_trend
+        $wpdb->query($wpdb->prepare("UPDATE {$index_table}
+            SET industry_trend = CASE
+                WHEN COALESCE(index_ma50, 0) <= 0 THEN NULL
+                WHEN ABS(industry_index - index_ma50) / index_ma50 < 0.02 THEN 'Tích lũy'
+                WHEN industry_index > index_ma50 THEN 'Xu hướng tăng'
+                ELSE 'Xu hướng giảm'
+            END
+            WHERE {$scope_sql}", $params));
+
+        // Step 6: update leader_stock_ratio
+        $wpdb->query($wpdb->prepare("UPDATE {$metrics_table} m
+            INNER JOIN (
+                SELECT
+                    o.event_time,
+                    o.timeframe,
+                    COALESCE(map.id_icb2, 0) AS id_icb2,
+                    SUM(CASE WHEN COALESCE(o.pct_t_1, 0) >= 0.03 THEN 1 ELSE 0 END) AS stocks_breakout,
+                    COUNT(*) AS total_stocks
+                FROM {$ohlc_table} o
+                LEFT JOIN {$mapping_table} map ON UPPER(TRIM(map.symbol)) = UPPER(TRIM(o.symbol))
+                WHERE o.event_time IN ({$event_placeholders}) AND o.timeframe IN ({$timeframe_placeholders})
+                GROUP BY o.event_time, o.timeframe, COALESCE(map.id_icb2, 0)
+            ) b ON b.event_time = m.event_time AND b.timeframe = m.timeframe AND b.id_icb2 = m.id_icb2
+            SET m.leader_stock_ratio = CASE
+                WHEN COALESCE(b.total_stocks, 0) = 0 THEN NULL
+                ELSE b.stocks_breakout / b.total_stocks
+            END
+            WHERE {$scope_sql_metrics}", $params));
+
+        // Step 7: update updown_ratio
+        $wpdb->query($wpdb->prepare("UPDATE {$metrics_table}
+            SET updown_ratio = CASE
+                WHEN (total_stocks - stocks_up) <= 0 THEN NULL
+                ELSE stocks_up / (total_stocks - stocks_up)
+            END
+            WHERE {$scope_sql}", $params));
+
+        // Step 8: update industry_phase
+        $wpdb->query($wpdb->prepare("UPDATE {$metrics_table} m
+            LEFT JOIN {$return_table} r ON r.event_time = m.event_time AND r.timeframe = m.timeframe AND r.id_icb2 = m.id_icb2
+            SET m.industry_phase = CASE
+                WHEN m.momentum > 0 AND m.relative_strength > 0 AND COALESCE(r.money_flow_ratio, 0) > 1.2 THEN 'Bứt phá'
+                WHEN m.momentum > 0 AND m.relative_strength > 0 AND COALESCE(r.money_flow_ratio, 0) >= 0.9 AND COALESCE(r.money_flow_ratio, 0) <= 1.2 THEN 'Tăng ổn định'
+                WHEN ABS(m.momentum) <= 0.01 THEN 'Tích lũy'
+                WHEN m.momentum < 0 AND m.relative_strength < 0 THEN 'Suy yếu'
+                ELSE 'Tích lũy'
+            END
+            WHERE {$scope_sql_metrics}", $params));
+    }
+
+    public static function rebuild_industry_analysis_snapshot($timeframes = ['1D'], $force_rebuild = true) {
+        global $wpdb;
+
+        $return_table = $wpdb->prefix . 'lcni_industry_return';
+        $index_table = $wpdb->prefix . 'lcni_industry_index';
+        $metrics_table = $wpdb->prefix . 'lcni_industry_metrics';
+
+        $return_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $return_table));
+        $index_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $index_table));
+        $metrics_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $metrics_table));
+
+        if ($return_exists !== $return_table || $index_exists !== $index_table || $metrics_exists !== $metrics_table) {
+            return 0;
+        }
+
+        if ($force_rebuild) {
+            $wpdb->query("TRUNCATE TABLE {$return_table}");
+            $wpdb->query("TRUNCATE TABLE {$index_table}");
+            $wpdb->query("TRUNCATE TABLE {$metrics_table}");
+        }
+
+        self::sync_symbol_market_icb_mapping();
+
+        return (int) self::rebuild_industry_analysis_incremental([], (array) $timeframes, true);
+    }
+
+    public static function rebuild_industry_analysis_snapshot_chunked($timeframes = ['1D'], $batch_size = 5, $reset = false) {
+        global $wpdb;
+
+        $return_table = $wpdb->prefix . 'lcni_industry_return';
+        $index_table = $wpdb->prefix . 'lcni_industry_index';
+        $metrics_table = $wpdb->prefix . 'lcni_industry_metrics';
+
+        $return_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $return_table));
+        $index_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $index_table));
+        $metrics_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $metrics_table));
+
+        if ($return_exists !== $return_table || $index_exists !== $index_table || $metrics_exists !== $metrics_table) {
+            return [
+                'processed' => 0,
+                'remaining' => 0,
+                'total' => 0,
+                'done' => true,
+                'status' => 'missing_tables',
+            ];
+        }
+
+        $timeframes = array_values(array_unique(array_filter(array_map(static function ($timeframe) {
+            return strtoupper(trim((string) $timeframe));
+        }, (array) $timeframes))));
+        if (empty($timeframes)) {
+            $timeframes = ['1D'];
+        }
+
+        $batch_size = max(1, min(30, (int) $batch_size));
+        $progress_option = 'lcni_industry_rebuild_progress_v1';
+        $progress = get_option($progress_option, null);
+
+        if ($reset || !is_array($progress) || empty($progress['event_times']) || empty($progress['timeframes']) || $progress['timeframes'] !== $timeframes) {
+            $wpdb->query("TRUNCATE TABLE {$return_table}");
+            $wpdb->query("TRUNCATE TABLE {$index_table}");
+            $wpdb->query("TRUNCATE TABLE {$metrics_table}");
+
+            self::sync_symbol_market_icb_mapping();
+
+            $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+            $mapping_source_sql = "SELECT UPPER(TRIM(symbol)) AS symbol_key, MAX(id_icb2) AS id_icb2
+                FROM {$wpdb->prefix}lcni_sym_icb_market
+                WHERE TRIM(COALESCE(symbol, '')) <> ''
+                GROUP BY UPPER(TRIM(symbol))";
+            $event_times = $wpdb->get_col(
+                $wpdb->prepare(
+                    "SELECT DISTINCT o.event_time
+                    FROM {$ohlc_table} o
+                    INNER JOIN ({$mapping_source_sql}) map ON map.symbol_key = UPPER(TRIM(o.symbol))
+                    WHERE o.timeframe = %s AND o.event_time > 0
+                    ORDER BY o.event_time ASC",
+                    $timeframes[0]
+                )
+            );
+
+            $progress = [
+                'event_times' => array_values(array_map('intval', (array) $event_times)),
+                'offset' => 0,
+                'total' => count((array) $event_times),
+                'timeframes' => $timeframes,
+            ];
+        }
+
+        $total = (int) ($progress['total'] ?? 0);
+        $offset = (int) ($progress['offset'] ?? 0);
+        $event_times = (array) ($progress['event_times'] ?? []);
+
+        if ($total <= 0 || empty($event_times)) {
+            delete_option($progress_option);
+            return [
+                'processed' => 0,
+                'remaining' => 0,
+                'total' => 0,
+                'done' => true,
+                'status' => 'empty_source',
+            ];
+        }
+
+        $batch_events = array_slice($event_times, $offset, $batch_size);
+        if (empty($batch_events)) {
+            delete_option($progress_option);
+            return [
+                'processed' => 0,
+                'remaining' => 0,
+                'total' => $total,
+                'done' => true,
+                'status' => 'completed',
+            ];
+        }
+
+        $processed = (int) self::rebuild_industry_analysis_incremental($batch_events, $timeframes, false);
+        $offset += count($batch_events);
+        $remaining = max(0, $total - $offset);
+
+        if ($remaining === 0) {
+            delete_option($progress_option);
+            update_option('lcni_industry_analysis_backfilled_v1', 'yes');
+            return [
+                'processed' => $processed,
+                'remaining' => 0,
+                'total' => $total,
+                'done' => true,
+                'status' => 'completed',
+            ];
+        }
+
+        $progress['offset'] = $offset;
+        update_option($progress_option, $progress, false);
+
+        return [
+            'processed' => $processed,
+            'remaining' => $remaining,
+            'total' => $total,
+            'done' => false,
+            'status' => 'in_progress',
+        ];
+    }
+
+    public static function get_industry_rebuild_progress() {
+        $progress = get_option('lcni_industry_rebuild_progress_v1', null);
+        if (!is_array($progress) || empty($progress['event_times'])) {
+            return null;
+        }
+
+        $total = (int) ($progress['total'] ?? 0);
+        $offset = (int) ($progress['offset'] ?? 0);
+
+        return [
+            'total' => $total,
+            'processed' => max(0, min($offset, $total)),
+            'remaining' => max(0, $total - $offset),
+            'timeframes' => (array) ($progress['timeframes'] ?? ['1D']),
+        ];
+    }
+
+    public static function get_industry_analysis_table_stats() {
+        global $wpdb;
+
+        $tables = [
+            'industry_return' => $wpdb->prefix . 'lcni_industry_return',
+            'industry_index' => $wpdb->prefix . 'lcni_industry_index',
+            'industry_metrics' => $wpdb->prefix . 'lcni_industry_metrics',
+        ];
+
+        $stats = [];
+
+        foreach ($tables as $key => $table) {
+            $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)) === $table;
+            if (!$exists) {
+                $stats[$key] = [
+                    'table' => $table,
+                    'exists' => false,
+                    'rows' => 0,
+                    'latest_event_time' => 0,
+                ];
+                continue;
+            }
+
+            $stats[$key] = [
+                'table' => $table,
+                'exists' => true,
+                'rows' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table}"),
+                'latest_event_time' => (int) $wpdb->get_var("SELECT MAX(event_time) FROM {$table}"),
+            ];
+        }
+
+        return $stats;
+    }
+
+    private static function backfill_industry_analysis_tables($force_rebuild = false) {
+        $migration_flag = 'lcni_industry_analysis_backfilled_v1';
+        if (!$force_rebuild && get_option($migration_flag) === 'yes') {
+            return;
+        }
+
+        $rows_rebuilt = self::rebuild_industry_analysis_snapshot(['1D'], true);
+        if ($rows_rebuilt > 0) {
+            update_option($migration_flag, 'yes');
+            self::log_change('backfill_industry_analysis_tables', 'Rebuilt industry return/index/metrics materialized tables from OHLC source.');
+            return;
+        }
+
+        self::log_change('backfill_industry_analysis_tables', 'Skipped migration flag update because no industry rows were rebuilt yet.');
+    }
+
+    private static function rebuild_industry_analysis_incremental($event_times = [], $timeframes = ['1D'], $full_rebuild = false) {
+        global $wpdb;
+
+        $ohlc_table = $wpdb->prefix . 'lcni_ohlc';
+        $mapping_table = $wpdb->prefix . 'lcni_sym_icb_market';
+        $return_table = $wpdb->prefix . 'lcni_industry_return';
+        $index_table = $wpdb->prefix . 'lcni_industry_index';
+        $metrics_table = $wpdb->prefix . 'lcni_industry_metrics';
+
+        $timeframes = array_values(array_unique(array_filter(array_map(static function ($timeframe) {
+            return strtoupper(trim((string) $timeframe));
+        }, (array) $timeframes))));
+        if (empty($timeframes)) {
+            $timeframes = ['1D'];
+        }
+
+        if ($full_rebuild || empty($event_times)) {
+            $mapping_source_sql = "SELECT UPPER(TRIM(symbol)) AS symbol_key, MAX(id_icb2) AS id_icb2
+                FROM {$mapping_table}
+                WHERE TRIM(COALESCE(symbol, '')) <> ''
+                GROUP BY UPPER(TRIM(symbol))";
+            $event_times = $wpdb->get_col(
+                $wpdb->prepare(
+                    "SELECT DISTINCT o.event_time
+                    FROM {$ohlc_table} o
+                    INNER JOIN ({$mapping_source_sql}) map ON map.symbol_key = UPPER(TRIM(o.symbol))
+                    WHERE o.timeframe = %s AND o.event_time > 0
+                    ORDER BY o.event_time ASC",
+                    $timeframes[0]
+                )
+            );
+        }
+
+        $event_times = array_values(array_unique(array_filter(array_map('intval', (array) $event_times), static function ($v) {
+            return $v > 0;
+        })));
+
+        if (empty($event_times)) {
+            return 0;
+        }
+
+        $event_placeholders = implode(', ', array_fill(0, count($event_times), '%d'));
+        $timeframe_placeholders = implode(', ', array_fill(0, count($timeframes), '%s'));
+        $where_params = array_merge($event_times, $timeframes);
+
+        $delete_sql = "event_time IN ({$event_placeholders}) AND timeframe IN ({$timeframe_placeholders})";
+        $wpdb->query($wpdb->prepare("DELETE FROM {$return_table} WHERE {$delete_sql}", $where_params));
+        $wpdb->query($wpdb->prepare("DELETE FROM {$index_table} WHERE {$delete_sql}", $where_params));
+        $wpdb->query($wpdb->prepare("DELETE FROM {$metrics_table} WHERE {$delete_sql}", $where_params));
+
+        $insert_return_sql = "INSERT INTO {$return_table}
+            (event_time, timeframe, id_icb2, industry_return, industry_value, stocks_up, total_stocks, breadth)
+            SELECT
+                o.event_time,
+                o.timeframe,
+                COALESCE(m.id_icb2, 0) AS id_icb2,
+                COALESCE(
+                    SUM(
+                        COALESCE(
+                            o.pct_t_1,
+                            CASE
+                                WHEN COALESCE(prev.close_price, 0) > 0 THEN (o.close_price / prev.close_price) - 1
+                                ELSE 0
+                            END
+                        ) * COALESCE(o.value_traded, 0)
+                    ) / NULLIF(SUM(COALESCE(o.value_traded, 0)), 0),
+                    0
+                ) AS industry_return,
+                COALESCE(SUM(COALESCE(o.value_traded, 0)), 0) AS industry_value,
+                SUM(CASE WHEN COALESCE(prev.close_price, 0) > 0 AND o.close_price > prev.close_price THEN 1 ELSE 0 END) AS stocks_up,
+                COUNT(*) AS total_stocks,
+                COALESCE(SUM(CASE WHEN COALESCE(prev.close_price, 0) > 0 AND o.close_price > prev.close_price THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 0) AS breadth
+            FROM {$ohlc_table} o
+            INNER JOIN (
+                SELECT UPPER(TRIM(symbol)) AS symbol_key, MAX(id_icb2) AS id_icb2
+                FROM {$mapping_table}
+                WHERE TRIM(COALESCE(symbol, '')) <> ''
+                GROUP BY UPPER(TRIM(symbol))
+            ) m ON m.symbol_key = UPPER(TRIM(o.symbol))
+            LEFT JOIN {$ohlc_table} prev ON prev.symbol = o.symbol AND prev.timeframe = o.timeframe AND prev.event_time = (
+                SELECT MAX(p2.event_time)
+                FROM {$ohlc_table} p2
+                WHERE p2.symbol = o.symbol AND p2.timeframe = o.timeframe AND p2.event_time < o.event_time
+            )
+            WHERE o.event_time IN ({$event_placeholders}) AND o.timeframe IN ({$timeframe_placeholders})
+            GROUP BY o.event_time, o.timeframe, m.id_icb2
+            ON DUPLICATE KEY UPDATE
+                industry_return = VALUES(industry_return),
+                industry_value = VALUES(industry_value),
+                stocks_up = VALUES(stocks_up),
+                total_stocks = VALUES(total_stocks),
+                breadth = VALUES(breadth)";
+        $wpdb->query($wpdb->prepare($insert_return_sql, $where_params));
+
+        foreach ($timeframes as $tf) {
+            $tf_events = $wpdb->get_col($wpdb->prepare("SELECT DISTINCT event_time FROM {$return_table} WHERE timeframe = %s ORDER BY event_time ASC", $tf));
+            $indices = [];
+            $rows = $wpdb->get_results($wpdb->prepare("SELECT event_time, id_icb2, industry_return FROM {$return_table} WHERE timeframe = %s ORDER BY event_time ASC", $tf), ARRAY_A);
+
+            foreach ((array) $rows as $row) {
+                $id = (int) $row['id_icb2'];
+                $ret = (float) $row['industry_return'];
+                if (!isset($indices[$id])) {
+                    $indices[$id] = 1000.0;
+                }
+                $indices[$id] = $indices[$id] * (1.0 + $ret);
+                $wpdb->query($wpdb->prepare(
+                    "INSERT INTO {$index_table} (event_time, timeframe, id_icb2, industry_index, industry_return)
+                    VALUES (%d, %s, %d, %f, %f)
+                    ON DUPLICATE KEY UPDATE industry_index = VALUES(industry_index), industry_return = VALUES(industry_return)",
+                    (int) $row['event_time'],
+                    $tf,
+                    $id,
+                    $indices[$id],
+                    $ret
+                ));
+            }
+        }
+
+        $insert_metrics_sql = "INSERT INTO {$metrics_table}
+            (event_time, timeframe, id_icb2, industry_return, industry_value, stocks_up, total_stocks, return_5d, return_10d, return_20d, momentum, relative_strength, money_flow_share, breadth, industry_score_raw, industry_rating_vi)
+            SELECT
+                r.event_time,
+                r.timeframe,
+                r.id_icb2,
+                r.industry_return,
+                r.industry_value,
+                r.stocks_up,
+                r.total_stocks,
+                COALESCE((r.industry_value / NULLIF(prev5.industry_value, 0)) - 1, 0) AS return_5d,
+                COALESCE((r.industry_value / NULLIF(prev10.industry_value, 0)) - 1, 0) AS return_10d,
+                COALESCE((r.industry_value / NULLIF(prev20.industry_value, 0)) - 1, 0) AS return_20d,
+                0 AS momentum,
+                0 AS relative_strength,
+                COALESCE(r.industry_value / NULLIF(market.total_market_value, 0), 0) AS money_flow_share,
+                r.breadth,
+                0 AS industry_score_raw,
+                'Ngành trung tính' AS industry_rating_vi
+            FROM {$return_table} r
+            LEFT JOIN {$return_table} prev5 ON prev5.id_icb2 = r.id_icb2 AND prev5.timeframe = r.timeframe AND prev5.event_time = (
+                SELECT e5.event_time FROM {$return_table} e5
+                WHERE e5.id_icb2 = r.id_icb2 AND e5.timeframe = r.timeframe AND e5.event_time < r.event_time
+                ORDER BY e5.event_time DESC LIMIT 1 OFFSET 4
+            )
+            LEFT JOIN {$return_table} prev10 ON prev10.id_icb2 = r.id_icb2 AND prev10.timeframe = r.timeframe AND prev10.event_time = (
+                SELECT e10.event_time FROM {$return_table} e10
+                WHERE e10.id_icb2 = r.id_icb2 AND e10.timeframe = r.timeframe AND e10.event_time < r.event_time
+                ORDER BY e10.event_time DESC LIMIT 1 OFFSET 9
+            )
+            LEFT JOIN {$return_table} prev20 ON prev20.id_icb2 = r.id_icb2 AND prev20.timeframe = r.timeframe AND prev20.event_time = (
+                SELECT e20.event_time FROM {$return_table} e20
+                WHERE e20.id_icb2 = r.id_icb2 AND e20.timeframe = r.timeframe AND e20.event_time < r.event_time
+                ORDER BY e20.event_time DESC LIMIT 1 OFFSET 19
+            )
+            INNER JOIN (
+                SELECT event_time, timeframe, SUM(industry_value) AS total_market_value
+                FROM {$return_table}
+                GROUP BY event_time, timeframe
+            ) market ON market.event_time = r.event_time AND market.timeframe = r.timeframe
+            WHERE r.event_time IN ({$event_placeholders}) AND r.timeframe IN ({$timeframe_placeholders})
+            ON DUPLICATE KEY UPDATE
+                industry_return = VALUES(industry_return),
+                industry_value = VALUES(industry_value),
+                stocks_up = VALUES(stocks_up),
+                total_stocks = VALUES(total_stocks),
+                return_5d = VALUES(return_5d),
+                return_10d = VALUES(return_10d),
+                return_20d = VALUES(return_20d),
+                money_flow_share = VALUES(money_flow_share),
+                breadth = VALUES(breadth),
+                industry_rating_vi = VALUES(industry_rating_vi)";
+        $wpdb->query($wpdb->prepare($insert_metrics_sql, $where_params));
+
+        $vnindex_return_20d_sql = "SELECT cur.event_time, cur.timeframe, COALESCE((cur.close_price / NULLIF(prev.close_price, 0)) - 1, 0) AS vnindex_return_20d
+            FROM {$ohlc_table} cur
+            LEFT JOIN {$ohlc_table} prev ON prev.symbol = cur.symbol AND prev.timeframe = cur.timeframe AND prev.event_time = (
+                SELECT p2.event_time FROM {$ohlc_table} p2
+                WHERE p2.symbol = cur.symbol AND p2.timeframe = cur.timeframe AND p2.event_time < cur.event_time
+                ORDER BY p2.event_time DESC LIMIT 1 OFFSET 19
+            )
+            WHERE cur.symbol = 'VNINDEX'";
+
+        $vn_rows = $wpdb->get_results($vnindex_return_20d_sql, ARRAY_A);
+        $vn_map = [];
+        foreach ((array) $vn_rows as $vn_row) {
+            $vn_map[$vn_row['timeframe'] . '|' . $vn_row['event_time']] = (float) $vn_row['vnindex_return_20d'];
+        }
+
+        $metric_rows = $wpdb->get_results($wpdb->prepare("SELECT id, event_time, timeframe, return_5d, return_10d, return_20d, money_flow_share, breadth FROM {$metrics_table} WHERE event_time IN ({$event_placeholders}) AND timeframe IN ({$timeframe_placeholders})", $where_params), ARRAY_A);
+
+        foreach ((array) $metric_rows as $metric_row) {
+            $momentum = 0.5 * (float) $metric_row['return_20d'] + 0.3 * (float) $metric_row['return_10d'] + 0.2 * (float) $metric_row['return_5d'];
+            $rs = ((float) $metric_row['return_20d']) - (float) ($vn_map[$metric_row['timeframe'] . '|' . $metric_row['event_time']] ?? 0);
+            $money_flow = (float) $metric_row['money_flow_share'];
+            $breadth = (float) $metric_row['breadth'];
+            $score = (0.35 * $momentum) + (0.30 * $rs) + (0.20 * $money_flow) + (0.15 * $breadth);
+            $score_normalized = max(0.0, min(1.0, (float) $score));
+
+            $rating = 'Ngành suy yếu';
+            if ($score_normalized >= 0.75) {
+                $rating = 'Ngành dẫn dắt';
+            } elseif ($score_normalized >= 0.60) {
+                $rating = 'Ngành mạnh';
+            } elseif ($score_normalized >= 0.50) {
+                $rating = 'Ngành tích cực';
+            } elseif ($score_normalized >= 0.40) {
+                $rating = 'Ngành trung tính';
+            } elseif ($score_normalized >= 0.30) {
+                $rating = 'Ngành yếu';
+            }
+
+            $wpdb->query($wpdb->prepare(
+                "UPDATE {$metrics_table}
+                SET momentum = %f,
+                    relative_strength = %f,
+                    industry_score_raw = %f,
+                    industry_rating_vi = %s
+                WHERE id = %d",
+                $momentum,
+                $rs,
+                $score_normalized,
+                $rating,
+                (int) $metric_row['id']
+            ));
+        }
+
+        self::refresh_industry_analysis_extended_metrics($event_times, $timeframes, $full_rebuild);
+
+        return count($event_times);
+    }
+
+}
+
+if (!function_exists('lcni_convert_candles')) {
+    function lcni_convert_candles($data, $symbol, $tf) {
+        $rows = [];
+
+        if (!is_array($data) || empty($data['t']) || !is_array($data['t'])) {
+            return $rows;
+        }
+
+        foreach ($data['t'] as $i => $time) {
+            $timestamp = (int) $time;
+            if ($timestamp > 1000000000000) {
+                $timestamp = (int) floor($timestamp / 1000);
+            }
+
+            if ($timestamp <= 0) {
+                continue;
+            }
+
+            $rows[] = [
+                'symbol' => strtoupper((string) $symbol),
+                'timeframe' => strtoupper((string) $tf),
+                'event_time' => $timestamp,
+                'candle_time' => gmdate('Y-m-d H:i:s', $timestamp),
+                'open' => isset($data['o'][$i]) ? (float) $data['o'][$i] : 0,
+                'high' => isset($data['h'][$i]) ? (float) $data['h'][$i] : 0,
+                'low' => isset($data['l'][$i]) ? (float) $data['l'][$i] : 0,
+                'close' => isset($data['c'][$i]) ? (float) $data['c'][$i] : 0,
+                'volume' => isset($data['v'][$i]) ? (int) $data['v'][$i] : 0,
+            ];
+        }
+
+        return $rows;
     }
 }

@@ -1,0 +1,200 @@
+/* ================================================================
+   lcni-ui-table.css  — Global Table UI System  v3.0
+   ================================================================
+   CSS custom properties injected into :root by LCNI_Table_Config
+   (class-lcni-table-config.php) via wp_head priority 5.
+
+   ALL modules (filter, watchlist, signal, portfolio, dnse...)
+   read the same --lcni-table-* tokens. No per-module overrides.
+
+   Sticky rules:
+     • border-collapse:separate required (collapse = transparent bg)
+     • .lcni-table-wrapper = ONLY scroll container
+     • sticky header: has-sticky-header class on <table>
+     • sticky col:    is-sticky-col   class on th/td (index 0)
+   ================================================================ */
+
+/* ── Scroll container ─────────────────────────────────────────── */
+/* overflow:auto (cả X lẫn Y) → tạo scroll context 2D đúng chuẩn
+   • Sticky header/col bám vào container này (top:0, left:0)
+   • max-height giới hạn chiều cao → scroll dọc nằm trong container
+   • Không leak scroll ra ngoài trang                              */
+.lcni-table-wrapper,
+.lcni-table-scroll {
+    position:                   relative;
+    width:                      100%;
+    overflow:                   auto;
+    max-height:                 var(--lcni-table-max-height, 70vh);
+    /* KHÔNG dùng -webkit-overflow-scrolling:touch — tạo isolated GPU layer
+       trên iOS Safari → position:sticky bị nuốt vào layer, sticky col mất.
+       Dùng 'auto' để browser tự xử lý momentum scroll hiện đại.          */
+    -webkit-overflow-scrolling: auto;
+    overscroll-behavior:        contain;
+    scroll-behavior:            smooth;
+    scrollbar-gutter:           stable;
+    /* KHÔNG dùng isolation:isolate — tạo stacking context mới, phá sticky */
+}
+
+/* ── Base table ───────────────────────────────────────────────── */
+.lcni-table {
+    width:           100%;
+    min-width:       720px;
+    border-collapse: separate !important;
+    border-spacing:  0;
+    table-layout:    auto;
+}
+
+/* ── Header cells ─────────────────────────────────────────────── */
+.lcni-table th {
+    background:    var(--lcni-table-header-bg);
+    color:         var(--lcni-table-header-color);
+    font-size:     var(--lcni-table-header-size);
+    height:        var(--lcni-table-header-height);
+    font-weight:   500;
+    padding:       0 8px;
+    white-space:   nowrap;
+    text-align:    left;
+    box-sizing:    border-box;
+    border-bottom: var(--lcni-row-divider-width) solid var(--lcni-row-divider-color);
+}
+
+/* ── Data cells ───────────────────────────────────────────────── */
+.lcni-table td {
+    background:    var(--lcni-table-value-bg);
+    color:         var(--lcni-table-value-color);
+    font-size:     var(--lcni-table-value-size);
+    height:        var(--lcni-table-row-height);
+    padding:       0 8px;
+    white-space:   nowrap;
+    box-sizing:    border-box;
+    border-bottom: var(--lcni-row-divider-width) solid var(--lcni-row-divider-color);
+}
+
+/* ── Row hover ────────────────────────────────────────────────── */
+.lcni-table tbody tr:hover td,
+.lcni-table tbody tr:hover th,
+.lcni-signal-row:hover td,
+.lcni-signal-row:hover th {
+    background: var(--lcni-row-hover-bg) !important;
+}
+
+/* ── Sticky header (opt-in: has-sticky-header on <table>) ─────── */
+.lcni-table.has-sticky-header thead th {
+    position:   -webkit-sticky;
+    position:   sticky;
+    top:        0;
+    z-index:    20;
+    background: var(--lcni-table-header-bg);
+    box-shadow: inset 0 -1px 0 var(--lcni-row-divider-color);
+}
+
+/* ── Sticky column (opt-in: is-sticky-col on th/td) ──────────── */
+.lcni-table .is-sticky-col {
+    position:   -webkit-sticky !important;
+    position:   sticky !important;
+    left:       0;
+    z-index:    15;
+    background: var(--lcni-table-value-bg);
+    box-shadow: 2px 0 4px -1px rgba(0,0,0,0.06);
+}
+.lcni-table th.is-sticky-col {
+    z-index:    25;
+    background: var(--lcni-table-header-bg);
+    box-shadow: 2px 0 4px -1px rgba(0,0,0,0.08),
+                inset 0 -1px 0 var(--lcni-row-divider-color);
+}
+/* When header+col intersect: z-index 25 wins over both 20 and 15 */
+.lcni-table.has-sticky-header thead th.is-sticky-col {
+    z-index: 30;
+}
+.lcni-table tbody tr:hover .is-sticky-col,
+.lcni-signal-row:hover .is-sticky-col {
+    background: var(--lcni-row-hover-bg) !important;
+}
+
+/* ── Dark variant ─────────────────────────────────────────────── */
+.lcni-table--dark {
+    --lcni-table-header-bg:    #161b22;
+    --lcni-table-header-color: #c9d1d9;
+    --lcni-table-value-bg:     #0d1117;
+    --lcni-table-value-color:  #c9d1d9;
+    --lcni-row-divider-color:  rgba(255,255,255,0.06);
+    --lcni-row-hover-bg:       rgba(255,255,255,0.04);
+}
+
+/* ── Number / text alignment ──────────────────────────────────── */
+.lcni-table .lcni-cell-number { text-align: right; }
+.lcni-table .lcni-cell-text   { text-align: left;  }
+
+/* ── Signal row ───────────────────────────────────────────────── */
+.lcni-signal-row { cursor: default; }
+
+td[data-lcni-field="signal__symbol"] a,
+td[data-lcni-field="symbol"] a {
+    cursor: pointer; text-decoration: none; font-weight: 600; color: inherit;
+}
+td[data-lcni-field="signal__symbol"] a:hover,
+td[data-lcni-field="symbol"] a:hover { text-decoration: underline; color: #2563eb; }
+
+/* ── Price cell interactive ───────────────────────────────────── */
+td[data-cell-field="close_price"],
+td[data-cell-field="close"],
+td[data-cell-field="price"],
+td[data-cell-field="current_price"],
+.lcni-price-cell { cursor: pointer; user-select: none; transition: background 0.12s; }
+
+td[data-cell-field="close_price"]:hover,
+td[data-cell-field="close"]:hover,
+td[data-cell-field="price"]:hover,
+td[data-cell-field="current_price"]:hover,
+.lcni-price-cell:hover {
+    background: rgba(37,99,235,0.07) !important;
+    text-decoration: underline dotted rgba(37,99,235,0.5);
+}
+.lcni-price-click, td.lcni-price-click {
+    background: #ffe9a8 !important; transition: background 0.05s;
+}
+
+/* ── Prevent parents from stealing scroll context ─────────────── */
+/* overflow:clip chặn nội dung tràn ra ngoài mà KHÔNG tạo scroll context mới
+   → sticky header/col vẫn hoạt động đúng, scroll ngang bị giữ trong .lcni-table-wrapper
+   KHÔNG áp cho .lcni-stock-filter — module filter tự quản lý overflow qua .lcni-table-scroll */
+.lcni-filter-wrapper,.lcni-signal-panel,
+.lcni-recommend-signals-table,.dashboard-card,.panel,.widget,
+.lcni-pf-section,.lcni-pf-main,.lcni-dnse-widget {
+    overflow-x: clip !important; max-height: none !important;
+}
+.lcni-recommend-signals-table:has(.lcni-table-wrapper),
+.dashboard-card:has(.lcni-table-wrapper),
+.panel:has(.lcni-table-wrapper),
+.lcni-dnse-widget:has(.lcni-table-wrapper) {
+    overflow: clip;
+}
+
+/* ── Chart container ──────────────────────────────────────────── */
+.lcni-chart-container { width:100%; height:60vh; min-height:260px; box-sizing:border-box; }
+
+/* ── Mobile ───────────────────────────────────────────────────── */
+@media (max-width:768px) {
+    .lcni-table { min-width:720px; width:max-content; }
+    .lcni-chart-container { height:50vh; }
+    .lcni-dashboard-grid  { grid-template-columns:1fr !important; }
+    .lcni-app .lcni-stock-filter { overflow:visible !important; }
+    .lcni-filter-form,.lcni-filter-container { display:flex; flex-direction:column; gap:10px; }
+    .lcni-filter-form select,.lcni-filter-form button,
+    .lcni-filter-container select,.lcni-filter-container button,
+    .lcni-filter-container input { width:100%; max-width:100%; }
+
+    /* Mobile guard: neutralize transform/contain từ Elementor/WP wrappers
+       Chỉ reset trên chính scroll container, không reset cha (gây layout shift) */
+    .lcni-table-wrapper,
+    .lcni-table-scroll {
+        -webkit-overflow-scrolling: auto !important;
+        transform:   none !important;
+        contain:     none !important;
+        will-change: auto !important;
+        isolation:   auto !important;
+    }
+}
+@media (max-width:480px) { .lcni-table { min-width:560px; } .lcni-chart-container { height:45vh; } }
+@media (max-width:375px) { .lcni-table { min-width:640px; } }
