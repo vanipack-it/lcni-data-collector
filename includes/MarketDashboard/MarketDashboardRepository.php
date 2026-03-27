@@ -74,8 +74,16 @@ class LCNI_MarketDashboardRepository {
         $timeframe = strtoupper( $timeframe );
 
         if ( $use_cache ) {
+            // Redis cache — nhanh hơn query DB context table
+            $redis_key = 'market_snapshot:' . $timeframe . ':' . (int) $event_time;
+            $redis_hit = LCNI_RedisCache::get( $redis_key, LCNI_RedisCache::GRP_MARKET_STATS );
+            if ( ! empty( $redis_hit ) ) {
+                return $redis_hit;
+            }
+
             $cached = $this->read_context_from_db( $timeframe, $event_time );
             if ( ! empty( $cached ) ) {
+                LCNI_RedisCache::set( $redis_key, $cached, LCNI_RedisCache::GRP_MARKET_STATS );
                 return $cached;
             }
         }
@@ -91,6 +99,10 @@ class LCNI_MarketDashboardRepository {
         $snapshot = $this->build_snapshot( $timeframe, $et );
         $this->save_context_to_db( $snapshot );
         $this->wpdb->suppress_errors( $prev );
+
+        // Ghi vào Redis sau khi build xong
+        $redis_key = 'market_snapshot:' . $timeframe . ':' . $et;
+        LCNI_RedisCache::set( $redis_key, $snapshot, LCNI_RedisCache::GRP_MARKET_STATS );
 
         return $snapshot;
     }

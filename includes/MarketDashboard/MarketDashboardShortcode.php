@@ -37,6 +37,11 @@ class LCNI_MarketDashboardShortcode {
 
     public function register_shortcode(): void {
         add_shortcode( 'lcni_market_dashboard', [ $this, 'render' ] );
+        // Widget shortcodes — dùng độc lập hoặc kéo thả trong Gutenberg
+        add_shortcode( 'lcni_market_health',   [ $this, 'render_widget_health' ] );
+        add_shortcode( 'lcni_market_rotation', [ $this, 'render_widget_rotation' ] );
+        add_shortcode( 'lcni_market_leaders',  [ $this, 'render_widget_leaders' ] );
+        add_shortcode( 'lcni_market_flow',     [ $this, 'render_widget_flow' ] );
     }
 
     public function register_assets(): void {
@@ -161,5 +166,80 @@ class LCNI_MarketDashboardShortcode {
             esc_attr( $atts['show_rotation'] !== 'no' ? '1' : '0' ),
             $title_html
         );
+    }
+
+    // ── Widget shortcodes ─────────────────────────────────────────────────
+
+    /**
+     * Helper chung: enqueue assets, parse atts cơ bản, output widget div.
+     *
+     * @param array  $atts       Shortcode attributes đã được shortcode_atts xử lý
+     * @param string $widget_key 'health' | 'rotation' | 'leaders' | 'flow'
+     */
+    private function render_widget( array $atts, string $widget_key ): string {
+        $tf = strtoupper( sanitize_text_field( $atts['timeframe'] ?? '1D' ) );
+        if ( ! in_array( $tf, [ '1D', '1W', '1M' ], true ) ) {
+            $tf = '1D';
+        }
+
+        wp_enqueue_script( 'lcni-market-dashboard' );
+        wp_enqueue_style( 'lcni-market-dashboard' );
+
+        wp_localize_script( 'lcni-market-dashboard', 'lcniMktDashCfg', [
+            'apiBase'   => esc_url( rest_url( 'lcni/v1/market-dashboard' ) ),
+            'nonce'     => wp_create_nonce( 'wp_rest' ),
+            'defaultTf' => $tf,
+            'i18n'      => [
+                'loading' => 'Đang tải dữ liệu...',
+                'error'   => 'Lỗi kết nối. Thử lại sau.',
+            ],
+        ] );
+
+        $title_html = ! empty( $atts['title'] )
+            ? '<h3 class="lcni-mkt-title">' . esc_html( $atts['title'] ) . '</h3>'
+            : '';
+
+        return sprintf(
+            '<div class="lcni-market-dashboard" data-widget="%s" data-timeframe="%s">%s<div class="lcni-mkt-body"></div></div>',
+            esc_attr( $widget_key ),
+            esc_attr( $tf ),
+            $title_html
+        );
+    }
+
+    /**
+     * [lcni_market_health timeframe="1D" title=""]
+     * Sức khỏe thị trường: composite score, 4 gauges, breadth bars.
+     */
+    public function render_widget_health( $atts = [] ): string {
+        $atts = shortcode_atts( [ 'timeframe' => '1D', 'title' => '' ], $atts, 'lcni_market_health' );
+        return $this->render_widget( $atts, 'health' );
+    }
+
+    /**
+     * [lcni_market_rotation timeframe="1D" title=""]
+     * Phân phối pha ngành: dẫn dắt / cải thiện / suy yếu / tụt hậu.
+     */
+    public function render_widget_rotation( $atts = [] ): string {
+        $atts = shortcode_atts( [ 'timeframe' => '1D', 'title' => '' ], $atts, 'lcni_market_rotation' );
+        return $this->render_widget( $atts, 'rotation' );
+    }
+
+    /**
+     * [lcni_market_leaders timeframe="1D" title=""]
+     * Bảng top ngành dẫn dắt với score, pha, return 5D.
+     */
+    public function render_widget_leaders( $atts = [] ): string {
+        $atts = shortcode_atts( [ 'timeframe' => '1D', 'title' => '' ], $atts, 'lcni_market_leaders' );
+        return $this->render_widget( $atts, 'leaders' );
+    }
+
+    /**
+     * [lcni_market_flow timeframe="1D" title=""]
+     * Top 5 ngành theo dòng tiền + tổng GTGD.
+     */
+    public function render_widget_flow( $atts = [] ): string {
+        $atts = shortcode_atts( [ 'timeframe' => '1D', 'title' => '' ], $atts, 'lcni_market_flow' );
+        return $this->render_widget( $atts, 'flow' );
     }
 }
