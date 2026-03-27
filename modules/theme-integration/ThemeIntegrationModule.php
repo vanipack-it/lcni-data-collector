@@ -56,6 +56,15 @@ class LCNI_Theme_Integration_Module {
         // 3. CSS badge trên avatar toggle (luôn visible, không cần mở dropdown)
         add_action( 'wp_head', [ $this, 'inject_package_badge_css' ] );
 
+        // 3b. Fallback: inject avatar JS qua wp_footer với priority thấp
+        // Chạy kể cả khi không detect được dashboard_context
+        add_action( 'wp_footer', [ $this, 'inject_avatar_fallback_script' ], 99 );
+
+        // 3c. Bell notification button (bên cạnh avatar)
+        // bell inject handled inside inject_avatar_fallback_script
+        // Thêm bell qua PHP hook trong topbar (chuẩn nhất)
+        add_action( 'sd_topbar_right_before_user', [ $this, 'render_bell_html' ] );
+
         // ── Phase 2: Cần theme thêm do_action (xem topbar.php + bottom-bar.php) ──
 
         // 4. Badge HTML đầy đủ trong dropdown header
@@ -224,6 +233,12 @@ class LCNI_Theme_Integration_Module {
             // Chỉ có label text
             $badge_inner_js = json_encode( esc_html( $label ) );
         }
+
+        // ── Avatar cho nút toggle user ────────────────────────────────────────
+        $avatar_html_js = $this->build_toggle_avatar_js( $pkg['color'] );
+
+        // ── Lời chào theo giờ trên topbar desktop ────────────────────────────
+        $greeting_js = $this->build_greeting_js();
         ?>
         <style id="lcni-pkg-badge-css">
         /* ── LCNI Package Badge ─────────────────────────────────── */
@@ -302,12 +317,43 @@ class LCNI_Theme_Integration_Module {
         @media (max-width: 640px) {
             .lcni-topbar-greeting { display: none; }
         }
+
+        /* ── LCNI User Avatar trong toggle button ───────────────────── */
+        .lcni-user-avatar {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            overflow: hidden;
+            flex-shrink: 0;
+            box-sizing: border-box;
+            vertical-align: middle;
+        }
+        .lcni-user-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 50%;
+            display: block;
+        }
+        /* Kích thước trong toggle topbar */
+        .sd-topbar .lcni-user-avatar {
+            width: 28px;
+            height: 28px;
+        }
+        /* Kích thước trong toggle bottom-bar */
+        .sd-bottom-bar .lcni-user-avatar {
+            width: 26px;
+            height: 26px;
+        }
         </style>
         <script id="lcni-pkg-badge-js">
         (function() {
             var badgeInner = <?php echo $badge_inner_js; ?>;
             var isIcon     = <?php echo $has_icon ? 'true' : 'false'; ?>;
             var expired    = <?php echo $is_expired; ?>;
+            var avatarHtml  = <?php echo $avatar_html_js; ?>;
+            var greetingHtml = <?php echo $greeting_js; ?>;
 
             function applyBadge() {
                 var toggles = document.querySelectorAll('.sd-user-dropdown__toggle');
@@ -329,10 +375,116 @@ class LCNI_Theme_Integration_Module {
                 });
             }
 
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', applyBadge);
-            } else {
+            /**
+             * Thay thế dashicons-admin-users trong nút toggle bằng avatar user.
+             *
+             * Dùng replaceChild() thay vì display:none để tránh bị reset
+             * khi <details> open/close trên một số browser.
+             * Tìm icon bằng Array.from(el.children) — đáng tin hơn :scope selector
+             * khi el là <summary> element.
+             */
+            function applyAvatar() {
+                // avatarHtml có thể là null (PHP json_encode null = "null" string)
+                if (!avatarHtml || avatarHtml === 'null') return;
+
+                // Selector ưu tiên: toggle trong topbar/bottom-bar
+                // Fallback: tất cả toggle (phòng trường hợp theme đổi class wrapper)
+                var toggles = document.querySelectorAll(
+                    '.sd-topbar .sd-user-dropdown__toggle, ' +
+                    '.sd-bottom-bar .sd-user-dropdown__toggle'
+                );
+
+                // Fallback nếu không tìm thấy với selector hẹp
+                if (!toggles.length) {
+                    // Lọc thủ công: chỉ lấy toggle KHÔNG nằm trong .sd-user-dropdown__menu
+                    var all = document.querySelectorAll('.sd-user-dropdown__toggle');
+                    var filtered = [];
+                    all.forEach(function(el) {
+                        if (!el.closest('.sd-user-dropdown__menu')) {
+                            filtered.push(el);
+                        }
+                    });
+                    toggles = filtered;
+                }
+
+                if (!toggles.length) return;
+
+                toggles.forEach(function(el) {
+                    // Bottom-bar: PHP lcni_get_user_avatar() đã render .lcni-avatar → skip
+                    if (el.closest('.sd-bottom-bar')) return;
+                    // Bỏ qua nếu đã inject avatar rồi
+                    if (el.querySelector('.lcni-user-avatar, .lcni-avatar')) return;
+
+                    // Tìm dashicons-admin-users là con TRỰC TIẾP
+                    var icon = null;
+                    var kids = Array.prototype.slice.call(el.children);
+                    for (var i = 0; i < kids.length; i++) {
+                        if (kids[i].classList && kids[i].classList.contains('dashicons-admin-users')) {
+                            icon = kids[i];
+                            break;
+                        }
+                    }
+
+                    // Build avatar element
+                    var tmp = document.createElement('span');
+                    tmp.innerHTML = avatarHtml;
+                    var avatarEl = tmp.firstElementChild;
+                    if (!avatarEl) return;
+
+                    if (icon) {
+                        // replaceChild — xóa hẳn khỏi DOM, không dùng display:none
+                        el.replaceChild(avatarEl, icon);
+                    } else {
+                        // Không có dashicons (có thể theme đã dùng get_avatar)
+                        // → thay thế img/avatar hiện có nếu có, hoặc prepend
+                        var existingImg = el.querySelector('img');
+                        if (existingImg && existingImg.parentElement === el) {
+                            el.replaceChild(avatarEl, existingImg);
+                        } else {
+                            el.insertBefore(avatarEl, el.firstChild);
+                        }
+                    }
+                });
+            }
+
+            /**
+             * Inject lời chào bên trái avatar trong .sd-topbar-right (desktop only).
+             * CSS đã ẩn .lcni-topbar-greeting trên ≤640px.
+             */
+            function applyGreeting() {
+                if (!greetingHtml) return;
+
+                // Chỉ inject vào topbar (không phải bottom-bar)
+                var topbarRight = document.querySelector('.sd-topbar .sd-topbar-right, .sd-topbar-right');
+                if (!topbarRight) return;
+
+                // Không inject trùng
+                if (topbarRight.querySelector('.lcni-topbar-greeting')) return;
+
+                // Tìm toggle trong topbar-right để chèn greeting ngay trước nó
+                var toggle = topbarRight.querySelector('.sd-user-dropdown__toggle');
+                var wrapper = document.createElement('span');
+                wrapper.innerHTML = greetingHtml;
+                var greetingEl = wrapper.firstElementChild;
+                if (!greetingEl) return;
+
+                if (toggle) {
+                    topbarRight.insertBefore(greetingEl, toggle);
+                } else {
+                    topbarRight.insertBefore(greetingEl, topbarRight.firstChild);
+                }
+            }
+
+            function init() {
+                applyGreeting();
+                applyAvatar();
                 applyBadge();
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', init);
+            } else {
+                init();
             }
         })();
         </script>
@@ -458,13 +610,600 @@ class LCNI_Theme_Integration_Module {
         ];
     }
 
+
+    /**
+     * Build HTML avatar cho nút toggle, encode thành JSON string để inject vào JS.
+     *
+     * Thứ tự ưu tiên:
+     *  1. Ảnh Google (meta lcni_google_avatar) — render <img>
+     *  2. Initials từ display_name              — render <span> tròn inline
+     *
+     * Không dùng Gravatar ở đây vì cần HTTP request async — toggle phải hiện ngay.
+     *
+     * @param string $border_color Màu viền hex từ gói SaaS.
+     * @return string JSON-encoded HTML string để nhúng vào JS.
+     */
+
+    /**
+     * Build lời chào theo giờ hiện tại, encode thành JSON string cho JS.
+     *
+     * Giờ server (giờ VN nếu WP timezone đúng):
+     *  05:00–11:59 → Chào buổi sáng
+     *  12:00–17:59 → Chào buổi chiều
+     *  18:00–04:59 → Chào buổi tối
+     *
+     * Tên dùng: display_name, fallback user_login.
+     *
+     * @return string JSON-encoded HTML string hoặc "null".
+     */
+    private function build_greeting_js() {
+        $user_id = get_current_user_id();
+        if ( ! $user_id ) {
+            return 'null';
+        }
+
+        $user = get_userdata( $user_id );
+        if ( ! $user ) {
+            return 'null';
+        }
+
+        // Lấy giờ theo timezone WordPress
+        $hour = (int) current_time( 'G' ); // 0-23
+
+        if ( $hour >= 5 && $hour < 12 ) {
+            $salutation = 'Chào buổi sáng';
+        } elseif ( $hour >= 12 && $hour < 18 ) {
+            $salutation = 'Chào buổi chiều';
+        } else {
+            $salutation = 'Chào buổi tối';
+        }
+
+        $name = ! empty( $user->display_name ) ? $user->display_name : $user->user_login;
+        $name = esc_html( $name );
+
+        $html = sprintf(
+            '<span class="lcni-topbar-greeting">%s, <strong>%s</strong></span>',
+            esc_html( $salutation ),
+            $name
+        );
+
+        return wp_json_encode( $html );
+    }
+
+    private function build_toggle_avatar_js( $border_color ) {
+        $user_id = get_current_user_id();
+        if ( ! $user_id ) {
+            return 'null';
+        }
+
+        $user         = get_userdata( $user_id );
+        $border_color = sanitize_hex_color( $border_color ) ?: '#2563eb';
+        $size         = 28; // px — đủ nhìn rõ trong cả topbar lẫn bottom-bar
+        $border_px    = 2;
+
+        // ── 1. Google avatar ─────────────────────────────────────────────────
+        $google_url = get_user_meta( $user_id, 'lcni_google_avatar', true );
+        if ( $google_url && filter_var( $google_url, FILTER_VALIDATE_URL ) ) {
+            $html = sprintf(
+                '<span class="lcni-user-avatar" style="width:%1$dpx;height:%1$dpx;border:%2$dpx solid %3$s;">'
+                . '<img src="%4$s" alt="%5$s" width="%1$d" height="%1$d" loading="lazy">'
+                . '</span>',
+                $size,
+                $border_px,
+                esc_attr( $border_color ),
+                esc_url( $google_url ),
+                esc_attr( $user ? $user->display_name : '' )
+            );
+            return wp_json_encode( $html );
+        }
+
+        // ── 2. Initials fallback ─────────────────────────────────────────────
+        $display_name = $user ? trim( $user->display_name ) : '';
+        if ( empty( $display_name ) ) {
+            return 'null';
+        }
+
+        $words = preg_split( '/\s+/u', $display_name, -1, PREG_SPLIT_NO_EMPTY );
+        if ( count( $words ) >= 2 ) {
+            $initials = mb_strtoupper( mb_substr( $words[0], 0, 1, 'UTF-8' ), 'UTF-8' )
+                      . mb_strtoupper( mb_substr( $words[ count($words)-1 ], 0, 1, 'UTF-8' ), 'UTF-8' );
+        } else {
+            $initials = mb_strtoupper( mb_substr( $words[0], 0, 2, 'UTF-8' ), 'UTF-8' );
+        }
+
+        // Tính màu nền nhạt 12% opacity
+        $hex = ltrim( $border_color, '#' );
+        if ( strlen( $hex ) === 3 ) {
+            $hex = $hex[0].$hex[0].$hex[1].$hex[1].$hex[2].$hex[2];
+        }
+        $r = hexdec( substr($hex,0,2) );
+        $g = hexdec( substr($hex,2,2) );
+        $b = hexdec( substr($hex,4,2) );
+        $bg = "rgba({$r},{$g},{$b},0.12)";
+
+        $font_size = max( 9, (int) round( $size * 0.38 ) );
+
+        $html = sprintf(
+            '<span class="lcni-user-avatar" '
+            . 'style="width:%1$dpx;height:%1$dpx;border:%2$dpx solid %3$s;'
+            . 'background:%4$s;color:%3$s;'
+            . 'font-size:%5$dpx;font-weight:700;font-family:inherit;'
+            . 'letter-spacing:0.04em;user-select:none;" '
+            . 'aria-label="%6$s" title="%6$s">'
+            . '%6$s'
+            . '</span>',
+            $size,
+            $border_px,
+            esc_attr( $border_color ),
+            esc_attr( $bg ),
+            $font_size,
+            esc_html( $initials )
+        );
+
+        return wp_json_encode( $html );
+    }
+
     /**
      * Convert hex color sang RGB tuple string "R,G,B" để dùng trong rgba().
      *
      * @param string $hex
      * @return string
      */
-    private function hex_to_rgb( $hex ) {
+    // =========================================================================
+    // Fallback avatar script — chạy qua wp_footer, không cần dashboard_context
+    // =========================================================================
+
+    /**
+     * Inject script thay icon user bằng avatar — chạy qua wp_footer priority 99.
+     * Không phụ thuộc stock_dashboard_theme_is_dashboard_context(), đảm bảo
+     * luôn chạy trên mọi trang có .sd-topbar hoặc .sd-bottom-bar.
+     */
+    /**
+     * Render bell button HTML trực tiếp vào topbar qua PHP hook.
+     * Đây là cách chuẩn nhất — không cần JS injection.
+     */
+    public function render_bell_html(): void {
+        if ( ! is_user_logged_in() ) return;
+        if ( ! class_exists( 'LCNI_InboxDB' ) ) return;
+        ?>
+        <div id="lcni-bell-wrap" style="position:relative;display:inline-flex;align-items:center;margin-right:4px;">
+            <button id="lcni-bell-btn"
+                    title="Thông báo"
+                    aria-label="Thông báo"
+                    style="position:relative;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;padding:0;border:none;border-radius:50%;background:transparent;cursor:pointer;color:inherit;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                </svg>
+                <span id="lcni-bell-badge"
+                      style="display:none;position:absolute;top:0;right:0;min-width:16px;height:16px;padding:0 3px;border-radius:8px;background:#ef4444;color:#fff;font-size:9px;font-weight:700;line-height:16px;text-align:center;box-shadow:0 0 0 2px rgba(0,0,0,.25);pointer-events:none;box-sizing:border-box;">0</span>
+            </button>
+            <div id="lcni-bell-dropdown"
+                 style="display:none;position:absolute;top:calc(100% + 6px);right:0;z-index:999999;width:320px;max-width:calc(100vw - 16px);background:#fff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.18);overflow:hidden;"></div>
+        </div>
+        <?php
+    }
+
+    public function inject_bell_script(): void {
+        if ( ! is_user_logged_in() ) return;
+        if ( ! class_exists( 'LCNI_InboxDB' ) ) return;
+
+        $rest_base = esc_url( rest_url( 'lcni/v1/inbox' ) );
+        $nonce     = wp_create_nonce( 'wp_rest' );
+        $inbox_url = esc_url( LCNI_InboxDB::get_admin_config()['inbox_page_url'] ?? home_url('/') );
+        ?>
+        <script id="lcni-bell-inject">
+        (function(){
+            var CFG = {
+                restBase: <?php echo wp_json_encode( $rest_base ); ?>,
+                nonce:    <?php echo wp_json_encode( $nonce ); ?>,
+                inboxUrl: <?php echo wp_json_encode( $inbox_url ); ?>,
+                poll:     60000
+            };
+
+            // ── Tạo bell element ─────────────────────────────────────────────
+            function createBell() {
+                var w = document.createElement('div');
+                w.id = 'lcni-bell-wrap';
+                w.style.cssText = 'position:relative;display:inline-flex;align-items:center;margin-right:6px;';
+                w.innerHTML =
+                    '<button id="lcni-bell-btn" style="position:relative;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;padding:0;border:none;border-radius:50%;background:transparent;cursor:pointer;color:inherit;">' +
+                        '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+                            '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>' +
+                            '<path d="M13.73 21a2 2 0 0 1-3.46 0"/>' +
+                        '</svg>' +
+                        '<span id="lcni-bell-badge" style="display:none;position:absolute;top:1px;right:1px;min-width:18px;height:18px;padding:0 4px;border-radius:999px;background:#ef4444;color:#fff;font-size:10px;font-weight:700;line-height:18px;text-align:center;box-shadow:0 0 0 2px #fff;pointer-events:none;box-sizing:border-box;">0</span>' +
+                    '</button>' +
+                    '<div id="lcni-bell-dropdown" style="display:none;position:absolute;top:calc(100% + 8px);right:0;z-index:99999;width:340px;max-width:calc(100vw - 16px);background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.16);overflow:hidden;"></div>';
+                return w;
+            }
+
+            // ── Inject vào topbar ────────────────────────────────────────────
+            // Chiến lược: tìm chính xác toggle button chứa lcni-avatar rồi inject bell trước nó
+            // Xác định vùng topbar để không inject nhầm vào content
+            function getTopbarScope() {
+                var scopes = [
+                    document.querySelector('.sd-topbar'),
+                    document.querySelector('[class*="topbar"]:not([class*="content"])'),
+                    document.querySelector('header'),
+                    document.querySelector('#masthead'),
+                    document.querySelector('#site-header'),
+                ];
+                for (var i = 0; i < scopes.length; i++) {
+                    if (scopes[i]) return scopes[i];
+                }
+                return null;
+            }
+
+            function findToggle() {
+                var scope = getTopbarScope();
+                if (!scope) return null;
+
+                // Ưu tiên: .sd-user-dropdown__toggle trong topbar scope
+                var toggle = scope.querySelector('.sd-user-dropdown__toggle');
+                if (toggle) return toggle;
+
+                // Tìm lcni-avatar CHỈ trong topbar scope
+                var avatar = scope.querySelector('.lcni-avatar, .lcni-user-avatar');
+                if (avatar) {
+                    var el = avatar.parentElement;
+                    while (el && el !== scope) {
+                        if (el.tagName === 'BUTTON' || el.tagName === 'A' ||
+                            (el.className && (String(el.className).indexOf('toggle') >= 0 ||
+                             String(el.className).indexOf('dropdown') >= 0))) {
+                            return el;
+                        }
+                        el = el.parentElement;
+                    }
+                    return avatar.parentElement;
+                }
+
+                // Fallback: greeting
+                var greeting = scope.querySelector('.lcni-topbar-greeting');
+                if (greeting) return greeting;
+
+                return null;
+            }
+
+            function injectBell() {
+                if (document.getElementById('lcni-bell-btn')) return;
+
+                var toggle = findToggle();
+                if (!toggle) {
+                    console.log('[LCNI Bell] toggle not found, retrying...');
+                    return;
+                }
+
+                var bell = createBell();
+                var parent = toggle.parentElement;
+                if (!parent) return;
+
+                parent.insertBefore(bell, toggle);
+                bindBell();
+                console.log('[LCNI Bell] injected before:', toggle.tagName, toggle.className.substring(0, 60));
+            }
+
+            // ── Badge ────────────────────────────────────────────────────────
+            var _unread = 0;
+            function setBadge(n) {
+                _unread = Math.max(0, n);
+                var b = document.getElementById('lcni-bell-badge');
+                if (!b) return;
+                b.style.display = _unread ? 'block' : 'none';
+                b.textContent   = _unread > 99 ? '99+' : String(_unread);
+            }
+
+            function fetchCount() {
+                fetch(CFG.restBase + '/count', {
+                    credentials: 'same-origin',
+                    headers: { 'X-WP-Nonce': CFG.nonce }
+                }).then(function(r){ return r.json(); }).then(function(d){
+                    setBadge(d.unread_count || 0);
+                }).catch(function(){});
+            }
+
+            // ── Dropdown ─────────────────────────────────────────────────────
+            var _open = false;
+
+            function renderItem(item) {
+                var url = CFG.inboxUrl + (CFG.inboxUrl.indexOf('?') >= 0 ? '&' : '?') + 'notif_id=' + item.id;
+                var bg  = item.is_read ? '#fff' : '#eff6ff';
+                var fw  = item.is_read ? '500' : '700';
+                return '<a href="' + url + '" data-id="' + item.id + '"'
+                    + ' style="display:flex;align-items:flex-start;gap:10px;padding:11px 16px;text-decoration:none;color:inherit;border-bottom:1px solid #f9fafb;background:' + bg + ';">'
+                    + '<div style="flex:1;min-width:0;">'
+                        + '<div style="font-size:13px;font-weight:' + fw + ';color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escH(item.title) + '</div>'
+                        + '<div style="font-size:11px;color:#9ca3af;margin-top:2px;">' + escH(item.time_ago) + '</div>'
+                    + '</div>'
+                    + (item.is_read ? '' : '<div style="width:8px;height:8px;border-radius:50%;background:#3b82f6;flex-shrink:0;margin-top:4px;"></div>')
+                    + '</a>';
+            }
+
+            function openDropdown() {
+                var drop = document.getElementById('lcni-bell-dropdown');
+                if (!drop) return;
+                _open = true;
+                drop.style.display = 'block';
+                drop.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;padding:13px 16px 11px;border-bottom:1px solid #f3f4f6;">'
+                    + '<span style="font-weight:700;font-size:14px;">🔔 Thông báo</span>'
+                    + '<button id="lcni-drop-mark-all" style="border:none;background:none;color:#3b82f6;font-size:12px;font-weight:600;cursor:pointer;">✓ Đọc hết</button>'
+                    + '</div>'
+                    + '<div id="lcni-drop-list" style="max-height:360px;overflow-y:auto;"><div style="text-align:center;padding:20px;color:#9ca3af;">Đang tải...</div></div>'
+                    + '<div style="padding:10px 16px;border-top:1px solid #f3f4f6;text-align:center;"><a href="' + escH(CFG.inboxUrl) + '" style="font-size:13px;color:#3b82f6;font-weight:600;text-decoration:none;">Xem tất cả →</a></div>';
+
+                fetch(CFG.restBase + '?per_page=8', {
+                    credentials: 'same-origin',
+                    headers: { 'X-WP-Nonce': CFG.nonce }
+                }).then(function(r){ return r.json(); }).then(function(d){
+                    var list = document.getElementById('lcni-drop-list');
+                    if (!list) return;
+                    var items = d.items || [];
+                    setBadge(d.unread_count || 0);
+                    list.innerHTML = items.length
+                        ? items.map(renderItem).join('')
+                        : '<div style="text-align:center;padding:24px;color:#9ca3af;">Không có thông báo.</div>';
+
+                    list.addEventListener('click', function(e) {
+                        var a = e.target.closest('[data-id]');
+                        if (!a) return;
+                        fetch(CFG.restBase + '/mark-read', { method:'POST', credentials:'same-origin',
+                            headers:{'X-WP-Nonce':CFG.nonce,'Content-Type':'application/json'},
+                            body: JSON.stringify({ ids: [parseInt(a.dataset.id,10)] })
+                        }).then(function(r){ return r.json(); }).then(function(r){ setBadge(r.unread_count||0); });
+                    });
+                });
+
+                var markAll = document.getElementById('lcni-drop-mark-all');
+                if (markAll) markAll.addEventListener('click', function(){
+                    fetch(CFG.restBase + '/mark-read', { method:'POST', credentials:'same-origin',
+                        headers:{'X-WP-Nonce':CFG.nonce,'Content-Type':'application/json'},
+                        body: JSON.stringify({ ids: 'all' })
+                    }).then(function(r){ return r.json(); }).then(function(r){ setBadge(0); });
+                });
+            }
+
+            function closeDropdown() {
+                var drop = document.getElementById('lcni-bell-dropdown');
+                if (drop) drop.style.display = 'none';
+                _open = false;
+            }
+
+            function bindBell() {
+                var btn = document.getElementById('lcni-bell-btn');
+                if (!btn || btn._lcniBound) return;
+                btn._lcniBound = true;
+                btn.addEventListener('click', function(e){
+                    e.stopPropagation();
+                    _open ? closeDropdown() : openDropdown();
+                });
+                document.addEventListener('click', function(e){
+                    var w = document.getElementById('lcni-bell-wrap');
+                    if (w && !w.contains(e.target)) closeDropdown();
+                });
+                document.addEventListener('keydown', function(e){
+                    if (e.key === 'Escape') closeDropdown();
+                });
+            }
+
+            function escH(s) {
+                return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+            }
+
+            // ── Polling ──────────────────────────────────────────────────────
+            function startPoll() {
+                fetchCount();
+                var t = setInterval(fetchCount, CFG.poll);
+                document.addEventListener('visibilitychange', function(){
+                    if (document.hidden) { clearInterval(t); }
+                    else { fetchCount(); t = setInterval(fetchCount, CFG.poll); }
+                });
+            }
+
+            // ── Boot ─────────────────────────────────────────────────────────
+            function boot() {
+                // Debug: log topbar structure để diagnose
+                setTimeout(function() {
+                    var topbars = document.querySelectorAll('[class*="topbar"],[class*="header"] nav,[class*="header"] .right');
+                    if (topbars.length) {
+                        console.log('[LCNI Bell] topbar candidates:', Array.prototype.map.call(topbars, function(el){ return el.className; }));
+                    }
+                    var anchor = findAnchorEl();
+                    console.log('[LCNI Bell] anchor found:', anchor ? anchor.className : 'NULL');
+                }, 200);
+
+                injectBell();
+                setTimeout(injectBell, 300);
+                setTimeout(injectBell, 800);
+                setTimeout(injectBell, 2000);
+                startPoll();
+                // MutationObserver: catch topbar nếu theme render sau DOMContentLoaded
+                if (window.MutationObserver) {
+                    var obs = new MutationObserver(function() {
+                        if (!document.getElementById('lcni-bell-btn')) {
+                            injectBell();
+                        } else {
+                            obs.disconnect();
+                        }
+                    });
+                    obs.observe(document.body, { childList: true, subtree: true });
+                    setTimeout(function(){ obs.disconnect(); }, 5000);
+                }
+            }
+
+            if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+            else boot();
+        })();
+        </script>
+        <?php
+    }
+
+    public function inject_avatar_fallback_script(): void {
+        if ( ! is_user_logged_in() ) {
+            return;
+        }
+
+        $pkg          = $this->get_current_user_badge_data();
+        $avatar_html  = $this->build_toggle_avatar_js( $pkg['color'] );
+
+        // Không có avatar → không cần inject
+        if ( $avatar_html === 'null' ) {
+            return;
+        }
+        ?>
+        <script id="lcni-avatar-fallback-js">
+        (function() {
+            var avatarHtml = <?php echo $avatar_html; ?>;
+            if (!avatarHtml || avatarHtml === 'null') return;
+
+            function doInject() {
+                // Kiểm tra trang có topbar/bottom-bar không — nếu không thì bỏ qua
+                if (!document.querySelector('.sd-topbar, .sd-bottom-bar')) return;
+
+                // Nhắm đúng toggle trong topbar và bottom-bar (không phải trong menu)
+                var toggles = document.querySelectorAll(
+                    '.sd-topbar .sd-user-dropdown__toggle, ' +
+                    '.sd-bottom-bar .sd-user-dropdown__toggle'
+                );
+
+                // Fallback rộng hơn nếu không tìm thấy
+                if (!toggles.length) {
+                    var all = document.querySelectorAll('.sd-user-dropdown__toggle');
+                    var arr = [];
+                    all.forEach(function(el) {
+                        if (!el.closest('.sd-user-dropdown__menu')) arr.push(el);
+                    });
+                    toggles = arr;
+                }
+
+                toggles.forEach(function(el) {
+                    // Bottom-bar: PHP lcni_get_user_avatar() đã render .lcni-avatar → skip
+                    if (el.closest('.sd-bottom-bar')) return;
+                    // Đã inject rồi → bỏ qua
+                    if (el.querySelector('.lcni-user-avatar, .lcni-avatar')) return;
+
+                    // Tìm dashicons-admin-users là con trực tiếp
+                    var icon = null;
+                    Array.prototype.forEach.call(el.children, function(child) {
+                        if (!icon && child.classList && child.classList.contains('dashicons-admin-users')) {
+                            icon = child;
+                        }
+                    });
+
+                    var tmp = document.createElement('span');
+                    tmp.innerHTML = avatarHtml;
+                    var avatarEl = tmp.firstElementChild;
+                    if (!avatarEl) return;
+
+                    if (icon) {
+                        el.replaceChild(avatarEl, icon);
+                    } else {
+                        // Không có dashicons — thay img nếu có, hoặc prepend
+                        var existingImg = null;
+                        Array.prototype.forEach.call(el.children, function(child) {
+                            if (!existingImg && child.tagName === 'IMG') existingImg = child;
+                        });
+                        if (existingImg) {
+                            el.replaceChild(avatarEl, existingImg);
+                        } else {
+                            el.insertBefore(avatarEl, el.firstChild);
+                        }
+                    }
+                });
+            }
+
+            // ── Inject bell ngay trước toggle (cùng selector với avatar) ──
+            // Bell đã được render bởi PHP (render_bell_html) — chỉ cần bind events
+            function bindBellIfRendered() {
+                var btn = document.getElementById('lcni-bell-btn');
+                if (!btn || btn._bellBound) return;
+                btn._bellBound = true;
+
+                var RBASE  = <?php echo wp_json_encode( esc_url( rest_url( 'lcni/v1/inbox' ) ) ); ?>;
+                var RNONCE = <?php echo wp_json_encode( wp_create_nonce( 'wp_rest' ) ); ?>;
+                var IURL   = <?php echo wp_json_encode( class_exists('LCNI_InboxDB') ? esc_url( LCNI_InboxDB::get_admin_config()['inbox_page_url'] ?? home_url('/') ) : esc_url( home_url('/') ) ); ?>;
+                var _open  = false;
+
+                function setBadge(n) {
+                    var b = document.getElementById('lcni-bell-badge');
+                    if (!b) return;
+                    b.style.display = n > 0 ? 'block' : 'none';
+                    b.textContent = n > 99 ? '99+' : String(n);
+                }
+                function fetchCount() {
+                    fetch(RBASE + '/count', {credentials:'same-origin', headers:{'X-WP-Nonce':RNONCE}})
+                        .then(function(r){return r.json();}).then(function(d){setBadge(d.unread_count||0);}).catch(function(){});
+                }
+                function escH(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+                function renderDrop(items, unread) {
+                    setBadge(unread);
+                    var drop = document.getElementById('lcni-bell-dropdown');
+                    if (!drop) return;
+                    var html = '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px 10px;border-bottom:1px solid #f3f4f6;">'
+                        + '<span style="font-weight:700;font-size:13px;">🔔 Thông báo</span>'
+                        + '<button id="lcni-mark-all" style="border:none;background:none;color:#3b82f6;font-size:11px;font-weight:600;cursor:pointer;padding:2px 6px;">✓ Đọc hết</button>'
+                        + '</div><div style="max-height:320px;overflow-y:auto;">';
+                    if (!items.length) {
+                        html += '<div style="text-align:center;padding:20px;color:#9ca3af;font-size:13px;">Không có thông báo.</div>';
+                    } else {
+                        items.forEach(function(item) {
+                            var u = IURL + (IURL.indexOf('?')>=0?'&':'?') + 'notif_id=' + item.id;
+                            html += '<a href="' + escH(u) + '" data-id="' + item.id + '" style="display:block;padding:10px 14px;text-decoration:none;color:inherit;border-bottom:1px solid #f9fafb;background:' + (item.is_read?'#fff':'#eff6ff') + ';">'
+                                + '<div style="font-size:12px;font-weight:' + (item.is_read?'500':'700') + ';color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escH(item.title) + '</div>'
+                                + '<div style="font-size:10px;color:#9ca3af;margin-top:2px;">' + escH(item.time_ago) + '</div>'
+                                + '</a>';
+                        });
+                    }
+                    html += '</div><div style="padding:8px 14px;border-top:1px solid #f3f4f6;text-align:center;"><a href="' + escH(IURL) + '" style="font-size:12px;color:#3b82f6;font-weight:600;text-decoration:none;">Xem tất cả →</a></div>';
+                    drop.innerHTML = html;
+                    var ma = document.getElementById('lcni-mark-all');
+                    if (ma) ma.addEventListener('click', function(){
+                        fetch(RBASE+'/mark-read',{method:'POST',credentials:'same-origin',headers:{'X-WP-Nonce':RNONCE,'Content-Type':'application/json'},body:JSON.stringify({ids:'all'})})
+                            .then(function(r){return r.json();}).then(function(){setBadge(0);});
+                    });
+                    drop.addEventListener('click', function(e){
+                        var a = e.target.closest('[data-id]');
+                        if (!a) return;
+                        fetch(RBASE+'/mark-read',{method:'POST',credentials:'same-origin',headers:{'X-WP-Nonce':RNONCE,'Content-Type':'application/json'},body:JSON.stringify({ids:[parseInt(a.dataset.id,10)]})})
+                            .then(function(r){return r.json();}).then(function(d){setBadge(d.unread_count||0);});
+                    });
+                }
+
+                btn.addEventListener('click', function(e){
+                    e.stopPropagation();
+                    var drop = document.getElementById('lcni-bell-dropdown');
+                    if (!drop) return;
+                    _open = !_open;
+                    if (_open) {
+                        drop.style.display = 'block';
+                        drop.innerHTML = '<div style="text-align:center;padding:16px;color:#9ca3af;font-size:12px;">Đang tải...</div>';
+                        fetch(RBASE+'?per_page=8',{credentials:'same-origin',headers:{'X-WP-Nonce':RNONCE}})
+                            .then(function(r){return r.json();})
+                            .then(function(d){renderDrop(d.items||[],d.unread_count||0);});
+                    } else { drop.style.display = 'none'; }
+                });
+                document.addEventListener('click', function(e){
+                    var w = document.getElementById('lcni-bell-wrap');
+                    if (_open && w && !w.contains(e.target)){ _open=false; var d=document.getElementById('lcni-bell-dropdown'); if(d) d.style.display='none'; }
+                });
+                document.addEventListener('keydown', function(e){ if(e.key==='Escape'&&_open){ _open=false; var d=document.getElementById('lcni-bell-dropdown'); if(d) d.style.display='none'; } });
+
+                fetchCount();
+                setInterval(fetchCount, 60000);
+                document.addEventListener('visibilitychange', function(){ if(!document.hidden) fetchCount(); });
+            }
+            // Chạy ngay (wp_footer = DOM đã sẵn sàng) + retry 1 lần sau 500ms
+            // đề phòng theme render toggle sau DOMContentLoaded
+            doInject();
+            setTimeout(doInject, 500);
+            bindBellIfRendered();
+            setTimeout(bindBellIfRendered, 300);
+        })();
+        </script>
+        <?php
+    }
+
+        private function hex_to_rgb( $hex ) {
         $hex = ltrim( $hex, '#' );
         if ( strlen( $hex ) === 3 ) {
             $hex = $hex[0] . $hex[0] . $hex[1] . $hex[1] . $hex[2] . $hex[2];
