@@ -16,6 +16,9 @@ class ExitEngine {
     /**
      * Trả về lý do thoát lệnh (string) hoặc '' nếu chưa cần thoát.
      * Thứ tự ưu tiên: stop_loss > max_loss > take_profit > max_hold
+     *
+     * @param int $holding_days PHẢI là số ngày thực (uncapped), KHÔNG phải min(holding, max_hold).
+     *                          Dùng giá trị thực để kiểm tra MAX_HOLD chính xác.
      */
     public function get_exit_reason( $signal, $rule, $current_price, $r_multiple, $holding_days ): string {
         $entry_price        = (float) ( $signal['entry_price'] ?? 0 );
@@ -49,9 +52,15 @@ class ExitEngine {
     }
 
     /**
-     * Tính final_r có cap theo exit_reason.
+     * Tính final_r có cap theo exit_reason. ĐÂY LÀ NGUỒN CANONICAL DUY NHẤT.
+     * DailyCronService phải gọi hàm này thay vì tự tính riêng.
+     *
      * stop_loss / max_loss → cap tối đa -1.0R (đúng nguyên tắc R-multiple)
      * take_profit / max_hold → dùng r_multiple thực tế
+     *
+     * @param float  $r_multiple  R-multiple thực tế tính từ giá exit
+     * @param string $exit_reason Một trong các hằng số REASON_* của class này
+     * @return float final_r đã được cap
      */
     public static function compute_final_r( float $r_multiple, string $exit_reason ): float {
         if ( $exit_reason === self::REASON_STOP_LOSS || $exit_reason === self::REASON_MAX_LOSS ) {

@@ -16,6 +16,10 @@ class SignalRepository {
         $this->notifier = $notifier;
     }
 
+    public function get_notifier(): ?RuleFollowNotifier {
+        return $this->notifier;
+    }
+
     private $wpdb;
     private $table;
     private $symbols_table;
@@ -73,14 +77,27 @@ class SignalRepository {
     }
 
     public function create_signal($rule, $symbol, $entry_time, $entry_price) {
-        $symbol = strtoupper(trim((string) $symbol));
+        $symbol    = strtoupper(trim((string) $symbol));
         $timeframe = strtoupper(sanitize_text_field((string) ($rule['timeframe'] ?? '1D')));
 
         if (!$this->is_valid_symbol($symbol) || $entry_price <= 0) {
+            if ( defined('WP_DEBUG') && WP_DEBUG ) {
+                error_log( sprintf(
+                    '[LCNI Signal] create_signal REJECTED rule #%d symbol=%s price=%s — reason: %s',
+                    (int)($rule['id'] ?? 0), $symbol, $entry_price,
+                    !$this->is_valid_symbol($symbol) ? 'invalid_symbol' : 'price_zero'
+                ) );
+            }
             return 0;
         }
 
         if ($this->find_by_rule_symbol_entry((int) $rule['id'], $symbol, (int) $entry_time, $timeframe)) {
+            if ( defined('WP_DEBUG') && WP_DEBUG ) {
+                error_log( sprintf(
+                    '[LCNI Signal] create_signal SKIPPED (duplicate) rule #%d symbol=%s entry_time=%d',
+                    (int)$rule['id'], $symbol, $entry_time
+                ) );
+            }
             return 0;
         }
 
@@ -108,53 +125,54 @@ class SignalRepository {
         $this->wpdb->insert($this->table, $data);
         $signal_id = (int) $this->wpdb->insert_id;
 
-        // Fire email notification to rule followers
-        if ( $signal_id > 0 && $this->notifier !== null ) {
-            $this->notifier->on_new_signal(
-                $signal_id, $rule, $symbol, $entry_price, $entry_time
-            );
+        // Hook cho UserRuleEngine để mirror signal (giữ nguyên — fire per-signal)
+        if ( $signal_id > 0 ) {
+            do_action( 'lcni_signal_created', $signal_id, (int) $rule['id'], $symbol, $entry_price, $entry_time );
         }
+
+        // NOTE: Email và inbox notification KHÔNG gửi ở đây nữa.
+        // DailyCronService gom tất cả signals của 1 rule → gọi notifier->on_new_signals_batch()
+        // sau khi vòng foreach kết thúc → 1 email digest + 1 inbox notification cho mỗi follower.
 
         return $signal_id;
     }
 
     public function prune_invalid_signals() {
-        $sql = "DELETE s FROM {$this->table} s
-            LEFT JOIN {$this->symbols_table} sym ON sym.symbol = s.symbol
-            WHERE sym.symbol IS NULL OR s.symbol = ''";
-
-        return (int) $this->wpdb->query($sql);
+        // Chỉ xóa signals có symbol rỗng (data corruption) — KHÔNG xóa theo lcni_symbols
+        // vì mã có thể bị delist sau khi signal đã hợp lệ được tạo
+        // → xóa signal mở có symbol = '' hoặc NULL
+        $sql = "DELETE FROM {$this->table} WHERE (symbol IS NULL OR symbol = '') AND status = 'open'";
+        return (int) $this->wpdb->query( $sql );
     }
 
     public function update_open_signal_metrics($signal_id, $current_price, $r_multiple, $position_state, $holding_days) {
+        // S2 FIX: bỏ format array ['%f',...] để tránh PHP locale dấu phẩy thập phân
+        // wpdb->update tự suy luận format từ kiểu dữ liệu PHP
         return $this->wpdb->update(
             $this->table,
             [
-                'current_price' => (float) $current_price,
-                'r_multiple' => (float) $r_multiple,
-                'position_state' => sanitize_text_field((string) $position_state),
-                'holding_days' => (int) $holding_days,
+                'current_price'  => (float) $current_price,
+                'r_multiple'     => (float) $r_multiple,
+                'position_state' => sanitize_text_field( (string) $position_state ),
+                'holding_days'   => (int) $holding_days,
             ],
-            ['id' => (int) $signal_id],
-            ['%f', '%f', '%s', '%d'],
-            ['%d']
+            [ 'id' => (int) $signal_id ]
         );
     }
 
     public function close_signal($signal_id, $exit_price, $exit_time, $final_r, $holding_days, $exit_reason = '') {
+        // S3 FIX: bỏ format array có %f để tránh PHP locale bug
         return $this->wpdb->update(
             $this->table,
             [
-                'status'      => 'closed',
-                'exit_price'  => (float) $exit_price,
-                'exit_time'   => (int) $exit_time,
-                'final_r'     => (float) $final_r,
-                'holding_days'=> (int) $holding_days,
-                'exit_reason' => sanitize_key( (string) $exit_reason ),
+                'status'       => 'closed',
+                'exit_price'   => (float) $exit_price,
+                'exit_time'    => (int) $exit_time,
+                'final_r'      => (float) $final_r,
+                'holding_days' => (int) $holding_days,
+                'exit_reason'  => sanitize_key( (string) $exit_reason ),
             ],
-            ['id' => (int) $signal_id],
-            ['%s', '%f', '%d', '%f', '%d', '%s'],
-            ['%d']
+            [ 'id' => (int) $signal_id ]
         );
     }
 

@@ -8,6 +8,8 @@ class PerformanceCalculator {
     private $wpdb;
     private $signal_table;
     private $performance_table;
+    /** @var bool|null  P3 FIX: cache SHOW COLUMNS kết quả thay vì query lại mỗi lần */
+    private $has_exit_reason_col = null;
 
     public function __construct(wpdb $wpdb) {
         $this->wpdb = $wpdb;
@@ -19,10 +21,20 @@ class PerformanceCalculator {
         return (string) ( $this->wpdb->last_error ?? '' );
     }
 
-    public function refresh_all() {
-        $rule_ids = $this->wpdb->get_col("SELECT DISTINCT rule_id FROM {$this->signal_table}");
-        foreach ((array) $rule_ids as $rule_id) {
-            $this->refresh_rule((int) $rule_id);
+    /**
+     * Refresh performance cho các rule.
+     * P1 FIX: nhận danh sách rule_ids cụ thể để tránh refresh toàn bộ sau mỗi thao tác nhỏ.
+     * Truyền [] (mảng rỗng) để refresh tất cả (dùng cho batch jobs ban đêm).
+     *
+     * @param int[] $rule_ids  Danh sách rule_id cần refresh. [] = refresh all.
+     */
+    public function refresh_all( array $rule_ids = [] ): void {
+        if ( empty( $rule_ids ) ) {
+            // Chỉ gọi khi thực sự cần refresh toàn bộ (ví dụ: admin tool)
+            $rule_ids = $this->wpdb->get_col( "SELECT DISTINCT rule_id FROM {$this->signal_table}" );
+        }
+        foreach ( (array) $rule_ids as $rule_id ) {
+            $this->refresh_rule( (int) $rule_id );
         }
     }
 
@@ -59,13 +71,15 @@ class PerformanceCalculator {
             $max_r = $max_r === null ? $r : max($max_r, $r);
             $min_r = $min_r === null ? $r : min($min_r, $r);
 
-            if ($r >= 0) {
+            // P2 FIX: tách breakeven (r=0) khỏi win để tránh inflate winrate và Kelly%
+            if ( $r > 0 ) {
                 $win++;
                 $sum_win_r += $r;
-            } else {
+            } elseif ( $r < 0 ) {
                 $lose++;
-                $sum_loss_r += abs($r);
+                $sum_loss_r += abs( $r );
             }
+            // r == 0 (breakeven): không đếm vào win hoặc lose
         }
 
         $winrate    = $closed_total > 0 ? $win / $closed_total : 0;
@@ -116,11 +130,7 @@ class PerformanceCalculator {
      * Each element: [ date, trade_r, cumulative_r, symbol ]
      */
     public function get_equity_curve( int $rule_id ): array {
-        // Kiểm tra cột exit_reason có tồn tại không (migration có thể chưa chạy)
-        $has_exit_reason = (bool) $this->wpdb->get_var(
-            "SHOW COLUMNS FROM {$this->signal_table} LIKE 'exit_reason'"
-        );
-
+        $has_exit_reason = $this->has_exit_reason_column();
         $select = $has_exit_reason
             ? "SELECT symbol, entry_time, exit_time, final_r, holding_days, exit_reason"
             : "SELECT symbol, entry_time, exit_time, final_r, holding_days";
@@ -177,11 +187,7 @@ class PerformanceCalculator {
         $result = array_fill_keys( $known, 0 );
         $result['unknown'] = 0;
 
-        $has_exit_reason = (bool) $this->wpdb->get_var(
-            "SHOW COLUMNS FROM {$this->signal_table} LIKE 'exit_reason'"
-        );
-
-        if ( ! $has_exit_reason ) {
+        if ( ! $this->has_exit_reason_column() ) {
             return $result;
         }
 
@@ -233,6 +239,18 @@ class PerformanceCalculator {
         if ( $score >= 65 ) return 'good';
         if ( $score >= 40 ) return 'neutral';
         return 'weak';
+    }
+
+    /**
+     * P3 FIX: Cache kết quả SHOW COLUMNS để không query lại nhiều lần trong cùng request.
+     */
+    private function has_exit_reason_column(): bool {
+        if ( $this->has_exit_reason_col === null ) {
+            $this->has_exit_reason_col = (bool) $this->wpdb->get_var(
+                "SHOW COLUMNS FROM {$this->signal_table} LIKE 'exit_reason'"
+            );
+        }
+        return $this->has_exit_reason_col;
     }
 
     public function list_performance($rule_id = 0) {

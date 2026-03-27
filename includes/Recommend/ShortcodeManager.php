@@ -27,6 +27,32 @@ class ShortcodeManager {
         'signal__npl_closed' => 'NPL đã chốt (%)',
     ];
 
+    // Việt hóa position_state
+    private const POSITION_STATE_VI = [
+        'EARLY'            => 'MUA',
+        'HOLD'             => 'NẮM GIỮ',
+        'ADD_ZONE'         => 'GIA TĂNG',
+        'TAKE_PROFIT_ZONE' => 'CHỐT LỜI',
+        'CUT_ZONE'         => 'RỦI RO',
+    ];
+
+    // Việt hóa status
+    private const STATUS_VI = [
+        'open'   => 'MỞ',
+        'closed' => 'ĐÓNG',
+    ];
+
+    // Việt hóa exit_reason
+    private const EXIT_REASON_VI = [
+        'stop_loss'   => 'Cắt lỗ',
+        'take_profit' => 'Chốt lời',
+        'max_hold'    => 'Hết thời gian',
+        'max_loss'    => 'Lỗ tối đa',
+        'manual'      => 'Thủ công',
+        'trailing_sl' => 'Trailing SL',
+        'exit_signal' => 'Tín hiệu thoát',
+    ];
+
     private $signal_repository;
     private $performance_calculator;
     private $position_engine;
@@ -78,134 +104,182 @@ class ShortcodeManager {
         if (!is_string($register_url) || $register_url === '') {
             $register_url = function_exists('wp_registration_url') ? wp_registration_url() : wp_login_url();
         }
-        $value_background = (string) ($styles['value_background'] ?? '#ffffff');
-        $value_text_color = (string) ($styles['value_text_color'] ?? '#111827');
-        $row_hover_background = (string) ($styles['row_hover_bg'] ?? '#f3f4f6');
-        $sticky_column = (string) ($styles['sticky_column'] ?? 'signal__symbol');
-        $sticky_header_enabled = !empty($styles['sticky_header']);
-        $filter_button_color = (string) ($styles['filter_button_color'] ?? '#374151');
-        $filter_button_background = (string) ($styles['filter_button_background'] ?? '#ffffff');
-        $filter_button_height = (int) ($styles['filter_button_height'] ?? 28);
-        $filter_button_font_size = (int) ($styles['filter_button_font_size'] ?? 14);
-        $filter_button_icon = $this->sanitize_icon_class((string) ($styles['filter_button_icon'] ?? 'fa-solid fa-filter'), 'fa-solid fa-filter');
-        $watchlist_button_color = (string) ($styles['watchlist_button_color'] ?? '#dc2626');
-        $watchlist_button_active_color = (string) ($styles['watchlist_button_active_color'] ?? '#16a34a');
-        $watchlist_button_height = (int) ($styles['watchlist_button_height'] ?? 28);
-        $watchlist_button_font_size = (int) ($styles['watchlist_button_font_size'] ?? 15);
-        $watchlist_button_icon = $this->sanitize_icon_class((string) ($styles['watchlist_button_icon'] ?? 'fa-solid fa-heart'), 'fa-solid fa-heart');
-        $watchlist_button_active_icon = $this->sanitize_icon_class((string) ($styles['watchlist_button_active_icon'] ?? 'fa-solid fa-check'), 'fa-solid fa-check');
-        $filter_panel_button_height = (int) ($styles['filter_panel_button_height'] ?? 32);
-        $filter_panel_button_font_size = (int) ($styles['filter_panel_button_font_size'] ?? 14);
-        $filter_apply_button_color = (string) ($styles['filter_apply_button_color'] ?? '#ffffff');
-        $filter_apply_button_background = (string) ($styles['filter_apply_button_background'] ?? '#2563eb');
-        $filter_apply_button_hover_background = (string) ($styles['filter_apply_button_hover_background'] ?? '#1d4ed8');
-        $filter_apply_button_icon = $this->sanitize_icon_class((string) ($styles['filter_apply_button_icon'] ?? 'fa-solid fa-check'), 'fa-solid fa-check');
-        $filter_apply_button_label = sanitize_text_field((string) ($styles['filter_apply_button_label'] ?? 'Apply'));
-        $filter_clear_button_color = (string) ($styles['filter_clear_button_color'] ?? '#111827');
-        $filter_clear_button_background = (string) ($styles['filter_clear_button_background'] ?? '#e5e7eb');
-        $filter_clear_button_hover_background = (string) ($styles['filter_clear_button_hover_background'] ?? '#d1d5db');
-        $filter_clear_button_icon = $this->sanitize_icon_class((string) ($styles['filter_clear_button_icon'] ?? 'fa-solid fa-eraser'), 'fa-solid fa-eraser');
-        $filter_clear_button_label = sanitize_text_field((string) ($styles['filter_clear_button_label'] ?? 'Clear'));
-        $filter_panel_button_border = sanitize_text_field((string) ($styles['filter_panel_button_border'] ?? '1px solid #9ca3af'));
-        $filter_panel_button_border_radius = (int) ($styles['filter_panel_button_border_radius'] ?? 6);
+        // Sticky controlled globally via LCNI_Table_Config (Admin → Bảng dữ liệu)
+        $sticky_header_enabled = class_exists('LCNI_Table_Config') ? LCNI_Table_Config::sticky_header() : true;
+        $sticky_first_col      = class_exists('LCNI_Table_Config') ? LCNI_Table_Config::sticky_first_col() : true;
         $table_max_height = (int) ($styles['table_max_height'] ?? 560);
-        $wrapper_style = sprintf('font-family:%s;color:%s;background:%s;border:%s;border-radius:%dpx;overflow:visible;max-width:100%%;position:relative;isolation:isolate;--lcni-signals-filter-btn-color:%s;--lcni-signals-filter-btn-bg:%s;--lcni-signals-watchlist-btn-color:%s;--lcni-signals-watchlist-btn-active-color:%s;--lcni-signals-filter-btn-height:%dpx;--lcni-signals-filter-btn-font-size:%dpx;--lcni-signals-watchlist-btn-height:%dpx;--lcni-signals-watchlist-btn-font-size:%dpx;--lcni-signals-panel-btn-height:%dpx;--lcni-signals-panel-btn-font-size:%dpx;--lcni-signals-apply-btn-bg:%s;--lcni-signals-apply-btn-color:%s;--lcni-signals-apply-btn-hover-bg:%s;--lcni-signals-clear-btn-bg:%s;--lcni-signals-clear-btn-color:%s;--lcni-signals-clear-btn-hover-bg:%s;--lcni-signals-panel-btn-border:%s;--lcni-signals-panel-btn-radius:%dpx;',
-            esc_attr((string) ($styles['font'] ?? 'inherit')),
-            esc_attr((string) ($styles['text_color'] ?? '#111827')),
-            esc_attr((string) ($styles['background'] ?? '#ffffff')),
-            esc_attr((string) ($styles['border'] ?? '1px solid #e5e7eb')),
-            (int) ($styles['border_radius'] ?? 8),
-            esc_attr($filter_button_color),
-            esc_attr($filter_button_background),
-            esc_attr($watchlist_button_color),
-            esc_attr($watchlist_button_active_color),
-            $filter_button_height,
-            $filter_button_font_size,
-            $watchlist_button_height,
-            $watchlist_button_font_size,
-            $filter_panel_button_height,
-            $filter_panel_button_font_size,
-            esc_attr($filter_apply_button_background),
-            esc_attr($filter_apply_button_color),
-            esc_attr($filter_apply_button_hover_background),
-            esc_attr($filter_clear_button_background),
-            esc_attr($filter_clear_button_color),
-            esc_attr($filter_clear_button_hover_background),
-            esc_attr($filter_panel_button_border),
-            $filter_panel_button_border_radius
-        );
+        // overflow:clip → chặn bảng tràn ra ngoài mà không tạo scroll context mới
+        $wrapper_style = 'overflow:clip;max-width:100%;position:relative;';
 
         $button_configs = [
-            'btn_filter_watchlist_login' => LCNI_Button_Style_Config::get_button('btn_filter_watchlist_login'),
-            'btn_filter_watchlist_register' => LCNI_Button_Style_Config::get_button('btn_filter_watchlist_register'),
-            'btn_popup_confirm' => LCNI_Button_Style_Config::get_button('btn_popup_confirm'),
-            'btn_popup_close' => LCNI_Button_Style_Config::get_button('btn_popup_close'),
+            'btn_add_filter_row'             => LCNI_Button_Style_Config::get_button('btn_add_filter_row'),
+            'btn_filter_watchlist_login'      => LCNI_Button_Style_Config::get_button('btn_filter_watchlist_login'),
+            'btn_filter_watchlist_register'   => LCNI_Button_Style_Config::get_button('btn_filter_watchlist_register'),
+            'btn_popup_confirm'               => LCNI_Button_Style_Config::get_button('btn_popup_confirm'),
+            'btn_popup_close'                 => LCNI_Button_Style_Config::get_button('btn_popup_close'),
         ];
 
         ob_start();
-        echo '<div class="lcni-recommend-signals-table" data-lcni-signals-table data-watchlist-rest-base="' . esc_attr($watchlist_rest_base) . '" data-login-url="' . esc_url($login_url) . '" data-register-url="' . esc_url($register_url) . '" data-is-logged-in="' . (is_user_logged_in() ? '1' : '0') . '" data-rest-nonce="' . esc_attr(wp_create_nonce('wp_rest')) . '" data-watchlist-icon="' . esc_attr($watchlist_button_icon) . '" data-watchlist-active-icon="' . esc_attr($watchlist_button_active_icon) . '" data-filter-apply-icon="' . esc_attr($filter_apply_button_icon) . '" data-filter-clear-icon="' . esc_attr($filter_clear_button_icon) . '" data-filter-apply-label="' . esc_attr($filter_apply_button_label) . '" data-filter-clear-label="' . esc_attr($filter_clear_button_label) . '" data-button-config="' . esc_attr(wp_json_encode($button_configs)) . '" style="' . $wrapper_style . '">';
-        // lcni-table-wrapper: scroll container cho sticky header + sticky column + mobile scroll
-        $table_wrapper_style = 'width:100%;overflow-x:auto;overflow-y:auto;max-height:' . $table_max_height . 'px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;position:relative;';
-        echo '<div class="lcni-table-wrapper" style="' . $table_wrapper_style . '">';
-        echo '<table class="lcni-table signal-table" style="width:100%;border-collapse:separate;border-spacing:0;font-size:' . (int) ($styles['row_font_size'] ?? 14) . 'px;">';
-        $head_row_style = 'height:' . (int) ($styles['head_height'] ?? 30) . 'px;background:' . esc_attr((string) ($styles['header_background'] ?? '#ffffff')) . ';color:' . esc_attr((string) ($styles['header_text_color'] ?? '#111827')) . ';';
-        echo '<thead><tr style="' . $head_row_style . '">';
-        foreach ($columns as $column) {
-            $label = $this->resolve_column_label($column, $catalog);
-            $th_style = 'text-align:left;padding:8px;border-bottom:' . (int) ($styles['row_divider_width'] ?? 1) . 'px solid ' . esc_attr((string) ($styles['row_divider_color'] ?? '#e5e7eb')) . ';font-size:' . (int) ($styles['header_font_size'] ?? 14) . 'px;background:' . esc_attr((string) ($styles['header_background'] ?? '#ffffff')) . ';white-space:nowrap;line-height:1.2;';
-            if ($sticky_header_enabled) {
-                $th_style .= 'position:sticky;top:0;z-index:20;';
+        echo '<div class="lcni-recommend-signals-table" data-lcni-signals-table data-watchlist-rest-base="' . esc_attr($watchlist_rest_base) . '" data-login-url="' . esc_url($login_url) . '" data-register-url="' . esc_url($register_url) . '" data-is-logged-in="' . (is_user_logged_in() ? '1' : '0') . '" data-rest-nonce="' . esc_attr(wp_create_nonce('wp_rest')) . '" data-button-config="' . esc_attr(wp_json_encode($button_configs)) . '" style="' . $wrapper_style . '">';
+        // lcni-table-wrapper: scroll container — overflow từ lcni-ui-table.css (auto)
+        // max-height từ config admin, --lcni-table-max-height từ CSS token làm fallback
+        echo '<div class="lcni-table-wrapper lcni-table-scroll" style="max-height:' . (int) $table_max_height . 'px;overflow:auto;touch-action:pan-x pan-y;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;">';
+        $table_classes = 'lcni-table signal-table lcni-rf-signals-table' . ( $sticky_header_enabled ? ' has-sticky-header' : '' );
+        echo '<table class="' . esc_attr( $table_classes ) . '" style="width:100%;border-collapse:separate;border-spacing:0;">';
+        // thead th: appearance from CSS vars, only positioning inline
+        echo '<thead><tr>';
+        foreach ($columns as $col_idx => $column) {
+            $label    = $this->resolve_column_label($column, $catalog);
+            $th_style = 'text-align:left;white-space:nowrap;';
+            $th_class = '';
+            if ( $sticky_first_col && $col_idx === 0 ) {
+                $th_class = 'is-sticky-col';
+                $th_style .= 'left:0;';
             }
-            if ($sticky_column === $column) {
-                $th_style .= 'position:sticky;left:0;z-index:' . ($sticky_header_enabled ? '25' : '5') . ';';
-            }
-            echo '<th class="' . ($sticky_column === $column ? 'lcni-sticky-col' : '') . '" style="' . $th_style . '" data-lcni-field="' . esc_attr($column) . '"><span>' . esc_html($label) . '</span><button type="button" class="lcni-signals-filter-btn" data-lcni-filter-btn aria-label="Lọc nhanh"><i class="' . esc_attr($filter_button_icon) . '" aria-hidden="true"></i></button></th>';
+            echo '<th';
+            if ( $th_class !== '' ) echo ' class="' . esc_attr($th_class) . '"';
+            echo ' style="' . esc_attr($th_style) . '"';
+            echo ' data-lcni-field="' . esc_attr($column) . '"';
+            echo '><span>' . esc_html($label) . '</span></th>';
         }
         echo '</tr></thead><tbody>';
 
         foreach ($rows as $row) {
             $row_symbol = strtoupper(sanitize_text_field((string) ($row['signal__symbol'] ?? '')));
             $row_url = $this->build_stock_detail_url($stock_detail_base_url, $row_symbol);
-            echo '<tr class="lcni-signal-row" data-lcni-row-symbol="' . esc_attr($row_symbol) . '" data-lcni-row-url="' . esc_url($row_url) . '" style="background:' . esc_attr($value_background) . ';color:' . esc_attr($value_text_color) . ';">';
-            foreach ($columns as $column) {
+            echo '<tr class="lcni-signal-row" data-lcni-row-symbol="' . esc_attr($row_symbol) . '" data-lcni-row-url="' . esc_url($row_url) . '">';
+            foreach ($columns as $col_idx => $column) {
                 $value = isset($row[$column]) ? $row[$column] : '';
                 $raw_value = $value;
+
+                // Vị thế đã đóng: không hiển thị position_state (không còn ý nghĩa)
+                if ( $column === 'signal__position_state'
+                    && isset( $row['signal__status'] )
+                    && strtolower( (string) $row['signal__status'] ) === 'closed'
+                ) {
+                    $value     = '';
+                    $raw_value = '';
+                    echo '<td class="lcni-table-cell" data-lcni-field="' . esc_attr( $column ) . '" data-lcni-value=""></td>';
+                    continue;
+                }
+
                 $value = $this->format_signal_value($column, $value);
                 $cell_style = $this->resolve_recommend_signal_cell_style($column, $raw_value, $styles);
-                $cell_style_attr = 'padding:8px;border-bottom:' . (int) ($styles['row_divider_width'] ?? 1) . 'px solid ' . esc_attr((string) ($styles['row_divider_color'] ?? '#e5e7eb')) . ';white-space:nowrap;line-height:1.2;';
+                // Only cell-color overrides inline — padding/height/border from lcni-ui-table.css
+                $cell_style_attr = '';
                 if ($cell_style['background'] !== '') {
                     $cell_style_attr .= 'background:' . esc_attr($cell_style['background']) . ';';
                 }
                 if ($cell_style['color'] !== '') {
                     $cell_style_attr .= 'color:' . esc_attr($cell_style['color']) . ';';
                 }
-                if ($sticky_column === $column) {
-                    $cell_bg = $cell_style['background'] !== '' ? (string) $cell_style['background'] : $value_background;
-                    $cell_style_attr .= 'position:sticky;left:0;z-index:15;background:' . esc_attr($cell_bg) . ';';
+                if ($sticky_first_col && $col_idx === 0) {
+                    $cell_bg = $cell_style['background'] !== '' ? (string) $cell_style['background'] : '';
+                    if ($cell_bg !== '') {
+                        $cell_style_attr .= 'background:' . esc_attr($cell_bg) . ';';
+                    }
+                }
+                $td_class = 'lcni-table-cell';
+                if ( $sticky_first_col && $col_idx === 0 ) {
+                    $td_class .= ' is-sticky-col';
+                    // left:0 fallback — LcniTableEngine.refresh() sẽ tính lại chính xác
+                    $cell_style_attr .= 'left:0;';
                 }
 
                 if ($column === 'signal__symbol') {
                     $symbol = strtoupper(sanitize_text_field((string) $raw_value));
                     $detail_url = $this->build_stock_detail_url($stock_detail_base_url, $symbol);
-                    $watchlist_btn = '<button type="button" class="lcni-signals-watchlist-btn" data-lcni-watchlist-add data-symbol="' . esc_attr($symbol) . '" aria-label="Thêm vào watchlist"><i class="' . esc_attr($watchlist_button_icon) . '" aria-hidden="true"></i></button>';
+                    $watchlist_btn = '<button type="button" class="lcni-btn lcni-btn-btn_add_filter_row" data-lcni-watchlist-add data-symbol="' . esc_attr($symbol) . '" aria-label="Thêm vào watchlist">' . LCNI_Button_Style_Config::build_button_content('btn_add_filter_row', '') . '</button>';
+                    $td_open = '<td class="' . $td_class . '" data-lcni-field="' . esc_attr($column) . '" data-lcni-value="' . esc_attr((string) $raw_value) . '"' . ( $cell_style_attr ? ' style="' . $cell_style_attr . '"' : '' ) . '>';
                     if ($detail_url !== '') {
                         $value = '<a href="' . esc_url($detail_url) . '">' . esc_html((string) $value) . '</a>';
-                        echo '<td class="' . ($sticky_column === $column ? 'lcni-sticky-col' : '') . '" data-lcni-field="' . esc_attr($column) . '" data-lcni-value="' . esc_attr((string) $raw_value) . '" style="' . $cell_style_attr . '"><span class="lcni-signals-symbol-cell">' . $value . $watchlist_btn . '</span></td>';
+                        echo $td_open . '<span class="lcni-signals-symbol-cell">' . $value . $watchlist_btn . '</span></td>';
                         continue;
                     }
-                    echo '<td class="' . ($sticky_column === $column ? 'lcni-sticky-col' : '') . '" data-lcni-field="' . esc_attr($column) . '" data-lcni-value="' . esc_attr((string) $raw_value) . '" style="' . $cell_style_attr . '"><span class="lcni-signals-symbol-cell">' . esc_html((string) $value) . $watchlist_btn . '</span></td>';
+                    echo $td_open . '<span class="lcni-signals-symbol-cell">' . esc_html((string) $value) . $watchlist_btn . '</span></td>';
                     continue;
                 }
 
-                echo '<td class="' . ($sticky_column === $column ? 'lcni-sticky-col' : '') . '" data-lcni-field="' . esc_attr($column) . '" data-lcni-value="' . esc_attr((string) $raw_value) . '" style="' . $cell_style_attr . '">' . esc_html((string) $value) . '</td>';
+                echo '<td class="' . $td_class . '" data-lcni-field="' . esc_attr($column) . '" data-lcni-value="' . esc_attr((string) $raw_value) . '"' . ( $cell_style_attr ? ' style="' . $cell_style_attr . '"' : '' ) . '>' . esc_html((string) $value) . '</td>';
             }
             echo '</tr>';
         }
 
         echo '</tbody></table></div></div>';  // close table, lcni-table-wrapper, lcni-recommend-signals-table
         echo $this->render_signals_table_assets();
+        echo $this->render_signals_sticky_init();
 
         return ob_get_clean();
+    }
+
+    /**
+     * Inject script khởi tạo sticky sau khi HTML render xong.
+     * Dùng LcniTableEngine.refresh (không phải recalcOffsets).
+     */
+    private function render_signals_sticky_init(): string {
+        $sticky_cols = ( class_exists('LCNI_Table_Config') && LCNI_Table_Config::sticky_first_col() ) ? 1 : 0;
+        $sticky_hdr  = ( class_exists('LCNI_Table_Config') && LCNI_Table_Config::sticky_header()    ) ? 'true' : 'false';
+        return '<script>
+(function() {
+    var cfg = { sticky_columns: ' . (int) $sticky_cols . ', sticky_header: ' . $sticky_hdr . ' };
+
+    function bindTouchScroll(wrap) {
+        if (!wrap || wrap.dataset.touchBound) return;
+        wrap.dataset.touchBound = "1";
+        var sx=0, sy=0, sleft=0, stop=0, locked=null;
+        wrap.addEventListener("touchstart", function(e) {
+            var t = e.touches[0];
+            sx = t.clientX; sy = t.clientY;
+            sleft = wrap.scrollLeft; stop = wrap.scrollTop;
+            locked = null;
+        }, {passive: true});
+        wrap.addEventListener("touchmove", function(e) {
+            if (e.touches.length !== 1) return;
+            var t = e.touches[0];
+            var dx = t.clientX - sx, dy = t.clientY - sy;
+            if (locked === null) {
+                if (Math.hypot(dx, dy) < 8) return;
+                locked = Math.abs(dx) > Math.abs(dy);
+            }
+            if (locked) {
+                e.preventDefault();
+                wrap.scrollLeft = sleft - dx;
+            } else {
+                var atTop = wrap.scrollTop <= 0;
+                var atBot = wrap.scrollTop >= wrap.scrollHeight - wrap.clientHeight;
+                if ((dy > 0 && atTop) || (dy < 0 && atBot)) return;
+                e.preventDefault();
+                wrap.scrollTop = stop - dy;
+            }
+        }, {passive: false});
+        wrap.addEventListener("touchend",    function() { locked = null; }, {passive: true});
+        wrap.addEventListener("touchcancel", function() { locked = null; }, {passive: true});
+    }
+
+    function initWrap(wrap) {
+        if (!wrap) return;
+        bindTouchScroll(wrap);
+        if (!window.LcniTableEngine) return;
+        window.LcniTableEngine.refresh(wrap, cfg);
+        window.LcniTableEngine.observe(wrap, cfg);
+    }
+
+    function lcniInitSignalsSticky(scope) {
+        var hosts = (scope || document).querySelectorAll(".lcni-recommend-signals-table");
+        hosts.forEach(function(host) {
+            var wrap = host.querySelector(".lcni-table-wrapper, .lcni-table-scroll");
+            initWrap(wrap);
+        });
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", function() { lcniInitSignalsSticky(document); });
+    } else {
+        lcniInitSignalsSticky(document);
+    }
+    window.lcniInitSignalsSticky = lcniInitSignalsSticky;
+})();
+</script>';
     }
 
     private function render_signals_table_assets() {
@@ -216,21 +290,18 @@ class ShortcodeManager {
 
         return <<<'HTML'
 <style>
-.lcni-signals-filter-btn{margin-left:6px;border:0;background:var(--lcni-signals-filter-btn-bg,#ffffff);cursor:pointer;color:var(--lcni-signals-filter-btn-color,#374151);padding:0 8px;height:var(--lcni-signals-filter-btn-height,28px);min-width:var(--lcni-signals-filter-btn-height,28px);border-radius:6px;font-size:var(--lcni-signals-filter-btn-font-size,14px);display:inline-flex;align-items:center;justify-content:center}
 .lcni-signals-filter-pop{position:fixed;z-index:999999;background:#fff;border:1px solid #d1d5db;border-radius:8px;padding:10px;min-width:240px;max-width:360px;max-height:min(65vh,420px);overflow:auto;box-shadow:0 10px 30px rgba(17,24,39,.2)}
 .lcni-signals-filter-pop-title{display:block;font-size:15px}
 .lcni-signals-filter-search{width:100%;box-sizing:border-box;height:34px;padding:0 10px;margin:8px 0;border:1px solid #d1d5db;border-radius:6px}
 .lcni-signals-filter-hint{font-size:12px;color:#6b7280;margin:0 0 6px}
 .lcni-signals-filter-pop [data-lcni-values]{display:grid;gap:4px;max-height:240px;overflow:auto;margin:8px 0}
 .lcni-signals-filter-actions{display:flex;gap:8px;justify-content:flex-end}
-.lcni-signals-filter-actions .lcni-btn{height:var(--lcni-signals-panel-btn-height,32px);font-size:var(--lcni-signals-panel-btn-font-size,14px);padding:0 12px;display:inline-flex;align-items:center;gap:6px;border:var(--lcni-signals-panel-btn-border,1px solid #9ca3af);border-radius:var(--lcni-signals-panel-btn-radius,6px)}
-.lcni-signals-filter-actions [data-lcni-clear]{background:var(--lcni-signals-clear-btn-bg,#e5e7eb);color:var(--lcni-signals-clear-btn-color,#111827)}
-.lcni-signals-filter-actions [data-lcni-clear]:hover{background:var(--lcni-signals-clear-btn-hover-bg,#d1d5db)}
-.lcni-signals-filter-actions [data-lcni-apply]{background:var(--lcni-signals-apply-btn-bg,#2563eb);color:var(--lcni-signals-apply-btn-color,#ffffff)}
-.lcni-signals-filter-actions [data-lcni-apply]:hover{background:var(--lcni-signals-apply-btn-hover-bg,#1d4ed8)}
+.lcni-signals-filter-actions .lcni-btn{height:32px;font-size:14px;padding:0 12px;display:inline-flex;align-items:center;gap:6px;border:1px solid #9ca3af;border-radius:6px}
+.lcni-signals-filter-actions [data-lcni-clear]{background:#e5e7eb;color:#111827}
+.lcni-signals-filter-actions [data-lcni-clear]:hover{background:#d1d5db}
+.lcni-signals-filter-actions [data-lcni-apply]{background:#2563eb;color:#ffffff}
+.lcni-signals-filter-actions [data-lcni-apply]:hover{background:#1d4ed8}
 .lcni-signals-symbol-cell{display:flex;gap:8px;align-items:center}
-.lcni-signals-watchlist-btn{border:0;background:transparent;cursor:pointer;color:var(--lcni-signals-watchlist-btn-color,#dc2626);padding:0;height:var(--lcni-signals-watchlist-btn-height,28px);min-width:var(--lcni-signals-watchlist-btn-height,28px);display:inline-flex;align-items:center;justify-content:center;font-size:var(--lcni-signals-watchlist-btn-font-size,15px)}
-.lcni-signals-watchlist-btn.is-active{color:var(--lcni-signals-watchlist-btn-active-color,#16a34a)}
 .lcni-signals-modal{position:fixed;inset:0;background:rgba(17,24,39,.45);display:flex;align-items:center;justify-content:center;z-index:999999}
 .lcni-signals-modal-card{background:#fff;border-radius:10px;padding:14px;width:min(92vw,420px)}
 .lcni-signals-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
@@ -246,11 +317,12 @@ class ShortcodeManager {
   const closeModal=()=>{const n=document.querySelector('.lcni-signals-modal');if(n)n.remove()};
   const showModal=(html)=>{closeModal();const n=document.createElement('div');n.className='lcni-signals-modal';n.innerHTML='<div class="lcni-signals-modal-card">'+html+'</div>';n.addEventListener('click',(e)=>{if(e.target===n||e.target.closest('[data-lcni-close]'))closeModal()});document.body.appendChild(n)};
   const watchlistApi=(host,path,opt)=>fetch((host.dataset.watchlistRestBase||'').replace(/\/$/,'')+path,{method:(opt&&opt.method)||'GET',headers:{'Content-Type':'application/json','X-WP-Nonce':host.dataset.restNonce||''},credentials:'same-origin',body:opt&&opt.body?JSON.stringify(opt.body):undefined}).then(async(r)=>{const p=await r.json().catch(()=>({}));if(!r.ok)throw p;return p&&typeof p==='object'&&Object.prototype.hasOwnProperty.call(p,'data')?p.data:p});
-  const setButtonState=(btn)=>{const icon=btn.querySelector('i');if(!icon)return;icon.className=btn.classList.contains('is-active')?(btn.closest('[data-lcni-signals-table]')?.dataset.watchlistActiveIcon||'fa-solid fa-check'):(btn.closest('[data-lcni-signals-table]')?.dataset.watchlistIcon||'fa-solid fa-heart')};
+  const setButtonState=(btn)=>{const host=btn.closest('[data-lcni-signals-table]');const cfg=host?getButtonConfig(host,'btn_add_filter_row'):{};const icon=btn.querySelector('i');if(!icon)return;icon.className=btn.classList.contains('is-done')?'fa-solid fa-circle-check':(String(cfg.icon_class||'fa-solid fa-heart-circle-plus'));};
   const isNumericValues=(values)=>values.length>0&&values.every((v)=>{const n=Number(String(v).replace(/,/g,''));return Number.isFinite(n);});
 
-  const openWatchlist=(host,symbol,btn)=>{
+  const openWatchlist=(host,symbol,btn,onSuccess,onError)=>{
     if(host.dataset.isLoggedIn!=='1'){
+      if(onError)onError();
       showModal('<h3>Vui lòng đăng nhập hoặc đăng ký để thêm vào watchlist</h3><div class="lcni-signals-modal-actions"><a class="lcni-btn lcni-btn-btn_filter_watchlist_login" href="'+esc(host.dataset.loginUrl||'#')+'">'+renderButtonContent(host,'btn_filter_watchlist_login','Login')+'</a><a class="lcni-btn lcni-btn-btn_filter_watchlist_register" href="'+esc(host.dataset.registerUrl||host.dataset.loginUrl||'#')+'">'+renderButtonContent(host,'btn_filter_watchlist_register','Register')+'</a><button type="button" class="lcni-btn lcni-btn-btn_popup_close" data-lcni-close>'+renderButtonContent(host,'btn_popup_close','Close')+'</button></div>');
       return;
     }
@@ -260,16 +332,20 @@ class ShortcodeManager {
       const active=Number(data.active_watchlist_id||0);
 
       if(!lists.length){
+        if(onError)onError();
         showModal('<h3>Tạo watchlist mới cho '+esc(symbol)+'</h3><form data-lcni-create><input type="text" name="name" placeholder="Tên watchlist" required><div class="lcni-signals-modal-actions"><button class="lcni-btn lcni-btn-btn_popup_confirm" type="submit">'+renderButtonContent(host,'btn_popup_confirm','+ New')+'</button><button class="lcni-btn lcni-btn-btn_popup_close" type="button" data-lcni-close>'+renderButtonContent(host,'btn_popup_close','Close')+'</button></div></form>');
         const form=document.querySelector('[data-lcni-create]');
-        if(form) form.addEventListener('submit',(e)=>{e.preventDefault();const name=String((new FormData(form)).get('name')||'').trim();if(!name)return;watchlistApi(host,'/create',{method:'POST',body:{name}}).then((c)=>{const id=Number(c.id||0);if(!id)throw new Error('Không thể tạo watchlist');return watchlistApi(host,'/add-symbol',{method:'POST',body:{symbol,watchlist_id:id}})}).then(()=>{btn.classList.add('is-active');setButtonState(btn);closeModal();toast('Đã thêm mã '+symbol+' vào watchlist')}).catch((err)=>toast((err&&err.message)||'Không thể thêm vào watchlist'));},{once:true});
+        if(form) form.addEventListener('submit',(e)=>{e.preventDefault();const name=String((new FormData(form)).get('name')||'').trim();if(!name)return;watchlistApi(host,'/create',{method:'POST',body:{name}}).then((c)=>{const id=Number(c.id||0);if(!id)throw new Error('Không thể tạo watchlist');return watchlistApi(host,'/add-symbol',{method:'POST',body:{symbol,watchlist_id:id}})}).then(()=>{closeModal();toast('Đã thêm mã '+symbol+' vào watchlist');if(onSuccess)onSuccess();}).catch((err)=>{toast((err&&err.message)||'Không thể thêm vào watchlist');if(onError)onError();});},{once:true});
         return;
       }
 
+      if(onError)onError();
       showModal('<h3>Chọn watchlist cho '+esc(symbol)+'</h3><form data-lcni-pick><div class="lcni-filter-watchlist-options">'+lists.map((w)=>'<label><input type="radio" name="watchlist_id" value="'+Number(w.id||0)+'" '+(Number(w.id||0)===active?'checked':'')+'> '+esc(w.name||'')+'</label>').join('')+'</div><div class="lcni-signals-modal-actions"><button class="lcni-btn lcni-btn-btn_popup_confirm" type="submit">'+renderButtonContent(host,'btn_popup_confirm','Confirm')+'</button><button class="lcni-btn lcni-btn-btn_popup_close" type="button" data-lcni-close>'+renderButtonContent(host,'btn_popup_close','Close')+'</button></div></form>');
       const form=document.querySelector('[data-lcni-pick]');
-      if(form) form.addEventListener('submit',(e)=>{e.preventDefault();const sel=form.querySelector('input[name="watchlist_id"]:checked');const id=Number(sel?sel.value:0);if(!id)return;watchlistApi(host,'/add-symbol',{method:'POST',body:{symbol,watchlist_id:id}}).then(()=>{btn.classList.add('is-active');setButtonState(btn);closeModal();toast('Đã thêm mã '+symbol+' vào watchlist')}).catch((err)=>toast((err&&err.message)||'Không thể thêm vào watchlist'));},{once:true});
-    }).catch((err)=>toast((err&&err.message)||'Không thể tải watchlist'));
+      if(form) form.addEventListener('submit',(e)=>{e.preventDefault();const sel=form.querySelector('input[name="watchlist_id"]:checked');const id=Number(sel?sel.value:0);if(!id)return;
+        const submitBtn=form.querySelector('[type="submit"]');if(submitBtn){submitBtn.disabled=true;}
+        watchlistApi(host,'/add-symbol',{method:'POST',body:{symbol,watchlist_id:id}}).then(()=>{closeModal();toast('Đã thêm mã '+symbol+' vào watchlist');if(onSuccess)onSuccess();}).catch((err)=>{toast((err&&err.message)||'Không thể thêm vào watchlist');if(submitBtn)submitBtn.disabled=false;});},{once:true});
+    }).catch((err)=>{toast((err&&err.message)||'Không thể tải watchlist');if(onError)onError();});
   };
 
   const applyFilters=(host)=>{
@@ -285,7 +361,19 @@ class ShortcodeManager {
 
   document.addEventListener('click',(e)=>{
     const watchBtn=e.target.closest('[data-lcni-watchlist-add]');
-    if(watchBtn){const host=watchBtn.closest('[data-lcni-signals-table]');if(!host)return;e.preventDefault();e.stopPropagation();openWatchlist(host,String(watchBtn.dataset.symbol||'').toUpperCase(),watchBtn);return;}
+    if(watchBtn){const host=watchBtn.closest('[data-lcni-signals-table]');if(!host)return;e.preventDefault();e.stopPropagation();
+      const iconEl=watchBtn.querySelector('i');const origIcon=iconEl?iconEl.className:'';
+      watchBtn.classList.add('is-loading');watchBtn.disabled=true;
+      if(iconEl)iconEl.className='fa-solid fa-circle-notch lcni-btn-icon';
+      openWatchlist(host,String(watchBtn.dataset.symbol||'').toUpperCase(),watchBtn,
+        ()=>{
+          watchBtn.classList.remove('is-loading');watchBtn.classList.add('is-done');watchBtn.disabled=false;
+          if(iconEl)iconEl.className='fa-solid fa-circle-check';
+          setButtonState(watchBtn);
+          setTimeout(()=>{watchBtn.classList.remove('is-done');if(iconEl)iconEl.className=origIcon;},1800);
+        },
+        ()=>{watchBtn.classList.remove('is-loading');watchBtn.disabled=false;if(iconEl)iconEl.className=origIcon;}
+      );return;}
 
     const filterBtn=e.target.closest('[data-lcni-filter-btn]');
     if(filterBtn){
@@ -343,12 +431,14 @@ HTML;
 
     public function render_signals_rule($atts = []) {
         $atts = shortcode_atts(['rule_id' => 0, 'status' => '', 'limit' => 200, 'symbol' => ''], $atts, 'lcni_signals_rule');
-        $atts['rule_id'] = (int) $atts['rule_id'];
+        // URL param ?rule_id=X có ưu tiên cao hơn shortcode attribute
+        $url_rule_id     = isset( $_GET['rule_id'] ) ? absint( $_GET['rule_id'] ) : 0;
+        $atts['rule_id'] = $url_rule_id > 0 ? $url_rule_id : (int) $atts['rule_id'];
         if ($atts['rule_id'] <= 0) {
             return '';
         }
 
-        return $this->render_signals($atts);
+        return $this->render_signals_rule_header( $atts['rule_id'] ) . $this->render_signals($atts);
     }
 
     private function get_recommend_signal_frontend_settings() {
@@ -367,49 +457,10 @@ HTML;
         return [
             'column_order' => $columns,
             'styles' => [
-                'font' => sanitize_text_field($styles['font'] ?? 'inherit'),
-                'text_color' => sanitize_hex_color($styles['text_color'] ?? '#111827') ?: '#111827',
-                'background' => sanitize_hex_color($styles['background'] ?? '#ffffff') ?: '#ffffff',
-                'border' => sanitize_text_field($styles['border'] ?? '1px solid #e5e7eb'),
-                'border_radius' => max(0, min(24, (int) ($styles['border_radius'] ?? 8))),
-                'header_font_size' => max(10, min(30, (int) ($styles['header_font_size'] ?? 14))),
-                'row_font_size' => max(10, min(30, (int) ($styles['row_font_size'] ?? 14))),
-                'header_background' => sanitize_hex_color($styles['header_background'] ?? '#ffffff') ?: '#ffffff',
-                'header_text_color' => sanitize_hex_color($styles['header_text_color'] ?? '#111827') ?: '#111827',
-                'value_background' => sanitize_hex_color($styles['value_background'] ?? '#ffffff') ?: '#ffffff',
-                'value_text_color' => sanitize_hex_color($styles['value_text_color'] ?? '#111827') ?: '#111827',
-                'row_divider_color' => sanitize_hex_color($styles['row_divider_color'] ?? '#e5e7eb') ?: '#e5e7eb',
-                'row_divider_width' => max(1, min(6, (int) ($styles['row_divider_width'] ?? 1))),
-                'head_height' => max(24, min(120, (int) ($styles['head_height'] ?? 30))),
                 'sticky_column' => in_array(sanitize_key((string) ($styles['sticky_column'] ?? 'signal__symbol')), $columns, true)
                     ? sanitize_key((string) ($styles['sticky_column'] ?? 'signal__symbol'))
                     : ($columns[0] ?? 'signal__symbol'),
-                'sticky_header' => !empty($styles['sticky_header']) ? 1 : 0,
-                'filter_button_color' => sanitize_hex_color($styles['filter_button_color'] ?? '#374151') ?: '#374151',
-                'filter_button_background' => sanitize_hex_color($styles['filter_button_background'] ?? '#ffffff') ?: '#ffffff',
-                'filter_button_height' => max(20, min(60, (int) ($styles['filter_button_height'] ?? 28))),
-                'filter_button_font_size' => max(10, min(24, (int) ($styles['filter_button_font_size'] ?? 14))),
-                'filter_button_icon' => sanitize_text_field((string) ($styles['filter_button_icon'] ?? 'fa-solid fa-filter')),
-                'watchlist_button_color' => sanitize_hex_color($styles['watchlist_button_color'] ?? '#dc2626') ?: '#dc2626',
-                'watchlist_button_active_color' => sanitize_hex_color($styles['watchlist_button_active_color'] ?? '#16a34a') ?: '#16a34a',
-                'watchlist_button_height' => max(20, min(60, (int) ($styles['watchlist_button_height'] ?? 28))),
-                'watchlist_button_font_size' => max(10, min(24, (int) ($styles['watchlist_button_font_size'] ?? 15))),
-                'watchlist_button_icon' => sanitize_text_field((string) ($styles['watchlist_button_icon'] ?? 'fa-solid fa-heart')),
-                'watchlist_button_active_icon' => sanitize_text_field((string) ($styles['watchlist_button_active_icon'] ?? 'fa-solid fa-check')),
-                'filter_apply_button_color' => sanitize_hex_color($styles['filter_apply_button_color'] ?? '#ffffff') ?: '#ffffff',
-                'filter_apply_button_background' => sanitize_hex_color($styles['filter_apply_button_background'] ?? '#2563eb') ?: '#2563eb',
-                'filter_apply_button_hover_background' => sanitize_hex_color($styles['filter_apply_button_hover_background'] ?? '#1d4ed8') ?: '#1d4ed8',
-                'filter_apply_button_icon' => sanitize_text_field((string) ($styles['filter_apply_button_icon'] ?? 'fa-solid fa-check')),
-                'filter_apply_button_label' => sanitize_text_field((string) ($styles['filter_apply_button_label'] ?? 'Apply')),
-                'filter_clear_button_color' => sanitize_hex_color($styles['filter_clear_button_color'] ?? '#111827') ?: '#111827',
-                'filter_clear_button_background' => sanitize_hex_color($styles['filter_clear_button_background'] ?? '#e5e7eb') ?: '#e5e7eb',
-                'filter_clear_button_hover_background' => sanitize_hex_color($styles['filter_clear_button_hover_background'] ?? '#d1d5db') ?: '#d1d5db',
-                'filter_clear_button_icon' => sanitize_text_field((string) ($styles['filter_clear_button_icon'] ?? 'fa-solid fa-eraser')),
-                'filter_clear_button_label' => sanitize_text_field((string) ($styles['filter_clear_button_label'] ?? 'Clear')),
-                'filter_panel_button_height' => max(24, min(64, (int) ($styles['filter_panel_button_height'] ?? 32))),
-                'filter_panel_button_font_size' => max(10, min(24, (int) ($styles['filter_panel_button_font_size'] ?? 14))),
-                'filter_panel_button_border' => sanitize_text_field((string) ($styles['filter_panel_button_border'] ?? '1px solid #9ca3af')),
-                'filter_panel_button_border_radius' => max(0, min(24, (int) ($styles['filter_panel_button_border_radius'] ?? 6))),
+                'sticky_header' => isset($styles['sticky_header']) ? (!empty($styles['sticky_header']) ? 1 : 0) : 1,
                 'table_max_height' => max(240, min(1600, (int) ($styles['table_max_height'] ?? 560))),
                 'cell_color_rules' => $this->sanitize_cell_color_rules($styles['cell_color_rules'] ?? [], $columns),
             ],
@@ -467,6 +518,23 @@ HTML;
         }
 
         $field = strpos((string) $column, '__') !== false ? substr((string) $column, strpos((string) $column, '__') + 2) : (string) $column;
+
+        // Việt hóa position_state
+        if ( $field === 'position_state' ) {
+            return self::POSITION_STATE_VI[ (string) $value ] ?? (string) $value;
+        }
+
+        // Việt hóa status
+        if ( $field === 'status' ) {
+            return self::STATUS_VI[ strtolower( (string) $value ) ] ?? (string) $value;
+        }
+
+        // Việt hóa exit_reason
+        if ( $field === 'exit_reason' ) {
+            $key = strtolower( (string) $value );
+            return self::EXIT_REASON_VI[ $key ] ?? (string) $value;
+        }
+
         if (($field === 'entry_time' || $field === 'exit_time') && is_numeric($value)) {
             $format_settings = LCNI_Data_Format_Settings::get_settings();
             $event_time_format = (string) ($format_settings['date_formats']['event_time'] ?? 'DD-MM-YYYY');
@@ -548,6 +616,7 @@ HTML;
     }
 
     private function resolve_recommend_signal_cell_style($column, $value, $styles) {
+        // User-configured cell color rules
         $rules = isset($styles['cell_color_rules']) && is_array($styles['cell_color_rules']) ? $styles['cell_color_rules'] : [];
 
         foreach ($rules as $rule) {
@@ -609,7 +678,7 @@ HTML;
         $rows = $this->performance_calculator->list_performance((int) $atts['rule_id']);
 
         ob_start();
-        echo '<div class="lcni-table-wrapper"><table class="lcni-table" style="width:100%;"><thead><tr><th>Rule</th><th>Total</th><th>Win</th><th>Lose</th><th>Winrate</th><th>Avg R</th><th>Expectancy</th><th>Max R</th><th>Min R</th></tr></thead><tbody>';
+        echo '<div class="lcni-table-wrapper"><table class="lcni-table" style="width:100%;"><thead><tr><th>Chiến lược</th><th>Total</th><th>Win</th><th>Lose</th><th>Winrate</th><th>Avg R</th><th>Expectancy</th><th>Max R</th><th>Min R</th></tr></thead><tbody>';
         foreach ($rows as $row) {
             echo '<tr>';
             echo '<td>' . esc_html((string) ($row['rule_name'] ?: ('Rule #' . $row['rule_id']))) . '</td>';
@@ -641,12 +710,16 @@ HTML;
             'lcni_performance_v2'
         );
 
-        $rule_id_filter = (int) $atts['rule_id'];
+        // URL param ?rule_id=X có ưu tiên cao hơn shortcode attribute
+        // Cho phép nút "Xem thống kê" từ [lcni_rule_follow] truyền rule_id qua URL
+        $url_rule_id    = isset( $_GET['rule_id'] ) ? absint( $_GET['rule_id'] ) : 0;
+        $rule_id_filter = $url_rule_id > 0 ? $url_rule_id : (int) $atts['rule_id'];
         $rows           = $this->performance_calculator->list_performance( $rule_id_filter );
         $show_chart     = ( $atts['show_chart'] !== '0' );
         $ajax_url       = esc_url_raw( admin_url( 'admin-ajax.php' ) );
         $nonce          = wp_create_nonce( 'lcni_public_equity_curve' );
         $uid            = 'lcni-pv2-' . ( $rule_id_filter > 0 ? $rule_id_filter : 'all' );
+
 
         ob_start(); ?>
         <div class="lcni-pv2" id="<?php echo esc_attr( $uid ); ?>">
@@ -715,7 +788,10 @@ HTML;
 
             <?php /* Header: tên + điểm */ ?>
             <div class="lcni-pv2-header">
-                <span class="lcni-pv2-rulename"><?php echo esc_html( $rname ); ?></span>
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0">
+                    <span class="lcni-pv2-rulename"><?php echo esc_html( $rname ); ?></span>
+                    <?php echo $this->render_rule_action_bar( $rid, true ); ?>
+                </div>
                 <div class="lcni-pv2-score-wrap">
                     <span class="lcni-pv2-score-num <?php echo esc_attr( $badge ); ?>"><?php echo esc_html( (string) $score ); ?>/100</span>
                     <span class="lcni-pv2-badge <?php echo esc_attr( $badge ); ?>"><?php echo esc_html( $vi_badge[$badge] ?? '' ); ?></span>
@@ -999,7 +1075,7 @@ HTML;
         $uid      = 'lcni-ec-' . $rule_id . '-' . wp_rand( 1000, 9999 );
 
         if ( empty( $points ) ) {
-            return '<p><em>Chưa có lệnh đã đóng cho rule này.</em></p>';
+            return '<p><em>Chưa có lệnh đã đóng cho chiến lược này.</em></p>';
         }
 
         ob_start();
@@ -1106,6 +1182,191 @@ HTML;
         wp_send_json_success( [ 'points' => $points, 'count' => count( $points ) ] );
     }
 
+    /**
+     * Header cho [lcni_signals_rule]: tên rule + timeframe + nút Tự động / Theo dõi — inline, giống lcni_performance_v2.
+     */
+    private function render_signals_rule_header( int $rule_id ): string {
+        if ( $rule_id <= 0 ) return '';
+
+        global $wpdb;
+        $rule = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT id, name, timeframe FROM {$wpdb->prefix}lcni_recommend_rule WHERE id = %d LIMIT 1",
+                $rule_id
+            ), ARRAY_A
+        );
+        if ( ! $rule ) return '';
+
+        $rule_name = esc_html( $rule['name'] );
+        $timeframe = esc_html( strtoupper( $rule['timeframe'] ?? '1D' ) );
+        $btns_html = $this->render_rule_action_bar( $rule_id, true );
+
+        ob_start(); ?>
+<div class="lcni-srh" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 0 16px;border-bottom:1px solid #e5e7eb;margin-bottom:18px;">
+    <h2 style="margin:0;font-size:20px;font-weight:700;color:#111827;"><?php echo $rule_name; ?></h2>
+    <span style="background:#f3f4f6;color:#6b7280;font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;"><?php echo $timeframe; ?></span>
+    <?php echo $btns_html; ?>
+</div>
+        <?php
+        return ob_get_clean();
+    }
+
+    /**
+     * Dùng chung cho [lcni_signals_rule] và [lcni_performance_v2].
+     */
+    private function render_rule_action_bar( int $rule_id, bool $buttons_only = false ): string {
+        if ( $rule_id <= 0 ) return '';
+
+        global $wpdb;
+        $rule = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT id, name, timeframe FROM {$wpdb->prefix}lcni_recommend_rule WHERE id = %d LIMIT 1",
+                $rule_id
+            ), ARRAY_A
+        );
+        if ( ! $rule ) return '';
+
+        $rule_name = esc_html( $rule['name'] );
+        $timeframe = esc_html( strtoupper( $rule['timeframe'] ?? '1D' ) );
+
+        // Follow status
+        $is_following = false;
+        if ( is_user_logged_in() ) {
+            $follow_table = $wpdb->prefix . 'lcni_recommend_rule_follow';
+            $is_following = (bool) $wpdb->get_var( $wpdb->prepare(
+                "SELECT id FROM {$follow_table} WHERE user_id=%d AND rule_id=%d LIMIT 1",
+                get_current_user_id(), $rule_id
+            ) );
+        }
+
+        // URLs
+        $rest_url    = esc_url_raw( rest_url( 'lcni/v1' ) );
+        $nonce       = wp_create_nonce( 'wp_rest' );
+        $ur_page_id  = absint( get_option( 'lcni_user_rule_page_id', 0 ) );
+        $ur_page_url = $ur_page_id > 0 ? esc_url( get_permalink( $ur_page_id ) ) : '';
+        $auto_href   = $ur_page_url
+            ? esc_url( add_query_arg( [ 'ur_new' => '1', 'rule_id' => $rule_id ], $ur_page_url ) )
+            : '';
+        // Các page đã cấu hình trong Admin → Filter Page (giống Rule Follow)
+        $perf_page_id  = absint( get_option( 'lcni_performance_page_id', 0 ) );
+        $perf_page_url = $perf_page_id > 0 ? esc_url( get_permalink( $perf_page_id ) ) : '';
+        $sig_page_id   = absint( get_option( 'lcni_signals_rule_page_id', 0 ) );
+        $sig_page_url  = $sig_page_id > 0 ? esc_url( get_permalink( $sig_page_id ) ) : '';
+
+        $uid = 'lcni-rab-' . $rule_id;
+
+        // Button content từ Style Config
+        $btn_follow_html    = LCNI_Button_Style_Config::build_button_content( 'btn_rab_follow',    '🔔 Theo dõi' );
+        $btn_following_html = LCNI_Button_Style_Config::build_button_content( 'btn_rab_following', '✅ Đang theo dõi' );
+        $btn_auto_html      = LCNI_Button_Style_Config::build_button_content( 'btn_rab_auto',      '⚙ Tự động' );
+
+        // Inject CSS từ config (FontAwesome + button dynamic CSS) — chỉ inject 1 lần mỗi trang
+        static $lcni_rab_css_injected = false;
+        $fa_tag  = '';
+        $btn_css = '';
+        if ( ! $lcni_rab_css_injected ) {
+            $lcni_rab_css_injected = true;
+            $fa_tag  = '<link rel="stylesheet" href="' . esc_url( 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css' ) . '">' . "\n";
+            $inline  = LCNI_Button_Style_Config::get_inline_css();
+            $btn_css = $inline !== '' ? '<style id="lcni-rab-btn-style">' . $inline . '</style>' . "\n" : '';
+        }
+
+        ob_start();
+        echo $fa_tag;
+        echo $btn_css;
+        ?>
+<div class="lcni-rab<?php echo $buttons_only ? ' lcni-rab--inline' : ''; ?>" id="<?php echo esc_attr($uid); ?>"
+     data-rest="<?php echo esc_attr($rest_url); ?>"
+     data-nonce="<?php echo esc_attr($nonce); ?>"
+     data-rule-id="<?php echo $rule_id; ?>"
+     data-following="<?php echo $is_following ? '1' : '0'; ?>"
+     data-follow-html="<?php echo esc_attr( $btn_follow_html ); ?>"
+     data-following-html="<?php echo esc_attr( $btn_following_html ); ?>">
+    <?php if ( ! $buttons_only ): ?>
+    <div class="lcni-rab-left">
+        <h2 class="lcni-rab-title"><?php echo $rule_name; ?></h2>
+        <span class="lcni-rab-tf"><?php echo $timeframe; ?></span>
+    </div>
+    <?php endif; ?>
+    <div class="lcni-rab-right">
+        <?php if ( $sig_page_url ): ?>
+        <a class="lcni-btn lcni-btn-btn_rf_signal" href="<?php echo esc_url( $sig_page_url . '?rule_id=' . $rule_id ); ?>" title="Tín hiệu"><?php echo LCNI_Button_Style_Config::build_button_content( 'btn_rf_signal', '📋' ); ?></a>
+        <?php endif; ?>
+        <?php if ( $perf_page_url ): ?>
+        <a class="lcni-btn lcni-btn-btn_rf_performance" href="<?php echo esc_url( $perf_page_url . '?rule_id=' . $rule_id ); ?>" title="Hiệu suất"><?php echo LCNI_Button_Style_Config::build_button_content( 'btn_rf_performance', '📊' ); ?></a>
+        <?php endif; ?>
+        <?php if ( $auto_href ): ?>
+        <a class="lcni-btn lcni-btn-btn_rab_auto lcni-rab-btn-auto" href="<?php echo $auto_href; ?>"><?php echo $btn_auto_html; ?></a>
+        <?php endif; ?>
+        <?php if ( is_user_logged_in() ): ?>
+        <button type="button"
+                class="lcni-btn <?php echo $is_following ? 'lcni-btn-btn_rab_following' : 'lcni-btn-btn_rab_follow'; ?> lcni-rab-follow-btn"
+                id="<?php echo esc_attr($uid); ?>-follow">
+            <?php echo $is_following ? $btn_following_html : $btn_follow_html; ?>
+        </button>
+        <?php endif; ?>
+    </div>
+</div>
+<style>
+/* lcni-rab layout — structural only; colors/sizes come from LCNI_Button_Style_Config */
+.lcni-rab{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0 16px;flex-wrap:wrap;border-bottom:1px solid #e5e7eb;margin-bottom:18px}
+.lcni-rab--inline{border:none;padding:0;margin:0;display:inline-flex;vertical-align:middle}
+.lcni-rab--inline .lcni-rab-right{gap:6px}
+.lcni-rab-left{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0}
+.lcni-rab-title{margin:0;font-size:20px;font-weight:700;color:#111827}
+.lcni-rab-tf{background:#f3f4f6;color:#6b7280;font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px}
+.lcni-rab-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.lcni-rab-follow-btn,.lcni-rab-btn-auto{white-space:nowrap;text-decoration:none;transition:all .15s}
+.lcni-rab-follow-btn:disabled{opacity:.5;cursor:not-allowed}
+@media(max-width:600px){
+.lcni-rab{flex-direction:column;align-items:flex-start;gap:8px}
+.lcni-rab-left{width:100%}
+.lcni-rab-title{font-size:17px}
+.lcni-rab-right{flex-shrink:1;width:100%;flex-wrap:wrap;gap:6px}
+.lcni-btn-btn_rab_follow,.lcni-btn-btn_rab_following,.lcni-btn-btn_rab_auto{flex:1 1 auto;justify-content:center}
+}
+</style>
+<script>
+(function(){
+    var bar   = document.getElementById(<?php echo wp_json_encode($uid); ?>);
+    if (!bar) return;
+    var btn   = document.getElementById(<?php echo wp_json_encode($uid.'-follow'); ?>);
+    var REST  = bar.dataset.rest;
+    var NONCE = bar.dataset.nonce;
+    var ruleId= bar.dataset.ruleId;
+    var followHtml    = bar.dataset.followHtml    || '🔔 Theo dõi';
+    var followingHtml = bar.dataset.followingHtml || '✅ Đang theo dõi';
+    if (!btn) return;
+    btn.addEventListener('click', function(){
+        var following = bar.dataset.following === '1';
+        btn.disabled = true;
+        var path = following ? '/recommend/rules/'+ruleId+'/unfollow' : '/recommend/rules/'+ruleId+'/follow';
+        var body = following ? {} : {notify_email: true, notify_browser: false};
+        fetch(REST+path,{method:'POST',headers:{'Content-Type':'application/json','X-WP-Nonce':NONCE},body:JSON.stringify(body)})
+        .then(function(r){return r.json();})
+        .then(function(res){
+            if (!res.success) throw new Error(res.message||'Lỗi');
+            if (following) {
+                bar.dataset.following = '0';
+                btn.innerHTML = followHtml;
+                btn.classList.remove('lcni-btn-btn_rab_following');
+                btn.classList.add('lcni-btn-btn_rab_follow');
+            } else {
+                bar.dataset.following = '1';
+                btn.innerHTML = followingHtml;
+                btn.classList.remove('lcni-btn-btn_rab_follow');
+                btn.classList.add('lcni-btn-btn_rab_following');
+            }
+        })
+        .catch(function(e){ alert(e.message||'Lỗi kết nối'); })
+        .finally(function(){ btn.disabled=false; });
+    });
+})();
+</script>
+        <?php
+        return ob_get_clean();
+    }
+
     public function render_signal_card($atts = []) {
         $atts = shortcode_atts(['symbol' => ''], $atts, 'lcni_signal');
         $symbol = strtoupper(sanitize_text_field((string) $atts['symbol']));
@@ -1122,7 +1383,7 @@ HTML;
 
         ob_start();
         echo '<div>';
-        echo '<p><strong>Rule Name:</strong> ' . esc_html((string) $signal['rule_name']) . '</p>';
+        echo '<p><strong>Chiến lược:</strong> ' . esc_html((string) $signal['rule_name']) . '</p>';
         echo '<p><strong>Entry price:</strong> ' . esc_html((string) $signal['entry_price']) . '</p>';
         echo '<p><strong>Current price:</strong> ' . esc_html((string) $signal['current_price']) . '</p>';
         echo '<p><strong>R multiple:</strong> ' . esc_html(number_format((float) $signal['r_multiple'], 2)) . '</p>';

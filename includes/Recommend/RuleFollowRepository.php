@@ -31,29 +31,42 @@ class RuleFollowRepository {
      * Follow một rule.
      * Dùng INSERT IGNORE để idempotent (gọi nhiều lần không lỗi).
      */
-    public function follow( int $user_id, int $rule_id, bool $notify_email = true ): bool {
+    /**
+     * @param bool  $notify_email
+     * @param bool  $notify_browser     — Web push notification
+     * @param int   $dynamic_watchlist_id — 0 = không tạo dynamic watchlist
+     */
+    public function follow(
+        int  $user_id,
+        int  $rule_id,
+        bool $notify_email         = true,
+        bool $notify_browser       = false,
+        int  $dynamic_watchlist_id = 0
+    ): bool {
         if ( $user_id <= 0 || $rule_id <= 0 ) return false;
+
+        $data = [
+            'notify_email'         => $notify_email ? 1 : 0,
+            'notify_browser'       => $notify_browser ? 1 : 0,
+            'dynamic_watchlist_id' => $dynamic_watchlist_id > 0 ? $dynamic_watchlist_id : null,
+        ];
 
         $existing = $this->get_follow( $user_id, $rule_id );
         if ( $existing ) {
-            // Đã follow → update notify_email nếu khác
-            if ( (int) $existing['notify_email'] !== ( $notify_email ? 1 : 0 ) ) {
-                $this->wpdb->update(
-                    $this->table,
-                    [ 'notify_email' => $notify_email ? 1 : 0 ],
-                    [ 'user_id' => $user_id, 'rule_id' => $rule_id ],
-                    [ '%d' ], [ '%d', '%d' ]
-                );
-            }
+            $this->wpdb->update(
+                $this->table,
+                $data,
+                [ 'user_id' => $user_id, 'rule_id' => $rule_id ],
+                [ '%d', '%d', '%s' ], [ '%d', '%d' ]
+            );
             return true;
         }
 
-        $result = $this->wpdb->insert( $this->table, [
-            'user_id'      => $user_id,
-            'rule_id'      => $rule_id,
-            'notify_email' => $notify_email ? 1 : 0,
-        ], [ '%d', '%d', '%d' ] );
-
+        $result = $this->wpdb->insert(
+            $this->table,
+            array_merge( [ 'user_id' => $user_id, 'rule_id' => $rule_id ], $data ),
+            [ '%d', '%d', '%d', '%d', '%s' ]
+        );
         return $result !== false;
     }
 
@@ -134,14 +147,48 @@ class RuleFollowRepository {
         $sql = $this->wpdb->prepare(
             "SELECT r.*,
                     CASE WHEN f.id IS NOT NULL THEN 1 ELSE 0 END AS is_following,
-                    COALESCE(f.notify_email, 1) AS notify_email,
-                    f.created_at AS followed_at
+                    COALESCE(f.notify_email, 1)    AS notify_email,
+                    COALESCE(f.notify_browser, 0)  AS notify_browser,
+                    f.dynamic_watchlist_id         AS dynamic_watchlist_id,
+                    f.created_at                   AS followed_at
              FROM {$this->rule_table} r
              LEFT JOIN {$this->table} f
                     ON f.rule_id = r.id AND f.user_id = %d
              WHERE r.is_active = 1
              ORDER BY r.id ASC",
             $user_id
+        );
+        return $this->wpdb->get_results( $sql, ARRAY_A ) ?: [];
+    }
+
+    /**
+     * Lấy danh sách user follow rule + muốn nhận browser push (notify_browser = 1).
+     * @return array[]  [['user_id' => int], ...]
+     */
+    public function get_browser_subscribers_for_rule( int $rule_id ): array {
+        $sql = $this->wpdb->prepare(
+            "SELECT f.user_id
+             FROM {$this->table} f
+             WHERE f.rule_id = %d
+               AND f.notify_browser = 1",
+            $rule_id
+        );
+        return $this->wpdb->get_results( $sql, ARRAY_A ) ?: [];
+    }
+
+    /**
+     * Lấy danh sách (user_id, dynamic_watchlist_id) của rule.
+     * Dùng khi có signal mới → sync symbol vào watchlist.
+     * @return array[]  [['user_id' => int, 'dynamic_watchlist_id' => int], ...]
+     */
+    public function get_dynamic_watchlist_subscribers_for_rule( int $rule_id ): array {
+        $sql = $this->wpdb->prepare(
+            "SELECT f.user_id, f.dynamic_watchlist_id
+             FROM {$this->table} f
+             WHERE f.rule_id = %d
+               AND f.dynamic_watchlist_id IS NOT NULL
+               AND f.dynamic_watchlist_id > 0",
+            $rule_id
         );
         return $this->wpdb->get_results( $sql, ARRAY_A ) ?: [];
     }

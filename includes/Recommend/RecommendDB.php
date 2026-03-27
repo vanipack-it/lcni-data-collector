@@ -30,6 +30,7 @@ class LCNI_Recommend_DB {
             apply_from_date DATE NULL,
             scan_time VARCHAR(5) NOT NULL DEFAULT '18:00',
             scan_times VARCHAR(100) NOT NULL DEFAULT '18:00',
+            scan_interval_minutes SMALLINT UNSIGNED NOT NULL DEFAULT 0,
             max_loss_pct DECIMAL(10,4) NOT NULL DEFAULT 8.0000,
             last_scan_at BIGINT UNSIGNED DEFAULT NULL,
             is_active TINYINT(1) NOT NULL DEFAULT 1,
@@ -72,13 +73,54 @@ class LCNI_Recommend_DB {
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             user_id BIGINT UNSIGNED NOT NULL,
             rule_id BIGINT UNSIGNED NOT NULL,
-            notify_email TINYINT(1) NOT NULL DEFAULT 1,
+            notify_email    TINYINT(1) NOT NULL DEFAULT 1,
+            notify_browser  TINYINT(1) NOT NULL DEFAULT 0,
+            dynamic_watchlist_id BIGINT UNSIGNED DEFAULT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             UNIQUE KEY uniq_user_rule (user_id, rule_id),
             KEY user_id (user_id),
             KEY rule_id (rule_id)
         ) {$charset_collate};");
+
+        // Migration: scan_interval_minutes (intraday scanning)
+        $rule_cols = $wpdb->get_col("SHOW COLUMNS FROM {$rule_table}", 0);
+        if (!in_array('scan_interval_minutes', $rule_cols)) {
+            $wpdb->query("ALTER TABLE {$rule_table} ADD COLUMN scan_interval_minutes SMALLINT UNSIGNED NOT NULL DEFAULT 0 AFTER scan_times");
+        }
+
+        // Migration: thêm cột mới nếu chưa có (upgrade từ version cũ)
+        $existing_cols = $wpdb->get_col("SHOW COLUMNS FROM {$follow_table}", 0);
+        if (!in_array('notify_browser', $existing_cols)) {
+            $wpdb->query("ALTER TABLE {$follow_table} ADD COLUMN notify_browser TINYINT(1) NOT NULL DEFAULT 0 AFTER notify_email");
+        }
+        if (!in_array('dynamic_watchlist_id', $existing_cols)) {
+            $wpdb->query("ALTER TABLE {$follow_table} ADD COLUMN dynamic_watchlist_id BIGINT UNSIGNED DEFAULT NULL AFTER notify_browser");
+        }
+
+        // ── Web Push Subscription table ──────────────────────────────────────────
+        $push_table = $wpdb->prefix . 'lcni_push_subscriptions';
+        dbDelta("CREATE TABLE {$push_table} (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            user_id BIGINT UNSIGNED NOT NULL,
+            endpoint TEXT NOT NULL,
+            p256dh VARCHAR(512) NOT NULL DEFAULT '',
+            auth VARCHAR(256) NOT NULL DEFAULT '',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY uniq_user_endpoint (user_id, endpoint(191)),
+            KEY user_id (user_id)
+        ) {$charset_collate};");
+
+        // Auto-generate VAPID keys nếu chưa có
+        if ( ! get_option('lcni_vapid_public_key') ) {
+            $keys = self::generate_vapid_keys();
+            if ( $keys ) {
+                update_option('lcni_vapid_public_key',  $keys['public'],  false);
+                update_option('lcni_vapid_private_key', $keys['private'], false);
+            }
+        }
 
         $log_table = $wpdb->prefix . 'lcni_recommend_rule_log';
 
@@ -113,6 +155,35 @@ class LCNI_Recommend_DB {
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (rule_id)
         ) {$charset_collate};");
+    }
+
+    /**
+     * Generate VAPID key pair (EC P-256) dùng openssl extension.
+     * Returns ['public' => base64url, 'private' => base64url] hoặc null nếu không support.
+     */
+    public static function generate_vapid_keys(): ?array {
+        if ( ! function_exists('openssl_pkey_new') ) return null;
+        try {
+            $key = openssl_pkey_new([
+                'curve_name'       => 'prime256v1',
+                'private_key_type' => OPENSSL_KEYTYPE_EC,
+            ]);
+            if ( ! $key ) return null;
+            $details = openssl_pkey_get_details($key);
+            if ( ! $details || ! isset($details['ec']['x'], $details['ec']['y'], $details['ec']['d']) ) return null;
+
+            // Uncompressed public key: 0x04 + x (32 bytes) + y (32 bytes)
+            $pub_raw  = "" . str_pad($details['ec']['x'], 32, " ", STR_PAD_LEFT)
+                               . str_pad($details['ec']['y'], 32, " ", STR_PAD_LEFT);
+            $priv_raw = str_pad($details['ec']['d'], 32, " ", STR_PAD_LEFT);
+
+            return [
+                'public'  => rtrim(strtr(base64_encode($pub_raw),  '+/', '-_'), '='),
+                'private' => rtrim(strtr(base64_encode($priv_raw), '+/', '-_'), '='),
+            ];
+        } catch ( \Throwable $e ) {
+            return null;
+        }
     }
 
     public static function ensure_tables_exist() {

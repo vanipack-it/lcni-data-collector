@@ -6,9 +6,14 @@ if (!defined('ABSPATH')) {
 
 class RuleRepository {
     const ALLOWED_SCAN_TIMES = ['06:00', '09:00', '12:00', '15:00', '18:00'];
+    const ALLOWED_INTRADAY_INTERVALS = [5, 10, 15, 20, 30]; // phút
     private $wpdb;
     private $table;
     private $log_table;
+    /** @var bool|null — cached result of indicators_ready column existence check */
+    private $has_indicators_ready_col = null;
+    /** @var bool|null — cached result of lcni_ohlc_latest table existence check */
+    private $has_ohlc_latest_table = null;
 
     public function __construct(wpdb $wpdb) {
         $this->wpdb = $wpdb;
@@ -156,6 +161,7 @@ class RuleRepository {
         //   tn = lcni_thong_ke_nganh_icb_2
 
         $alias_map = [
+            // Full table keys (không có wp_ prefix)
             'lcni_ohlc'                     => 'o',
             'lcni_symbols'                  => 's',
             'lcni_sym_icb_market'           => 'm',
@@ -165,7 +171,19 @@ class RuleRepository {
             'lcni_industry_metrics'         => 'im',
             'lcni_thong_ke_thi_truong'      => 'tk',
             'lcni_thong_ke_nganh_icb_2'     => 'tn',
-            'lcni_market_context_latest'    => 'mc',
+            'lcni_market_context'           => 'mc',   // history: join theo event_time + timeframe
+            // Short alias — frontend có thể gửi tên ngắn không có prefix lcni_
+            'ohlc'                          => 'o',
+            'symbols'                       => 's',
+            'sym_icb_market'                => 'm',
+            'icb2'                          => 'i',
+            'symbol_tongquan'               => 't',
+            'tongquan'                      => 't',
+            'industry_return'               => 'ir',
+            'industry_metrics'              => 'im',
+            'thong_ke_thi_truong'           => 'tk',
+            'thong_ke_nganh_icb_2'          => 'tn',
+            'market_context'                => 'mc',
         ];
 
         // Đánh dấu những alias nào thực sự được dùng trong conditions
@@ -214,8 +232,10 @@ class RuleRepository {
                     if (!is_numeric($raw_value)) {
                         continue;
                     }
-                    $clause       = $column_ref . ' ' . $operator . ' %f';
-                    $clause_param = (float) $raw_value;
+                    // Dùng %s thay %f để tránh PHP locale format dấu phẩy/chấm
+                    // (một số server Việt Nam dùng dấu phẩy thập phân → MySQL lỗi)
+                    $clause       = $column_ref . ' ' . $operator . ' %s';
+                    $clause_param = $this->format_numeric_param((float) $raw_value);
                 } elseif ($operator === 'contains') {
                     $clause       = $column_ref . ' LIKE %s';
                     $clause_param = '%' . $this->wpdb->esc_like($raw_value) . '%';
@@ -224,15 +244,15 @@ class RuleRepository {
                     $clause_param = '%' . $this->wpdb->esc_like($raw_value) . '%';
                 } elseif ($operator === '!=') {
                     if (is_numeric($raw_value)) {
-                        $clause       = $column_ref . ' != %f';
-                        $clause_param = (float) $raw_value;
+                        $clause       = $column_ref . ' != %s';
+                        $clause_param = $this->format_numeric_param((float) $raw_value);
                     } else {
                         $clause       = $column_ref . ' != %s';
                         $clause_param = $raw_value;
                     }
                 } elseif (is_numeric($raw_value)) {
-                    $clause       = $column_ref . ' = %f';
-                    $clause_param = (float) $raw_value;
+                    $clause       = $column_ref . ' = %s';
+                    $clause_param = $this->format_numeric_param((float) $raw_value);
                 } else {
                     $clause       = $column_ref . ' = %s';
                     $clause_param = $raw_value;
@@ -313,14 +333,31 @@ class RuleRepository {
 
                 $next_item      = $clause_items[$idx + 1];
                 $same_field     = ($item['field_key'] === $next_item['field_key']);
-                $explicit_or    = ($item['join_with_next'] === 'OR');
+                $explicit_join  = $item['join_with_next']; // 'AND' hoặc 'OR'
 
-                if ($same_field || $explicit_or) {
-                    // Cùng field HOẶC người dùng tường minh chọn OR → tiếp tục segment hiện tại
+                // Ưu tiên join_with_next tường minh hơn same_field heuristic:
+                //   - OR tường minh  → luôn gộp vào segment hiện tại (kể cả khác field)
+                //   - AND tường minh → luôn tách segment mới (kể cả cùng field)
+                //   - Cùng field mà không có explicit override → gộp (backward compat)
+                if ($explicit_join === 'OR') {
+                    // Người dùng chọn OR tường minh → tiếp tục segment hiện tại
                     continue;
                 }
 
-                // Khác field + AND → đóng segment hiện tại, bắt đầu segment mới
+                if ($explicit_join === 'AND' && $same_field) {
+                    // Người dùng chọn AND tường minh cho cùng field → tách segment
+                    // (VD: xep_hang = 'A' AND xep_hang = 'B+' → 2 điều kiện độc lập)
+                    $segments[] = $current;
+                    $current    = [];
+                    continue;
+                }
+
+                if ($same_field) {
+                    // Không có explicit join, cùng field → gộp theo behavior cũ
+                    continue;
+                }
+
+                // Khác field + AND (explicit hoặc default) → tách segment mới
                 $segments[] = $current;
                 $current    = [];
             }
@@ -384,8 +421,8 @@ class RuleRepository {
                 if ($column === '') {
                     continue;
                 }
-                $where[]        = "o.`{$column}` >= %f";
-                $where_params[] = (float) $value;
+                $where[]        = "o.`{$column}` >= %s";
+                $where_params[] = $this->format_numeric_param((float) $value);
                 continue;
             }
 
@@ -394,14 +431,14 @@ class RuleRepository {
                 if ($column === '') {
                     continue;
                 }
-                $where[]        = "o.`{$column}` <= %f";
-                $where_params[] = (float) $value;
+                $where[]        = "o.`{$column}` <= %s";
+                $where_params[] = $this->format_numeric_param((float) $value);
                 continue;
             }
 
             if (is_numeric($value)) {
-                $where[]        = "o.`{$field}` = %f";
-                $where_params[] = (float) $value;
+                $where[]        = "o.`{$field}` = %s";
+                $where_params[] = $this->format_numeric_param((float) $value);
             } else {
                 $where[]        = "o.`{$field}` = %s";
                 $where_params[] = sanitize_text_field((string) $value);
@@ -409,7 +446,10 @@ class RuleRepository {
         }
 
         // ── Build JOIN clauses (chỉ JOIN bảng thực sự được dùng) ─────────────
-        $ohlc_table      = $this->wpdb->prefix . 'lcni_ohlc';
+        $ohlc_table        = $this->wpdb->prefix . 'lcni_ohlc';
+        // non-window scan dùng ohlc_latest (snapshot 1 row/symbol/timeframe, luôn có đủ indicators)
+        // → nhất quán với Filter module, không cần MAX(event_time) subquery
+        $ohlc_latest_table = $this->wpdb->prefix . 'lcni_ohlc_latest';
         $symbol_table    = $this->wpdb->prefix . 'lcni_symbols';
         $icb2_table      = $this->wpdb->prefix . 'lcni_icb2';
         $mapping_table   = $this->wpdb->prefix . 'lcni_sym_icb_market';
@@ -500,8 +540,13 @@ class RuleRepository {
         }
 
         if ($need_mc) {
-            $mc_table = $this->wpdb->prefix . 'lcni_market_context_latest';
-            $joins[]  = "LEFT JOIN {$mc_table} mc ON mc.timeframe = o.timeframe";
+            // Dùng bảng history lcni_market_context, join theo event_time + timeframe
+            // → lấy đúng snapshot thị trường của phiên giao dịch đó (dùng cho backtest/window scan)
+            // Với non-window scan (realtime): o.event_time là nến mới nhất → MC snapshot tương ứng
+            $mc_table = $this->wpdb->prefix . 'lcni_market_context';
+            $joins[]  = "LEFT JOIN {$mc_table} mc"
+                . " ON mc.event_time = o.event_time"
+                . " AND mc.timeframe = o.timeframe";
         }
 
         $join_sql = !empty($joins) ? "\n                " . implode("\n                ", $joins) : '';
@@ -509,8 +554,24 @@ class RuleRepository {
         // ── Assemble final WHERE ──────────────────────────────────────────────
         $is_window_scan = $start_event_time !== null || $end_event_time !== null;
 
+        // indicators_ready = 1: window scan (backfill lịch sử) chỉ đọc rows Python đã sync đầy đủ.
+        // Guard: chỉ thêm filter khi cột thực sự tồn tại trong DB (migration chưa chạy → bỏ qua).
+        // Cache vào instance property để không query information_schema lặp lại mỗi lần scan.
+        if ( $this->has_indicators_ready_col === null ) {
+            $this->has_indicators_ready_col = (bool) $this->wpdb->get_var(
+                "SELECT COUNT(*) FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE()
+                   AND TABLE_NAME   = '{$ohlc_table}'
+                   AND COLUMN_NAME  = 'indicators_ready'"
+            );
+        }
+
         $base_where        = ['o.timeframe = %s'];
         $base_where_params = [$timeframe];
+
+        if ( $this->has_indicators_ready_col ) {
+            $base_where[] = 'o.indicators_ready = 1';
+        }
 
         if ($start_event_time !== null) {
             $base_where[]        = 'o.event_time >= %d';
@@ -529,55 +590,94 @@ class RuleRepository {
 
         // ── Execute query ─────────────────────────────────────────────────────
         if ($is_window_scan) {
-            $sql = "SELECT o.symbol, o.event_time, o.close_price
-                FROM {$ohlc_table} o{$join_sql}
-                WHERE {$where_sql}
-                ORDER BY o.event_time ASC, o.symbol ASC
+            // Window scan: lấy nến EARLIEST khớp điều kiện cho mỗi symbol.
+            // Logic:
+            //   Subquery (f): WHERE conditions lọc trước → GROUP BY → MIN(event_time) per symbol
+            //   JOIN o2: lấy close_price đúng của nến MIN(event_time) đó
+            //
+            // join_sql và where_sql (có timeframe + event_time range + conditions) nằm
+            // trong subquery f — đảm bảo chỉ nến thỏa điều kiện mới được GROUP BY.
+            $sql = "SELECT f.symbol, f.event_time, o2.close_price
+                FROM (
+                    SELECT o.symbol, MIN(o.event_time) AS event_time
+                    FROM {$ohlc_table} o{$join_sql}
+                    WHERE {$where_sql}
+                    GROUP BY o.symbol
+                ) f
+                INNER JOIN {$ohlc_table} o2
+                    ON o2.symbol     = f.symbol
+                   AND o2.event_time = f.event_time
+                   AND o2.timeframe  = %s
+                ORDER BY f.event_time ASC, f.symbol ASC
                 LIMIT 2000";
 
+            // all_params cho WHERE trong subquery f, thêm timeframe cho JOIN o2
+            $window_params = array_merge($all_params, [$timeframe]);
+
             return $this->wpdb->get_results(
-                $this->wpdb->prepare($sql, $all_params),
+                $this->wpdb->prepare($sql, $window_params),
                 ARRAY_A
             );
         }
 
-        // Non-window scan: lấy nến mới nhất của mỗi symbol
-        // Dùng INNER JOIN subquery để lọc đúng nến latest trước, rồi apply conditions
-        // Điều này tránh việc LEFT JOIN với bảng industry bị nhân hàng do nhiều event_time
-        $latest_params  = [$timeframe];
-        $filter_params  = array_merge([$timeframe], $where_params);
-
-        // Rebuild base_where không có event_time filter (vì đây là latest-scan)
+        // Non-window scan: dùng lcni_ohlc_latest thay vì lcni_ohlc + MAX(event_time) subquery.
+        //
+        // lcni_ohlc_latest là snapshot 1 row/(symbol, timeframe), luôn chứa candle mới nhất
+        // với đầy đủ indicators (Python ghi trực tiếp, MySQL Event sync định kỳ).
+        // Filter module cũng dùng bảng này → kết quả nhất quán với Filter.
+        //
+        // Lợi ích:
+        //   - Không cần MAX(event_time) subquery → nhanh hơn, đơn giản hơn
+        //   - Không cần indicators_ready filter (ohlc_latest luôn sẵn sàng)
+        //   - Nhất quán với Filter module: "8 mã trong Filter → 8 mã trong Recommend"
         $filter_where = array_merge(['o.timeframe = %s'], $where);
+
+        // Fallback về lcni_ohlc nếu lcni_ohlc_latest chưa tồn tại (cài mới)
+        // Cache kết quả vào instance property.
+        if ( $this->has_ohlc_latest_table === null ) {
+            $this->has_ohlc_latest_table = (bool) $this->wpdb->get_var(
+                $this->wpdb->prepare( 'SHOW TABLES LIKE %s', $ohlc_latest_table )
+            );
+        }
+        $scan_table = $this->has_ohlc_latest_table ? $ohlc_latest_table : $ohlc_table;
 
         $sql = "SELECT o.symbol,
                        o.event_time,
                        o.close_price
-                FROM {$ohlc_table} o
-                INNER JOIN (
-                    SELECT symbol, MAX(event_time) AS max_event_time
-                    FROM {$ohlc_table}
-                    WHERE timeframe = %s
-                    GROUP BY symbol
-                ) latest ON latest.symbol = o.symbol
-                         AND o.event_time = latest.max_event_time
-                         AND o.timeframe = %s{$join_sql}
+                FROM {$scan_table} o{$join_sql}
                 WHERE " . implode("\n                    AND ", $filter_where) . "
                 ORDER BY o.symbol ASC
                 LIMIT 500";
 
+        // $final_params: chỉ timeframe cho filter_where[0] + where_params cho rule conditions
         $final_params = array_merge(
-            [$timeframe, $timeframe],  // params cho 2 chỗ trong INNER JOIN subquery
-            $filter_params
+            [$timeframe],   // WHERE o.timeframe = %s
+            $where_params   // các condition params
         );
 
-        return $this->wpdb->get_results(
-            $this->wpdb->prepare($sql, $final_params),
-            ARRAY_A
-        );
+        $prepared_sql = $this->wpdb->prepare($sql, $final_params);
+
+        // DEBUG: log query và kết quả khi WP_DEBUG bật
+        if ( defined('WP_DEBUG') && WP_DEBUG ) {
+            error_log( '[LCNI RuleRepo] non-window scan table=' . $scan_table );
+            error_log( '[LCNI RuleRepo] SQL=' . $prepared_sql );
+        }
+
+        $results = $this->wpdb->get_results( $prepared_sql, ARRAY_A );
+
+        if ( defined('WP_DEBUG') && WP_DEBUG ) {
+            error_log( '[LCNI RuleRepo] wpdb->last_error=' . $this->wpdb->last_error );
+            error_log( '[LCNI RuleRepo] result count=' . count( (array) $results ) );
+        }
+
+        return $results;
     }
 
-    private function normalize_conditions($raw) {
+    /**
+     * Normalize entry_conditions từ nhiều format (array, JSON string, legacy flat)
+     * về format chuẩn: { match: 'AND'|'OR', rules: [{field, operator, value, join_with_next}] }
+     */
+    private function normalize_conditions($raw): array {
         if (is_string($raw)) {
             $decoded = json_decode(wp_unslash($raw), true);
             $raw = is_array($decoded) ? $decoded : [];
@@ -633,9 +733,8 @@ class RuleRepository {
                     'value' => $value,
                 ];
 
-                if (array_key_exists('join_with_next', $rule) || array_key_exists('join', $rule)) {
-                    $normalized_rule['join_with_next'] = $join_with_next;
-                }
+                // Luôn persist join_with_next để không mất thông tin khi đọc lại từ DB
+                $normalized_rule['join_with_next'] = $join_with_next;
 
                 $normalized_rules[] = $normalized_rule;
             }
@@ -671,6 +770,20 @@ class RuleRepository {
         }
 
         return $normalized;
+    }
+
+    /**
+     * Format số thực thành string với dấu chấm thập phân, tránh PHP locale dùng dấu phẩy.
+     * Dùng thay %f trong wpdb->prepare() để MySQL nhận đúng giá trị số.
+     *
+     * @param float $value
+     * @return string  VD: 60.0 → "60", 1.5 → "1.5", 0.001 → "0.001"
+     */
+    private function format_numeric_param(float $value): string {
+        // number_format với dấu chấm, đủ 10 chữ số thập phân rồi trim trailing zeros
+        $formatted = number_format($value, 10, '.', '');
+        // Bỏ số 0 thừa sau dấu chấm, bỏ luôn dấu chấm nếu không còn phần thập phân
+        return rtrim(rtrim($formatted, '0'), '.');
     }
 
     private function normalize_condition_table_key($raw_table_key) {
@@ -756,6 +869,7 @@ class RuleRepository {
             'apply_from_date' => $this->sanitize_apply_from_date($data['apply_from_date'] ?? null),
             'scan_time' => $scan_times[0],
             'scan_times' => implode(',', $scan_times),
+            'scan_interval_minutes' => absint( $data['scan_interval_minutes'] ?? 0 ),
             'is_active' => !empty($data['is_active']) ? 1 : 0,
         ];
     }

@@ -41,6 +41,14 @@ class DailyCronService {
                     continue;
                 }
 
+                // Intraday slots: chỉ chạy trong ngày làm việc (T2-T6)
+                $dow = (int) current_datetime()->format('N'); // 1=Mon..7=Sun
+                $interval = absint( $rule['scan_interval_minutes'] ?? 0 );
+                $is_intraday_slot = $interval > 0 && ! in_array( $scan_time, RuleRepository::ALLOWED_SCAN_TIMES, true );
+                if ( $is_intraday_slot && $dow >= 6 ) {
+                    continue; // bỏ qua cuối tuần cho intraday slots
+                }
+
                 $slot_timestamp = $this->parse_scan_date($current_date, $scan_time . ':00');
                 if ($slot_timestamp === null) {
                     continue;
@@ -51,14 +59,24 @@ class DailyCronService {
                 }
 
                 $candidates = $this->scan_rule_candidates($rule, $current_date);
-                $last_scan_at = current_time('timestamp');
+                // D1 FIX: update last_scan_at = slot_timestamp (khong phai time())
+                // Neu dung time(): last_scan_at > slot sau -> cac slot sau trong ngay bi skip
+                // Dung slot_timestamp: moi slot co timestamp rieng -> check dung
+                $last_scan_at = $slot_timestamp;
                 $this->rule_repository->update_last_scan_at((int) $rule['id'], $last_scan_at);
-                $this->rule_repository->log_rule_change((int) $rule['id'], 'cron_scanned', 'Cron quét rule theo lịch hằng ngày.', [
-                    'scan_time' => $scan_time,
-                    'scan_times' => $scan_times,
-                    'scanned_at' => current_time('mysql'),
+                $this->rule_repository->log_rule_change((int) $rule['id'], 'cron_scanned', 'Cron quét chiến lược theo lịch hằng ngày.', [
+                    'scan_time'       => $scan_time,
+                    'scan_times'      => $scan_times,
+                    'scanned_at'      => current_time('mysql'),
                     'candidate_count' => count($candidates),
                 ]);
+                // Debug log để truy vết khi mã đáp ứng điều kiện nhưng không vào signal
+                if ( defined('WP_DEBUG') && WP_DEBUG ) {
+                    error_log( sprintf(
+                        '[LCNI Recommend] Cron scanned rule #%d "%s" at %s — %d candidates found',
+                        (int)$rule['id'], $rule['name'] ?? '', $scan_time, count($candidates)
+                    ) );
+                }
             }
         }
 
@@ -76,7 +94,7 @@ class DailyCronService {
 
         if ($scan_from !== null || $scan_to !== null) {
             $start = $scan_from !== null ? $scan_from : 0;
-            $end = $scan_to !== null ? $scan_to : current_time('timestamp');
+            $end = $scan_to !== null ? $scan_to : time();
 
             if ($start > $end) {
                 [$start, $end] = [$end, $start];
@@ -87,20 +105,52 @@ class DailyCronService {
             $candidates = $this->scan_rule_candidates_latest($rule);
         }
 
-        $this->rule_repository->update_last_scan_at((int) $rule['id'], current_time('timestamp'));
+        // D3 FIX: scan_rule_now chỉ update last_scan_at khi là latest-scan (không có date range)
+        // Window scan không update → cron vẫn chạy đúng slot sau đó
+        if ( $scan_from === null && $scan_to === null ) {
+            $this->rule_repository->update_last_scan_at((int) $rule['id'], time());
+        }
+
+        // Đếm số signals thực sự được tạo (khác với candidate_count)
+        // scan_rule_candidates_* trả về $candidates (array rows từ ohlc)
+        // create_signal có thể reject do: duplicate, invalid_symbol, price=0
+        // → cần đếm riêng để hiển thị đúng cho admin
+        $created_count = 0;
+        foreach ( $candidates as $c ) {
+            // Kiểm tra xem signal có được tạo không bằng cách tra bảng signal
+            global $wpdb;
+            $signal_table = $wpdb->prefix . 'lcni_recommend_signal';
+            $timeframe = strtoupper( (string) ( $rule['timeframe'] ?? '1D' ) );
+            $exists = $wpdb->get_var( $wpdb->prepare(
+                "SELECT id FROM {$signal_table}
+                 WHERE rule_id = %d AND symbol = %s AND entry_time = %d LIMIT 1",
+                (int) $rule['id'],
+                strtoupper( (string) $c['symbol'] ),
+                (int) $c['event_time']
+            ) );
+            if ( $exists ) $created_count++;
+        }
+
         $this->rule_repository->log_rule_change((int) $rule['id'], 'manual_scanned', 'Quét thủ công rule từ danh sách.', [
-            'scanned_at' => current_time('mysql'),
+            'scanned_at'      => current_time('mysql'),
             'candidate_count' => count($candidates),
+            'created_count'   => $created_count,
+            'candidates'      => array_map( static fn($c) => $c['symbol'] . '@' . $c['event_time'], $candidates ),
         ]);
 
-        $this->performance_calculator->refresh_all();
+        // P1 FIX: chỉ refresh performance của rule này, không refresh toàn bộ
+        $this->performance_calculator->refresh_all( [ (int) $rule['id'] ] );
 
+        // Trả về candidate_count (backward compat) nhưng thêm created vào log
         return count($candidates);
     }
 
     public function refresh_open_positions_now() {
-        $this->refresh_open_positions();
-        $this->performance_calculator->refresh_all();
+        $affected_rule_ids = $this->refresh_open_positions();
+        // P1 FIX: chỉ refresh các rule có open signals vừa được cập nhật
+        if ( ! empty( $affected_rule_ids ) ) {
+            $this->performance_calculator->refresh_all( array_unique( $affected_rule_ids ) );
+        }
     }
 
     public function backfill_rule_history($rule) {
@@ -134,7 +184,8 @@ class DailyCronService {
             'created_signals' => $created,
         ]);
 
-        $this->performance_calculator->refresh_all();
+        // P1 FIX: chỉ refresh rule vừa backfill
+        $this->performance_calculator->refresh_all( [ (int) $rule['id'] ] );
 
         return $created;
     }
@@ -175,11 +226,34 @@ class DailyCronService {
     }
 
     private function scan_rule_candidates($rule, $current_date) {
-        $window = $this->resolve_scan_window($rule, $current_date);
-        $candidates = $this->rule_repository->find_candidate_symbols_by_window($rule, $window['start'], $window['end']);
+        $candidates = $this->rule_repository->find_candidate_symbols($rule);
+        $created    = 0;
+        $new_signals = []; // gom signals mới để notify batch
 
         foreach ($candidates as $candidate) {
-            $this->signal_repository->create_signal($rule, $candidate['symbol'], (int) $candidate['event_time'], (float) $candidate['close_price']);
+            $sid = $this->signal_repository->create_signal($rule, $candidate['symbol'], (int) $candidate['event_time'], (float) $candidate['close_price']);
+            if ( $sid > 0 ) {
+                $created++;
+                $new_signals[] = [
+                    'signal_id'   => $sid,
+                    'symbol'      => $candidate['symbol'],
+                    'entry_price' => (float) $candidate['close_price'],
+                    'entry_time'  => (int)   $candidate['event_time'],
+                ];
+            }
+        }
+
+        // Gửi 1 email digest + 1 inbox notification sau khi scan xong rule
+        if ( ! empty( $new_signals ) && $this->signal_repository->get_notifier() !== null ) {
+            $this->signal_repository->get_notifier()->on_new_signals_batch( $rule, $new_signals );
+        }
+
+        if ( count($candidates) > 0 && $created === 0 && defined('WP_DEBUG') && WP_DEBUG ) {
+            $symbols = array_column($candidates, 'symbol');
+            error_log( sprintf(
+                '[LCNI Recommend] Rule #%d "%s": %d candidates found but 0 signals created (possible: duplicate, invalid symbol, or price=0). Symbols: %s',
+                (int)$rule['id'], $rule['name'] ?? '', count($candidates), implode(',', $symbols)
+            ) );
         }
 
         return $candidates;
@@ -187,9 +261,32 @@ class DailyCronService {
 
     private function scan_rule_candidates_latest($rule) {
         $candidates = $this->rule_repository->find_candidate_symbols($rule);
+        $created    = 0;
+        $new_signals = [];
 
         foreach ($candidates as $candidate) {
-            $this->signal_repository->create_signal($rule, $candidate['symbol'], (int) $candidate['event_time'], (float) $candidate['close_price']);
+            $sid = $this->signal_repository->create_signal($rule, $candidate['symbol'], (int) $candidate['event_time'], (float) $candidate['close_price']);
+            if ( $sid > 0 ) {
+                $created++;
+                $new_signals[] = [
+                    'signal_id'   => $sid,
+                    'symbol'      => $candidate['symbol'],
+                    'entry_price' => (float) $candidate['close_price'],
+                    'entry_time'  => (int)   $candidate['event_time'],
+                ];
+            }
+        }
+
+        if ( ! empty( $new_signals ) && $this->signal_repository->get_notifier() !== null ) {
+            $this->signal_repository->get_notifier()->on_new_signals_batch( $rule, $new_signals );
+        }
+
+        if ( count($candidates) > 0 && $created === 0 && defined('WP_DEBUG') && WP_DEBUG ) {
+            $symbols = array_column($candidates, 'symbol');
+            error_log( sprintf(
+                '[LCNI Recommend] Rule #%d "%s" (latest scan): %d candidates, 0 signals created. Symbols: %s',
+                (int)$rule['id'], $rule['name'] ?? '', count($candidates), implode(',', $symbols)
+            ) );
         }
 
         return $candidates;
@@ -197,9 +294,24 @@ class DailyCronService {
 
     private function scan_rule_candidates_by_window($rule, $start_event_time, $end_event_time) {
         $candidates = $this->rule_repository->find_candidate_symbols_by_window($rule, $start_event_time, $end_event_time);
+        $created    = 0;
+        $new_signals = [];
 
         foreach ($candidates as $candidate) {
-            $this->signal_repository->create_signal($rule, $candidate['symbol'], (int) $candidate['event_time'], (float) $candidate['close_price']);
+            $sid = $this->signal_repository->create_signal($rule, $candidate['symbol'], (int) $candidate['event_time'], (float) $candidate['close_price']);
+            if ( $sid > 0 ) {
+                $created++;
+                $new_signals[] = [
+                    'signal_id'   => $sid,
+                    'symbol'      => $candidate['symbol'],
+                    'entry_price' => (float) $candidate['close_price'],
+                    'entry_time'  => (int)   $candidate['event_time'],
+                ];
+            }
+        }
+
+        if ( ! empty( $new_signals ) && $this->signal_repository->get_notifier() !== null ) {
+            $this->signal_repository->get_notifier()->on_new_signals_batch( $rule, $new_signals );
         }
 
         return $candidates;
@@ -212,6 +324,7 @@ class DailyCronService {
             $scan_times_raw = sanitize_text_field((string) ($rule['scan_time'] ?? '18:00'));
         }
 
+        // Buoc 1: chi giu cac moc co dinh trong ALLOWED_SCAN_TIMES
         $scan_times = array_values(array_unique(array_filter(array_map('sanitize_text_field', explode(',', $scan_times_raw)))));
         $scan_times = array_values(array_filter($scan_times, static function ($scan_time) {
             return in_array($scan_time, RuleRepository::ALLOWED_SCAN_TIMES, true);
@@ -221,9 +334,40 @@ class DailyCronService {
             $scan_times = ['18:00'];
         }
 
+        // Buoc 2: merge intraday slots SAU khi da filter
+        // Intraday slots khong qua ALLOWED_SCAN_TIMES filter - chung duoc tao tu generate_intraday_slots()
+        $interval = absint( $rule['scan_interval_minutes'] ?? 0 );
+        if ( $interval > 0 && in_array( $interval, RuleRepository::ALLOWED_INTRADAY_INTERVALS, true ) ) {
+            $intraday   = $this->generate_intraday_slots( $interval );
+            $scan_times = array_values( array_unique( array_merge( $scan_times, $intraday ) ) );
+        }
+
         sort($scan_times);
 
         return $scan_times;
+    }
+
+    /**
+     * Sinh ra danh sách mốc giờ HH:MM trong phiên giao dịch HOSE: 09:00 – 14:45
+     * Cách nhau $interval phút, bỏ nghỉ trưa 11:30–13:00.
+     */
+    private function generate_intraday_slots( int $interval ): array {
+        $slots      = [];
+        $session_start = strtotime( '1970-01-01 09:00:00 UTC' );
+        $session_end   = strtotime( '1970-01-01 14:45:00 UTC' );
+        $lunch_start   = strtotime( '1970-01-01 11:30:00 UTC' );
+        $lunch_end     = strtotime( '1970-01-01 13:00:00 UTC' );
+        $step = $interval * 60;
+
+        for ( $t = $session_start; $t <= $session_end; $t += $step ) {
+            // Bỏ qua nghỉ trưa (11:30–13:00)
+            if ( $t > $lunch_start && $t < $lunch_end ) {
+                continue;
+            }
+            $slots[] = gmdate( 'H:i', $t );
+        }
+
+        return $slots;
     }
 
     private function parse_scan_date($date, $time_suffix) {
@@ -241,8 +385,10 @@ class DailyCronService {
         return $dt->getTimestamp();
     }
 
-    private function refresh_open_positions() {
-        $open_signals = $this->signal_repository->get_open_signals();
+    /** @return int[] Danh sách rule_ids có signal được xử lý */
+    private function refresh_open_positions(): array {
+        $open_signals      = $this->signal_repository->get_open_signals();
+        $affected_rule_ids = [];
 
         foreach ($open_signals as $signal) {
             $rule = $this->rule_repository->find((int) $signal['rule_id']);
@@ -263,15 +409,22 @@ class DailyCronService {
 
             $r_multiple     = $this->position_engine->calculate_r_multiple( $entry_price, $initial_sl, $current_price );
             $position_state = $this->position_engine->resolve_state( $r_multiple, (float) $rule['add_at_r'], (float) $rule['exit_at_r'] );
-            $holding_days   = max( 0, (int) floor( ( $latest_time - (int) $signal['entry_time'] ) / DAY_IN_SECONDS ) );
-            $max_hold_days  = max( 1, (int) ( $rule['max_hold_days'] ?? 1 ) );
+            // E2 FIX: holding_days thực (uncapped) dùng cho get_exit_reason
+            // capped_holding_days chỉ dùng để lưu DB (không vượt max_hold_days)
+            $holding_days        = max( 0, (int) floor( ( $latest_time - (int) $signal['entry_time'] ) / DAY_IN_SECONDS ) );
+            $max_hold_days       = max( 1, (int) ( $rule['max_hold_days'] ?? 1 ) );
             $capped_holding_days = min( $holding_days, $max_hold_days );
 
             $this->signal_repository->update_open_signal_metrics( (int) $signal['id'], $current_price, $r_multiple, $position_state, $capped_holding_days );
 
+            // Hook cho UserRuleEngine cập nhật user_signals mirror
+            do_action( 'lcni_signal_updated', (int) $signal['id'], $current_price, $r_multiple, $position_state, $capped_holding_days );
+
+            // Truyền holding_days thực (uncapped) để MAX_HOLD check chính xác
             $exit_reason = $this->exit_engine->get_exit_reason( $signal, $rule, $current_price, $r_multiple, $holding_days );
 
             if ( $exit_reason === '' ) {
+                $affected_rule_ids[] = (int) $signal['rule_id'];
                 continue;
             }
 
@@ -288,7 +441,7 @@ class DailyCronService {
                 if ( $should_exit_ts > 0 && $should_exit_ts <= $latest_time ) {
                     $exit_time = $should_exit_ts;
                     // Lấy close_price của nến tại ngày should_exit_ts
-                    $exit_candle = $this->find_candle_at_or_after( $signal['symbol'], $timeframe, $should_exit_ts );
+                    $exit_candle = $this->find_candle_at_or_after( $signal['symbol'], (string) ( $rule['timeframe'] ?? '1D' ), $should_exit_ts );
                     if ( $exit_candle ) {
                         $exit_price = (float) $exit_candle['close_price'];
                     }
@@ -340,21 +493,10 @@ class DailyCronService {
             }
 
             // ── Tính final_r chính xác theo exit_reason ───────────────────
-            $final_r = ( $exit_price - $entry_price ) / $risk_per_share;
-
-            if ( $exit_reason === ExitEngine::REASON_STOP_LOSS ) {
-                // Giá gap qua SL → cap final_r = -1.0R (tối đa rủi ro đã chấp nhận)
-                $sl_r    = ( $initial_sl - $entry_price ) / $risk_per_share; // thường = -1.0
-                $final_r = max( $final_r, $sl_r );                           // lấy giá trị lớn hơn (ít lỗ hơn)
-            } elseif ( $exit_reason === ExitEngine::REASON_MAX_LOSS ) {
-                // Thoát do max_loss_cut → cap tại đúng max_loss_pct
-                $max_loss_pct   = abs( (float) ( $rule['max_loss_pct'] ?? ( $rule['initial_sl_pct'] ?? 8 ) ) );
-                $max_loss_price = $entry_price * ( 1 - $max_loss_pct / 100 );
-                $max_loss_r     = ( $max_loss_price - $entry_price ) / $risk_per_share;
-                $final_r        = max( $final_r, $max_loss_r );
-            }
-
-            $final_r = round( $final_r, 6 );
+            // E1+D2 FIX: Dùng ExitEngine::compute_final_r() làm nguồn canonical
+            // thay vì duplicate logic cap ở đây.
+            $raw_r   = ( $exit_price - $entry_price ) / $risk_per_share;
+            $final_r = round( ExitEngine::compute_final_r( $raw_r, $exit_reason ), 6 );
 
             $this->signal_repository->close_signal(
                 (int) $signal['id'],
@@ -364,7 +506,14 @@ class DailyCronService {
                 $capped_holding_days,
                 $exit_reason
             );
+
+            // Hook cho UserRuleEngine đóng user_signals + recalc performance
+            do_action( 'lcni_signal_closed', (int) $signal['id'], $exit_price, $exit_time, $final_r, $capped_holding_days, $exit_reason );
+
+            $affected_rule_ids[] = (int) $signal['rule_id'];
         }
+
+        return array_unique( $affected_rule_ids );
     }
 
     private function get_latest_price($symbol, $timeframe) {

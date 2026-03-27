@@ -20,6 +20,8 @@ class LCNI_Recommend_Module {
         $follow_repo     = new RuleFollowRepository( $wpdb );
         $follow_notifier = new RuleFollowNotifier( $follow_repo, $rule_repository );
         $signal_repository->set_notifier( $follow_notifier );
+        // Singleton để static queued handler có thể dùng
+        RuleFollowNotifier::set_instance( $follow_notifier );
 
         // Shortcode [lcni_rule_follow]
         new RuleFollowShortcode( $follow_repo );
@@ -28,6 +30,9 @@ class LCNI_Recommend_Module {
         add_action( 'rest_api_init', static function() use ( $follow_repo ) {
             ( new RuleFollowRestController( $follow_repo ) )->register_routes();
         } );
+
+        // Serve Service Worker tại /lcni-sw.js (cần flush rewrite rules 1 lần)
+        new PushServiceWorkerEndpoint();
         // ─────────────────────────────────────────────────────────────────────
 
         $this->daily_cron_service = new DailyCronService(
