@@ -29,7 +29,6 @@ class LCNI_Portfolio_Shortcode {
 
         $ctrl_js    = LCNI_PATH . 'modules/portfolio/assets/js/lcni-transaction-controller.js';
         $ctrl_css   = LCNI_PATH . 'modules/portfolio/assets/css/lcni-transaction-modal.css';
-        $svc_js     = LCNI_PATH . 'modules/portfolio/assets/js/lcni-order-service.js';
         $dnse_svc_js = LCNI_PATH . 'modules/portfolio/assets/js/services/DNSEOrderService.js';
 
         $js_ver     = file_exists($js_path)    ? (string) filemtime($js_path)    : self::VERSION;
@@ -38,23 +37,19 @@ class LCNI_Portfolio_Shortcode {
         $wcss_ver   = file_exists($widget_css) ? (string) filemtime($widget_css) : self::VERSION;
         $cjs_ver    = file_exists($ctrl_js)    ? (string) filemtime($ctrl_js)    : self::VERSION;
         $ccss_ver   = file_exists($ctrl_css)   ? (string) filemtime($ctrl_css)   : self::VERSION;
-        $svc_ver    = file_exists($svc_js)     ? (string) filemtime($svc_js)     : self::VERSION;
         $dnse_svc_ver = file_exists($dnse_svc_js) ? (string) filemtime($dnse_svc_js) : self::VERSION;
 
-        // DNSE Order Service — dedicated DNSE API client (loads before lcni-order-service)
-        wp_register_script('lcni-dnse-order-service',     LCNI_URL . 'modules/portfolio/assets/js/services/DNSEOrderService.js',   [], $dnse_svc_ver, true);
+        // DNSEOrderService — the single order service (no lcni-order-service.js)
+        wp_register_script('lcni-dnse-order-service', LCNI_URL . 'modules/portfolio/assets/js/services/DNSEOrderService.js', [], $dnse_svc_ver, true);
 
-        // Order service — unified pipeline (depends on dnse-order-service)
-        wp_register_script('lcni-order-service',          LCNI_URL . 'modules/portfolio/assets/js/lcni-order-service.js',          ['lcni-dnse-order-service'], $svc_ver, true);
-
-        // Unified transaction controller — must load BEFORE widget & portfolio scripts
-        wp_register_script('lcni-transaction-controller', LCNI_URL . 'modules/portfolio/assets/js/lcni-transaction-controller.js', ['lcni-order-service', 'lcni-dnse-order-service'], $cjs_ver, true);
+        // Transaction controller — depends only on DNSEOrderService
+        wp_register_script('lcni-transaction-controller', LCNI_URL . 'modules/portfolio/assets/js/lcni-transaction-controller.js', ['lcni-dnse-order-service'], $cjs_ver, true);
         wp_register_style('lcni-transaction-modal',       LCNI_URL . 'modules/portfolio/assets/css/lcni-transaction-modal.css',    ['lcni-ui-table'], $ccss_ver);
 
-        wp_register_script('lcni-portfolio',        LCNI_URL . 'modules/portfolio/assets/js/portfolio.js',             ['jquery', 'lcni-order-service', 'lcni-transaction-controller'], $js_ver,  true);
-        wp_register_style('lcni-portfolio',          LCNI_URL . 'modules/portfolio/assets/css/portfolio.css',           ['lcni-ui-table', 'lcni-transaction-modal'], $css_ver);
-        wp_register_script('lcni-add-tx-widget',    LCNI_URL . 'modules/portfolio/assets/js/lcni-add-tx-widget.js',    ['lcni-transaction-controller'],             $wjs_ver, true);
-        wp_register_style('lcni-add-tx-widget',     LCNI_URL . 'modules/portfolio/assets/css/lcni-add-tx-widget.css',  ['lcni-ui-table', 'lcni-transaction-modal'], $wcss_ver);
+        wp_register_script('lcni-portfolio',     LCNI_URL . 'modules/portfolio/assets/js/portfolio.js',          ['jquery', 'lcni-dnse-order-service', 'lcni-transaction-controller', 'lcni-table-engine'], $js_ver,  true);
+        wp_register_style('lcni-portfolio',      LCNI_URL . 'modules/portfolio/assets/css/portfolio.css',        ['lcni-ui-table', 'lcni-transaction-modal'], $css_ver);
+        wp_register_script('lcni-add-tx-widget', LCNI_URL . 'modules/portfolio/assets/js/lcni-add-tx-widget.js', ['lcni-transaction-controller'], $wjs_ver, true);
+        wp_register_style('lcni-add-tx-widget',  LCNI_URL . 'modules/portfolio/assets/css/lcni-add-tx-widget.css', ['lcni-ui-table', 'lcni-transaction-modal'], $wcss_ver);
     }
 
     public function render($atts = []) {
@@ -63,8 +58,6 @@ class LCNI_Portfolio_Shortcode {
         }
 
         wp_enqueue_script('lcni-dnse-order-service');
-        wp_enqueue_script('lcni-dnse-order-service');
-        wp_enqueue_script('lcni-order-service');
         wp_enqueue_script('lcni-transaction-controller');
         wp_enqueue_style('lcni-transaction-modal');
         wp_enqueue_script('lcni-portfolio');
@@ -180,10 +173,10 @@ class LCNI_Portfolio_Shortcode {
                         <span class="lcni-pf-count" id="pf-holding-count"></span>
                     </div>
                     <div class="lcni-pf-table-wrap lcni-table-wrapper">
-                        <table class="lcni-pf-table lcni-table" id="lcni-pf-holdings-table">
+                        <table class="lcni-pf-table lcni-table<?php echo LCNI_Table_Config::sticky_header() ? ' has-sticky-header' : ''; ?>" id="lcni-pf-holdings-table">
                             <thead>
                                 <tr>
-                                    <th class="lcni-sticky-col">Mã CP</th>
+                                    <th class="is-sticky-col lcni-sticky-col">Mã CP</th>
                                     <th>Khối lượng</th>
                                     <th>Giá vốn TB</th>
                                     <th>Giá hiện tại</th>
@@ -231,10 +224,10 @@ class LCNI_Portfolio_Shortcode {
                     <h3>Lịch sử giao dịch</h3>
                 </div>
                 <div class="lcni-pf-table-wrap lcni-table-wrapper">
-                    <table class="lcni-pf-table lcni-table" id="lcni-pf-tx-table">
+                    <table class="lcni-pf-table lcni-table<?php echo LCNI_Table_Config::sticky_header() ? ' has-sticky-header' : ''; ?>" id="lcni-pf-tx-table">
                         <thead>
                             <tr>
-                                <th class="lcni-sticky-col">Ngày</th>
+                                <th class="is-sticky-col lcni-sticky-col">Ngày</th>
                                 <th>Mã CP</th>
                                 <th>Loại</th>
                                 <th>Khối lượng</th>
@@ -393,7 +386,6 @@ class LCNI_Portfolio_Shortcode {
         // Load portfolio script + modal CSS so lcniOpenPortfolioTxModal is available
         // even when [lcni_portfolio] shortcode is not on the same page.
         wp_enqueue_script('lcni-dnse-order-service');
-        wp_enqueue_script('lcni-order-service');
         wp_enqueue_script('lcni-transaction-controller');
         wp_enqueue_style('lcni-transaction-modal');
         wp_enqueue_script('lcni-portfolio');

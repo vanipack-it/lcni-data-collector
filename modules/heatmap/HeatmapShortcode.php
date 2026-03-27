@@ -46,10 +46,14 @@ class LCNI_Heatmap_Shortcode {
 
         $settings = $this->get_display_settings();
 
+        $filter_page_slug = sanitize_title((string) get_option('lcni_filter_link_page', 'sug-filter'));
+        $filter_page_url  = $filter_page_slug !== '' ? home_url('/' . $filter_page_slug . '/') : '';
+
         wp_localize_script('lcni-heatmap', 'lcniHeatmapConfig', [
             'restUrl'        => esc_url_raw(rest_url('lcni/v1/heatmap/data')),
             'nonce'          => wp_create_nonce('wp_rest'),
             'stockDetailUrl' => esc_url_raw($stock_detail_url),
+            'filterPageUrl'  => esc_url_raw($filter_page_url),
             'settings'       => $settings,
         ]);
     }

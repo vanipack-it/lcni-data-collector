@@ -721,35 +721,30 @@
     const selectedId = Number(state.selectedSavedFilterId || 0);
     const selectedTemplateId = Number(state.selectedTemplateId || 0);
 
+    // Panel-specific vars (filter only, không trùng với lcni_global_table_config)
     host.style.setProperty('--lcni-panel-label-size', `${Number(style.panel_label_font_size || 13)}px`);
     host.style.setProperty('--lcni-panel-value-size', `${Number(style.panel_value_font_size || 13)}px`);
     host.style.setProperty('--lcni-panel-label-color', String(style.panel_label_color || '#111827'));
     host.style.setProperty('--lcni-panel-value-color', String(style.panel_value_color || '#374151'));
-    host.style.setProperty('--lcni-table-header-size', `${Number(style.table_header_font_size || 12)}px`);
-    host.style.setProperty('--lcni-table-header-color', String(style.table_header_text_color || '#111827'));
-    host.style.setProperty('--lcni-table-header-bg', String(style.table_header_background || '#f3f4f6'));
-    host.style.setProperty('--lcni-table-value-size', `${Number(style.table_value_font_size || 13)}px`);
-    host.style.setProperty('--lcni-table-value-color', String(style.table_value_text_color || '#111827'));
-    host.style.setProperty('--lcni-table-value-bg', String(style.table_value_background || '#ffffff'));
-    host.style.setProperty('--lcni-row-divider-color', String(style.table_row_divider_color || '#e5e7eb'));
-    host.style.setProperty('--lcni-row-divider-width', `${Number(style.table_row_divider_width || 1)}px`);
-    host.style.setProperty('--lcni-row-hover-bg', String(style.row_hover_background || '#eef2ff'));
     host.style.setProperty('--lcni-saved-filter-bg', String(style.saved_filter_dropdown_bg || '#ffffff'));
     host.style.setProperty('--lcni-saved-filter-color', String(style.saved_filter_dropdown_text || '#111827'));
     host.style.setProperty('--lcni-saved-filter-border', String(style.saved_filter_dropdown_border || '#d1d5db'));
     host.style.setProperty('--lcni-template-filter-bg', String(style.template_filter_dropdown_bg || '#ffffff'));
     host.style.setProperty('--lcni-template-filter-color', String(style.template_filter_dropdown_text || '#111827'));
     host.style.setProperty('--lcni-template-filter-border', String(style.template_filter_dropdown_border || '#d1d5db'));
-    host.style.setProperty('--lcni-table-header-height', `${Number(style.table_header_row_height || 42)}px`);
-    host.style.setProperty('--lcni-table-row-height', `${Number(style.row_height || 36)}px`);
     host.style.setProperty('--lcni-table-scroll-speed', String(Number(style.table_scroll_speed || 1)));
-    host.classList.toggle('lcni-disable-sticky-header', Number(style.sticky_header_rows || 1) < 1);
+    // --lcni-table-* và --lcni-row-* được quản lý bởi lcni_global_table_config (PHP :root)
+    // KHÔNG override ở đây để tránh xung đột với cấu hình Bảng dữ liệu trong Admin
+    // FIX: dùng ?? thay || để phân biệt 0 (tắt sticky) với undefined (default=1)
+    host.classList.toggle('lcni-disable-sticky-header', Number(style.sticky_header_rows ?? 1) < 1);
+    // FIX: toggle lcni-no-sticky-col để override lcni-ui-table.css :first-child sticky
+    host.classList.toggle('lcni-no-sticky-col', Number(style.sticky_column_count ?? 1) < 1);
 
     const hideBtn = style.enable_hide_button ? `<button type="button" class="lcni-btn lcni-btn-btn_filter_hide lcni-filter-hide-btn" data-filter-hide>${renderButtonContent('btn_filter_hide', 'Ẩn')}</button>` : '';
     const savedFilterLabel = esc(style.saved_filter_label || 'Saved Filter');
     const templateLabel = esc(style.template_filter_label || 'LCNi Filter Template');
 
-    host.innerHTML = `<div class="lcni-filter-toolbar"><button type="button" class="lcni-btn lcni-btn-btn_filter_open" data-filter-toggle>${renderButtonContent('btn_filter_open', 'Filter')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_setting" data-column-toggle-btn>${renderButtonContent('btn_filter_setting', '')}</button></div><div class="lcni-filter-summary lcni-filter-summary-mobile" data-filter-result-summary></div><div class="lcni-filter-panel ${state.panelHidden ? 'is-collapsed' : ''}" data-filter-panel><div class="lcni-filter-panel-body">${renderCriteriaPanel()}</div><div class="lcni-filter-panel-actions"><label class="lcni-saved-filter-label">${savedFilterLabel}</label><select data-saved-filter-select class="lcni-select-saved-filter"><option value="">${savedFilterLabel}</option>${(state.savedFilters || []).map((f) => `<option value="${Number(f.id || 0)}" ${Number(f.id || 0) === selectedId ? 'selected' : ''}>${esc(f.filter_name || '')}</option>`).join('')}</select><label class="lcni-saved-filter-label">${templateLabel}</label><select data-template-filter-select class="lcni-select-template-filter"><option value="">${templateLabel}</option>${(state.adminTemplates || []).map((f) => `<option value="${Number(f.id || 0)}" ${Number(f.id || 0) === selectedTemplateId ? 'selected' : ''}>${esc(f.filter_name || '')}</option>`).join('')}</select><button type="button" class="lcni-btn lcni-btn-btn_filter_reload" data-reload-filter>${renderButtonContent('btn_filter_reload', 'Reload')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_save" data-save-current-filter>${renderButtonContent('btn_filter_save', 'Save')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_delete" data-delete-current-filter>${renderButtonContent('btn_filter_delete', 'Delete')}</button><button type="button" class="lcni-btn lcni-btn-btn_set_default_filter" data-set-default-filter>${renderButtonContent('btn_set_default_filter', 'Set Default')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_clear" data-clear-filter>${renderButtonContent('btn_filter_clear', 'Clear')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_apply" data-apply-filter>${renderButtonContent('btn_filter_apply', 'Apply Filter', getApplyLabel())}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_add_watchlist_bulk" data-add-filter-result-watchlist>${renderButtonContent('btn_filter_add_watchlist_bulk', 'Thêm vào Watchlist')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_export_excel" data-export-filter-excel>${renderButtonContent('btn_filter_export_excel', 'Xuất Excel')}</button>${hideBtn}</div></div><div class="lcni-column-pop" data-column-pop ${state.columnPanelOpen ? '' : 'hidden'}></div><div class="lcni-table-scroll lcni-table-wrapper"><table class="lcni-table"><thead><tr>${columns.map((c, idx) => `<th data-sort-key="${esc(c)}" class="${idx < Number(style.sticky_column_count || 1) ? 'is-sticky-col lcni-sticky-col' : ''} ${isNumericValue((state.dataset[0] || {})[c]) ? 'lcni-cell-number' : 'lcni-cell-text'}">${esc(labels[c] || c)} <span data-sort-icon>${state.sortKey === c ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</span></th>`).join('')}</tr></thead><tbody><tr><td colspan="${columns.length}" class="lcni-cell-text">Nhấn Apply Filter để tải dữ liệu.</td></tr></tbody></table></div>`;
+    host.innerHTML = `<div class="lcni-filter-toolbar"></div><div class="lcni-filter-summary lcni-filter-summary-mobile" data-filter-result-summary></div><div class="lcni-filter-panel ${state.panelHidden ? 'is-collapsed' : ''}" data-filter-panel><div class="lcni-filter-panel-body">${renderCriteriaPanel()}</div><div class="lcni-filter-panel-actions"><label class="lcni-saved-filter-label">${savedFilterLabel}</label><select data-saved-filter-select class="lcni-select-saved-filter"><option value="">${savedFilterLabel}</option>${(state.savedFilters || []).map((f) => `<option value="${Number(f.id || 0)}" ${Number(f.id || 0) === selectedId ? 'selected' : ''}>${esc(f.filter_name || '')}</option>`).join('')}</select><label class="lcni-saved-filter-label">${templateLabel}</label><select data-template-filter-select class="lcni-select-template-filter"><option value="">${templateLabel}</option>${(state.adminTemplates || []).map((f) => `<option value="${Number(f.id || 0)}" ${Number(f.id || 0) === selectedTemplateId ? 'selected' : ''}>${esc(f.filter_name || '')}</option>`).join('')}</select><button type="button" class="lcni-btn lcni-btn-btn_filter_reload" data-reload-filter>${renderButtonContent('btn_filter_reload', 'Reload')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_save" data-save-current-filter>${renderButtonContent('btn_filter_save', 'Save')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_delete" data-delete-current-filter>${renderButtonContent('btn_filter_delete', 'Delete')}</button><button type="button" class="lcni-btn lcni-btn-btn_set_default_filter" data-set-default-filter>${renderButtonContent('btn_set_default_filter', 'Set Default')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_clear" data-clear-filter>${renderButtonContent('btn_filter_clear', 'Clear')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_apply" data-apply-filter>${renderButtonContent('btn_filter_apply', 'Apply Filter', getApplyLabel())}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_add_watchlist_bulk" data-add-filter-result-watchlist>${renderButtonContent('btn_filter_add_watchlist_bulk', 'Thêm vào Watchlist')}</button><button type="button" class="lcni-btn lcni-btn-btn_filter_export_excel" data-export-filter-excel>${renderButtonContent('btn_filter_export_excel', 'Xuất Excel')}</button>${hideBtn}</div></div><div class="lcni-column-pop" data-column-pop ${state.columnPanelOpen ? '' : 'hidden'}></div><div class="lcni-table-scroll lcni-table-wrapper"><table class="lcni-table ${Number(style.sticky_header_rows ?? 1) >= 1 ? 'has-sticky-header' : ''}"><thead><tr>${columns.map((c, idx) => { const _sc = idx < Number(style.sticky_column_count ?? 1); return `<th data-sort-key="${esc(c)}" class="${_sc ? 'is-sticky-col lcni-sticky-col' : ''} ${isNumericValue((state.dataset[0] || {})[c]) ? 'lcni-cell-number' : 'lcni-cell-text'}"${_sc ? ' style="left:0px"' : ''}>${esc(labels[c] || c)} <span data-sort-icon>${state.sortKey === c ? (state.sortDir === 'asc' ? '↑' : '↓') : ''}</span></th>`; }).join('')}</tr></thead><tbody><tr><td colspan="${columns.length}" class="lcni-cell-text">Nhấn Apply Filter để tải dữ liệu.</td></tr></tbody></table></div>`;
 
     const selectable = settings.table_columns || columns;
     host.querySelector('[data-column-pop]').innerHTML = `${renderColumnPositionItems(selectable, labels)}<button type="button" class="lcni-btn lcni-btn-btn_save_filter" data-save-columns>${renderButtonContent('btn_save_filter', 'Save')}</button>`;
@@ -759,7 +754,8 @@
     if (state.filters.length) applySavedFilterConfig(host, { filters: state.filters });
     renderFilterSummary(host);
     // Áp dụng sticky offset ban đầu sau khi DOM đã layout
-    requestAnimationFrame(() => applyStickyColumnOffsets(host));
+    // FIX: double-rAF đảm bảo layout pass hoàn thành trước khi đo offsetWidth
+    requestAnimationFrame(() => requestAnimationFrame(() => applyStickyColumnOffsets(host)));
   }
 
 
@@ -835,7 +831,8 @@
     state.dataset = Array.isArray(payload.items) ? payload.items : state.dataset;
     if (tbody) {
       const style = ((cfg.settings || {}).style || {});
-      const stickyCount = Number(style.sticky_column_count || 1);
+      // FIX: ?? thay || để admin có thể set 0 (không sticky)
+      const stickyCount = Number(style.sticky_column_count ?? 1);
       const columns = state.visibleColumns.length ? state.visibleColumns : ((cfg.settings && cfg.settings.table_columns) || []);
       const sorted = sortDataset(state.dataset);
 
@@ -845,7 +842,7 @@
         tbody.innerHTML = sorted.map((row) => `<tr data-symbol="${esc(row.symbol || '')}">${columns.map((column, idx) => {
         const stickyClass = idx < stickyCount ? 'is-sticky-col lcni-sticky-col' : '';
         if (column === 'symbol') {
-          return `<td class="${stickyClass} lcni-cell-text" data-cell-field="symbol" data-cell-value="${esc(row[column] || '')}"><span>${esc(row[column] || '')}</span> <button type="button" class="lcni-btn lcni-btn-btn_add_filter_row" data-lcni-watchlist-add data-symbol="${esc(row.symbol || '')}" aria-label="Add to watchlist">${renderButtonContent('btn_add_filter_row', '')}</button></td>`;
+          return `<td class="${stickyClass} lcni-cell-text" data-cell-field="symbol" data-cell-value="${esc(row[column] || '')}"${stickyClass ? ' style="left:0px"' : ''}><span>${esc(row[column] || '')}</span> <button type="button" class="lcni-btn lcni-btn-btn_add_filter_row" data-lcni-watchlist-add data-symbol="${esc(row.symbol || '')}" aria-label="Add to watchlist">${renderButtonContent('btn_add_filter_row', '')}</button></td>`;
         }
         const typeClass = isNumericValue(row[column]) ? 'lcni-cell-number' : 'lcni-cell-text';
         const cellRule = resolveCellToCellMeta(column, row);
@@ -856,6 +853,8 @@
         const iconPosition = String((iconRule && iconRule.icon_position) || 'left');
         const content = iconHtml ? (iconPosition === 'right' ? `${valueHtml} ${iconHtml}` : `${iconHtml} ${valueHtml}`) : valueHtml;
         const styleParts = [];
+        // FIX: left:0px inline đảm bảo sticky hoạt động ngay cả trước khi JS gán offset
+        if (stickyClass) styleParts.push('left:0px;');
         if (valueRule) styleParts.push(`background:${esc(valueRule.bg_color || '')};color:${esc(valueRule.text_color || '')};`);
         if (cellRule && cellRule.text_color) styleParts.push(`color:${esc(cellRule.text_color)};`);
         const styleAttr = styleParts.length ? ` style="${styleParts.join('')}"` : '';
@@ -866,43 +865,46 @@
     state.total = Number(payload.total || state.total || 0);
     state.lastAppliedTotal = state.total;
     updateApplyButtonLabel(host);
-    applyStickyColumnOffsets(host);
+    requestAnimationFrame(() => requestAnimationFrame(() => applyStickyColumnOffsets(host)));
   }
 
   /**
    * applyStickyColumnOffsets — gán left chính xác cho CSS position:sticky.
-   *
-   * Nguyên tắc: CSS position:sticky với left:Xpx tự giữ element bám Xpx từ
-   * cạnh trái scroll container khi scroll ngang — browser tự tính scrollLeft.
-   * JS chỉ cần đo width mỗi cột sticky và gán left=offset tích lũy, một lần.
-   * KHÔNG cần scroll listener, KHÔNG cần cộng scrollLeft.
+   * Ưu tiên LcniTableEngine.refresh() (chuẩn hệ thống).
+   * Fallback về logic nội bộ nếu engine chưa load.
    */
   function applyStickyColumnOffsets(host) {
     const wrap = host.querySelector('.lcni-table-scroll');
-    const table = host.querySelector('.lcni-table');
-    if (!wrap || !table) return;
+    if (!wrap) return;
 
+    // Bridge → LcniTableEngine (single source of truth)
+    if (window.LcniTableEngine && typeof window.LcniTableEngine.refresh === 'function') {
+      const style = ((cfg.settings || {}).style || {});
+      const stickyCount = Number(style.sticky_column_count ?? 1);
+      const stickyHeader = Number(style.sticky_header_rows ?? 1) >= 1;
+      window.LcniTableEngine.refresh(wrap, { sticky_columns: stickyCount, sticky_header: stickyHeader });
+      return;
+    }
+
+    // Fallback: tự tính offset
+    const table = host.querySelector('.lcni-table');
+    if (!table) return;
     const headerRow = table.querySelector('thead tr');
     if (!headerRow) return;
     const stickyThs = Array.from(headerRow.querySelectorAll('th.is-sticky-col, th.lcni-sticky-col'));
     if (!stickyThs.length) return;
 
-    // Đo offset tích lũy: reset inline left trước để offsetWidth chính xác
     stickyThs.forEach(th => { th.style.left = ''; });
+    table.querySelectorAll('tbody td.is-sticky-col, tbody td.lcni-sticky-col').forEach(td => { td.style.left = ''; });
 
     let acc = 0;
     const colOffsets = stickyThs.map(th => {
       const off = acc;
-      acc += th.offsetWidth || 110;
+      const w = th.getBoundingClientRect().width || th.offsetWidth || 110;
+      acc += Math.ceil(w);
       return off;
     });
-
-    // Gán left = offset tĩnh cho TH (CSS sticky tự xử lý phần scroll)
-    stickyThs.forEach((th, i) => {
-      th.style.left = colOffsets[i] + 'px';
-    });
-
-    // Gán left cho toàn bộ TD sticky trong tbody
+    stickyThs.forEach((th, i) => { th.style.left = colOffsets[i] + 'px'; });
     table.querySelectorAll('tbody tr').forEach(tr => {
       tr.querySelectorAll('td.is-sticky-col, td.lcni-sticky-col').forEach((td, i) => {
         if (i < colOffsets.length) td.style.left = colOffsets[i] + 'px';
@@ -1147,7 +1149,31 @@
       if (addBtn) {
         const symbol = String(addBtn.getAttribute('data-symbol') || '').trim().toUpperCase();
         if (!symbol) return;
-        try { await openWatchlistSelector(symbol); addBtn.classList.add('is-active'); } catch (e) { showToast((e && e.message) || 'Không thể cập nhật watchlist'); }
+
+        // --- ajax feedback: spin ---
+        const iconEl = addBtn.querySelector('i');
+        const originalIconClass = iconEl ? iconEl.className : '';
+        addBtn.classList.add('is-loading');
+        addBtn.disabled = true;
+        if (iconEl) iconEl.className = 'fa-solid fa-circle-notch lcni-btn-icon';
+
+        try {
+          await openWatchlistSelector(symbol);
+          // --- success: check-circle ---
+          addBtn.classList.remove('is-loading');
+          addBtn.classList.add('is-done');
+          if (iconEl) iconEl.className = 'fa-solid fa-circle-check';
+          setTimeout(() => {
+            addBtn.classList.remove('is-done');
+            addBtn.disabled = false;
+            if (iconEl) iconEl.className = originalIconClass;
+          }, 1800);
+        } catch (e) {
+          addBtn.classList.remove('is-loading');
+          addBtn.disabled = false;
+          if (iconEl) iconEl.className = originalIconClass;
+          showToast((e && e.message) || 'Không thể cập nhật watchlist');
+        }
       }
     });
 
@@ -1355,13 +1381,24 @@
         await load(host);
       }
 
-      // Recalculate sticky offsets khi cột thay đổi kích thước (xoay màn hình, zoom...)
-      if (typeof ResizeObserver !== 'undefined') {
-        const ro = new ResizeObserver(() => {
-          applyStickyColumnOffsets(host);
-        });
-        const tableEl = host.querySelector('.lcni-table');
-        if (tableEl) ro.observe(tableEl);
+      // Đăng ký auto-recalc sticky khi resize/orientationchange qua LcniTableEngine
+      // (bao gồm ResizeObserver + window resize + orientationchange)
+      const wrapEl = host.querySelector('.lcni-table-scroll');
+      if (wrapEl && window.LcniTableEngine && typeof window.LcniTableEngine.observe === 'function') {
+        const style = ((cfg.settings || {}).style || {});
+        const stickyCount = Number(style.sticky_column_count ?? 1);
+        const stickyHeader = Number(style.sticky_header_rows ?? 1) >= 1;
+        window.LcniTableEngine.observe(wrapEl, { sticky_columns: stickyCount, sticky_header: stickyHeader });
+      } else {
+        // Fallback nếu LcniTableEngine chưa load
+        if (typeof ResizeObserver !== 'undefined') {
+          const ro = new ResizeObserver(() => { requestAnimationFrame(() => applyStickyColumnOffsets(host)); });
+          const tableEl = host.querySelector('.lcni-table');
+          if (tableEl) ro.observe(tableEl);
+        }
+        const onMobileResize = () => requestAnimationFrame(() => requestAnimationFrame(() => applyStickyColumnOffsets(host)));
+        window.addEventListener('orientationchange', onMobileResize);
+        window.addEventListener('resize', onMobileResize, { passive: true });
       }
     });
   }

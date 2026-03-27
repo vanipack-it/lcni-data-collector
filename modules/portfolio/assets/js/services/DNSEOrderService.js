@@ -19,7 +19,7 @@
   'use strict';
 
   /** Market order types that do not require a price */
-  var MARKET_TYPES = ['ATO', 'ATC', 'MP', 'PM'];
+  var MARKET_TYPES = ['ATO', 'ATC', 'MP', 'MTL', 'MOK', 'MAK', 'PM'];
 
   /* ── Config helpers ──────────────────────────────────────── */
   function cfg() {
@@ -34,7 +34,12 @@
     return base.indexOf('http') === 0 ? base : (cfg().restUrl || '') + '/dnse/order';
   }
 
-  /** VNĐ full (21500) → DB/DNSE format (21.5) */
+  /** DB format (26.6) → full VNĐ (26600) vì DNSE API yêu cầu giá theo đơn vị đồng */
+  function dbToVnd(p) {
+    return Math.round(parseFloat(p) * 1000);
+  }
+
+  /** VNĐ full (21500) → DB format (21.5) — chỉ dùng cho lưu portfolio nội bộ */
   function vndToDb(p) {
     return (parseFloat(p) / 1000).toFixed(4);
   }
@@ -60,40 +65,58 @@
      */
     sendOrder: function (order) {
       var isMarket = MARKET_TYPES.indexOf(order.dnseOrderType || '') !== -1;
-      var price    = isMarket ? 0 : parseFloat(vndToDb(order.priceVnd || 0));
+      // FIX: DNSE API yêu cầu side = "NB" (mua) hoặc "NS" (bán), KHÔNG phải "buy"/"sell"
+      // Nhưng plugin WordPress REST controller nhận "buy"/"sell" rồi DnseTradingApiClient.php
+      // sẽ convert → NB/NS trước khi gửi lên DNSE. Giữ nguyên "buy"/"sell" ở đây.
+      var dnseSide = (order.type === 'sell') ? 'sell' : 'buy';
+      // Price: gửi theo DB format (nghìn VNĐ) lên WordPress REST endpoint.
+      // DnseTradingApiClient.php sẽ nhân *1000 để ra full VNĐ trước khi gửi DNSE.
+      // order.priceVnd là full VNĐ (ví dụ 21500) → chia 1000 → DB format (21.5)
+      var priceDb = isMarket ? 0 : parseFloat((parseFloat(order.priceVnd || 0) / 1000).toFixed(4));
 
       return fetch(dnseOrderUrl(), {
         method:      'POST',
         headers:     { 'Content-Type': 'application/json', 'X-WP-Nonce': nonce() },
         credentials: 'same-origin',
         body: JSON.stringify({
-          account_no:   order.dnseAccountNo,
-          account_type: order.dnseAccountType || 'spot',
-          symbol:       order.symbol,
-          side:         order.type === 'sell' ? 'sell' : 'buy',
-          order_type:   order.dnseOrderType   || 'LO',
-          price:        price,
-          quantity:     parseInt(order.qty, 10),
+          account_no:      order.dnseAccountNo,
+          account_type:    order.dnseAccountType || 'spot',
+          symbol:          order.symbol,
+          side:            dnseSide,
+          order_type:      order.dnseOrderType   || 'LO',
+          price:           priceDb,
+          quantity:        parseInt(order.qty, 10),
+          // FIX: loanPackageId bắt buộc theo DNSE API — phải > 0
+          loan_package_id: parseInt(order.loan_package_id || 0, 10),
         }),
       })
-        .then(function (r) { return r.json(); })
+        .then(async function (r) {
+          // Safe parse — prevents "Unexpected token <" when backend returns HTML error page
+          if (!r.ok) {
+            var text = await r.text();
+            throw new Error('DNSE API Error: ' + text);
+          }
+          return r.json();
+        })
         .then(function (res) {
           if (res && res.success) {
             return {
-              success:  true,
-              order_id: (res.data && res.data.order_id) || '',
-              message:  (res.data && res.data.message)  || 'Đặt lệnh thành công.',
+              success: true,
+              data: {
+                order_id: res.order_id || (res.data && res.data.order_id) || '',
+                message:  res.message  || (res.data && res.data.message)  || 'Đặt lệnh thành công.',
+              },
             };
           }
           return {
             success: false,
-            error:   (res && (res.data || res.message)) || 'Đặt lệnh thất bại.',
+            error:   res.error || res.message || (res.data && typeof res.data === 'string' ? res.data : '') || 'Đặt lệnh thất bại.',
           };
         })
         .catch(function (err) {
           return {
             success: false,
-            error:   'Không kết nối được DNSE API.',
+            error:   (err && err.message) ? err.message : 'Không kết nối được DNSE API.',
           };
         });
     },

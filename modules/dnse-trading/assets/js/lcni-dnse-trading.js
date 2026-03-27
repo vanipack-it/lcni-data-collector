@@ -20,11 +20,21 @@
             },
             body: body ? JSON.stringify(body) : undefined,
         });
+        // Safe parse — prevents "Unexpected token <" when backend returns HTML error page
+        if (!res.ok) {
+            const text = await res.text();
+            throw new Error('API Error (' + res.status + '): ' + text.slice(0, 200));
+        }
         return res.json();
     }
 
     const GET  = (path)        => api('GET',  path, null);
     const POST = (path, body)  => api('POST', path, body || {});
+
+    /** Extract success message from REST response */
+    function _msg(res) { return res.message || (res.data && res.data.message) || T.sync_success || 'Thành công.'; }
+    /** Extract error string from REST response */
+    function _err(res) { return res.error || res.message || T.error_generic || 'Có lỗi xảy ra.'; }
 
     // ── Format helpers ────────────────────────────────────────────────────────
 
@@ -58,13 +68,16 @@
         const connected   = status.connected;
         const hasTrading  = status.has_trading;
         const accountNo   = status.account_no || '';
+        const perms       = status.permissions || [];
+
+        console.log('[DNSE] renderConnectTab: connected=', connected, 'has_trading=', hasTrading);
 
         if (!connected) {
             return `
             <div class="lcni-dnse-section">
                 <h3>${T.connect}</h3>
                 <p class="lcni-dnse-hint">
-                    Nhập tài khoản DNSE (EntradeX) của bạn. Mật khẩu không được lưu lại.
+                    Nhập tài khoản DNSE (EntradeX) của bạn. Mật khẩu không được lưu lại trừ khi bật tự động đăng nhập.
                 </p>
                 <div class="lcni-dnse-form">
                     <div class="lcni-dnse-field">
@@ -75,6 +88,26 @@
                         <label>Mật khẩu</label>
                         <input id="dnse-password" type="password" placeholder="Mật khẩu EntradeX" autocomplete="current-password">
                     </div>
+
+                    <!-- Permissions checkboxes -->
+                    <div class="lcni-dnse-perms-box" style="margin:12px 0;padding:12px 14px;border:1px solid rgba(255,255,255,.1);border-radius:8px;background:rgba(255,255,255,.03)">
+                        <p style="margin:0 0 10px;font-size:12px;color:rgba(255,255,255,.6);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Tùy chọn tự động hóa</p>
+                        <label class="lcni-dnse-perm-label" style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px;cursor:pointer">
+                            <input type="checkbox" id="perm-auto-renew" value="perm_auto_renew" style="margin-top:2px;flex-shrink:0">
+                            <span>
+                                <strong style="font-size:13px;color:rgba(255,255,255,.85)">🔄 Tự động đăng nhập lại</strong><br>
+                                <span style="font-size:11px;color:rgba(255,255,255,.45);line-height:1.5">Lưu mật khẩu (mã hoá) để hệ thống tự đăng nhập và gia hạn kết nối mỗi 8 giờ. Yêu cầu Gmail đã kết nối.</span>
+                            </span>
+                        </label>
+                        <label class="lcni-dnse-perm-label" style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
+                            <input type="checkbox" id="perm-trade" value="perm_trade" style="margin-top:2px;flex-shrink:0">
+                            <span>
+                                <strong style="font-size:13px;color:rgba(255,255,255,.85)">⚡ Cho phép đặt lệnh tự động</strong><br>
+                                <span style="font-size:11px;color:rgba(255,255,255,.45);line-height:1.5">Hệ thống sẽ tự đặt lệnh mua/bán khi Auto Rule phát hiện tín hiệu. Chỉ áp dụng cho rule có bật Auto Order.</span>
+                            </span>
+                        </label>
+                    </div>
+
                     <button class="lcni-dnse-btn lcni-dnse-btn--primary" id="dnse-connect-btn">
                         ${T.connect}
                     </button>
@@ -82,12 +115,74 @@
             </div>`;
         }
 
+        // ── Gmail auto-renew status ──────────────────────────────────────────
+        const gmailConfigured = !!status.gmail_configured;
+        const gmailConnected  = !!status.gmail_connected;
+        const gmailEmail      = status.gmail_email || '';
+
+        const gmailSection = `
+            <div class="lcni-dnse-gmail-panel" style="margin-top:16px;padding:14px 16px;border:1px solid rgba(255,255,255,.1);border-radius:8px;background:rgba(255,255,255,.03)">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+                    <strong style="font-size:13px">📧 Auto-Renew Trading Token</strong>
+                    ${gmailConnected
+                        ? '<span style="font-size:11px;background:#22c55e22;color:#22c55e;padding:2px 8px;border-radius:20px">● Đang bật</span>'
+                        : '<span style="font-size:11px;background:rgba(255,255,255,.08);color:rgba(255,255,255,.45);padding:2px 8px;border-radius:20px">○ Chưa bật</span>'
+                    }
+                </div>
+                ${gmailConnected ? `
+                    <p style="font-size:12px;color:rgba(255,255,255,.6);margin:0 0 10px;line-height:1.5">
+                        ✅ Đã kết nối Gmail <strong style="color:rgba(255,255,255,.85)">${gmailEmail}</strong>.<br>
+                        Trading token sẽ tự động gia hạn mỗi 8 giờ — không cần nhập OTP lại.
+                    </p>
+                    <button class="lcni-dnse-btn lcni-dnse-btn--secondary" id="dnse-gmail-disconnect-btn"
+                            style="font-size:11px;padding:4px 12px;opacity:.7">
+                        Ngắt kết nối Gmail
+                    </button>
+                ` : gmailConfigured ? `
+                    <p style="font-size:12px;color:rgba(255,255,255,.6);margin:0 0 12px;line-height:1.5">
+                        Kết nối Gmail để hệ thống tự đọc mã OTP từ DNSE và gia hạn trading token mỗi 8 giờ.<br>
+                        <span style="opacity:.6;font-size:11px">Chỉ cần thực hiện 1 lần. Chỉ đọc email — không gửi hoặc xoá.</span>
+                    </p>
+                    <button class="lcni-dnse-btn lcni-dnse-btn--primary" id="dnse-gmail-connect-btn"
+                            style="font-size:12px;display:flex;align-items:center;gap:6px">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M20 18h-2V9.25L12 13 6 9.25V18H4V6h1.2l6.8 4.25L18.8 6H20v12z"/>
+                        </svg>
+                        Kết nối Gmail
+                    </button>
+                ` : `
+                    <p style="font-size:12px;color:rgba(255,255,255,.45);margin:0">
+                        ⚙️ Admin chưa cấu hình Gmail OAuth. Liên hệ Admin để bật tính năng này.
+                    </p>
+                `}
+            </div>`;
+
         // Đã connected, nhưng có thể cần xác thực OTP
+        // Kiểm tra transient pending từ server (dùng status field nếu có)
+        const autoOtpPending = !!status.auto_otp_pending;
+
         const otpSection = hasTrading ? `
             <div class="lcni-dnse-alert lcni-dnse-alert--success">
                 ${T.trading_active}. Token còn hiệu lực đến 
                 <strong>${fmt.time(status.trading_expires_at)}</strong>.
-            </div>` : `
+            </div>
+            ${gmailSection}` : autoOtpPending ? `
+            <div class="lcni-dnse-alert lcni-dnse-alert--warning" style="display:flex;align-items:center;gap:10px">
+                <span class="lcni-dnse-auto-otp-badge">⏳ Đang đọc Gmail để xác thực OTP...</span>
+            </div>
+            ${gmailSection}` : gmailConnected ? `
+            <div class="lcni-dnse-alert lcni-dnse-alert--warning">
+                ${T.trading_expired}
+            </div>
+            <div class="lcni-dnse-form" style="padding-top:4px">
+                <p class="lcni-dnse-hint" style="margin-bottom:12px">
+                    Gmail đã kết nối — hệ thống sẽ tự xác thực OTP. Bấm nút bên dưới để kích hoạt ngay.
+                </p>
+                <button class="lcni-dnse-btn lcni-dnse-btn--primary" id="dnse-gmail-renew-btn">
+                    🔄 Xác thực OTP tự động qua Gmail
+                </button>
+            </div>
+            ${gmailSection}` : `
             <div class="lcni-dnse-alert lcni-dnse-alert--warning">
                 ${T.trading_expired}
             </div>
@@ -122,6 +217,59 @@
                 <button class="lcni-dnse-btn lcni-dnse-btn--primary" id="dnse-verify-otp-btn">
                     ${T.verify_otp}
                 </button>
+            </div>
+            ${gmailSection}`;
+
+        // ── Permissions panel (khi đã connected) ────────────────────────────
+        const permAutoRenew = perms.includes('perm_auto_renew');
+        const permTrade     = perms.includes('perm_trade');
+
+        const permPanel = `
+            <div class="lcni-dnse-perms-panel" id="dnse-perms-panel"
+                 style="margin-top:16px;padding:14px 16px;border:1px solid rgba(255,255,255,.1);border-radius:8px;background:rgba(255,255,255,.03)">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                    <strong style="font-size:13px">⚙️ Tùy chọn tự động hóa</strong>
+                    <button id="dnse-save-perms-btn" class="lcni-dnse-btn lcni-dnse-btn--secondary"
+                            style="font-size:11px;padding:4px 12px">Lưu</button>
+                </div>
+                <label class="lcni-dnse-perm-label" style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px;cursor:pointer">
+                    <input type="checkbox" id="dnse-perm-auto-renew" value="perm_auto_renew"
+                           ${permAutoRenew ? 'checked' : ''} style="margin-top:2px;flex-shrink:0">
+                    <span>
+                        <strong style="font-size:13px;color:rgba(255,255,255,.85)">🔄 Tự động đăng nhập lại</strong><br>
+                        <span style="font-size:11px;color:rgba(255,255,255,.45);line-height:1.5">
+                            Lưu mật khẩu (mã hoá) để hệ thống tự gia hạn kết nối mỗi 8 giờ.
+                            ${permAutoRenew
+                                ? '<span style="color:#22c55e">● Đang bật</span>'
+                                : '<span style="color:rgba(255,255,255,.3)">○ Tắt</span>'
+                            }
+                        </span>
+                    </span>
+                </label>
+                <label class="lcni-dnse-perm-label" style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
+                    <input type="checkbox" id="dnse-perm-trade" value="perm_trade"
+                           ${permTrade ? 'checked' : ''} style="margin-top:2px;flex-shrink:0">
+                    <span>
+                        <strong style="font-size:13px;color:rgba(255,255,255,.85)">⚡ Cho phép đặt lệnh tự động</strong><br>
+                        <span style="font-size:11px;color:rgba(255,255,255,.45);line-height:1.5">
+                            Hệ thống tự đặt lệnh mua/bán khi Auto Rule phát tín hiệu.
+                            ${permTrade
+                                ? '<span style="color:#22c55e">● Đang bật</span>'
+                                : '<span style="color:rgba(255,255,255,.3)">○ Tắt</span>'
+                            }
+                        </span>
+                    </span>
+                </label>
+                <!-- Panel nhập lại password khi bật auto_renew mà chưa có password -->
+                <div id="dnse-reauth-box" style="display:none;margin-top:12px;padding:10px 12px;border:1px solid rgba(232,184,75,.3);border-radius:6px;background:rgba(232,184,75,.05)">
+                    <p style="margin:0 0 8px;font-size:12px;color:#e8b84b">
+                        ⚠️ Cần nhập lại mật khẩu để bật tự động đăng nhập:
+                    </p>
+                    <input id="dnse-reauth-password" type="password" placeholder="Mật khẩu EntradeX"
+                           style="width:100%;margin-bottom:8px;padding:6px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.06);color:#fff;font-size:12px;box-sizing:border-box">
+                    <button id="dnse-reauth-confirm-btn" class="lcni-dnse-btn lcni-dnse-btn--primary"
+                            style="font-size:12px;padding:6px 16px">Xác nhận</button>
+                </div>
             </div>`;
 
         return `
@@ -132,6 +280,7 @@
                 <span class="lcni-dnse-account">${accountNo}</span>
             </div>
             ${otpSection}
+            ${permPanel}
             <div style="margin-top:20px">
                 <button class="lcni-dnse-btn lcni-dnse-btn--danger" id="dnse-disconnect-btn">
                     ${T.disconnect}
@@ -257,7 +406,7 @@
     // ── Main controller ───────────────────────────────────────────────────────
 
     function initWidget(el) {
-        let currentTab = el.dataset.defaultTab || CFG.defaultTab || 'portfolio';
+        let currentTab = el.dataset.defaultTab || CFG.defaultTab || 'connect';
         let dashData   = null;
         let status     = null;
 
@@ -281,9 +430,8 @@
 
         function renderTabs() {
             const tabs = [
-                { id: 'portfolio', label: T.tab_portfolio },
-                { id: 'orders',    label: T.tab_orders },
                 { id: 'connect',   label: T.tab_connect },
+                { id: 'orders',    label: T.tab_orders },
             ];
             return `<div class="lcni-dnse-tabs">
                 ${tabs.map(t => `
@@ -295,15 +443,25 @@
         }
 
         async function loadStatus() {
-            const res = await GET('/status');
-            if (res.success) status = res;
-            return res;
+            try {
+                const res = await GET('/status');
+                if (res.success) status = res;
+                console.log('[DNSE] /status response:', JSON.stringify({connected: res.connected, has_trading: res.has_trading, success: res.success}));
+                return res;
+            } catch (e) {
+                console.error('[DNSE] /status error:', e.message);
+                return { success: false, error: e.message };
+            }
         }
 
         async function loadDashboard() {
-            const res = await GET('/dashboard');
-            if (res.success) dashData = res;
-            return res;
+            try {
+                const res = await GET('/dashboard');
+                if (res.success) dashData = res;
+                return res;
+            } catch (e) {
+                return { success: false, error: e.message };
+            }
         }
 
         function bindOtpRadio() {
@@ -331,7 +489,9 @@
             if (!content) return;
 
             if (currentTab === 'connect') {
-                const st = status || await loadStatus();
+                // Luôn fetch status mới từ /status — không dùng lại response của /connect
+                setLoading();
+                const st = await loadStatus();
                 content.innerHTML = renderConnectTab(st);
                 bindConnectEvents();
                 bindOtpRadio();
@@ -348,11 +508,45 @@
                 return;
             }
 
-            if (currentTab === 'portfolio') {
-                content.innerHTML = renderPortfolioTab(dashData);
-            } else if (currentTab === 'orders') {
+            if (currentTab === 'orders') {
                 content.innerHTML = renderOrdersTab(dashData);
             }
+        }
+
+        // Poll /gmail-otp-poll mỗi 5s sau khi /connect gửi email OTP.
+        // Tối đa 8 lần (~40s). Hiện loading badge trên UI, tự reload khi xong.
+        async function pollGmailOtp() {
+            const MAX = 8;
+            for (let i = 0; i < MAX; i++) {
+                // Cập nhật badge trên UI nếu có
+                const badge = el.querySelector('.lcni-dnse-auto-otp-badge');
+                if (badge) badge.textContent = `⏳ Đang đọc Gmail... (${i + 1}/${MAX})`;
+
+                await new Promise(r => setTimeout(r, 5000));
+
+                let res;
+                try {
+                    res = await GET('/gmail-otp-poll');
+                } catch (e) {
+                    continue; // network error → thử lại
+                }
+
+                if (res.done) {
+                    if (res.success) {
+                        showToast('✅ ' + (res.message || 'Trading token xác thực thành công qua Gmail.'), 'success');
+                    } else {
+                        showToast('⚠️ Auto OTP thất bại: ' + (res.message || ''), 'warning');
+                    }
+                    dashData = null; status = null;
+                    await renderCurrentTab();
+                    return;
+                }
+                // done=false → email chưa đến → poll tiếp
+            }
+            // Hết lần thử → thông báo nhập thủ công
+            showToast('⚠️ Không đọc được OTP từ Gmail sau 40s — vui lòng xác thực thủ công.', 'warning');
+            dashData = null; status = null;
+            await renderCurrentTab();
         }
 
         function bindConnectEvents() {
@@ -369,18 +563,88 @@
                         showToast('Vui lòng nhập đầy đủ tài khoản và mật khẩu.', 'error');
                         return;
                     }
+                    // Thu thập permissions đã chọn
+                    const permissions = [];
+                    if (el.querySelector('#perm-auto-renew')?.checked) permissions.push('perm_auto_renew');
+                    if (el.querySelector('#perm-trade')?.checked)      permissions.push('perm_trade');
+
                     connectBtn.disabled = true;
                     connectBtn.textContent = 'Đang kết nối...';
-                    const res = await POST('/connect', { username, password });
+                    let res;
+                    try {
+                        res = await POST('/connect', { username, password, permissions });
+                    } catch (e) {
+                        connectBtn.disabled = false;
+                        connectBtn.textContent = T.connect;
+                        showToast(_err({ error: e.message }), 'error');
+                        return;
+                    }
                     connectBtn.disabled = false;
                     connectBtn.textContent = T.connect;
                     if (res.success) {
-                        showToast(res.message, 'success');
-                        dashData = null;
-                        status = null;
-                        await renderCurrentTab();
+                        if (res.auto_otp_pending) {
+                            // Gmail đã kết nối, email OTP đã gửi → poll để lấy kết quả
+                            showToast('📧 Đang xác thực OTP tự động qua Gmail...', 'success');
+                            dashData = null; status = null;
+                            await renderCurrentTab();
+                            await pollGmailOtp();
+                        } else {
+                            showToast(_msg(res), 'success');
+                            dashData = null; status = null;
+                            await renderCurrentTab();
+                        }
                     } else {
-                        showToast(res.message || T.error_generic, 'error');
+                        showToast(_err(res), 'error');
+                    }
+                });
+            }
+
+            const gmailRenewBtn = el.querySelector('#dnse-gmail-renew-btn');
+            if (gmailRenewBtn) {
+                gmailRenewBtn.addEventListener('click', async () => {
+                    gmailRenewBtn.disabled = true;
+                    gmailRenewBtn.textContent = '⏳ Đang xác thực...';
+                    // Trigger /connect lại với credentials đã lưu (server tự re-login + gửi OTP)
+                    let res;
+                    try {
+                        res = await POST('/reconnect');
+                    } catch (e) {
+                        gmailRenewBtn.disabled = false;
+                        gmailRenewBtn.textContent = '🔄 Xác thực OTP tự động qua Gmail';
+                        showToast(_err({ error: e.message }), 'error');
+                        return;
+                    }
+                    if (res && res.success) {
+                        if (res.auto_otp_pending) {
+                            showToast('📧 Đang xác thực OTP tự động qua Gmail...', 'success');
+                            dashData = null; status = null;
+                            await renderCurrentTab();
+                            await pollGmailOtp();
+                        } else if (res.manual_otp) {
+                            // Gmail không gửi được OTP → fallback form Smart OTP thủ công
+                            showToast('⚠️ ' + (res.message || 'Vui lòng xác thực bằng Smart OTP.'), 'warning');
+                            dashData = null;
+                            // Render lại với gmail_connected=false để hiện form OTP thủ công
+                            const st = await GET('/status');
+                            if (st && st.success) {
+                                st.gmail_connected = false; // force manual form
+                                const tabContent = el.querySelector('.lcni-dnse-content');
+                                if (tabContent) {
+                                    tabContent.innerHTML = renderConnectTab(st);
+                                    bindConnectEvents();
+                                    bindOtpRadio();
+                                }
+                            }
+                            return;
+                        } else {
+                            showToast(_msg(res), 'success');
+                            dashData = null; status = null;
+                            await renderCurrentTab();
+                        }
+                    } else {
+                        gmailRenewBtn.disabled = false;
+                        gmailRenewBtn.textContent = '🔄 Xác thực OTP tự động qua Gmail';
+                        showToast(_err(res), 'error');
                     }
                 });
             }
@@ -393,7 +657,15 @@
 
                     reqOtpBtn.disabled = true;
                     reqOtpBtn.textContent = 'Đang gửi...';
-                    const res = await POST('/request-otp');
+                    let res;
+                    try {
+                        res = await POST('/request-otp');
+                    } catch (e) {
+                        reqOtpBtn.disabled = false;
+                        reqOtpBtn.textContent = T.request_otp;
+                        showToast(_err({ error: e.message }), 'error');
+                        return;
+                    }
                     reqOtpBtn.disabled = false;
                     reqOtpBtn.textContent = T.request_otp;
 
@@ -402,7 +674,7 @@
                         // Focus vào ô nhập OTP
                         setTimeout(() => el.querySelector('#dnse-otp-input')?.focus(), 300);
                     } else {
-                        showToast(res.message || T.error_generic, 'error');
+                        showToast(_err(res), 'error');
                     }
                 });
             }
@@ -416,14 +688,148 @@
                         return;
                     }
                     verifyOtpBtn.disabled = true;
-                    const res = await POST('/verify-otp', { otp, otp_type });
+                    let res;
+                    try {
+                        res = await POST('/verify-otp', { otp, otp_type });
+                    } catch (e) {
+                        verifyOtpBtn.disabled = false;
+                        showToast(_err({ error: e.message }), 'error');
+                        return;
+                    }
                     verifyOtpBtn.disabled = false;
                     if (res.success) {
-                        showToast(res.message, 'success');
+                        showToast(_msg(res), 'success');
                         status = null;
                         await renderCurrentTab();
                     } else {
-                        showToast(res.message || T.error_generic, 'error');
+                        showToast(_err(res), 'error');
+                    }
+                });
+            }
+
+            // ── Gmail connect ─────────────────────────────────────────────────
+            const gmailConnectBtn    = el.querySelector('#dnse-gmail-connect-btn');
+            const gmailDisconnectBtn = el.querySelector('#dnse-gmail-disconnect-btn');
+
+            if (gmailConnectBtn) {
+                gmailConnectBtn.addEventListener('click', async () => {
+                    gmailConnectBtn.disabled = true;
+                    gmailConnectBtn.textContent = 'Đang chuyển hướng...';
+                    let res;
+                    try {
+                        res = await GET('/gmail-auth-url');
+                    } catch(e) {
+                        gmailConnectBtn.disabled = false;
+                        gmailConnectBtn.innerHTML = '📧 Kết nối Gmail';
+                        showToast(e.message || 'Lỗi kết nối.', 'error');
+                        return;
+                    }
+                    if (res.success && res.url) {
+                        // Redirect đến Google consent screen
+                        window.location.href = res.url;
+                    } else {
+                        gmailConnectBtn.disabled = false;
+                        gmailConnectBtn.innerHTML = '📧 Kết nối Gmail';
+                        showToast(_err(res), 'error');
+                    }
+                });
+            }
+
+            if (gmailDisconnectBtn) {
+                gmailDisconnectBtn.addEventListener('click', async () => {
+                    if (!confirm('Ngắt kết nối Gmail? Sau đó bạn phải nhập OTP thủ công mỗi 8 giờ.')) return;
+                    gmailDisconnectBtn.disabled = true;
+                    let res;
+                    try {
+                        res = await POST('/gmail-disconnect');
+                    } catch(e) {
+                        gmailDisconnectBtn.disabled = false;
+                        showToast(e.message || 'Lỗi.', 'error');
+                        return;
+                    }
+                    if (res.success) {
+                        showToast(_msg(res), 'success');
+                        status = null;
+                        await renderCurrentTab();
+                    } else {
+                        gmailDisconnectBtn.disabled = false;
+                        showToast(_err(res), 'error');
+                    }
+                });
+            }
+
+            // ── Permissions save ──────────────────────────────────────────────
+            const savePermsBtn = el.querySelector('#dnse-save-perms-btn');
+            if (savePermsBtn) {
+                savePermsBtn.addEventListener('click', async () => {
+                    const permissions = [];
+                    if (el.querySelector('#dnse-perm-auto-renew')?.checked) permissions.push('perm_auto_renew');
+                    if (el.querySelector('#dnse-perm-trade')?.checked)      permissions.push('perm_trade');
+
+                    savePermsBtn.disabled = true;
+                    savePermsBtn.textContent = 'Đang lưu...';
+                    let res;
+                    try {
+                        res = await POST('/save-permissions', { permissions });
+                    } catch(e) {
+                        savePermsBtn.disabled = false;
+                        savePermsBtn.textContent = 'Lưu';
+                        showToast('Lỗi: ' + e.message, 'error');
+                        return;
+                    }
+                    savePermsBtn.disabled = false;
+                    savePermsBtn.textContent = 'Lưu';
+
+                    if (res.success) {
+                        if (res.needs_password) {
+                            // Cần nhập lại password để bật auto_renew
+                            const reauthBox = el.querySelector('#dnse-reauth-box');
+                            if (reauthBox) reauthBox.style.display = 'block';
+                            showToast('Nhập lại mật khẩu để bật tự động đăng nhập.', 'warning');
+                        } else {
+                            showToast('✅ Đã lưu cài đặt.', 'success');
+                            dashData = null; status = null;
+                            await renderCurrentTab();
+                        }
+                    } else {
+                        showToast(_err(res), 'error');
+                    }
+                });
+            }
+
+            // ── Reauth confirm (nhập lại password để lưu với auto_renew) ─────
+            const reauthConfirmBtn = el.querySelector('#dnse-reauth-confirm-btn');
+            if (reauthConfirmBtn) {
+                reauthConfirmBtn.addEventListener('click', async () => {
+                    const pw = el.querySelector('#dnse-reauth-password')?.value;
+                    if (!pw) { showToast('Vui lòng nhập mật khẩu.', 'error'); return; }
+
+                    const permissions = [];
+                    if (el.querySelector('#dnse-perm-auto-renew')?.checked) permissions.push('perm_auto_renew');
+                    if (el.querySelector('#dnse-perm-trade')?.checked)      permissions.push('perm_trade');
+
+                    reauthConfirmBtn.disabled = true;
+                    reauthConfirmBtn.textContent = 'Đang xác nhận...';
+                    let res;
+                    try {
+                        // Re-connect để lưu password mới + permissions
+                        const accountNo = el.querySelector('.lcni-dnse-account')?.textContent?.trim() || '';
+                        res = await POST('/connect', { username: accountNo, password: pw, permissions });
+                    } catch(e) {
+                        reauthConfirmBtn.disabled = false;
+                        reauthConfirmBtn.textContent = 'Xác nhận';
+                        showToast('Lỗi: ' + e.message, 'error');
+                        return;
+                    }
+                    reauthConfirmBtn.disabled = false;
+                    reauthConfirmBtn.textContent = 'Xác nhận';
+
+                    if (res.success) {
+                        showToast('✅ Đã bật tự động đăng nhập.', 'success');
+                        dashData = null; status = null;
+                        await renderCurrentTab();
+                    } else {
+                        showToast(_err(res), 'error');
                     }
                 });
             }
@@ -483,15 +889,23 @@
                 syncBtn.addEventListener('click', async () => {
                     syncBtn.disabled = true;
                     syncBtn.textContent = 'Đang sync...';
-                    const res = await POST('/sync');
+                    let res;
+                    try {
+                        res = await POST('/sync');
+                    } catch (e) {
+                        syncBtn.disabled = false;
+                        syncBtn.textContent = `↻ ${T.sync}`;
+                        showToast(_err({ error: e.message }), 'error');
+                        return;
+                    }
                     syncBtn.disabled = false;
                     syncBtn.textContent = `↻ ${T.sync}`;
                     if (res.success) {
                         dashData = null;
-                        showToast(res.message, 'success');
+                        showToast(_msg(res), 'success');
                         await renderCurrentTab();
                     } else {
-                        showToast(res.message || T.error_generic, 'error');
+                        showToast(_err(res), 'error');
                     }
                 });
             }

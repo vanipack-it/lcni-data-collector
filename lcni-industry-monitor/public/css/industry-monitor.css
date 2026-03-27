@@ -1,40 +1,50 @@
+/* ================================================================
+   industry-monitor.css  — LCNI Industry Monitor
+   ================================================================ */
+
 .lcni-industry-monitor {
     width: 100%;
     max-width: 100%;
-    --lcni-row-bg: #ffffff;
-    --lcni-row-border-color: #e2e2e2;
-    --lcni-row-border-width: 1px;
-    --lcni-table-border-color: #d6d6d6;
-    --lcni-table-border-width: 1px;
-    --lcni-header-bg: #f7f7f7;
-    --lcni-header-height: 44px;
-    --lcni-row-font-size: 14px;
-    --lcni-table-height: 70vh;
+    --lcni-row-bg:           var(--lcni-table-value-bg,    #ffffff);
+    --lcni-row-border-color: var(--lcni-row-divider-color, #e2e2e2);
+    --lcni-row-border-width: var(--lcni-row-divider-width, 1px);
+    --lcni-header-bg:        var(--lcni-table-header-bg,   #f7f7f7);
+    --lcni-header-height:    var(--lcni-table-header-height, 44px);
+    --lcni-row-font-size:    var(--lcni-table-value-size,  14px);
+    --lcni-table-height:     var(--lcni-table-max-height,  70vh);
     --lcni-event-time-col-width: 140px;
-    --lcni-dropdown-height: 36px;
-    --lcni-dropdown-width: 280px;
-    --lcni-dropdown-border-color: #d0d0d0;
-    --lcni-dropdown-border-width: 1px;
 }
 
+/* ── Scroll container ─────────────────────────────────────────── */
 .lcni-industry-monitor__table-wrap {
     position: relative;
     overflow-x: auto;
-    overflow-y: auto;
+    overflow-y: visible;           /* fit theo nội dung — không cắt rows */
     width: 100%;
-    max-height: var(--lcni-table-height);
-    border: var(--lcni-table-border-width) solid var(--lcni-table-border-color);
+    max-height: none !important;   /* bỏ giới hạn 70vh */
+    border: none !important;
     box-shadow: none;
-    /* Override lcni-table-wrapper max-height với giá trị từ CSS variable admin */
-    --lcni-table-wrapper-max-height: var(--lcni-table-height);
+    touch-action: pan-x pan-y;
+    overscroll-behavior-x: contain;
 }
 
-/* Khi .lcni-table-wrapper xuất hiện cùng .lcni-industry-monitor__table-wrap,
-   dùng max-height từ CSS variable của industry monitor */
-.lcni-industry-monitor__table-wrap.lcni-table-wrapper {
-    max-height: var(--lcni-table-height);
+/* Override lcni-ui-table-wrapper max-height — industry monitor fit theo nội dung */
+.lcni-industry-monitor .lcni-table-wrapper,
+.lcni-industry-monitor .lcni-table-scroll,
+.lcni-industry-monitor__table-wrap.lcni-table-wrapper,
+.lcni-industry-monitor__table-wrap.lcni-table-scroll {
+    max-height: none !important;
+    overflow-y: visible !important;
 }
 
+/* Border bao quanh bảng — scope vào .lcni-industry-monitor để specificity cao hơn */
+.lcni-industry-monitor > .lcni-industry-monitor__table-wrap {
+    border: 1px solid var(--lcni-row-border-color, #e2e2e2) !important;
+    border-top: none !important; /* toolbar đã có border-bottom */
+    border-radius: 0 0 6px 6px;
+}
+
+/* ── Table base ───────────────────────────────────────────────── */
 .lcni-industry-monitor__table {
     border-collapse: separate;
     border-spacing: 0;
@@ -42,120 +52,165 @@
     min-width: 100%;
 }
 
-.lcni-industry-monitor__table th,
-.lcni-industry-monitor__table td {
-    border-style: solid;
-    border-color: var(--lcni-row-border-color);
-    border-width: 0 0 var(--lcni-row-border-width) 0;
-    padding: 8px 10px;
-    white-space: nowrap;
-    background: var(--lcni-row-bg);
-    font-size: var(--lcni-row-font-size);
+/* Override lcni-ui-table: bỏ min-width:720px cứng */
+.lcni-industry-monitor .lcni-industry-monitor__table.lcni-table {
+    min-width: 100% !important;
+    width: max-content !important;
 }
 
-.lcni-industry-monitor__table thead th {
+/* ── Cells ────────────────────────────────────────────────────── */
+.lcni-industry-monitor__table th,
+.lcni-industry-monitor__table td {
+    border-width: 0 0 1px 0 !important; /* chỉ bottom, cố định 1px không phụ thuộc admin config */
+    border-style: solid !important;
+    border-color: var(--lcni-row-border-color, #e2e2e2) !important;
+    padding: 0 10px;
+    white-space: nowrap;
+    background: var(--lcni-row-bg, #ffffff);
+    color: var(--lcni-table-value-color, #111827);
+    font-size: var(--lcni-row-font-size, 13px);
+}
+
+.lcni-industry-monitor__table td {
+    height: var(--lcni-table-row-height, 36px);
+}
+
+/* ── Thead th ─────────────────────────────────────────────────── */
+.lcni-industry-monitor .lcni-industry-monitor__table thead th {
     position: sticky;
     top: 0;
     z-index: 25;
-    background: var(--lcni-header-bg);
-    min-height: var(--lcni-header-height);
-    height: var(--lcni-header-height);
+    background: var(--lcni-header-bg, #f7f7f7) !important;
+    color: var(--lcni-table-header-color, #111827) !important;
+    height: var(--lcni-header-height, 44px);
+    border-width: 0 0 1px 0 !important;
+    border-color: var(--lcni-row-border-color, #e2e2e2) !important;
+    box-shadow: none;
 }
 
-.lcni-industry-monitor__sticky-industry,
-.lcni-industry-monitor__sticky-col {
-    position: sticky;
-    left: 0;
-    z-index: 18;
-    background: #fafafa;
+/* ── Sticky cột — 3-class specificity để thắng lcni-ui-table ─── */
+/* Body sticky cells: dùng row-bg (TRẮNG), không phải header-bg */
+.lcni-industry-monitor .lcni-industry-monitor__table .lcni-industry-monitor__sticky-col,
+.lcni-industry-monitor .lcni-industry-monitor__table .lcni-industry-monitor__sticky-industry {
+    position: sticky !important;
+    left: 0 !important;
+    z-index: 20 !important;
+    background: var(--lcni-row-bg, #ffffff) !important;
+    color: var(--lcni-table-value-color, #111827) !important;
     text-align: left;
-    width: max-content;
-    min-width: max-content;
+    min-width: 120px;
+    box-shadow: 2px 0 5px -2px rgba(0,0,0,.10);
 }
 
-.lcni-industry-monitor__table thead .lcni-industry-monitor__sticky-industry {
-    z-index: 60;
-    top: 0;
-    background: var(--lcni-header-bg);
+/* Corner cell = thead + sticky → header-bg */
+.lcni-industry-monitor .lcni-industry-monitor__table thead .lcni-industry-monitor__sticky-industry {
+    z-index: 40 !important;
+    background: var(--lcni-header-bg, #f7f7f7) !important;
+    color: var(--lcni-table-header-color, #9ca3af) !important;
+    font-size: 11px;
+    box-shadow: 2px 0 5px -2px rgba(0,0,0,.10);
 }
 
-.lcni-industry-monitor__table tbody .lcni-industry-monitor__sticky-col {
-    z-index: 20;
+/* Override lcni-ui-table is-sticky-col background cho industry monitor */
+.lcni-industry-monitor .lcni-table .is-sticky-col {
+    background: var(--lcni-row-bg, #ffffff) !important;
+}
+.lcni-industry-monitor .lcni-table th.is-sticky-col,
+.lcni-industry-monitor .lcni-table.has-sticky-header thead th.is-sticky-col {
+    background: var(--lcni-header-bg, #f7f7f7) !important;
+    box-shadow: 2px 0 5px -2px rgba(0,0,0,.10),
+                inset 0 -1px 0 var(--lcni-row-border-color, #e2e2e2) !important;
 }
 
-.lcni-industry-monitor__event-time {
-    min-width: var(--lcni-event-time-col-width);
+/* QUAN TRỌNG: tbody th.is-sticky-col (industry name cells dùng <th> tag)
+   → phải là row-bg (trắng), không phải header-bg */
+.lcni-industry-monitor .lcni-industry-monitor__table tbody th.is-sticky-col,
+.lcni-industry-monitor .lcni-industry-monitor__table tbody th.lcni-industry-monitor__sticky-col {
+    background: var(--lcni-row-bg, #ffffff) !important;
+    color: var(--lcni-table-value-color, #111827) !important;
+    font-weight: 500;
 }
 
-.lcni-industry-monitor__industry-head {
+/* ── Toolbar ───────────────────────────────────────────────────── */
+.lcni-im-toolbar {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 10px;
-}
-
-.lcni-industry-monitor__metric-dropdown {
-    position: relative;
-    z-index: 40;
-}
-
-.lcni-industry-monitor__metric-toggle {
-    min-width: var(--lcni-dropdown-width);
-    width: var(--lcni-dropdown-width);
-    height: var(--lcni-dropdown-height);
-    border: var(--lcni-dropdown-border-width) solid var(--lcni-dropdown-border-color);
-}
-
-.lcni-industry-monitor__metric-menu {
-    position: absolute;
-    top: calc(100% + 6px);
-    left: 0;
-    z-index: 90;
-    width: var(--lcni-dropdown-width);
-    border: var(--lcni-dropdown-border-width) solid var(--lcni-dropdown-border-color);
-    background: #fff;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-    padding: 8px;
-}
-
-.lcni-industry-monitor__metric-search {
+    padding: 10px 12px;
+    background: #ffffff;                 /* trắng — tách biệt khỏi thead */
+    border: 1px solid var(--lcni-row-border-color, #e2e2e2);
+    border-bottom: 1px solid var(--lcni-row-border-color, #e2e2e2);
+    border-radius: 6px 6px 0 0;
     width: 100%;
-    margin-bottom: 8px;
+    box-sizing: border-box;
+    flex-wrap: wrap;
 }
 
-.lcni-industry-monitor__metric-options {
-    max-height: 220px;
-    overflow-y: auto;
+.lcni-im-metric-chips {
     display: flex;
-    flex-direction: column;
-    gap: 4px;
+    flex-wrap: wrap;
+    gap: 5px;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
 }
 
-.lcni-industry-monitor__metric-option {
-    text-align: left;
-    background: #f6f6f6;
-    border: 0;
-    padding: 6px 8px;
-    cursor: pointer;
+.lcni-im-mchip {
+    display: inline-flex !important;
+    align-items: center !important;
+    height: 26px !important;
+    padding: 0 11px !important;
+    background: #ffffff !important;
+    border: 1px solid #d1d5db !important;
+    border-radius: 999px !important;
+    font-size: 12px !important;
+    font-weight: 500 !important;
+    color: #4b5563 !important;
+    white-space: nowrap !important;
+    line-height: 1 !important;
+    cursor: pointer !important;
+    transition: background .12s, border-color .12s, color .12s;
+    box-shadow: none !important;
+    text-transform: none !important;
+    margin: 0 !important;
+}
+.lcni-im-mchip:hover {
+    background: #eff6ff !important;
+    border-color: #93c5fd !important;
+    color: #1d4ed8 !important;
+}
+.lcni-im-mchip.is-active {
+    background: #2563eb !important;
+    border-color: #2563eb !important;
+    color: #ffffff !important;
+    font-weight: 600 !important;
 }
 
-.lcni-industry-monitor__row.is-hoverable {
-    cursor: pointer;
+.lcni-im-toolbar-divider {
+    width: 1px; height: 20px;
+    background: var(--lcni-row-border-color, #e2e2e2);
+    align-self: center; flex-shrink: 0;
 }
 
+/* ── Row hover ─────────────────────────────────────────────────── */
+.lcni-industry-monitor__row.is-hoverable { cursor: pointer; }
 .lcni-industry-monitor__row.is-hoverable:hover th,
 .lcni-industry-monitor__row.is-hoverable:hover td {
-    filter: brightness(0.96);
+    background: var(--lcni-row-hover-bg, #f5f5f5) !important;
 }
 
-.lcni-industry-monitor__full-link-wrap {
-    margin-top: 12px;
-    text-align: right;
-}
-
+/* ── Full link ─────────────────────────────────────────────────── */
+.lcni-industry-monitor__full-link-wrap { margin-top: 12px; text-align: right; }
 .lcni-industry-monitor__full-link {
     display: inline-block;
     padding: 6px 10px;
     border: 1px solid #d0d0d0;
     border-radius: 6px;
     text-decoration: none;
+}
+
+/* ── Prevent parent stealing sticky context ───────────────────── */
+.lcni-industry-monitor {
+    overflow: visible !important;
+    transform: none !important;
 }

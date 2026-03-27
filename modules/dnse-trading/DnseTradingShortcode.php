@@ -75,12 +75,12 @@ class LCNI_DnseTradingShortcode {
         }
 
         $atts = shortcode_atts( [
-            'tab'     => 'portfolio',
+            'tab'     => 'connect',
             'compact' => 'no',
         ], $atts, 'lcni_dnse_trading' );
 
-        $default_tab = in_array( $atts['tab'], [ 'portfolio', 'orders', 'connect' ], true )
-            ? $atts['tab'] : 'portfolio';
+        $default_tab = in_array( $atts['tab'], [ 'orders', 'connect' ], true )
+            ? $atts['tab'] : 'connect';
 
         wp_enqueue_script( 'lcni-dnse-trading' );
         wp_enqueue_style( 'lcni-dnse-trading' );

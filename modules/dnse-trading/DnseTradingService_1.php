@@ -156,10 +156,11 @@ class LCNI_DnseTradingService {
      * @return array  ['synced_accounts' => int, 'errors' => [...]]
      */
     public function sync_all( int $user_id ): array {
-        // perm_sync không cần check riêng — đã kết nối DNSE là được phép sync
+        if ( ! $this->repo->has_permission( $user_id, 'perm_sync' ) ) {
+            return [ 'synced_accounts' => 0, 'errors' => [ 'Chưa được cấp quyền đồng bộ dữ liệu.' ] ];
+        }
 
-        // Dùng get_jwt_for_auto_otp để tự re-login nếu JWT hết hạn
-        $jwt = $this->get_jwt_for_auto_otp( $user_id );
+        $jwt = $this->get_valid_jwt( $user_id );
         if ( is_wp_error( $jwt ) ) {
             return [ 'synced_accounts' => 0, 'errors' => [ $jwt->get_error_message() ] ];
         }
@@ -491,12 +492,12 @@ class LCNI_DnseTradingService {
             return true; // còn đủ hạn, không cần renew
         }
 
-        // Lấy JWT — tự re-login nếu hết hạn (JWT và trading token cùng hết hạn 8h)
-        $jwt = $this->get_jwt_for_auto_otp( $user_id );
+        // Lấy JWT
+        $jwt = $this->get_valid_jwt( $user_id );
         if ( is_wp_error( $jwt ) ) {
             return new WP_Error(
                 'dnse_auto_renew_jwt_expired',
-                "User {$user_id}: JWT hết hạn và không thể tự re-login. " . $jwt->get_error_message()
+                "User {$user_id}: JWT hết hạn, cần đăng nhập lại. " . $jwt->get_error_message()
             );
         }
 

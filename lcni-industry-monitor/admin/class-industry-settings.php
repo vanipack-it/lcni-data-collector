@@ -32,15 +32,9 @@ class LCNI_Industry_Settings
     {
         return array(
             'enabled_metrics' => array_keys(self::get_metric_labels()),
-            'row_bg_color' => '#ffffff',
-            'row_border_color' => '#e2e2e2',
-            'row_border_width' => 1,
-            'table_border_color' => '#d6d6d6',
-            'table_border_width' => 1,
-            'header_bg_color' => '#f7f7f7',
-            'header_height' => 44,
-            'row_font_size' => 14,
-            'table_height' => 70,
+            // row_bg_color, row_border_*, table_border_*, header_bg_color,
+            // header_height, row_font_size, table_height đã bị xoá —
+            // nay lấy từ Admin → Bảng dữ liệu (LCNI_Table_Config).
             'event_time_col_width' => 140,
             'dropdown_height' => 36,
             'dropdown_width' => 280,
@@ -82,7 +76,7 @@ class LCNI_Industry_Settings
 
     public function register_hooks()
     {
-        add_action('admin_menu', array($this, 'register_menu'));
+        // register_menu đã được thay bởi LCNI_IM_Admin — không đăng ký menu ở đây nữa
         add_action('admin_init', array($this, 'register_settings'));
         add_filter('lcni_industry_monitor_metric_labels', array($this, 'extend_metric_labels_from_data'));
     }
@@ -104,14 +98,18 @@ class LCNI_Industry_Settings
         return $labels;
     }
 
+    /**
+     * Đăng ký submenu — được gọi từ LCNI_IM_Admin, không tự đăng ký nữa.
+     * Giữ lại để LCNI_IM_Admin có thể gọi khi cần.
+     */
     public function register_menu()
     {
         add_submenu_page(
             'lcni-settings',
-            __('LCNI Industry Monitor', 'lcni-industry-monitor'),
-            __('Industry Monitor', 'lcni-industry-monitor'),
+            __('IM Cài đặt chung', 'lcni-industry-monitor'),
+            __('IM Cài đặt chung', 'lcni-industry-monitor'),
             'manage_options',
-            'lcni-industry-monitor',
+            'lcni-im-settings',
             array($this, 'render_page')
         );
     }
@@ -139,15 +137,8 @@ class LCNI_Industry_Settings
 
         return array(
             'enabled_metrics' => $enabled_metrics,
-            'row_bg_color' => sanitize_hex_color($input['row_bg_color'] ?? $defaults['row_bg_color']) ?: $defaults['row_bg_color'],
-            'row_border_color' => sanitize_hex_color($input['row_border_color'] ?? $defaults['row_border_color']) ?: $defaults['row_border_color'],
-            'row_border_width' => max(0, min(8, absint($input['row_border_width'] ?? $defaults['row_border_width']))),
-            'table_border_color' => sanitize_hex_color($input['table_border_color'] ?? $defaults['table_border_color']) ?: $defaults['table_border_color'],
-            'table_border_width' => max(0, min(8, absint($input['table_border_width'] ?? $defaults['table_border_width']))),
-            'header_bg_color' => sanitize_hex_color($input['header_bg_color'] ?? $defaults['header_bg_color']) ?: $defaults['header_bg_color'],
-            'header_height' => max(24, min(120, absint($input['header_height'] ?? $defaults['header_height']))),
-            'row_font_size' => max(10, min(24, absint($input['row_font_size'] ?? $defaults['row_font_size']))),
-            'table_height' => max(30, min(95, absint($input['table_height'] ?? $defaults['table_height']))),
+            // row_bg_color, row_border_*, table_border_*, header_*, row_font_size, table_height
+            // đã bị xoá — lấy từ LCNI_Table_Config (Admin → Bảng dữ liệu).
             'event_time_col_width' => max(72, min(360, absint($input['event_time_col_width'] ?? $defaults['event_time_col_width']))),
             'dropdown_height' => max(28, min(80, absint($input['dropdown_height'] ?? $defaults['dropdown_height']))),
             'dropdown_width' => max(80, min(720, absint($input['dropdown_width'] ?? $defaults['dropdown_width']))),
@@ -265,15 +256,7 @@ class LCNI_Industry_Settings
 
                 <h2><?php echo esc_html__('Table Styles', 'lcni-industry-monitor'); ?></h2>
                 <table class="form-table" role="presentation">
-                    <tr><th><label><?php echo esc_html__('Row background', 'lcni-industry-monitor'); ?></label></th><td><input type="color" name="<?php echo esc_attr(self::OPTION_KEY); ?>[row_bg_color]" value="<?php echo esc_attr($settings['row_bg_color']); ?>" /></td></tr>
-                    <tr><th><label><?php echo esc_html__('Row divider color', 'lcni-industry-monitor'); ?></label></th><td><input type="color" name="<?php echo esc_attr(self::OPTION_KEY); ?>[row_border_color]" value="<?php echo esc_attr($settings['row_border_color']); ?>" /></td></tr>
-                    <tr><th><label><?php echo esc_html__('Row divider thickness (px)', 'lcni-industry-monitor'); ?></label></th><td><input type="number" min="0" max="8" name="<?php echo esc_attr(self::OPTION_KEY); ?>[row_border_width]" value="<?php echo esc_attr((string) $settings['row_border_width']); ?>" /></td></tr>
-                    <tr><th><label><?php echo esc_html__('Frame border color', 'lcni-industry-monitor'); ?></label></th><td><input type="color" name="<?php echo esc_attr(self::OPTION_KEY); ?>[table_border_color]" value="<?php echo esc_attr($settings['table_border_color']); ?>" /></td></tr>
-                    <tr><th><label><?php echo esc_html__('Frame border thickness (px)', 'lcni-industry-monitor'); ?></label></th><td><input type="number" min="0" max="8" name="<?php echo esc_attr(self::OPTION_KEY); ?>[table_border_width]" value="<?php echo esc_attr((string) $settings['table_border_width']); ?>" /></td></tr>
-                    <tr><th><label><?php echo esc_html__('Row font size (px)', 'lcni-industry-monitor'); ?></label></th><td><input type="number" min="10" max="24" name="<?php echo esc_attr(self::OPTION_KEY); ?>[row_font_size]" value="<?php echo esc_attr((string) $settings['row_font_size']); ?>" /></td></tr>
-                    <tr><th><label><?php echo esc_html__('Table height (vh)', 'lcni-industry-monitor'); ?></label></th><td><input type="number" min="30" max="95" name="<?php echo esc_attr(self::OPTION_KEY); ?>[table_height]" value="<?php echo esc_attr((string) $settings['table_height']); ?>" /></td></tr>
-                    <tr><th><label><?php echo esc_html__('Header background', 'lcni-industry-monitor'); ?></label></th><td><input type="color" name="<?php echo esc_attr(self::OPTION_KEY); ?>[header_bg_color]" value="<?php echo esc_attr($settings['header_bg_color']); ?>" /></td></tr>
-                    <tr><th><label><?php echo esc_html__('Header height (px)', 'lcni-industry-monitor'); ?></label></th><td><input type="number" min="24" max="120" name="<?php echo esc_attr(self::OPTION_KEY); ?>[header_height]" value="<?php echo esc_attr((string) $settings['header_height']); ?>" /></td></tr>
+                    <tr><td colspan="2" style="padding:8px 0 12px;color:#6b7280;font-size:12px;font-style:italic;">ℹ️ Row background, divider, header, font size, table height được quản lý tại <strong>Admin → Frontend Setting → Bảng dữ liệu</strong>.</td></tr>
                     <tr><th><label><?php echo esc_html__('Event time column width (px)', 'lcni-industry-monitor'); ?></label></th><td><input type="number" min="72" max="360" name="<?php echo esc_attr(self::OPTION_KEY); ?>[event_time_col_width]" value="<?php echo esc_attr((string) $settings['event_time_col_width']); ?>" /></td></tr>
                     <tr><th><label><?php echo esc_html__('Dropdown height (px)', 'lcni-industry-monitor'); ?></label></th><td><input type="number" min="28" max="80" name="<?php echo esc_attr(self::OPTION_KEY); ?>[dropdown_height]" value="<?php echo esc_attr((string) $settings['dropdown_height']); ?>" /></td></tr>
                     <tr><th><label><?php echo esc_html__('Dropdown width (px)', 'lcni-industry-monitor'); ?></label></th><td><input type="number" min="80" max="720" name="<?php echo esc_attr(self::OPTION_KEY); ?>[dropdown_width]" value="<?php echo esc_attr((string) $settings['dropdown_width']); ?>" /></td></tr>

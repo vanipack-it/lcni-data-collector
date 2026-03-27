@@ -4,6 +4,61 @@
 
     if (typeof lcniPortfolioConfig === 'undefined') return;
 
+    /**
+     * lcniPfInitTableSticky — chuẩn hóa sticky cho portfolio tables.
+     * Dùng LcniTableEngine (single source of truth) nếu có, fallback CSS-only.
+     * Gọi sau mỗi lần render tbody để tính lại left offset + đăng ký observe.
+     * @param {string} tableSelector  — CSS selector của <table> (e.g. '#lcni-pf-holdings-table')
+     */
+    function lcniPfInitTableSticky(tableSelector) {
+        const table = document.querySelector(tableSelector);
+        if (!table) return;
+        const wrap = table.closest('.lcni-pf-table-wrap, .lcni-table-wrapper');
+        if (!wrap) return;
+
+        // Touch scroll — bind 1 lần duy nhất
+        if (!wrap.dataset.lcniTouchBound) {
+            wrap.dataset.lcniTouchBound = '1';
+            var sx = 0, sy = 0, sleft = 0, stop = 0, locked = null;
+            wrap.addEventListener('touchstart', function (e) {
+                var t = e.touches[0];
+                sx = t.clientX; sy = t.clientY;
+                sleft = wrap.scrollLeft; stop = wrap.scrollTop;
+                locked = null;
+            }, { passive: true });
+            wrap.addEventListener('touchmove', function (e) {
+                if (e.touches.length !== 1) return;
+                var t = e.touches[0];
+                var dx = t.clientX - sx, dy = t.clientY - sy;
+                if (locked === null) {
+                    if (Math.hypot(dx, dy) < 8) return;
+                    locked = Math.abs(dx) > Math.abs(dy);
+                }
+                if (locked) {
+                    e.preventDefault();
+                    wrap.scrollLeft = sleft - dx;
+                } else {
+                    var atTop = wrap.scrollTop <= 0;
+                    var atBot = wrap.scrollTop >= wrap.scrollHeight - wrap.clientHeight;
+                    if ((dy > 0 && atTop) || (dy < 0 && atBot)) return;
+                    e.preventDefault();
+                    wrap.scrollTop = stop - dy;
+                }
+            }, { passive: false });
+            wrap.addEventListener('touchend',    function () { locked = null; }, { passive: true });
+            wrap.addEventListener('touchcancel', function () { locked = null; }, { passive: true });
+        }
+
+        // LcniTableEngine — refresh offset + observe resize (chuẩn hệ thống)
+        if (window.LcniTableEngine && typeof window.LcniTableEngine.refresh === 'function') {
+            window.LcniTableEngine.refresh(wrap, { sticky_columns: 1, sticky_header: true });
+            if (!wrap.dataset.lcniObserved) {
+                wrap.dataset.lcniObserved = '1';
+                window.LcniTableEngine.observe(wrap, { sticky_columns: 1, sticky_header: true });
+            }
+        }
+    }
+
     const { restUrl, nonce, activeId: initActiveId } = lcniPortfolioConfig;
     let portfolios    = lcniPortfolioConfig.portfolios || [];
     let activeId      = initActiveId;
@@ -22,7 +77,7 @@
         const priceField   = document.getElementById('pf-tx-price');
         if (!orderTypeSel || !priceField) return;
 
-        const noPrice = ['ATO', 'ATC', 'MP', 'PM'].includes(orderTypeSel.value);
+        const noPrice = ['ATO', 'ATC', 'MP', 'MTL', 'MOK', 'MAK', 'PM'].includes(orderTypeSel.value);
         const group   = priceField.closest('.lcni-pf-form-group');
 
         priceField.disabled = noPrice;
@@ -167,6 +222,7 @@
         if (orderTypeSel) {
             orderTypeSel.addEventListener('change', _syncPriceFieldToOrderType);
         }
+
     })();
     let allocChart  = null;
     let equityChart = null;
@@ -303,7 +359,7 @@
         active.forEach(h => {
             tbody.append(`
                 <tr>
-                    <td class="lcni-sticky-col"><span class="lcni-pf-symbol">${h.symbol}</span></td>
+                    <td class="is-sticky-col lcni-sticky-col"><span class="lcni-pf-symbol">${h.symbol}</span></td>
                     <td>${fmtQty(h.quantity)}</td>
                     <td>${fmtVnd(h.avg_cost)}</td>
                     <td>${h.current_price > 0 ? fmtVnd(h.current_price) : '<span style="color:#9ca3af">—</span>'}</td>
@@ -312,6 +368,8 @@
                     <td class="${pnlClass(h.unrealized_pct)}">${fmtPct(h.unrealized_pct)}</td>
                 </tr>`);
         });
+        // Sticky + touch scroll — dùng LcniTableEngine (chuẩn hệ thống)
+        lcniPfInitTableSticky('#lcni-pf-holdings-table');
     }
 
     // =========================================================
@@ -430,7 +488,7 @@
             const total = parseFloat(tx.quantity) * priceVnd;
             tbody.append(`
                 <tr>
-                    <td class="lcni-sticky-col">${tx.trade_date}</td>
+                    <td class="is-sticky-col lcni-sticky-col">${tx.trade_date}</td>
                     <td><span class="lcni-pf-symbol">${tx.symbol}</span></td>
                     <td>${typeLabel(tx.type)}</td>
                     <td>${fmtQty(tx.quantity)}</td>
@@ -449,6 +507,8 @@
         // Attach tx data for edit modal
         window._lcniTxCache = {};
         txs.forEach(tx => { window._lcniTxCache[tx.id] = tx; });
+        // Sticky + touch scroll
+        lcniPfInitTableSticky('#lcni-pf-tx-table');
     }
 
     // =========================================================
@@ -510,6 +570,21 @@
 
         modal.show();
         setTimeout(() => (isPrefill || isEdit ? $('#pf-tx-qty') : $('#pf-tx-symbol')).focus(), 50);
+
+        // FIX: Fetch loan packages sau khi modal visible + account select đã populated
+        // Chỉ fetch khi không phải edit mode và DNSE connected
+        if (hasDnse && !isEdit) {
+            // populate accounts nếu chưa có (standalone modal case)
+            const acctSel = document.getElementById('pf-dnse-account');
+            if (acctSel && acctSel.options.length === 0) {
+                dnseAccounts.forEach(function(a) {
+                    const opt = document.createElement('option');
+                    opt.value = a.id; opt.dataset.type = a.type; opt.textContent = a.label;
+                    acctSel.appendChild(opt);
+                });
+            }
+            fetchLoanPackagesForModal();
+        }
     }
     function closeTxModal() { $('#lcni-pf-tx-modal').hide(); _hideBuyingPower(); }
 
@@ -556,11 +631,13 @@
                                 return (opt && opt.selectedOptions[0]
                                     && opt.selectedOptions[0].dataset.type) || 'spot';
                               })(),
+            // FIX: loanPackageId bắt buộc theo DNSE API — lấy từ select gói vay
+            loan_package_id:  parseInt($('#pf-dnse-loan-package').val() || '0') || 0,
         };
 
         // ── Basic validation ────────────────────────────────────
-        // Market order types (ATO/ATC/MP/PM) không cần giá — price = 0 hợp lệ.
-        const isMarketOrder = ['ATO','ATC','MP','PM'].includes(order.dnseOrderType)
+        // Market order types (DNSE v1): ATO/ATC/MP/MTL/MOK/MAK/PM — không cần giá
+        const isMarketOrder = ['ATO','ATC','MP','MTL','MOK','MAK','PM'].includes(order.dnseOrderType)
                               && order.sendDnse;
 
         if (!order.symbol) {
@@ -572,34 +649,46 @@
         if (!isMarketOrder && order.priceVnd <= 0) {
             $('#lcni-pf-tx-error').text('Giá phải lớn hơn 0 (lệnh giới hạn/thủ công).').show(); return;
         }
+        // FIX: loanPackageId bắt buộc theo DNSE API
+        if (order.sendDnse && !(order.loan_package_id > 0)) {
+            $('#lcni-pf-tx-error').text('Vui lòng chọn gói vay DNSE (đang tải...).').show(); return;
+        }
 
         $('#lcni-pf-tx-save').prop('disabled', true).text('Đang lưu...');
         $('#lcni-pf-tx-error').hide();
 
-        // ── Execute via unified LCNIOrderService ────────────────
-        const svc = window.LCNIOrderService;
-        const promise = svc
-            ? (isNew ? svc.execute(order) : svc.executeUpdate(order))
-            : _legacySaveTx(order, isNew); // fallback if service not loaded
+        // ── Pipeline: DNSEOrderService → portfolio DB ───────────
+        // Step 1: optional DNSE real order
+        const dnseStep = order.sendDnse && window.DNSEOrderService
+            ? window.DNSEOrderService.sendOrder(order)
+            : Promise.resolve({ success: true, skipped: true });
 
-        promise
-            .then(result => {
-                closeTxModal();
-                loadPortfolio(activeId);
+        dnseStep
+            .then(dnseRes => {
+                // FIX: Nếu DNSE thất bại (không phải skipped), DỪNG — không ghi portfolio
+                if (order.sendDnse && !dnseRes.skipped && !dnseRes.success) {
+                    const errMsg = dnseRes.error || 'Đặt lệnh DNSE thất bại.';
+                    $('#lcni-pf-tx-error').text('❌ DNSE: ' + errMsg + ' — Giao dịch KHÔNG được lưu vào danh mục.').show();
+                    return Promise.reject({ _handled: true });
+                }
+                // Step 2: chỉ lưu portfolio khi DNSE thành công hoặc Manual (skipped)
+                return _saveTx(order, isNew).then(txRes => ({ txRes, dnseRes }));
+            })
+            .then(({ txRes, dnseRes }) => {
+                if (txRes && txRes.success !== false) {
+                    closeTxModal();
+                    loadPortfolio(activeId);
 
-                // Warn about DNSE failure without blocking the success flow
-                if (result && result.dnseError) {
-                    setTimeout(() => {
-                        $('#lcni-pf-tx-error')
-                            .text('⚠ Giao dịch đã lưu nhưng đặt lệnh DNSE thất bại: ' + result.dnseError)
-                            .show();
-                    }, 200);
-                } else if (result && result.dnseOrderId) {
-                    const msg = '✅ Đặt lệnh DNSE thành công. Mã lệnh: ' + result.dnseOrderId;
-                    console.info('[LCNI DNSE]', msg);
+                    if (dnseRes && dnseRes.data && dnseRes.data.order_id) {
+                        console.info('[LCNI DNSE] ✅ Đặt lệnh thành công. Mã lệnh:', dnseRes.data.order_id);
+                    }
+                } else {
+                    const msg = (txRes && (txRes.data || txRes.message)) || 'Lỗi không xác định.';
+                    $('#lcni-pf-tx-error').text(msg).show();
                 }
             })
             .catch(err => {
+                if (err && err._handled) return;  // DNSE error already shown
                 const msg = (err && err.message) ? err.message : 'Lỗi không xác định.';
                 $('#lcni-pf-tx-error').text(msg).show();
             })
@@ -608,11 +697,15 @@
             });
     }
 
-    // Fallback khi LCNIOrderService chưa load (edge case)
-    function _legacySaveTx(order, isNew) {
-        return new Promise((resolve, reject) => {
-            const endpoint = isNew ? '/portfolio/tx/add' : '/portfolio/tx/update';
-            const data = {
+    // Save portfolio transaction — direct fetch, safe JSON parse
+    function _saveTx(order, isNew) {
+        const endpoint = isNew ? '/portfolio/tx/add' : '/portfolio/tx/update';
+        const CFG = window.lcniPortfolioConfig || {};
+        return fetch((CFG.restUrl || '') + endpoint, {
+            method:      'POST',
+            headers:     { 'Content-Type': 'application/json', 'X-WP-Nonce': CFG.nonce || '' },
+            credentials: 'same-origin',
+            body: JSON.stringify({
                 portfolio_id: order.portfolioId,
                 tx_id:        order.txId,
                 symbol:       order.symbol,
@@ -623,14 +716,75 @@
                 fee:          order.fee,
                 tax:          order.tax,
                 note:         order.note,
-            };
-            api('POST', endpoint, data)
-                .done(res => res.success ? resolve(res) : reject(new Error(res.data || 'Lỗi không xác định.')))
-                .fail(() => reject(new Error('Có lỗi kết nối.')));
+            }),
+        })
+        .then(async function (r) {
+            if (!r.ok) {
+                const text = await r.text();
+                throw new Error('Portfolio API Error: ' + text);
+            }
+            return r.json();
         });
     }
 
-    function deleteTx(txId) {
+    /**
+     * fetchLoanPackagesForModal — tự động lấy và chọn gói vay type=N khi account thay đổi.
+     * DNSE bắt buộc loanPackageId hợp lệ — không được gửi 0.
+     * type=N = Non-Margin (tiền mặt), type=M = Margin.
+     */
+    function fetchLoanPackagesForModal() {
+        var accountNo = $('#pf-dnse-account').val() || '';
+        var accountType = (function() {
+            var opt = document.getElementById('pf-dnse-account');
+            return (opt && opt.selectedOptions[0] && opt.selectedOptions[0].dataset.type) || 'spot';
+        })();
+        var sel   = document.getElementById('pf-dnse-loan-package');
+        var group = document.getElementById('pf-dnse-loan-pkg-group');
+        if (!sel || !accountNo) return;
+
+        sel.innerHTML = '<option value="">Đang tải...</option>';
+        if (group) group.style.display = '';
+
+        var CFG = window.lcniPortfolioConfig || {};
+        fetch((CFG.restUrl || '') + '/dnse/loan-packages?account_no=' + encodeURIComponent(accountNo) + '&account_type=' + encodeURIComponent(accountType), {
+            headers: { 'X-WP-Nonce': CFG.nonce || '' },
+            credentials: 'same-origin',
+        })
+        .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
+        .then(function(res) {
+            var packages = (res && res.packages) ? res.packages : [];
+            sel.innerHTML = '';
+            if (!packages.length) {
+                sel.innerHTML = '<option value="">Không có gói vay</option>';
+                return;
+            }
+            // Sắp xếp: Non-Margin (type=N) lên đầu
+            var sorted = packages.slice().sort(function(a, b) {
+                var at = (a.type || '').toUpperCase();
+                var bt = (b.type || '').toUpperCase();
+                if (at === 'N' && bt !== 'N') return -1;
+                if (bt === 'N' && at !== 'N') return 1;
+                return 0;
+            });
+            sorted.forEach(function(pkg) {
+                var opt = document.createElement('option');
+                opt.value = String(pkg.id);
+                var typeLabel = (pkg.type || '').toUpperCase() === 'N' ? 'Tiền mặt' : 'Margin';
+                opt.textContent = (pkg.name || ('Gói ' + pkg.id)) + ' (' + typeLabel + ')';
+                opt.dataset.pkgType = (pkg.type || '').toUpperCase();
+                sel.appendChild(opt);
+            });
+            // Auto-chọn gói Non-Margin đầu tiên
+            var nonMargin = sorted.find(function(p) { return (p.type || '').toUpperCase() === 'N'; });
+            if (nonMargin) sel.value = String(nonMargin.id);
+        })
+        .catch(function(err) {
+            sel.innerHTML = '<option value="">Lỗi tải gói vay</option>';
+            console.warn('[LCNI DNSE] fetchLoanPackages error:', err);
+        });
+    }
+
+        function deleteTx(txId) {
         if (!confirm('Xoá giao dịch này?')) return;
         api('POST', '/portfolio/tx/delete', { tx_id: txId })
             .done(res => { if (res.success) loadPortfolio(activeId); });
@@ -858,6 +1012,10 @@
         // portfolio.js chỉ expose lcniOpenPortfolioTxModal mà không render gì.
         if (!document.getElementById('lcni-portfolio-app')) return;
 
+        // Init sticky cho DOM tĩnh (PHP render) trước khi data load
+        lcniPfInitTableSticky('#lcni-pf-holdings-table');
+        lcniPfInitTableSticky('#lcni-pf-tx-table');
+
         if (typeof Chart === 'undefined') {
             // Load Chart.js from CDN dynamically
             const s = document.createElement('script');
@@ -890,8 +1048,23 @@
 
         // Pass symbol + price opts when called from price-cell click
         // (e.g. LCNITransactionController.openModal({ symbol: "HPG", price: 25.4 }))
+        //
+        // QUAN TRỌNG: opts.price từ price-cell click là DB format (nghìn VNĐ, ví dụ 4.75)
+        // vì data-cell-value trong filter/watchlist/signal table lưu giá từ DB.
+        // Input #pf-tx-price cần full VNĐ (4750) để:
+        //   - hiển thị đúng cho user
+        //   - updateTotalPreview() tính đúng: qty * price (không cần *1000)
+        //   - vndPriceToDb() khi save chia /1000 trở lại DB format
         var preFill = null;
         if (opts.symbol || opts.price) {
+            // Convert DB format → full VNĐ nếu giá hợp lý là DB format (< 100000 và có phần thập phân)
+            // HPX 4.75 → 4750,  APG 6.63 → 6630,  VNM 70.5 → 70500
+            // Dấu hiệu DB format: giá < 1000 (giá cổ phiếu VN tối thiểu ~1000đ)
+            var rawPrice = parseFloat(opts.price) || 0;
+            var priceForInput = (rawPrice > 0 && rawPrice < 1000)
+                ? Math.round(rawPrice * 1000)   // DB format → full VNĐ
+                : rawPrice;                      // Đã là full VNĐ (do user nhập hoặc nguồn khác)
+
             preFill = {
                 // Mimic the tx record shape openTxModal() expects for pre-fill:
                 // id=null → treated as new transaction, not edit
@@ -900,7 +1073,7 @@
                 type:       opts.type || 'buy',
                 trade_date: new Date().toISOString().slice(0, 10),
                 quantity:   '',
-                price:      opts.price || '',
+                price:      priceForInput || '',
                 fee:        0,
                 tax:        0,
                 note:       '',
@@ -992,6 +1165,12 @@
                                     </select>
                                 </div>
                             </div>
+                            <div class="lcni-pf-form-group" id="pf-dnse-loan-pkg-group" style="display:none;">
+                                <label>Gói vay <span style="color:#9ca3af;font-size:11px;">(bắt buộc)</span></label>
+                                <select id="pf-dnse-loan-package">
+                                    <option value="">-- Chọn tài khoản trước --</option>
+                                </select>
+                            </div>
                             <div class="lcni-pf-dnse-note">
                                 Lệnh sẽ được gửi tới DNSE <strong>và</strong> lưu vào danh mục cùng lúc.
                             </div>
@@ -1042,8 +1221,13 @@
                     sel.appendChild(opt);
                 });
             }
+            // Show DNSE section
+            const dnseSec = document.getElementById('lcni-pf-dnse-order-section');
+            if (dnseSec) dnseSec.style.display = '';
             // Bind order-type change for standalone modal
             $('#pf-dnse-order-type').off('change.price').on('change.price', _syncPriceFieldToOrderType);
+            // FIX: Bind account change → re-fetch loan packages
+            $('#pf-dnse-account').off('change.loan').on('change.loan', fetchLoanPackagesForModal);
         }
     }
 

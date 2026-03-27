@@ -31,15 +31,6 @@ class LCNI_FilterAdmin {
         return [
             'inherit_style' => !empty($input['inherit_style']),
             'enable_hide_button' => !empty($input['enable_hide_button']),
-            'font_size' => max(10, min(24, (int) ($input['font_size'] ?? 13))),
-            'text_color' => sanitize_hex_color((string) ($input['text_color'] ?? '')) ?: '',
-            'background_color' => sanitize_hex_color((string) ($input['background_color'] ?? '')) ?: '',
-            'border_color' => sanitize_hex_color((string) ($input['border_color'] ?? '')) ?: '',
-            'border_width' => is_numeric($input['border_width'] ?? '') ? max(0, min(6, (int) $input['border_width'])) : '',
-            'border_radius' => is_numeric($input['border_radius'] ?? '') ? max(0, min(30, (int) $input['border_radius'])) : '',
-            'header_label_font_size' => is_numeric($input['header_label_font_size'] ?? '') ? max(10, min(30, (int) $input['header_label_font_size'])) : '',
-            'row_font_size' => is_numeric($input['row_font_size'] ?? '') ? max(10, min(30, (int) $input['row_font_size'])) : '',
-            'row_height' => max(24, min(64, (int) ($input['row_height'] ?? 36))),
             'saved_filter_label' => sanitize_text_field((string) ($input['saved_filter_label'] ?? 'Saved Filter')),
             'template_filter_label' => sanitize_text_field((string) ($input['template_filter_label'] ?? 'LCNi Filter Template')),
             'saved_filter_dropdown_bg' => sanitize_hex_color((string) ($input['saved_filter_dropdown_bg'] ?? '')) ?: '',
@@ -52,20 +43,9 @@ class LCNI_FilterAdmin {
             'panel_value_font_size' => is_numeric($input['panel_value_font_size'] ?? '') ? max(10, min(30, (int) $input['panel_value_font_size'])) : '',
             'panel_label_color' => sanitize_hex_color((string) ($input['panel_label_color'] ?? '')) ?: '',
             'panel_value_color' => sanitize_hex_color((string) ($input['panel_value_color'] ?? '')) ?: '',
-            'table_header_font_size' => is_numeric($input['table_header_font_size'] ?? '') ? max(10, min(30, (int) $input['table_header_font_size'])) : '',
-            'table_header_text_color' => sanitize_hex_color((string) ($input['table_header_text_color'] ?? '')) ?: '',
-            'table_header_background' => sanitize_hex_color((string) ($input['table_header_background'] ?? '')) ?: '',
-            'table_value_font_size' => is_numeric($input['table_value_font_size'] ?? '') ? max(10, min(30, (int) $input['table_value_font_size'])) : '',
-            'table_value_text_color' => sanitize_hex_color((string) ($input['table_value_text_color'] ?? '')) ?: '',
-            'table_value_background' => sanitize_hex_color((string) ($input['table_value_background'] ?? '')) ?: '',
-            'table_row_divider_color' => sanitize_hex_color((string) ($input['table_row_divider_color'] ?? '')) ?: '',
-            'table_row_divider_width' => is_numeric($input['table_row_divider_width'] ?? '') ? max(0, min(6, (int) $input['table_row_divider_width'])) : '',
             'sticky_column_count' => is_numeric($input['sticky_column_count'] ?? '') ? max(0, min(5, (int) $input['sticky_column_count'])) : 1,
             'sticky_column' => sanitize_key((string) ($input['sticky_column'] ?? 'symbol')),
             'sticky_header_rows' => is_numeric($input['sticky_header_rows'] ?? '') ? max(0, min(2, (int) $input['sticky_header_rows'])) : 1,
-            'table_header_row_height' => is_numeric($input['table_header_row_height'] ?? '') ? max(28, min(80, (int) $input['table_header_row_height'])) : 42,
-            'table_scroll_speed' => is_numeric($input['table_scroll_speed'] ?? '') ? max(1, min(5, (int) $input['table_scroll_speed'])) : 1,
-            'row_hover_background' => sanitize_hex_color((string) ($input['row_hover_background'] ?? '')) ?: '',
             'conditional_value_colors' => is_string($rules) ? $rules : '[]',
         ];
     }
@@ -119,6 +99,7 @@ class LCNI_FilterAdmin {
         $filter_login_page_id = absint(get_option('lcni_filter_login_page_id', 0));
         $filter_register_page_id = absint(get_option('lcni_filter_register_page_id', 0));
         $filter_page_slug = sanitize_title((string) get_option('lcni_filter_link_page', 'sug-filter'));
+        $performance_page_id = absint(get_option('lcni_performance_page_id', 0));
         ?>
         <div id="<?php echo esc_attr($tab_id); ?>" class="lcni-sub-tab-content">
             <div class="lcni-sub-tab-nav" id="lcni-filter-sub-tabs">
@@ -206,33 +187,13 @@ class LCNI_FilterAdmin {
                     <p><label><input type="checkbox" name="lcni_filter_style_config[enable_hide_button]" value="1" <?php checked(!empty($style['enable_hide_button'])); ?>> Enable panel hide button</label></p>
                     <p><label>Saved filter label <input type="text" name="lcni_filter_style_config[saved_filter_label]" value="<?php echo esc_attr((string) ($style['saved_filter_label'] ?? 'Saved Filter')); ?>"></label></p>
                     <p><label>LCNi template label <input type="text" name="lcni_filter_style_config[template_filter_label]" value="<?php echo esc_attr((string) ($style['template_filter_label'] ?? 'LCNi Filter Template')); ?>"></label></p>
-                    <p><label>Font size <input type="number" name="lcni_filter_style_config[font_size]" value="<?php echo esc_attr((string) $style['font_size']); ?>"></label></p>
-                    <p><label>Text color <input type="color" name="lcni_filter_style_config[text_color]" value="<?php echo esc_attr((string) $style['text_color']); ?>"></label></p>
-                    <p><label>Background color <input type="color" name="lcni_filter_style_config[background_color]" value="<?php echo esc_attr((string) $style['background_color']); ?>"></label></p>
-                    <p><label>Border color <input type="color" name="lcni_filter_style_config[border_color]" value="<?php echo esc_attr((string) ($style['border_color'] ?? '#e5e7eb')); ?>"></label></p>
-                    <p><label>Border width <input type="number" name="lcni_filter_style_config[border_width]" value="<?php echo esc_attr((string) ($style['border_width'] ?? 1)); ?>"></label></p>
-                    <p><label>Border radius <input type="number" name="lcni_filter_style_config[border_radius]" value="<?php echo esc_attr((string) ($style['border_radius'] ?? 8)); ?>"></label></p>
-                    <p><label>Header label font size <input type="number" name="lcni_filter_style_config[header_label_font_size]" value="<?php echo esc_attr((string) ($style['header_label_font_size'] ?? 12)); ?>"></label></p>
-                    <p><label>Row font size <input type="number" name="lcni_filter_style_config[row_font_size]" value="<?php echo esc_attr((string) ($style['row_font_size'] ?? 13)); ?>"></label></p>
-                    <p><label>Row height <input type="number" name="lcni_filter_style_config[row_height]" value="<?php echo esc_attr((string) $style['row_height']); ?>"></label></p>
                     <p><label>Panel label font size <input type="number" name="lcni_filter_style_config[panel_label_font_size]" value="<?php echo esc_attr((string) ($style['panel_label_font_size'] ?? 13)); ?>"></label></p>
                     <p><label>Panel label color <input type="color" name="lcni_filter_style_config[panel_label_color]" value="<?php echo esc_attr((string) ($style['panel_label_color'] ?? '#111827')); ?>"></label></p>
                     <p><label>Panel value font size <input type="number" name="lcni_filter_style_config[panel_value_font_size]" value="<?php echo esc_attr((string) ($style['panel_value_font_size'] ?? 13)); ?>"></label></p>
                     <p><label>Panel value color <input type="color" name="lcni_filter_style_config[panel_value_color]" value="<?php echo esc_attr((string) ($style['panel_value_color'] ?? '#374151')); ?>"></label></p>
-                    <p><label>Table header font size <input type="number" name="lcni_filter_style_config[table_header_font_size]" value="<?php echo esc_attr((string) ($style['table_header_font_size'] ?? 12)); ?>"></label></p>
-                    <p><label>Table header text color <input type="color" name="lcni_filter_style_config[table_header_text_color]" value="<?php echo esc_attr((string) ($style['table_header_text_color'] ?? '#111827')); ?>"></label></p>
-                    <p><label>Table header background <input type="color" name="lcni_filter_style_config[table_header_background]" value="<?php echo esc_attr((string) ($style['table_header_background'] ?? '#f3f4f6')); ?>"></label></p>
-                    <p><label>Table value font size <input type="number" name="lcni_filter_style_config[table_value_font_size]" value="<?php echo esc_attr((string) ($style['table_value_font_size'] ?? 13)); ?>"></label></p>
-                    <p><label>Table value text color <input type="color" name="lcni_filter_style_config[table_value_text_color]" value="<?php echo esc_attr((string) ($style['table_value_text_color'] ?? '#111827')); ?>"></label></p>
-                    <p><label>Table value background <input type="color" name="lcni_filter_style_config[table_value_background]" value="<?php echo esc_attr((string) ($style['table_value_background'] ?? '#ffffff')); ?>"></label></p>
-                    <p><label>Row divider color <input type="color" name="lcni_filter_style_config[table_row_divider_color]" value="<?php echo esc_attr((string) ($style['table_row_divider_color'] ?? '#e5e7eb')); ?>"></label></p>
-                    <p><label>Row divider width <input type="number" name="lcni_filter_style_config[table_row_divider_width]" value="<?php echo esc_attr((string) ($style['table_row_divider_width'] ?? 1)); ?>"></label></p>
                     <p><label>Sticky column count <input type="number" name="lcni_filter_style_config[sticky_column_count]" value="<?php echo esc_attr((string) ($style['sticky_column_count'] ?? 1)); ?>"></label></p>
                     <p><label>Sticky column key (vd: symbol) <input type="text" name="lcni_filter_style_config[sticky_column]" value="<?php echo esc_attr((string) ($style['sticky_column'] ?? 'symbol')); ?>"></label></p>
                     <p><label>Sticky header rows <input type="number" name="lcni_filter_style_config[sticky_header_rows]" value="<?php echo esc_attr((string) ($style['sticky_header_rows'] ?? 1)); ?>"></label></p>
-                    <p><label>Table header row height <input type="number" name="lcni_filter_style_config[table_header_row_height]" value="<?php echo esc_attr((string) ($style['table_header_row_height'] ?? 42)); ?>"></label></p>
-                    <p><label>Table horizontal scroll speed <input type="number" min="1" max="5" name="lcni_filter_style_config[table_scroll_speed]" value="<?php echo esc_attr((string) ($style['table_scroll_speed'] ?? 1)); ?>"></label></p>
-                    <p><label>Row hover background <input type="color" name="lcni_filter_style_config[row_hover_background]" value="<?php echo esc_attr((string) ($style['row_hover_background'] ?? '#eef2ff')); ?>"></label></p>
                     <p><label>Saved filter dropdown background <input type="color" name="lcni_filter_style_config[saved_filter_dropdown_bg]" value="<?php echo esc_attr((string) ($style['saved_filter_dropdown_bg'] ?? '#ffffff')); ?>"></label></p>
                     <p><label>Saved filter dropdown text color <input type="color" name="lcni_filter_style_config[saved_filter_dropdown_text]" value="<?php echo esc_attr((string) ($style['saved_filter_dropdown_text'] ?? '#111827')); ?>"></label></p>
                     <p><label>Saved filter dropdown border color <input type="color" name="lcni_filter_style_config[saved_filter_dropdown_border]" value="<?php echo esc_attr((string) ($style['saved_filter_dropdown_border'] ?? '#d1d5db')); ?>"></label></p>
@@ -314,6 +275,41 @@ class LCNI_FilterAdmin {
                             <option value="0">-- Mặc định WordPress register --</option>
                             <?php foreach ($pages as $page) : ?>
                                 <option value="<?php echo esc_attr((string) absint($page->ID)); ?>" <?php selected(absint($page->ID), $filter_register_page_id); ?>><?php echo esc_html($page->post_title); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </p>
+                    <h4>Trang Performance (cho nút "Xem thống kê" trong [lcni_rule_follow])</h4>
+                    <p>Trang này phải có shortcode <code>[lcni_performance_v2 rule_id="1"]</code>. Rule ID sẽ được truyền tự động qua URL parameter.</p>
+                    <p>
+                        <label style="display:block;margin-bottom:6px;">Performance page</label>
+                        <select name="lcni_performance_page_id">
+                            <option value="0">-- Chọn page --</option>
+                            <?php foreach ($pages as $page) : ?>
+                                <option value="<?php echo esc_attr((string) absint($page->ID)); ?>" <?php selected(absint($page->ID), $performance_page_id); ?>><?php echo esc_html($page->post_title); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </p>
+                    <h4>Trang Signals Rule (cho nút 📋 trong [lcni_rule_follow])</h4>
+                    <p>Trang này phải có shortcode <code>[lcni_signals_rule rule_id="1"]</code>. Rule ID sẽ được truyền tự động qua <code>?rule_id=X</code>.</p>
+                    <p>
+                        <label style="display:block;margin-bottom:6px;">Signals Rule page</label>
+                        <?php $sig_rule_page_id = absint( get_option('lcni_signals_rule_page_id', 0) ); ?>
+                        <select name="lcni_signals_rule_page_id">
+                            <option value="0">-- Chọn page --</option>
+                            <?php foreach ($pages as $page) : ?>
+                                <option value="<?php echo esc_attr((string) absint($page->ID)); ?>" <?php selected(absint($page->ID), $sig_rule_page_id); ?>><?php echo esc_html($page->post_title); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </p>
+                    <h4>Trang Chiến lược tự động (nút ⚙ Tự động trong [lcni_rule_follow])</h4>
+                    <p>Trang này cần có shortcode <code>[lcni_user_rule]</code>. Khi nhấn nút Tự động, rule sẽ được nạp sẵn và bỏ qua bước chọn rule.</p>
+                    <p>
+                        <label style="display:block;margin-bottom:6px;">User Rule page</label>
+                        <?php $ur_page_id = absint( get_option('lcni_user_rule_page_id', 0) ); ?>
+                        <select name="lcni_user_rule_page_id">
+                            <option value="0">-- Chọn page --</option>
+                            <?php foreach ($pages as $page) : ?>
+                                <option value="<?php echo esc_attr((string) absint($page->ID)); ?>" <?php selected(absint($page->ID), $ur_page_id); ?>><?php echo esc_html($page->post_title); ?></option>
                             <?php endforeach; ?>
                         </select>
                     </p>

@@ -21,8 +21,8 @@
  *   openModal()
  *     → validate()
  *     → submit()
- *         → if Manual  : LCNIOrderService.savePortfolioTx()  → REST /portfolio/tx/add
- *         → if Broker  : DNSEOrderService.sendOrder()        → DNSE API
+ *         → if Manual  : _savePortfolioTx()          → REST /portfolio/tx/add
+ *         → if Broker  : DNSEOrderService.sendOrder() → DNSE API → _savePortfolioTx()
  *         → updatePortfolio() → lcniPortfolioReload() + lcniTxAdded event
  *
  * Fires CustomEvent 'lcniTxAdded' after successful save.
@@ -261,9 +261,16 @@
 
     buildModal();
 
+    // Giá từ price-cell click là DB format (nghìn VNĐ, ví dụ 4.75)
+    // Input lcni-tx-price cần full VNĐ (4750) để save + tính tổng đúng
+    var rawPrice = parseFloat(price) || 0;
+    var priceForInput = (rawPrice > 0 && rawPrice < 1000)
+      ? Math.round(rawPrice * 1000)
+      : rawPrice;
+
     _f('lcni-tx-symbol').value  = String(symbol).toUpperCase();
     _f('lcni-tx-type').value    = type || 'buy';
-    _f('lcni-tx-price').value   = price || '';
+    _f('lcni-tx-price').value   = priceForInput || '';
     _f('lcni-tx-qty').value     = '';
     _f('lcni-tx-fee').value     = '0';
     _f('lcni-tx-tax').value     = '0';
@@ -355,8 +362,16 @@
 
   /* ═══════════════════════════════════════════════════════════
      SUBMIT — unified pipeline
-     Manual  → LCNIOrderService.execute() → REST /portfolio/tx/add
-     Broker  → LCNIOrderService.execute() → DNSE + REST
+     Entry point: LCNITransactionController.submit()
+
+     Flow:
+       validate()
+         ↓
+       if sendDnse → DNSEOrderService.sendOrder()  → DNSE API
+         ↓
+       _savePortfolioTx()                          → REST /portfolio/tx/add
+         ↓
+       _triggerPortfolioUpdate()
   ═══════════════════════════════════════════════════════════ */
   function submit() {
     // Collect
@@ -376,7 +391,17 @@
     const dnseOrderType = _f('lcni-tx-dnse-order-type')?.value || 'LO';
     const dnseAccountEl = _f('lcni-tx-dnse-account');
     const dnseAccountType = (dnseAccountEl?.selectedOptions[0]?.dataset.type) || 'spot';
-    const sendDnse = dnseSend && !!dnseAccountNo && ['buy', 'sell'].includes(type) && orderType !== 'Manual';
+    // Extract bare account number from labels like "RocketX Deal (0001032017)" → "0001032017"
+    const _extractAcct = (raw) => {
+      if (!raw) return '';
+      const m = String(raw).match(/\(([^)]+)\)\s*$/);
+      return m ? m[1].trim() : String(raw).trim();
+    };
+    const dnseAccountNoBare = _extractAcct(dnseAccountNo || dnseAccountEl?.selectedOptions[0]?.text || '');
+    // Use the DNSE-specific order type (not the manual orderType field) to decide if we send
+    const dnseIsMarket = MARKET_ORDER_TYPES.has(dnseOrderType);
+    // Send to DNSE when: checkbox checked, account selected, buy/sell only, and not pure Manual
+    const sendDnse = dnseSend && !!(dnseAccountNoBare) && ['buy', 'sell'].includes(type) && dnseOrderType !== 'Manual';
 
     // Validate
     const error = validate({ symbol, portfolioId, qty, priceVnd, date, orderType });
@@ -388,57 +413,80 @@
     // Build order
     const order = {
       portfolioId, symbol, type, date, qty, priceVnd, fee, tax, note,
-      orderType, sendDnse, dnseAccountNo, dnseOrderType, dnseAccountType,
+      orderType, sendDnse,
+      dnseAccountNo:   dnseAccountNoBare,
+      dnseOrderType,
+      dnseAccountType,
     };
 
-    // Execute via unified pipeline
-    const svc = window.LCNIOrderService;
-    const promise = svc
-      ? svc.execute(order)
-      : _legacySave({ symbol, portfolioId, type, date, qty, priceVnd, fee, tax, note });
+    // Step 1: optional DNSE real order via DNSEOrderService (single service, no LCNIOrderService)
+    const dnseStep = sendDnse && window.DNSEOrderService
+      ? window.DNSEOrderService.sendOrder(order)
+      : Promise.resolve({ success: true, skipped: true });
 
-    promise
-      .then(res => {
-        if (res && res.success !== false) {
+    dnseStep
+      .then(dnseRes => {
+        // Nếu DNSE thất bại (không phải skipped), hiển thị lỗi và DỪNG — không ghi portfolio
+        if (sendDnse && !dnseRes.skipped && !dnseRes.success) {
+          const dnseErr = dnseRes.error || 'Đặt lệnh DNSE thất bại.';
+          _showError('❌ DNSE: ' + dnseErr + '\n\nGiao dịch KHÔNG được lưu vào danh mục.');
+          _setLoading(false);
+          return Promise.reject({ _handled: true });
+        }
+
+        // Step 2: chỉ lưu portfolio khi DNSE thành công hoặc Manual (skipped)
+        return _savePortfolioTx(order).then(txRes => ({ txRes, dnseRes }));
+      })
+      .then(({ txRes, dnseRes }) => {
+        if (txRes && txRes.success !== false) {
           closeModal();
           const label = type === 'buy' ? 'mua' : type === 'sell' ? 'bán' : type;
-          _showToast(`✅ Đã lưu GD ${label} ${symbol}`);
-          if (!svc) _triggerPortfolioUpdate(portfolioId, { symbol, type, priceVnd });
-          if (res.dnseError) console.warn('[LCNI] DNSE thất bại:', res.dnseError);
+          const dnseNote = (sendDnse && !dnseRes.skipped && dnseRes.success && dnseRes.data)
+            ? ` — Mã lệnh DNSE: ${dnseRes.data.order_id || ''}` : '';
+          _showToast(`✅ Đã lưu GD ${label} ${symbol}${dnseNote}`);
+          _triggerPortfolioUpdate(portfolioId, order);
         } else {
-          _showError((res && (res.data || res.message)) || 'Lỗi không xác định.');
+          _showError((txRes && (txRes.data || txRes.message)) || 'Lỗi không xác định.');
         }
       })
       .catch(err => {
+        // _handled = lỗi DNSE đã được xử lý ở trên → bỏ qua
+        if (err && err._handled) return;
         _showError((err && err.message) ? err.message : 'Không kết nối được server.');
       })
       .finally(() => _setLoading(false));
   }
 
   /* ═══════════════════════════════════════════════════════════
-     LEGACY SAVE  (direct fetch — fallback when LCNIOrderService absent)
+     SAVE PORTFOLIO TRANSACTION  (REST /portfolio/tx/add)
+     Direct fetch — no intermediate service wrapper.
   ═══════════════════════════════════════════════════════════ */
-  function _legacySave({ symbol, portfolioId, type, date, qty, priceVnd, fee, tax, note }) {
+  function _savePortfolioTx({ symbol, portfolioId, type, date, qty, priceVnd, fee, tax, note }) {
     return fetch(CFG.restUrl + '/portfolio/tx/add', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': CFG.nonce },
+      method:      'POST',
+      headers:     { 'Content-Type': 'application/json', 'X-WP-Nonce': CFG.nonce },
       credentials: 'same-origin',
       body: JSON.stringify({
         portfolio_id: portfolioId, symbol, type,
-        trade_date: date, quantity: qty,
-        price: vndToDb(priceVnd), fee, tax, note,
+        trade_date:   date,
+        quantity:     qty,
+        price:        vndToDb(priceVnd),
+        fee, tax, note,
       }),
-    }).then(r => r.json());
+    })
+    .then(async function (r) {
+      if (!r.ok) {
+        const text = await r.text();
+        throw new Error('Portfolio API Error: ' + text);
+      }
+      return r.json();
+    });
   }
 
   /* ═══════════════════════════════════════════════════════════
      PORTFOLIO UPDATE HOOKS
   ═══════════════════════════════════════════════════════════ */
   function _triggerPortfolioUpdate(portfolioId, order) {
-    if (window.LCNIOrderService) {
-      window.LCNIOrderService.updatePortfolio(portfolioId, order);
-      return;
-    }
     if (typeof window.lcniPortfolioReload === 'function') window.lcniPortfolioReload();
     window.dispatchEvent(new CustomEvent('lcniTxAdded', {
       detail: { portfolioId, symbol: order.symbol, type: order.type, price: order.priceVnd },
@@ -705,13 +753,13 @@
     closeModal,
     bindEvents,
     handleOrderTypeChange,
-    normalizePrice,       // STEP 3 — public: used by external callers
+    normalizePrice,
     validate,
     submit,
     // Backward-compat aliases
     validateTransaction:  validate,
     submitTransaction:    submit,
-    saveTransaction:      _legacySave,
+    saveTransaction:      _savePortfolioTx,
     updatePortfolio:      _triggerPortfolioUpdate,
   };
 

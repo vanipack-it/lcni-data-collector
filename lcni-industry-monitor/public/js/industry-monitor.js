@@ -55,11 +55,7 @@
         var wrap = root.querySelector('.lcni-industry-monitor__table-wrap');
         var table = root.querySelector('.lcni-industry-monitor__table');
         var metricEl = root.querySelector('.lcni-industry-metric');
-        var dropdown = root.querySelector('.lcni-industry-monitor__metric-dropdown');
-        var toggle = root.querySelector('.lcni-industry-monitor__metric-toggle');
-        var menu = root.querySelector('.lcni-industry-monitor__metric-menu');
-        var search = root.querySelector('.lcni-industry-monitor__metric-search');
-        var optionsWrap = root.querySelector('.lcni-industry-monitor__metric-options');
+        var metricChipsEl = root.querySelector('.lcni-im-metric-chips');
         var headerRow = root.querySelector('.lcni-industry-header-row');
         var body = root.querySelector('.lcni-industry-body');
         var fullLinkWrap = root.querySelector('.lcni-industry-monitor__full-link-wrap');
@@ -67,7 +63,7 @@
 
         function postData(metric, limit, timeframe) {
             var form = new FormData();
-            form.append('action', 'lcni_industry_data');
+            form.append('action', config.ajaxAction || 'lcni_im_data');
             form.append('nonce', config.nonce);
             form.append('metric', metric);
             form.append('limit', String(limit));
@@ -75,19 +71,45 @@
             if (Array.isArray(config.idIcb2) && config.idIcb2.length) {
                 form.append('id_icb2', config.idIcb2.join(','));
             }
+            if (config.monitorId) {
+                form.append('monitorId', String(config.monitorId));
+            }
+            if (Array.isArray(config.symbols) && config.symbols.length) {
+                form.append('symbols', config.symbols.join(','));
+            }
+            // icb mode: gửi sync_symbols để server convert sang id_icb2
+            if (Array.isArray(config.syncSymbols) && config.syncSymbols.length) {
+                form.append('sync_symbols', config.syncSymbols.join(','));
+            }
 
             return fetch(config.ajaxUrl, { method: 'POST', credentials: 'same-origin', body: form }).then(function (response) {
                 return response.json();
             });
         }
 
-        function buildFilterUrl(industryName) {
+        function buildFilterUrl(rowLabel) {
             var base = config.filterBaseUrl || window.location.origin;
             var url;
             try { url = new URL(base, window.location.origin); } catch (e) { url = new URL(window.location.href); }
             url.searchParams.set('apply_filter', '1');
-            url.searchParams.set('name_icb2', industryName || '');
+            var paramKey = config.filterParamKey || 'name_icb2';
+            url.searchParams.set(paramKey, rowLabel || '');
             return url.toString();
+        }
+
+        // Broadcast symbol/industry khi click row — các module khác (filter, watchlist) có thể lắng nghe
+        function broadcastRowClick(rowLabel) {
+            var paramKey = config.filterParamKey || 'name_icb2';
+            var detail = { label: rowLabel, paramKey: paramKey, mode: config.mode || 'icb' };
+            // Custom event cho cùng page
+            document.dispatchEvent(new CustomEvent('lcni:im:rowclick', { detail: detail, bubbles: true }));
+            // Nếu mode=symbol: đồng bộ sang filter/watchlist shortcode trên cùng page
+            if (config.mode === 'symbol' && rowLabel) {
+                document.dispatchEvent(new CustomEvent('lcni:symbol:select', {
+                    detail: { symbol: rowLabel },
+                    bubbles: true
+                }));
+            }
         }
 
         function applyCellRules(td, value, metric) {
@@ -111,9 +133,10 @@
 
         function gradientColorForValue(value, min, max, rule) {
             if (!isFinite(value) || !isFinite(min) || !isFinite(max) || max <= min || !rule) return '';
-            var start = hexToRgb(rule.start_color);
-            var mid = hexToRgb(rule.mid_color);
-            var end = hexToRgb(rule.end_color);
+            // Hỗ trợ cả 2 naming conventions
+            var start = hexToRgb(rule.color_negative || rule.start_color);
+            var mid   = hexToRgb(rule.color_neutral  || rule.mid_color);
+            var end   = hexToRgb(rule.color_positive  || rule.end_color);
             if (!start || !mid || !end) return '';
             var normalized = (value - min) / (max - min);
             var smooth = normalized * normalized * (3 - (2 * normalized));
@@ -137,6 +160,40 @@
             wrap.style.maxHeight = Math.ceil(headerHeight + rowsHeight + borderWidth) + 'px';
         }
 
+        /**
+         * applyStickyColumnOffsets — tính và gán left chính xác cho multi sticky col.
+         * Chuẩn hệ thống LCNI: JS override inline style, CSS chỉ cần left:0 fallback.
+         */
+        function applyStickyColumnOffsets(host) {
+            var table = host ? host.querySelector('.lcni-table') : null;
+            if (!table) return;
+            var headerRow = table.querySelector('thead tr');
+            if (!headerRow) return;
+            var stickyThs = Array.prototype.slice.call(headerRow.querySelectorAll('th.is-sticky-col'));
+            if (!stickyThs.length) return;
+
+            // Reset trước để offsetWidth chính xác
+            stickyThs.forEach(function (th) { th.style.left = ''; });
+            table.querySelectorAll('tbody tr').forEach(function (tr) {
+                tr.querySelectorAll('th.is-sticky-col, td.is-sticky-col').forEach(function (cell) { cell.style.left = ''; });
+            });
+
+            var acc = 0;
+            var colOffsets = stickyThs.map(function (th) {
+                var off = acc;
+                acc += th.offsetWidth || 0;
+                return off;
+            });
+
+            stickyThs.forEach(function (th, i) { th.style.left = colOffsets[i] + 'px'; });
+            table.querySelectorAll('tbody tr').forEach(function (tr) {
+                var cells = Array.prototype.slice.call(tr.querySelectorAll('th.is-sticky-col, td.is-sticky-col'));
+                cells.forEach(function (cell, i) {
+                    if (i < colOffsets.length) cell.style.left = colOffsets[i] + 'px';
+                });
+            });
+        }
+
         function renderTable(data, metric) {
             if (!headerRow || !body) return;
 
@@ -144,7 +201,6 @@
             var rawColumns = Array.isArray(data.rawColumns) ? data.rawColumns : [];
             var columnCount = Math.max(displayColumns.length, rawColumns.length);
 
-            // ── Rebuild header ONLY when column count or metric changes ──────
             // Tránh reset header mỗi lần fetch → giữ sticky top + scroll position
             var prevColumnCount = Number(headerRow.getAttribute('data-col-count') || -1);
             var prevMetric = headerRow.getAttribute('data-metric') || '';
@@ -178,7 +234,7 @@
 
                 var industryName = row.industry || '';
                 var industryCell = document.createElement('th');
-                industryCell.className = 'lcni-industry-monitor__sticky-col';
+                industryCell.className = 'lcni-industry-monitor__sticky-col is-sticky-col';
                 industryCell.textContent = industryName;
                 tr.appendChild(industryCell);
 
@@ -203,13 +259,20 @@
 
                 tr.addEventListener('click', function () {
                     if (!industryName) return;
-                    window.location.href = buildFilterUrl(industryName);
+                    broadcastRowClick(industryName);
+                    // Chỉ navigate nếu filterBaseUrl được cấu hình
+                    if (config.filterBaseUrl && config.filterBaseUrl !== window.location.origin) {
+                        window.location.href = buildFilterUrl(industryName);
+                    }
                 });
 
                 body.appendChild(tr);
             });
 
             adjustTableViewport();
+            requestAnimationFrame(function () {
+                applyStickyColumnOffsets(root);
+            });
         }
 
         function loadData() {
@@ -233,52 +296,100 @@
             fullLinkWrap.hidden = false;
         }
 
-        function setupMetricDropdown() {
-            if (!dropdown || !toggle || !menu || !search || !metricEl || !optionsWrap) return;
+        function setupMetricChips() {
+            if (!metricChipsEl || !metricEl) return;
 
-            function selectMetric(value, label) {
+            function selectMetric(value) {
                 metricEl.value = value;
-                toggle.textContent = label;
-                menu.hidden = true;
-                if (config.initialPayload && value === String(config.defaultMetric || '')) {
-                    renderTable(config.initialPayload, value);
+
+                // Update active state
+                metricChipsEl.querySelectorAll('.lcni-im-mchip').forEach(function (chip) {
+                    chip.classList.toggle('is-active', chip.dataset.value === value);
+                });
+
+                // Dùng initialPayload nếu đây là metric mặc định VÀ payload có dữ liệu
+                var payload = config.initialPayload;
+                if (payload && value === String(config.defaultMetric || '')) {
+                    var hasData = Array.isArray(payload.columns) && payload.columns.length > 0;
                     config.initialPayload = null;
-                    return;
+                    if (hasData) {
+                        renderTable(payload, value);
+                        return;
+                    }
                 }
                 loadData();
             }
 
-            toggle.addEventListener('click', function () {
-                menu.hidden = !menu.hidden;
-                if (!menu.hidden) search.focus();
+            metricChipsEl.addEventListener('click', function (e) {
+                var chip = e.target.closest('.lcni-im-mchip');
+                if (!chip) return;
+                selectMetric(String(chip.dataset.value || ''));
             });
 
-            document.addEventListener('click', function (event) {
-                if (!dropdown.contains(event.target)) menu.hidden = true;
-            });
+            // Select default metric on init
+            var defaultValue = String(config.defaultMetric || '');
+            var defaultChip = metricChipsEl.querySelector('.lcni-im-mchip[data-value="' + defaultValue + '"]')
+                           || metricChipsEl.querySelector('.lcni-im-mchip');
+            if (defaultChip) selectMetric(String(defaultChip.dataset.value || ''));
 
-            optionsWrap.addEventListener('click', function (event) {
-                var target = event.target;
-                if (!target.classList.contains('lcni-industry-monitor__metric-option')) return;
-                selectMetric(String(target.dataset.value || ''), target.textContent || '');
-            });
+            // ── Symbol sync — hoạt động với cả mode icb và symbol ──
+            function onSymbolsChanged(symbols) {
+                if (!Array.isArray(symbols) || !symbols.length) return;
+                var newList = symbols
+                    .map(function(s) { return String(s || '').toUpperCase().trim(); })
+                    .filter(Boolean);
+                var key = config.mode === 'symbol' ? 'symbols' : 'syncSymbols';
+                var oldStr = (config[key] || []).slice().sort().join(',');
+                var newStr = newList.slice().sort().join(',');
+                if (oldStr === newStr) return;
+                config[key] = newList;
+                if (metricEl.value) loadData();
+            }
 
-            search.addEventListener('input', function () {
-                var query = String(search.value || '').toLowerCase();
-                optionsWrap.querySelectorAll('.lcni-industry-monitor__metric-option').forEach(function (option) {
-                    option.hidden = option.textContent.toLowerCase().indexOf(query) === -1;
-                });
+            document.addEventListener('lcni:symbolsChanged', function(e) {
+                if (e.detail && Array.isArray(e.detail.symbols)) onSymbolsChanged(e.detail.symbols);
             });
-
-            var defaultMetric = config.defaultMetric;
-            var firstOption = optionsWrap.querySelector('.lcni-industry-monitor__metric-option');
-            var selected = optionsWrap.querySelector('.lcni-industry-monitor__metric-option[data-value="' + defaultMetric + '"]') || firstOption;
-            if (selected) selectMetric(String(selected.dataset.value || ''), selected.textContent || '');
+            window.addEventListener('lcniWatchlistSymbolsChanged', function(e) {
+                if (Array.isArray(e.detail)) onSymbolsChanged(e.detail);
+            });
         }
 
-        setupMetricDropdown();
+        setupMetricChips();
         setupCompactFullLink();
         window.addEventListener('resize', adjustTableViewport);
+
+        // Touch scroll handler — sticky col/header hoạt động trên mobile
+        if (wrap && !wrap.dataset.touchBound) {
+            wrap.dataset.touchBound = '1';
+            var _sx=0, _sy=0, _sleft=0, _stop=0, _locked=null;
+            wrap.addEventListener('touchstart', function(e) {
+                var t = e.touches[0];
+                _sx = t.clientX; _sy = t.clientY;
+                _sleft = wrap.scrollLeft; _stop = wrap.scrollTop;
+                _locked = null;
+            }, {passive: true});
+            wrap.addEventListener('touchmove', function(e) {
+                if (e.touches.length !== 1) return;
+                var t = e.touches[0];
+                var dx = t.clientX - _sx, dy = t.clientY - _sy;
+                if (_locked === null) {
+                    if (Math.sqrt(dx*dx + dy*dy) < 8) return;
+                    _locked = Math.abs(dx) > Math.abs(dy);
+                }
+                if (_locked) {
+                    e.preventDefault();
+                    wrap.scrollLeft = _sleft - dx;
+                } else {
+                    var atTop = wrap.scrollTop <= 0;
+                    var atBot = wrap.scrollTop >= wrap.scrollHeight - wrap.clientHeight;
+                    if ((dy > 0 && atTop) || (dy < 0 && atBot)) return;
+                    e.preventDefault();
+                    wrap.scrollTop = _stop - dy;
+                }
+            }, {passive: false});
+            wrap.addEventListener('touchend',    function() { _locked = null; }, {passive: true});
+            wrap.addEventListener('touchcancel', function() { _locked = null; }, {passive: true});
+        }
     }
 
     document.addEventListener('DOMContentLoaded', function () {

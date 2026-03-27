@@ -17,6 +17,11 @@
             headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': CFG.nonce || '' },
             body: body ? JSON.stringify(body) : undefined,
         });
+        // Safe parse — prevents "Unexpected token <" when backend returns HTML error page
+        if (!res.ok) {
+            const text = await res.text();
+            throw new Error('DNSE API Error (' + res.status + '): ' + text.slice(0, 200));
+        }
         return res.json();
     }
     const GET  = (path)       => api('GET',  path);
@@ -124,94 +129,12 @@
         });
     }
 
+
+    // SIGNALS TAB REMOVED — tính năng này đã chuyển sang [lcni_rule_follow] Tab 2
+
     // =========================================================================
-    // SIGNALS TAB
-    // =========================================================================
 
-    async function renderSignalsTab(container, dashData) {
-        const content = container.querySelector('.lcni-dnse-content');
-        if (!content) return;
 
-        content.innerHTML = '<div class="lcni-dnse-loading">Đang tải signals...</div>';
-
-        const res = await GET('/signals');
-        if (!res.success) {
-            content.innerHTML = `<div class="lcni-dnse-error">${res.message || 'Lỗi tải signals'}</div>`;
-            return;
-        }
-
-        const signals     = res.signals || [];
-        const hasTrade    = res.has_trading;
-        const connected   = res.connected;
-        const accounts    = (res.accounts || []).map(a => ({
-            id: a.investorAccountNo || a.id || a.accountNo || '',
-            type: a.marginAccount ? 'margin' : 'spot',
-            typeName: a.accountTypeName || a.accountTypeBriefName || '',
-        })).filter(a => a.id);
-
-        if (!connected) {
-            content.innerHTML = '<p class="lcni-dnse-empty">Kết nối DNSE trước để xem signals.</p>';
-            return;
-        }
-
-        if (!signals.length) {
-            content.innerHTML = '<p class="lcni-dnse-empty">Không có signal nào đang mở. Recommend Rule sẽ tạo signal khi có điều kiện phù hợp.</p>';
-            return;
-        }
-
-        // Trading token warning
-        const tokenWarn = !hasTrade ? `
-        <div class="lcni-dnse-alert lcni-dnse-alert--warning" style="margin-bottom:14px">
-            ⚠ Trading token hết hạn — bạn cần xác thực OTP trong tab "Kết nối" trước khi đặt lệnh.
-        </div>` : '';
-
-        const rows = signals.map(s => {
-            const alreadyHeld = s.already_held;
-            const btnClass    = hasTrade ? 'lcni-dnse-btn--primary' : 'lcni-dnse-btn--secondary';
-            const btnDisabled = !hasTrade ? 'disabled' : '';
-
-            return `
-            <tr class="lcni-signal-row" data-signal='${JSON.stringify(s)}'>
-                <td class="lcni-dnse-symbol">${s.symbol}</td>
-                <td style="font-size:11px;color:#8b949e">${s.rule_name}</td>
-                <td>${fmt.price(s.entry_price)}</td>
-                <td>${fmt.price(s.suggested_price)}</td>
-                <td class="${pnlCls(s.pnl_pct)}">${fmt.pct(s.pnl_pct)}</td>
-                <td>${s.holding_days}d</td>
-                <td><span style="font-size:10px;background:rgba(255,255,255,.07);padding:2px 6px;border-radius:4px">${s.position_state}</span></td>
-                <td>
-                    ${alreadyHeld ? `<span class="lcni-dnse-badge lcni-dnse-badge--amber" style="margin-right:4px">Đang giữ</span>` : ''}
-                    <button class="lcni-dnse-btn lcni-dnse-btn--sm ${btnClass} lcni-order-btn-signal"
-                            data-signal-id="${s.signal_id}" ${btnDisabled}
-                            title="${hasTrade ? 'Đặt lệnh mua theo signal' : 'Cần OTP trước'}">
-                        📈 Mua
-                    </button>
-                </td>
-            </tr>`;
-        }).join('');
-
-        content.innerHTML = `
-        ${tokenWarn}
-        <div class="lcni-dnse-table-wrap lcni-table-wrapper">
-            <table class="lcni-dnse-table lcni-table lcni-table--dark">
-                <thead><tr>
-                    <th>Mã CK</th><th>Rule</th><th>Giá vào</th>
-                    <th>Giá hiện tại</th><th>% P/L</th><th>Ngày</th>
-                    <th>Trạng thái</th><th>Lệnh</th>
-                </tr></thead>
-                <tbody>${rows}</tbody>
-            </table>
-        </div>`;
-
-        // Bind order buttons
-        content.querySelectorAll('.lcni-order-btn-signal').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                const row    = btn.closest('.lcni-signal-row');
-                const signal = JSON.parse(row.dataset.signal);
-                await openOrderFormFromSignal(signal, accounts, container);
-            });
-        });
-    }
 
     // =========================================================================
     // ORDER FORM — từ Signal
@@ -227,14 +150,23 @@
         const btn = container.querySelector(`[data-signal-id="${signal.signal_id}"]`);
         if (btn) { btn.disabled = true; btn.textContent = 'Đang đặt...'; }
 
-        const res = await POST('/order', modal.orderData);
+        let res;
+        try {
+            res = await POST('/order', modal.orderData);
+        } catch (e) {
+            if (btn) { btn.disabled = false; btn.textContent = '📈 Mua'; }
+            showGlobalToast(`❌ ${e.message || 'Đặt lệnh thất bại.'}`, 'error');
+            return;
+        }
 
         if (btn) { btn.disabled = false; btn.textContent = '📈 Mua'; }
 
         if (res.success) {
-            showGlobalToast(`✅ ${res.message}`, 'success');
+            const msg = res.message || (res.data && res.data.message) || 'Đặt lệnh thành công.';
+            showGlobalToast(`✅ ${msg}`, 'success');
         } else {
-            showGlobalToast(`❌ ${res.message}`, 'error');
+            const err = res.error || res.message || 'Đặt lệnh thất bại.';
+            showGlobalToast(`❌ ${err}`, 'error');
         }
     }
 
@@ -281,6 +213,7 @@
                         <option value="ATO">ATO — Khớp ngay đầu phiên</option>
                         <option value="ATC">ATC — Khớp ngay cuối phiên</option>
                         <option value="MP">MP — Thị trường</option>
+                        <option value="PM">PM — Thị trường (phiên chiều)</option>
                     </select>
                 </div>
                 <div style="background:rgba(34,113,177,.1);border-radius:6px;padding:10px 12px;font-size:12px;color:#8b949e;margin-top:8px">
@@ -400,6 +333,7 @@
                             <option value="ATO">ATO — Mở cửa</option>
                             <option value="ATC">ATC — Đóng cửa</option>
                             <option value="MP">MP — Thị trường</option>
+                            <option value="PM">PM — Thị trường (phiên chiều)</option>
                         </select>
                     </div>
                 </div>
@@ -436,7 +370,7 @@
         const typeEl  = content.querySelector('#lcni-manual-type');
         const priceField = priceEl.closest('.lcni-dnse-field');
         typeEl.addEventListener('change', () => {
-            const noPrice = ['ATO','ATC','MP'].includes(typeEl.value);
+            const noPrice = ['ATO','ATC','MP','PM'].includes(typeEl.value);
             priceField.style.opacity = noPrice ? '0.4' : '1';
             priceEl.disabled = noPrice;
             if (noPrice) priceEl.value = '0';
@@ -446,7 +380,12 @@
         content.querySelector('#lcni-manual-order-btn').addEventListener('click', async () => {
             const acctEl   = content.querySelector('#lcni-manual-account');
             const acctTypeEl = content.querySelector('#lcni-manual-account-type');
-            const acctNo   = acctEl.value.trim().toUpperCase();
+            // Extract bare account number — supports both plain input and labels like "RocketX Deal (0001032017)"
+            const rawAcct  = acctEl.value.trim();
+            const acctNo   = (function(raw) {
+                const m = raw.match(/\(([^)]+)\)\s*$/);
+                return (m ? m[1].trim() : raw).toUpperCase();
+            })(rawAcct);
             const acctType = acctTypeEl
                 ? acctTypeEl.value
                 : (acctEl.options?.[acctEl.selectedIndex]?.dataset?.type || 'spot');
@@ -468,7 +407,7 @@
             if (!orderData.symbol) {
                 showGlobalToast('Vui lòng nhập mã chứng khoán.', 'error'); return;
             }
-            if (!['ATO','ATC','MP'].includes(orderData.order_type) && orderData.price <= 0) {
+            if (!['ATO','ATC','MP','PM'].includes(orderData.order_type) && orderData.price <= 0) {
                 showGlobalToast('Vui lòng nhập giá lệnh.', 'error'); return;
             }
             if (orderData.quantity <= 0) {
@@ -482,14 +421,24 @@
             btn.disabled = true;
             btn.textContent = 'Đang đặt lệnh...';
 
-            const res = await POST('/order', orderData);
+            let res;
+            try {
+                res = await POST('/order', orderData);
+            } catch (e) {
+                btn.disabled = false;
+                btn.textContent = 'Xem xác nhận →';
+                showGlobalToast(`❌ ${e.message || 'Đặt lệnh thất bại.'}`, 'error');
+                return;
+            }
             btn.disabled = false;
             btn.textContent = 'Xem xác nhận →';
 
             if (res.success) {
-                showGlobalToast(`✅ ${res.message}`, 'success');
+                const msg = res.message || (res.data && res.data.message) || 'Đặt lệnh thành công.';
+                showGlobalToast(`✅ ${msg}`, 'success');
             } else {
-                showGlobalToast(`❌ ${res.message || 'Đặt lệnh thất bại.'}`, 'error');
+                const err = res.error || res.message || 'Đặt lệnh thất bại.';
+                showGlobalToast(`❌ ${err}`, 'error');
             }
         });
     }
@@ -529,12 +478,7 @@
             // Thêm 2 tab mới
             const syncBtn = tabsEl.querySelector('[data-role="sync"]');
 
-            const signalTab = document.createElement('button');
-            signalTab.className = 'lcni-dnse-tab';
-            signalTab.dataset.tab = 'signals';
-            signalTab.textContent = '📊 Signals';
-            tabsEl.insertBefore(signalTab, syncBtn);
-
+            // Signals tab đã chuyển sang [lcni_rule_follow]
             const manualTab = document.createElement('button');
             manualTab.className = 'lcni-dnse-tab';
             manualTab.dataset.tab = 'manual';
@@ -544,16 +488,14 @@
             // Lấy accounts từ dashboard data
             let accountsCache = [];
 
-            // Override tab click để handle 2 tab mới
-            [signalTab, manualTab].forEach(btn => {
+            // Override tab click để handle manual order tab
+            [manualTab].forEach(btn => {
                 btn.addEventListener('click', async () => {
                     el.querySelectorAll('.lcni-dnse-tab').forEach(b =>
                         b.classList.toggle('lcni-dnse-tab--active', b === btn)
                     );
 
-                    if (btn.dataset.tab === 'signals') {
-                        await renderSignalsTab(el, null);
-                    } else if (btn.dataset.tab === 'manual') {
+                    if (btn.dataset.tab === 'manual') {
                         if (!accountsCache.length) {
                             try {
                                 // Ưu tiên accounts đã sync từ DB (qua /dashboard)
@@ -597,4 +539,128 @@
     } else {
         boot();
     }
+
+    // =========================================================================
+    // DNSEOrderService — global singleton used by LCNIOrderService.sendDnseOrder()
+    //
+    // Pipeline:
+    //   LCNITransactionController.submit()
+    //     → LCNIOrderService.execute()
+    //       → LCNIOrderService.sendDnseOrder()
+    //         → DNSEOrderService.sendOrder()   ← THIS
+    //           → POST /lcni/v1/dnse/order
+    // =========================================================================
+
+    /**
+     * Extract bare account number from a label like "RocketX Deal (0001032017)".
+     * Falls back to the raw string if no parenthetical group found.
+     *
+     * "RocketX Deal (0001032017)" → "0001032017"
+     * "0001032017"               → "0001032017"
+     */
+    function extractAccountNo(raw) {
+        if (!raw) return '';
+        const m = String(raw).match(/\(([^)]+)\)\s*$/);
+        return m ? m[1].trim() : String(raw).trim();
+    }
+
+    /**
+     * Map unified controller order → DNSE REST payload.
+     *
+     * Unified controller fields:
+     *   order.dnseAccountNo   — account label OR bare account number
+     *   order.dnseOrderType   — 'LO'|'ATO'|'ATC'|'MP'|'PM'
+     *   order.dnseAccountType — 'spot'|'margin'
+     *   order.symbol
+     *   order.type            — 'buy'|'sell'
+     *   order.priceVnd        — full VNĐ (e.g. 21500)
+     *   order.qty             — quantity
+     *
+     * DNSE REST payload fields (per DnseOrderRestController):
+     *   account_no, symbol, side, order_type, price (DB format), quantity,
+     *   loan_package_id, account_type
+     */
+    function buildDnsePayload(order) {
+        // DNSE API v1 market order types (price omitted): MP, MTL, MOK, MAK, ATO, ATC, PM
+        const MARKET_TYPES = new Set(['MP', 'MTL', 'MOK', 'MAK', 'ATO', 'ATC', 'PM']);
+
+        const accountNo  = extractAccountNo(order.dnseAccountNo || order.account_no || '');
+        const orderType  = (order.dnseOrderType || order.order_type || 'LO').toUpperCase();
+        const isMarket   = MARKET_TYPES.has(orderType);
+
+        // Price: DB format (divide VNĐ by 1000). Market orders → 0 (PHP side will unset)
+        const priceDb = isMarket ? 0 : parseFloat((parseFloat(order.priceVnd || order.price || 0) / 1000).toFixed(4));
+
+        return {
+            account_no:      accountNo,
+            symbol:          (order.symbol || '').toUpperCase(),
+            side:            (order.type === 'sell' ? 'sell' : 'buy'),
+            order_type:      orderType,
+            price:           priceDb,
+            quantity:        parseInt(order.qty || order.quantity || 0),
+            loan_package_id: order.loan_package_id || 0,
+            account_type:    order.dnseAccountType || order.account_type || 'spot',
+        };
+    }
+
+    window.DNSEOrderService = {
+        /**
+         * Send a real order to DNSE via the WordPress REST endpoint.
+         * Returns Promise<{success, data:{order_id, message}}>
+         */
+        sendOrder: function (order) {
+            const base   = (CFG.apiBase || '/wp-json/lcni/v1/dnse').replace(/\/dnse$/, '');
+            const nonce  = CFG.nonce || '';
+            const payload = buildDnsePayload(order);
+
+            if (!payload.account_no) {
+                return Promise.resolve({ success: false, data: 'Thiếu số tài khoản DNSE.' });
+            }
+            if (!payload.symbol) {
+                return Promise.resolve({ success: false, data: 'Thiếu mã chứng khoán.' });
+            }
+            if (payload.quantity <= 0) {
+                return Promise.resolve({ success: false, data: 'Khối lượng phải lớn hơn 0.' });
+            }
+
+            return fetch(base + '/dnse/order', {
+                method:      'POST',
+                headers:     { 'Content-Type': 'application/json', 'X-WP-Nonce': nonce },
+                credentials: 'same-origin',
+                body:        JSON.stringify(payload),
+            })
+            .then(async function (r) {
+                if (!r.ok) {
+                    const text = await r.text();
+                    throw new Error('DNSE API Error (' + r.status + '): ' + text.slice(0, 200));
+                }
+                return r.json();
+            })
+            .then(function (res) {
+                if (res && res.success) {
+                    return {
+                        success: true,
+                        data: {
+                            order_id: res.order_id || (res.data && res.data.order_id) || '',
+                            message:  res.message  || (res.data && res.data.message)  || 'Đặt lệnh thành công.',
+                        },
+                    };
+                }
+                return {
+                    success: false,
+                    error: res.error || res.message || 'Đặt lệnh DNSE thất bại.',
+                };
+            })
+            .catch(function (err) {
+                return {
+                    success: false,
+                    error: (err && err.message) ? err.message : 'Không kết nối được DNSE API.',
+                };
+            });
+        },
+
+        /** Expose helpers for testing / external use */
+        extractAccountNo: extractAccountNo,
+        buildDnsePayload:  buildDnsePayload,
+    };
 })();

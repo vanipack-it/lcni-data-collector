@@ -1,14 +1,8 @@
 .lcni-watchlist {
-  --lcni-watchlist-label-font-size: 12px;
-  --lcni-watchlist-row-font-size: 13px;
-  --lcni-watchlist-header-bg: #fff;
-  --lcni-watchlist-header-color: #111827;
-  --lcni-watchlist-value-bg: #fff;
-  --lcni-watchlist-value-color: #111827;
-  --lcni-watchlist-row-divider-color: #e5e7eb;
-  --lcni-watchlist-row-divider-width: 1px;
-  --lcni-watchlist-row-hover-bg: #f3f4f6;
-  --lcni-watchlist-head-height: 40px;
+  /* Table appearance vars (label-font-size, row-font-size, header-bg, etc.)
+     are now injected globally via LCNI_Table_Config into :root as --lcni-table-*
+     and aliased to --lcni-watchlist-* in class-lcni-table-config.php.
+     Only widget-specific vars remain here as local fallbacks. */
   --lcni-watchlist-dropdown-height: 34px;
   --lcni-watchlist-dropdown-width: 220px;
   --lcni-watchlist-dropdown-font-size: 13px;
@@ -35,17 +29,17 @@
 .lcni-watchlist-col-item { font-size:var(--lcni-watchlist-label-font-size); display:flex; align-items:center; gap:6px; padding:4px 6px; border:1px dashed transparent; border-radius:6px; }
 .lcni-watchlist-col-item span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .lcni-watchlist-col-item.is-dragging { opacity:.5; border-color:#9ca3af; }
-.lcni-watchlist-table-wrap { position:relative; overflow:auto; overscroll-behavior:contain; overscroll-behavior-x:contain; max-height:calc(100vh - 180px); -webkit-overflow-scrolling:touch; touch-action:pan-x pan-y; }
-.lcni-watchlist-table { width:100%; min-width:680px; border-collapse:separate; border-spacing:0; table-layout:auto; }
-.lcni-watchlist-table th, .lcni-watchlist-table td { border:0; border-bottom:var(--lcni-watchlist-row-divider-width) solid var(--lcni-watchlist-row-divider-color); padding:8px; white-space:nowrap; word-break:keep-all; }
-.lcni-watchlist-table th { font-size:var(--lcni-watchlist-label-font-size); background:var(--lcni-watchlist-header-bg); color:var(--lcni-watchlist-header-color); height:var(--lcni-watchlist-head-height); font-weight:400; }
-.lcni-watchlist-table td { font-size:var(--lcni-watchlist-row-font-size); background:var(--lcni-watchlist-value-bg); color:var(--lcni-watchlist-value-color); }
+.lcni-watchlist-table-wrap { position:relative; overflow:auto; overscroll-behavior:contain; overscroll-behavior-x:contain; max-height:var(--lcni-table-max-height, calc(100vh - 180px)); -webkit-overflow-scrolling:touch; touch-action:pan-x pan-y; }
+.lcni-watchlist-table { width:100%; min-width:680px; border-collapse:separate; border-spacing:0; table-layout:auto; font-size:var(--lcni-table-value-size,13px); }
+.lcni-watchlist-table th, .lcni-watchlist-table td { border:0; border-bottom:var(--lcni-watchlist-row-divider-width,1px) solid var(--lcni-watchlist-row-divider-color,#e5e7eb); padding:0 8px; white-space:nowrap; word-break:keep-all; }
+.lcni-watchlist-table th { font-size:var(--lcni-watchlist-label-font-size); background:var(--lcni-watchlist-header-bg); color:var(--lcni-watchlist-header-color); height:var(--lcni-table-header-height,42px); font-weight:400; }
+.lcni-watchlist-table td { font-size:var(--lcni-watchlist-row-font-size); background:var(--lcni-watchlist-value-bg); color:var(--lcni-watchlist-value-color); height:var(--lcni-table-row-height,36px); }
 .lcni-watchlist-table .is-sticky-col { position:sticky; left:0; z-index:3; background:var(--lcni-watchlist-value-bg); box-shadow:2px 0 0 rgba(229,231,235,.7); }
 .lcni-watchlist-table.has-sticky-header thead th{position:sticky;top:0;z-index:20;background:var(--lcni-watchlist-header-bg);box-shadow:inset 0 -1px 0 var(--lcni-watchlist-row-divider-color);border-left:0 !important;border-right:0 !important;}
 .lcni-watchlist-table.has-sticky-header thead .is-sticky-col{z-index:25;background:var(--lcni-watchlist-header-bg);box-shadow:2px 0 0 rgba(229,231,235,.7), inset 0 -1px 0 var(--lcni-watchlist-row-divider-color);}
-.lcni-watchlist-table tbody tr { cursor:pointer; transition:background-color .18s ease; }
-.lcni-watchlist-table tbody tr:hover td { background:var(--row-hover-bg, var(--lcni-watchlist-row-hover-bg)); }
-.lcni-watchlist-table tbody tr:hover .is-sticky-col { background:var(--row-hover-bg, var(--lcni-watchlist-row-hover-bg)); }
+.lcni-watchlist-table tbody tr { cursor:pointer; }
+.lcni-watchlist-table tbody tr:hover td { background:var(--lcni-row-hover-bg, var(--lcni-watchlist-row-hover-bg)) !important; }
+.lcni-watchlist-table tbody tr:hover .is-sticky-col { background:var(--lcni-row-hover-bg, var(--lcni-watchlist-row-hover-bg)) !important; }
 .lcni-watchlist-symbol { margin-right:6px; font-weight:600; }
 .lcni-watchlist-overlay { position:absolute; inset:0; background:rgba(255,255,255,.65); display:flex; align-items:center; justify-content:center; z-index:20; }
 .lcni-watchlist-overlay[hidden] { display:none; }

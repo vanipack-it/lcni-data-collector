@@ -29,13 +29,21 @@ class LCNI_DnseTrading_Module {
     /** @var LCNI_DnseOrderService */
     private $order_service;
 
+    /** @var LCNI_Dnse_Gmail_OAuth_Service */
+    private $gmail;
+
+    /** @var LCNI_DnseTradingRepository */
+    private $repo;
+
     public function __construct() {
         LCNI_DnseTradingRepository::maybe_create_tables();
 
         $repo                = new LCNI_DnseTradingRepository();
         $api                 = new LCNI_DnseTradingApiClient();
+        $this->repo          = $repo;
         $this->service       = new LCNI_DnseTradingService( $repo, $api );
         $this->order_service = new LCNI_DnseOrderService( $repo, $api );
+        $this->gmail         = new LCNI_Dnse_Gmail_OAuth_Service( $repo, $api );
 
         new LCNI_DnseTradingShortcode( $this->service, $this->order_service );
         // Admin page: render qua lcni-settings&tab=dnse_trading (không cần khởi tạo)
@@ -49,12 +57,13 @@ class LCNI_DnseTrading_Module {
     }
 
     public function register_all_routes(): void {
-        $repo = new LCNI_DnseTradingRepository();
-        $api  = new LCNI_DnseTradingApiClient();
-        $svc  = new LCNI_DnseTradingService( $repo, $api );
-        $ord  = new LCNI_DnseOrderService( $repo, $api );
+        $repo  = new LCNI_DnseTradingRepository();
+        $api   = new LCNI_DnseTradingApiClient();
+        $svc   = new LCNI_DnseTradingService( $repo, $api );
+        $ord   = new LCNI_DnseOrderService( $repo, $api );
+        $gmail = new LCNI_Dnse_Gmail_OAuth_Service( $repo, $api );
 
-        ( new LCNI_DnseTradingRestController( $svc ) )->register_routes();
+        ( new LCNI_DnseTradingRestController( $svc, $gmail, $repo ) )->register_routes();
         ( new LCNI_DnseOrderRestController( $ord, $svc ) )->register_routes();
     }
 
@@ -74,6 +83,23 @@ class LCNI_DnseTrading_Module {
         $tbl  = $wpdb->prefix . 'lcni_dnse_credentials';
         $now  = time();
 
+        // ── Gmail Auto-Renew trading token ────────────────────────────────
+        // Chỉ renew nếu token sắp hết hạn (< 30 phút) — không chạy đồng thời
+        // cho nhiều user để tránh Gmail rate limit
+        $renew_users = $this->repo->get_users_with_valid_jwt();
+        foreach ( $renew_users as $uid ) {
+            // Chỉ renew nếu user đã cấp quyền auto renew
+            if ( ! $this->repo->has_permission( (int) $uid, 'perm_auto_renew' ) ) {
+                continue;
+            }
+            $result = $this->gmail->auto_renew_trading_token( (int) $uid );
+            if ( is_wp_error( $result ) ) {
+                error_log( '[LCNI DNSE] Gmail auto-renew error: ' . $result->get_error_message() );
+            }
+        }
+
+        // ── Sync data bình thường ─────────────────────────────────────────
+        // Lấy users có JWT hợp lệ — bao gồm cả user vừa được re-login ở bước trên
         $prev = $wpdb->suppress_errors( true );
         $users = $wpdb->get_col(
             $wpdb->prepare(
@@ -81,7 +107,7 @@ class LCNI_DnseTrading_Module {
                  WHERE jwt_expires_at > %d
                  ORDER BY last_sync_at ASC
                  LIMIT 50",
-                $now
+                time()
             )
         ) ?: [];
         $wpdb->suppress_errors( $prev );

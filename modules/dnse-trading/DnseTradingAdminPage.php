@@ -43,8 +43,14 @@ class LCNI_DnseTradingAdminPage {
         return $extra !== '' ? $base . '&' . $extra : $base;
     }
 
+    private function sub_url( string $dtab ): string {
+        return $this->page_url( 'dtab=' . $dtab );
+    }
+
     public function render_page(): void {
-        $tab = isset( $_GET['tab'] ) ? sanitize_key( $_GET['tab'] ) : 'overview';
+        // Dùng 'dtab' (DNSE sub-tab) để tránh xung đột với 'tab' của class-lcni-settings.php
+        // class-lcni-settings whitelist tab= nhưng không biết về dtab=
+        $tab = isset( $_GET['dtab'] ) ? sanitize_key( $_GET['dtab'] ) : 'overview';
         $allowed_tabs = [ 'overview', 'settings', 'log' ];
         if ( ! in_array( $tab, $allowed_tabs, true ) ) {
             $tab = 'overview';
@@ -54,15 +60,15 @@ class LCNI_DnseTradingAdminPage {
             <h1>🔗 DNSE Trading Module</h1>
 
             <nav class="nav-tab-wrapper">
-                <a href="<?php echo esc_url( $this->page_url( 'tab=overview' ) ); ?>"
+                <a href="<?php echo esc_url( $this->sub_url( 'overview' ) ); ?>"
                    class="nav-tab <?php echo $tab === 'overview' ? 'nav-tab-active' : ''; ?>">
                     Tổng quan
                 </a>
-                <a href="<?php echo esc_url( $this->page_url( 'tab=settings' ) ); ?>"
+                <a href="<?php echo esc_url( $this->sub_url( 'settings' ) ); ?>"
                    class="nav-tab <?php echo $tab === 'settings' ? 'nav-tab-active' : ''; ?>">
                     Cài đặt
                 </a>
-                <a href="<?php echo esc_url( $this->page_url( 'tab=log' ) ); ?>"
+                <a href="<?php echo esc_url( $this->sub_url( 'log' ) ); ?>"
                    class="nav-tab <?php echo $tab === 'log' ? 'nav-tab-active' : ''; ?>">
                     Log
                 </a>
@@ -219,6 +225,20 @@ class LCNI_DnseTradingAdminPage {
                 'positions_cache_ttl'   => max( 1, min( 60, (int) ( $_POST['positions_cache_ttl'] ?? 5 ) ) ),
             ];
             update_option( 'lcni_dnse_trading_settings', $settings );
+
+            // Gmail OAuth credentials
+            if ( isset( $_POST['lcni_dnse_gmail_client_id'] ) ) {
+                update_option(
+                    LCNI_Dnse_Gmail_OAuth_Service::OPT_CLIENT_ID,
+                    sanitize_text_field( wp_unslash( $_POST['lcni_dnse_gmail_client_id'] ) )
+                );
+            }
+            if ( isset( $_POST['lcni_dnse_gmail_client_secret'] ) ) {
+                update_option(
+                    LCNI_Dnse_Gmail_OAuth_Service::OPT_CLIENT_SECRET,
+                    sanitize_text_field( wp_unslash( $_POST['lcni_dnse_gmail_client_secret'] ) )
+                );
+            }
             echo '<div class="notice notice-success is-dismissible"><p>Đã lưu cài đặt.</p></div>';
         }
 
@@ -306,6 +326,74 @@ class LCNI_DnseTradingAdminPage {
                     ?>
                 </tbody>
             </table>
+
+            <h2 style="margin-top:28px">📧 Gmail Auto-Renew Trading Token</h2>
+            <p class="description" style="margin-bottom:12px">
+                Cho phép hệ thống tự đọc email OTP từ DNSE để tự động gia hạn trading token mỗi 8 giờ.
+                User không cần nhập OTP thủ công. Cần tạo <strong>Google OAuth Client</strong> riêng
+                (khác với Google Login đã cấu hình).
+            </p>
+            <?php if ( ! class_exists( 'LCNI_Dnse_Gmail_OAuth_Service' ) ) : ?>
+                <div class="notice notice-warning inline"><p>
+                    ⚠️ DnseGmailOAuthService chưa load. Kiểm tra file
+                    <code>modules/dnse-trading/DnseGmailOAuthService.php</code> đã được upload chưa.
+                </p></div>
+            <?php else : ?>
+            <table class="form-table">
+                <tr>
+                    <th scope="row">Gmail OAuth Client ID</th>
+                    <td>
+                        <input type="text" name="lcni_dnse_gmail_client_id"
+                               value="<?php echo esc_attr( LCNI_Dnse_Gmail_OAuth_Service::get_client_id() ); ?>"
+                               class="regular-text"
+                               placeholder="xxxxxxxxxxxx-xxxxxx.apps.googleusercontent.com">
+                        <p class="description">
+                            Tạo tại <a href="https://console.cloud.google.com/apis/credentials" target="_blank">
+                            Google Cloud Console</a> → Credentials → Create Credentials →
+                            OAuth 2.0 Client ID → Application type: <strong>Web application</strong>.
+                        </p>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row">Gmail OAuth Client Secret</th>
+                    <td>
+                        <input type="password" name="lcni_dnse_gmail_client_secret"
+                               value="<?php echo esc_attr( LCNI_Dnse_Gmail_OAuth_Service::get_client_secret() ); ?>"
+                               class="regular-text"
+                               placeholder="GOCSPX-...">
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row">Authorized Redirect URI</th>
+                    <td>
+                        <code style="display:inline-block;padding:4px 8px;background:#f0f0f1;border-radius:3px">
+                            <?php echo esc_html( LCNI_Dnse_Gmail_OAuth_Service::get_redirect_uri() ); ?>
+                        </code>
+                        <p class="description">
+                            Copy URI này vào <strong>Authorized redirect URIs</strong> trong Google Cloud Console.
+                        </p>
+                        <button type="button" class="button button-small" style="margin-top:6px"
+                                onclick="navigator.clipboard.writeText(
+                                    '<?php echo esc_js( LCNI_Dnse_Gmail_OAuth_Service::get_redirect_uri() ); ?>'
+                                ).then(()=>this.textContent='✅ Đã copy').catch(()=>{})">
+                            📋 Copy URI
+                        </button>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row">Trạng thái</th>
+                    <td>
+                        <?php if ( LCNI_Dnse_Gmail_OAuth_Service::is_configured() ) : ?>
+                            <span style="color:#166534;font-weight:600">✅ Đã cấu hình.</span>
+                            User có thể kết nối Gmail trên trang DNSE Trading để bật auto-renew.
+                        <?php else : ?>
+                            <span style="color:#92400e;font-weight:600">⏳ Chưa cấu hình.</span>
+                            Nhập Client ID và Client Secret rồi lưu để bật tính năng.
+                        <?php endif; ?>
+                    </td>
+                </tr>
+            </table>
+            <?php endif; ?>
 
             <?php submit_button( 'Lưu cài đặt' ); ?>
         </form>
