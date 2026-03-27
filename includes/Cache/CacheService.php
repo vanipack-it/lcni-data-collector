@@ -39,6 +39,16 @@ class LCNI_CacheService {
         return $value;
     }
 
+    public function delete($key): void {
+        $cache_key = $this->buildCacheKey($key);
+        wp_cache_delete($cache_key, $this->group);
+        delete_transient($cache_key);
+    }
+
+    public function flush_group(): void {
+        wp_cache_flush_group($this->group);
+    }
+
     private function buildCacheKey($key) {
         return 'lcni:' . md5((string) $key);
     }
