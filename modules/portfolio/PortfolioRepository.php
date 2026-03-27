@@ -52,7 +52,13 @@ class LCNI_Portfolio_Repository {
                 $wpdb->query("ALTER TABLE {$t} ADD COLUMN dnse_order_id VARCHAR(50) NOT NULL DEFAULT '' AFTER note");
             }
             if ( ! in_array('source', $cols_t) ) {
-                $wpdb->query("ALTER TABLE {$t} ADD COLUMN source ENUM('manual','dnse') NOT NULL DEFAULT 'manual' AFTER dnse_order_id");
+                $wpdb->query("ALTER TABLE {$t} ADD COLUMN source ENUM('manual','dnse','user_rule') NOT NULL DEFAULT 'manual' AFTER dnse_order_id");
+            } else {
+                // Migrate: thêm 'user_rule' vào ENUM nếu chưa có
+                $col_def = $wpdb->get_row("SHOW COLUMNS FROM {$t} LIKE 'source'");
+                if ($col_def && strpos($col_def->Type, 'user_rule') === false) {
+                    $wpdb->query("ALTER TABLE {$t} MODIFY COLUMN source ENUM('manual','dnse','user_rule') NOT NULL DEFAULT 'manual'");
+                }
             }
         }
     }
@@ -276,7 +282,37 @@ class LCNI_Portfolio_Repository {
      * Lấy hoặc tạo portfolio DNSE cho account_no.
      * Mỗi account DNSE = 1 portfolio riêng (source='dnse').
      */
-    public function get_or_create_dnse_portfolio( int $user_id, string $account_no, string $account_type_name = '' ): int {
+    /**
+     * Tìm hoặc tạo portfolio Paper Trade cho 1 UserRule.
+     * Tên portfolio: "📄 {rule_name} (Paper)"
+     * source = 'manual', đánh dấu bằng meta user_rule_id trong note
+     */
+    public function get_or_create_user_rule_portfolio( int $user_id, int $rule_id, string $rule_name ): int {
+        $p    = $this->portfolios_table;
+        $name = '📄 ' . $rule_name . ' (Paper)';
+
+        // Tìm portfolio đã tạo cho rule này
+        $existing = $this->wpdb->get_var( $this->wpdb->prepare(
+            "SELECT id FROM {$p}
+             WHERE user_id=%d AND source='manual' AND name=%s LIMIT 1",
+            $user_id, $name
+        ) );
+
+        if ( $existing ) return (int) $existing;
+
+        // Tạo mới
+        $ok = $this->wpdb->insert( $p, [
+            'user_id'     => $user_id,
+            'name'        => $name,
+            'description' => 'Portfolio tự động từ chiến lược #' . $rule_id,
+            'is_default'  => 0,
+            'source'      => 'manual',
+        ] );
+
+        return $ok ? (int) $this->wpdb->insert_id : 0;
+    }
+
+        public function get_or_create_dnse_portfolio( int $user_id, string $account_no, string $account_type_name = '' ): int {
         global $wpdb;
         $table = $this->portfolios_table;
 
