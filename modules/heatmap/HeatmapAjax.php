@@ -64,6 +64,8 @@ class LCNI_Heatmap_Ajax {
                 'text_color' => sanitize_hex_color($cell['text_color'] ?? '#ffffff') ?: '#ffffff',
                 'count'      => count($symbols),
                 'symbols'    => $symbols,
+                // filter data để JS build URL mở trang filter với bộ lọc đúng
+                'filter'     => $filter,
             ];
         }
 
