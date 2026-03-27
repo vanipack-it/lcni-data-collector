@@ -2,7 +2,7 @@
 /*
 Plugin Name: LCNI Data Collector
 Description: LCNI Market Data Engine: lấy nến, lưu DB, cron auto update
-Version: 5.5.92
+Version: 26.3.23.0
 */
 
 if (!defined('ABSPATH')) {
@@ -16,7 +16,10 @@ define('LCNI_SEED_CRON_HOOK', 'lcni_seed_batch_cron');
 define('LCNI_SECDEF_DAILY_CRON_HOOK', 'lcni_sync_secdef_daily_cron');
 define('LCNI_RULE_REBUILD_CRON_HOOK', 'lcni_rule_rebuild_batch_cron');
 
+// Redis Cache Layer — phải load trước class-lcni-db.php
+require_once LCNI_PATH . 'includes/Cache/LCNI_RedisCache.php';
 require_once LCNI_PATH . 'includes/class-lcni-db.php';
+require_once LCNI_PATH . 'includes/class-lcni-table-config.php';
 require_once LCNI_PATH . 'includes/class-lcni-compute-control.php';
 require_once LCNI_PATH . 'includes/class-lcni-api.php';
 require_once LCNI_PATH . 'includes/class-lcni-seed-repository.php';
@@ -33,6 +36,22 @@ require_once LCNI_PATH . 'includes/class-lcni-button-style-config.php';
 require_once LCNI_PATH . 'includes/class-lcni-update-manager.php';
 require_once LCNI_PATH . 'includes/class-lcni-ohlc-latest-manager.php';
 require_once LCNI_PATH . 'includes/Cache/CacheService.php';
+
+// Đăng ký Redis cache groups — cho phép wp_cache_flush_group() hoạt động
+add_action('init', function() {
+    if (function_exists('wp_cache_add_global_groups')) {
+        wp_cache_add_global_groups([
+            LCNI_RedisCache::GRP_REF,
+            LCNI_RedisCache::GRP_OHLC_LATEST,
+            LCNI_RedisCache::GRP_MARKET_STATS,
+            LCNI_RedisCache::GRP_REST,
+            LCNI_RedisCache::GRP_STATIC,
+        ]);
+    }
+}, 1);
+require_once LCNI_PATH . 'includes/Cache/LCNI_CacheFlushController.php';
+$lcni_cache_flush_ctrl = new LCNI_CacheFlushController();
+$lcni_cache_flush_ctrl->register_hooks();
 require_once LCNI_PATH . 'includes/Permissions/AccessControl.php';
 require_once LCNI_PATH . 'includes/Repositories/StockRepository.php';
 require_once LCNI_PATH . 'includes/Services/IndicatorService.php';
@@ -66,6 +85,16 @@ require_once LCNI_PATH . 'modules/filter/FilterAdmin.php';
 require_once LCNI_PATH . 'modules/filter/FilterShortcode.php';
 require_once LCNI_PATH . 'modules/filter/class-lcni-filter-module.php';
 require_once LCNI_PATH . 'modules/chart-builder/ChartBuilderShortcode.php';
+// ── Notification System (load trước Member để welcome email hook sẵn sàng) ─
+require_once LCNI_PATH . 'includes/Notification/LCNINotificationManager.php';
+require_once LCNI_PATH . 'includes/Notification/LCNINotificationAdminPage.php';
+require_once LCNI_PATH . 'includes/Notification/LCNINotificationPreviewAjax.php';
+// Inbox (in-app notification)
+require_once LCNI_PATH . 'includes/Notification/LCNI_InboxDB.php';
+require_once LCNI_PATH . 'includes/Notification/LCNI_InboxRestAPI.php';
+require_once LCNI_PATH . 'includes/Notification/LCNI_InboxDispatcher.php';
+require_once LCNI_PATH . 'includes/Notification/LCNI_InboxModule.php';
+
 require_once LCNI_PATH . 'includes/Member/SaasRepository.php';
 require_once LCNI_PATH . 'includes/Member/SaasService.php';
 require_once LCNI_PATH . 'includes/Member/MemberSettingsPage.php';
@@ -76,7 +105,22 @@ require_once LCNI_PATH . 'includes/Member/PermissionMiddleware.php';
 require_once LCNI_PATH . 'includes/Member/MemberAdminUserFields.php';
 require_once LCNI_PATH . 'includes/Member/MemberPricingShortcode.php';
 require_once LCNI_PATH . 'includes/Member/GoogleOAuthHandler.php';
+require_once LCNI_PATH . 'includes/Member/DnseLoginHandler.php';
+require_once LCNI_PATH . 'includes/Member/UpgradeRequestRepository.php';
+require_once LCNI_PATH . 'includes/Member/UpgradeRequestService.php';
+require_once LCNI_PATH . 'includes/Member/UpgradeRequestShortcode.php';
+require_once LCNI_PATH . 'includes/Member/UpgradeRequestAdminPage.php';
+require_once LCNI_PATH . 'includes/Member/MemberAvatarHelper.php';
 require_once LCNI_PATH . 'includes/Member/MemberModule.php';
+
+// ── Marketing Module ──────────────────────────────────────────────────────────
+require_once LCNI_PATH . 'includes/Marketing/MarketingDB.php';
+require_once LCNI_PATH . 'includes/Marketing/MarketingRepository.php';
+require_once LCNI_PATH . 'includes/Marketing/MarketingService.php';
+require_once LCNI_PATH . 'includes/Marketing/MarketingRestController.php';
+require_once LCNI_PATH . 'includes/Marketing/MarketingAdminPage.php';
+require_once LCNI_PATH . 'includes/Marketing/MarketingShortcode.php';
+require_once LCNI_PATH . 'includes/Marketing/MarketingModule.php';
 require_once LCNI_PATH . 'modules/portfolio/PortfolioRepository.php';
 require_once LCNI_PATH . 'modules/portfolio/PortfolioService.php';
 require_once LCNI_PATH . 'modules/portfolio/PortfolioController.php';
@@ -99,33 +143,64 @@ require_once LCNI_PATH . 'includes/Recommend/ShortcodeManager.php';
 require_once LCNI_PATH . 'includes/Recommend/Admin/RecommendAdminPage.php';
 require_once LCNI_PATH . 'includes/Recommend/RuleFollowRepository.php';
 require_once LCNI_PATH . 'includes/Recommend/RuleFollowNotifier.php';
+add_action( 'lcni_send_queued_notification',        [ 'RuleFollowNotifier', 'handle_queued_notification' ] );
+add_action( 'lcni_send_queued_digest_notification', [ 'RuleFollowNotifier', 'handle_queued_digest_notification' ], 10, 5 );
 require_once LCNI_PATH . 'includes/Recommend/RuleFollowRestController.php';
 require_once LCNI_PATH . 'includes/Recommend/RuleFollowShortcode.php';
+require_once LCNI_PATH . 'includes/Recommend/PushServiceWorkerEndpoint.php';
 require_once LCNI_PATH . 'includes/Recommend/RecommendModule.php';
-// DNSE Trading Module — Giai đoạn 1
-require_once LCNI_PATH . 'modules/dnse-trading/DnseTradingRepository.php';
-require_once LCNI_PATH . 'modules/dnse-trading/DnseTradingApiClient.php';
-require_once LCNI_PATH . 'modules/dnse-trading/DnseTradingService.php';
-require_once LCNI_PATH . 'modules/dnse-trading/DnseTradingRestController.php';
-require_once LCNI_PATH . 'modules/dnse-trading/DnseTradingShortcode.php';
-require_once LCNI_PATH . 'modules/dnse-trading/DnseOrderService.php';
-require_once LCNI_PATH . 'modules/dnse-trading/DnseOrderRestController.php';
-require_once LCNI_PATH . 'modules/dnse-trading/DnseTradingAdminPage.php';  // ← thêm dòng này
-require_once LCNI_PATH . 'modules/dnse-trading/class-lcni-dnse-trading-module.php';
-new LCNI_DnseTrading_Module();
+
+// ── User Rule / Paper Trading Module ──────────────────────────────────────
+require_once LCNI_PATH . 'includes/UserRule/UserRuleDB.php';
+require_once LCNI_PATH . 'includes/UserRule/UserRuleRepository.php';
+require_once LCNI_PATH . 'includes/UserRule/UserRuleEngine.php';
+require_once LCNI_PATH . 'includes/UserRule/UserRuleRestController.php';
+require_once LCNI_PATH . 'includes/UserRule/UserRuleShortcode.php';
+require_once LCNI_PATH . 'includes/UserRule/UserRuleNotifier.php';
+require_once LCNI_PATH . 'includes/UserRule/UserRuleNotificationAdminPage.php';
+require_once LCNI_PATH . 'includes/UserRule/UserRuleModule.php';
+require_once LCNI_PATH . 'includes/UserStats/UserStatsRepository.php';
+require_once LCNI_PATH . 'includes/UserStats/UserStatsAdminPage.php';
+// DNSE Trading Module — Giai đoạn 1 + 2
+// Wrapped in try/catch: a fatal in any DNSE class must NOT kill the entire WP page
+try {
+    require_once LCNI_PATH . 'modules/dnse-trading/DnseGmailOAuthService.php';
+    require_once LCNI_PATH . 'modules/dnse-trading/DnseTradingRepository.php';
+    require_once LCNI_PATH . 'modules/dnse-trading/DnseTradingApiClient.php';
+    require_once LCNI_PATH . 'modules/dnse-trading/DnseTradingService.php';
+    require_once LCNI_PATH . 'modules/dnse-trading/DnseTradingRestController.php';
+    require_once LCNI_PATH . 'modules/dnse-trading/DnseTradingShortcode.php';
+    require_once LCNI_PATH . 'modules/dnse-trading/DnseOrderService.php';
+    require_once LCNI_PATH . 'modules/dnse-trading/DnseOrderRestController.php';
+    require_once LCNI_PATH . 'modules/dnse-trading/DnseTradingAdminPage.php';
+    require_once LCNI_PATH . 'modules/dnse-trading/class-lcni-dnse-trading-module.php';
+    new LCNI_DnseTrading_Module();
+} catch ( \Throwable $e ) {
+    error_log( '[LCNI] DNSE Trading Module failed to load: ' . $e->getMessage() );
+}
 require_once LCNI_PATH . 'includes/MarketDashboard/MarketDashboardRepository.php';
 require_once LCNI_PATH . 'includes/MarketDashboard/MarketDashboardRestController.php';
 require_once LCNI_PATH . 'includes/MarketDashboard/MarketDashboardShortcode.php';
 require_once LCNI_PATH . 'includes/MarketDashboard/MarketChartShortcode.php';
+// Gutenberg blocks — chỉ load trong admin (editor) để tránh overhead frontend
+if ( is_admin() || ( defined( 'REST_REQUEST' ) && REST_REQUEST ) ) {
+    require_once LCNI_PATH . 'blocks/blocks.php';
+}
 new LCNI_MarketDashboardShortcode();
 new LCNI_MarketChartShortcode();
 require_once LCNI_PATH . 'includes/class-lcni-industry-shortcodes.php';
 require_once LCNI_PATH . 'lcni-industry-monitor/includes/class-industry-data.php';
 require_once LCNI_PATH . 'lcni-industry-monitor/includes/class-industry-monitor.php';
 require_once LCNI_PATH . 'lcni-industry-monitor/admin/class-industry-settings.php';
+require_once LCNI_PATH . 'lcni-industry-monitor/includes/class-im-monitor-db.php';
+require_once LCNI_PATH . 'lcni-industry-monitor/includes/class-im-symbol-data.php';
+require_once LCNI_PATH . 'lcni-industry-monitor/includes/class-im-shortcode.php';
+require_once LCNI_PATH . 'lcni-industry-monitor/includes/class-im-admin.php';
+require_once LCNI_PATH . 'includes/CustomIndex/lcni-custom-index-loader.php';
+require_once LCNI_PATH . 'includes/Screenshot/ScreenshotModule.php';
 
 if (!defined('LCNI_INDUSTRY_MONITOR_VERSION')) {
-    define('LCNI_INDUSTRY_MONITOR_VERSION', '5.5.2');
+    define('LCNI_INDUSTRY_MONITOR_VERSION', '6.0.1');
 }
 
 if (!defined('LCNI_INDUSTRY_MONITOR_PATH')) {
@@ -152,11 +227,28 @@ function lcni_activate_plugin() {
     LCNI_DB::create_tables();
     LCNI_DB::run_pending_migrations();
     LCNI_Member_Module::activate();
+    LCNI_Marketing_Module::activate();
     LCNI_Portfolio_Module::activate();
     LCNI_Recommend_Module::activate();
+    UserRuleModule::activate();
     lcni_ensure_cron_scheduled();
     (new LCNI_Stock_Detail_Router())->register_rewrite_rule();
     flush_rewrite_rules();
+    // Tự động tạo API key cho cache flush nếu chưa có
+    lcni_maybe_generate_sync_api_key();
+}
+
+/**
+ * Tạo lcni_sync_api_key trong wp_options nếu chưa tồn tại.
+ * Gọi khi activate plugin và khi admin vào trang Settings.
+ */
+function lcni_maybe_generate_sync_api_key(): void {
+    if ( get_option( 'lcni_sync_api_key', '' ) !== '' ) {
+        return; // Đã có key, không ghi đè
+    }
+    // Tạo key 32 bytes = 64 hex chars, đủ mạnh cho HMAC-SHA256
+    $key = bin2hex( random_bytes( 32 ) );
+    add_option( 'lcni_sync_api_key', $key, '', 'no' ); // autoload=no
 }
 
 function lcni_ensure_plugin_tables() {
@@ -244,6 +336,19 @@ function lcni_register_frontend_core_assets() {
         $formatter_version,
         true
     );
+
+    // ── Table Engine Core ─────────────────────────────────────
+    // Sticky engine dùng chung cho mọi module (filter, watchlist, recommend...)
+    $engine_path = LCNI_PATH . 'assets/js/lcni-table-engine.js';
+    $engine_ver  = file_exists( $engine_path ) ? (string) filemtime( $engine_path ) : '1.0.0';
+    wp_register_script(
+        'lcni-table-engine',
+        LCNI_URL . 'assets/js/lcni-table-engine.js',
+        [ 'lcni-main-js' ],
+        $engine_ver,
+        true
+    );
+    wp_enqueue_script( 'lcni-table-engine' );
 
     $settings = LCNI_Data_Format_Settings::get_settings();
 
@@ -337,6 +442,8 @@ if ( LCNI_Compute_Control::is_enabled('lcni_compute_rule_rebuild') ) {
 
 add_action('plugins_loaded', 'lcni_ensure_plugin_tables');
 add_action('init', 'lcni_ensure_cron_scheduled');
+// Inject unified table CSS vars into <head> — priority 5, before module CSS
+LCNI_Table_Config::register_wp_head();
 
 // Market Context cron handlers
 add_action( 'lcni_market_context_sync_cron', function () {
@@ -374,6 +481,8 @@ add_action( 'lcni_market_context_backfill_cron', function () {
     }
 } );
 add_action('wp_enqueue_scripts', 'lcni_register_frontend_core_assets', 1);
+// Đảm bảo API key tồn tại kể cả khi plugin được deploy thủ công (không qua activate)
+add_action('admin_init', 'lcni_maybe_generate_sync_api_key', 5);
 add_action('wp_enqueue_scripts', 'lcni_enqueue_stock_detail_assets', 20);
 
 register_activation_hook(__FILE__, 'lcni_activate_plugin');
@@ -393,8 +502,24 @@ new LCNI_Chart_Builder_Shortcode();
 new LCNI_Update_Data_Page();
 new LCNI_Industry_Data_Page();
 new LCNI_Member_Module();
+new LCNI_Marketing_Module();
+new LCNINotificationAdminPage();
+new UserRuleNotificationAdminPage();
+new LCNINotificationPreviewAjax();
+// Inbox notification
+$lcni_inbox_module     = new LCNI_InboxModule();
+$lcni_inbox_module->register_hooks();
+$lcni_inbox_rest       = new LCNI_InboxRestAPI();
+$lcni_inbox_rest->register_hooks();
+$lcni_inbox_dispatcher = new LCNI_InboxDispatcher();
+$lcni_inbox_dispatcher->register_hooks();
 new LCNI_Portfolio_Module();
 new LCNI_Recommend_Module();
+new UserRuleModule();
+if ( is_admin() ) {
+    global $wpdb;
+    new LCNI_UserStatsAdminPage( new LCNI_UserStatsRepository( $wpdb ) );
+}
 new LCNI_Industry_Shortcodes();
 
 // Theme integration — chỉ kích hoạt khi Stock Dashboard Theme đang active
@@ -407,12 +532,15 @@ if ( $lcni_active_theme === 'stock-dashboard-theme' || get_template() === 'stock
     new LCNI_Theme_Integration_Module( $lcni_theme_service );
 }
 
-$lcni_industry_monitor = new LCNI_Industry_Monitor(new LCNI_Industry_Data());
-$lcni_industry_monitor->register_hooks();
+// Industry Monitor v2 — đa shortcode
+$lcni_im_shortcode = new LCNI_IM_Shortcode();
+$lcni_im_shortcode->register_hooks();
 
 if (is_admin()) {
     $lcni_industry_settings = new LCNI_Industry_Settings();
     $lcni_industry_settings->register_hooks();
+    $lcni_im_admin = new LCNI_IM_Admin();
+    $lcni_im_admin->register_hooks();
 }
 
 LCNI_Update_Manager::init();
