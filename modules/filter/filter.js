@@ -763,7 +763,7 @@
         wrap.style.contain    = 'none';
         wrap.style.isolation  = 'auto';
         wrap.style.willChange = 'auto';
-        wrap.style.webkitOverflowScrolling = 'auto';
+        wrap.style.webkitOverflowScrolling = isMobileViewport() ? 'touch' : 'auto';
         window.LcniTableEngine.observe(wrap, {
           sticky_columns: _stickyFirstCol ? 1 : 0,
           sticky_header:  _stickyHeader,
@@ -913,7 +913,7 @@
       wrap.style.contain    = 'none';
       wrap.style.isolation  = 'auto';
       wrap.style.willChange = 'auto';
-      wrap.style.webkitOverflowScrolling = 'auto';
+      wrap.style.webkitOverflowScrolling = isMobileViewport() ? 'touch' : 'auto';
       window.LcniTableEngine.recalcOffsets(wrap);
     } else {
       // Fallback nội bộ khi engine chưa load

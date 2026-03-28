@@ -258,7 +258,7 @@
    • .lcni-table-scroll: flex:1, overflow:auto (scroll container cho sticky)
    • Sticky header và sticky col hoạt động bên trong .lcni-table-scroll
    ═══════════════════════════════════════════════════════════════ */
-@media (max-width: 768px) {
+@media (max-width: 767px) {
 
   /* ── Container mobile ── */
   /* overflow:visible → KHÔNG tạo scroll context mới
@@ -281,9 +281,9 @@
     max-height: calc(100dvh - 160px) !important;
     height: auto !important;
     overflow: auto !important;
-    /* KHÔNG dùng -webkit-overflow-scrolling:touch — tạo isolated GPU layer
-       trên iOS → position:sticky bị nuốt vào layer, sticky col mất tác dụng */
-    -webkit-overflow-scrolling: auto !important;
+    overflow-x: auto !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
     touch-action: pan-x pan-y;
     overscroll-behavior: contain;
     /* will-change:auto tránh tạo compositing layer không cần thiết         */
