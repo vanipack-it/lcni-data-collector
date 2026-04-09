@@ -56,6 +56,7 @@ class LCNI_Recommend_DB {
             exit_time BIGINT UNSIGNED DEFAULT NULL,
             final_r DECIMAL(16,6) DEFAULT NULL,
             holding_days INT UNSIGNED NOT NULL DEFAULT 0,
+            exit_reason VARCHAR(20) DEFAULT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -91,6 +92,10 @@ class LCNI_Recommend_DB {
             max_r DECIMAL(16,6) DEFAULT NULL,
             min_r DECIMAL(16,6) DEFAULT NULL,
             avg_hold_days DECIMAL(16,6) NOT NULL DEFAULT 0,
+            avg_win_r DECIMAL(16,6) NOT NULL DEFAULT 0,
+            avg_loss_r DECIMAL(16,6) NOT NULL DEFAULT 0,
+            profit_factor DECIMAL(16,6) NOT NULL DEFAULT 0,
+            kelly_pct DECIMAL(16,6) NOT NULL DEFAULT 0,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (rule_id)
         ) {$charset_collate};");
@@ -149,7 +154,23 @@ class LCNI_Recommend_DB {
             $wpdb->query("UPDATE {$rule_table} SET max_loss_pct = initial_sl_pct WHERE max_loss_pct <= 0");
         }
 
+        // v5.5.1 — new performance metrics columns
+        $perf_table = $wpdb->prefix . 'lcni_recommend_performance';
+        foreach (['avg_win_r', 'avg_loss_r', 'profit_factor', 'kelly_pct'] as $perf_col) {
+            $col_exists = $wpdb->get_var("SHOW COLUMNS FROM {$perf_table} LIKE '{$perf_col}'");
+            if (!$col_exists) {
+                $wpdb->query("ALTER TABLE {$perf_table} ADD COLUMN {$perf_col} DECIMAL(16,6) NOT NULL DEFAULT 0");
+            }
+        }
+
         $signal_table = $wpdb->prefix . 'lcni_recommend_signal';
+
+        // v5.5.2 — exit_reason field
+        $exit_reason_exists = $wpdb->get_var("SHOW COLUMNS FROM {$signal_table} LIKE 'exit_reason'");
+        if (!$exit_reason_exists) {
+            $wpdb->query("ALTER TABLE {$signal_table} ADD COLUMN exit_reason VARCHAR(20) DEFAULT NULL AFTER holding_days");
+        }
+
         $timeframe_exists = $wpdb->get_var("SHOW COLUMNS FROM {$signal_table} LIKE 'timeframe'");
         if (!$timeframe_exists) {
             $wpdb->query("ALTER TABLE {$signal_table} ADD COLUMN timeframe VARCHAR(20) NOT NULL DEFAULT '1D' AFTER symbol");

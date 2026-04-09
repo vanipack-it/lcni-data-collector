@@ -15,6 +15,10 @@ class PerformanceCalculator {
         $this->performance_table = $wpdb->prefix . 'lcni_recommend_performance';
     }
 
+    public function get_last_db_error(): string {
+        return (string) ( $this->wpdb->last_error ?? '' );
+    }
+
     public function refresh_all() {
         $rule_ids = $this->wpdb->get_col("SELECT DISTINCT rule_id FROM {$this->signal_table}");
         foreach ((array) $rule_ids as $rule_id) {
@@ -64,25 +68,171 @@ class PerformanceCalculator {
             }
         }
 
-        $winrate = $closed_total > 0 ? $win / $closed_total : 0;
-        $avg_r = $closed_total > 0 ? $sum_r / $closed_total : 0;
-        $avg_hold = $closed_total > 0 ? $sum_hold / $closed_total : 0;
-        $avg_win_r = $win > 0 ? $sum_win_r / $win : 0;
+        $winrate    = $closed_total > 0 ? $win / $closed_total : 0;
+        $lossrate   = 1 - $winrate;
+        $avg_r      = $closed_total > 0 ? $sum_r / $closed_total : 0;
+        $avg_hold   = $closed_total > 0 ? $sum_hold / $closed_total : 0;
+        $avg_win_r  = $win  > 0 ? $sum_win_r  / $win  : 0;
         $avg_loss_r = $lose > 0 ? $sum_loss_r / $lose : 0;
-        $expectancy = ($winrate * $avg_win_r) - ((1 - $winrate) * $avg_loss_r);
+        $expectancy = ($winrate * $avg_win_r) - ($lossrate * $avg_loss_r);
+
+        // Profit Factor = gross profit / gross loss
+        if ($sum_loss_r > 0) {
+            $profit_factor = $sum_win_r / $sum_loss_r;
+        } elseif ($sum_win_r > 0) {
+            $profit_factor = 99.0; // infinite — no losses
+        } else {
+            $profit_factor = 0.0;
+        }
+
+        // Kelly % = W - (L / (avg_win_r / avg_loss_r))
+        // Clamped to [0, 1]. Half-Kelly is recommended in practice.
+        $kelly_pct = 0.0;
+        if ($avg_win_r > 0 && $avg_loss_r > 0 && $winrate > 0) {
+            $raw_kelly = $winrate - ($lossrate / ($avg_win_r / $avg_loss_r));
+            $kelly_pct = max(0.0, min(1.0, $raw_kelly));
+        }
 
         $this->wpdb->replace($this->performance_table, [
-            'rule_id' => (int) $rule_id,
-            'total_trades' => (int) $all_signals_total,
-            'win_trades' => (int) $win,
-            'lose_trades' => (int) $lose,
-            'avg_r' => (float) $avg_r,
-            'winrate' => (float) $winrate,
-            'expectancy' => (float) $expectancy,
-            'max_r' => $max_r,
-            'min_r' => $min_r,
+            'rule_id'       => (int) $rule_id,
+            'total_trades'  => (int) $all_signals_total,
+            'win_trades'    => (int) $win,
+            'lose_trades'   => (int) $lose,
+            'avg_r'         => (float) $avg_r,
+            'winrate'       => (float) $winrate,
+            'expectancy'    => (float) $expectancy,
+            'max_r'         => $max_r,
+            'min_r'         => $min_r,
             'avg_hold_days' => (float) $avg_hold,
+            'avg_win_r'     => (float) $avg_win_r,
+            'avg_loss_r'    => (float) $avg_loss_r,
+            'profit_factor' => (float) $profit_factor,
+            'kelly_pct'     => (float) $kelly_pct,
         ]);
+    }
+
+    /**
+     * Return closed trades ordered by exit_time for equity-curve rendering.
+     * Each element: [ date, trade_r, cumulative_r, symbol ]
+     */
+    public function get_equity_curve( int $rule_id ): array {
+        // Kiểm tra cột exit_reason có tồn tại không (migration có thể chưa chạy)
+        $has_exit_reason = (bool) $this->wpdb->get_var(
+            "SHOW COLUMNS FROM {$this->signal_table} LIKE 'exit_reason'"
+        );
+
+        $select = $has_exit_reason
+            ? "SELECT symbol, entry_time, exit_time, final_r, holding_days, exit_reason"
+            : "SELECT symbol, entry_time, exit_time, final_r, holding_days";
+
+        $rows = $this->wpdb->get_results(
+            $this->wpdb->prepare(
+                "{$select}
+                 FROM {$this->signal_table}
+                 WHERE rule_id = %d AND status = 'closed' AND final_r IS NOT NULL
+                 ORDER BY exit_time ASC, entry_time ASC",
+                $rule_id
+            ),
+            ARRAY_A
+        );
+
+        if ( empty( $rows ) ) {
+            return [];
+        }
+
+        $cum    = 0.0;
+        $result = [];
+        foreach ( $rows as $row ) {
+            $r          = round( (float) $row['final_r'], 6 );
+            $cum        = round( $cum + $r, 6 );
+            $exit_date  = ( (int) $row['exit_time'] > 0 )
+                ? wp_date( 'Y-m-d', (int) $row['exit_time'], wp_timezone() )
+                : '';
+            $entry_date = ( (int) $row['entry_time'] > 0 )
+                ? wp_date( 'Y-m-d', (int) $row['entry_time'], wp_timezone() )
+                : '';
+            $exit_reason = (string) ( $row['exit_reason'] ?? '' );
+
+            $result[] = [
+                'date'         => $exit_date,
+                'entry_date'   => $entry_date,
+                'holding_days' => (int) $row['holding_days'],
+                'trade_r'      => $r,
+                'cumulative_r' => $cum,
+                'symbol'       => strtoupper( (string) $row['symbol'] ),
+                'exit_reason'  => $exit_reason,
+                'exit_label'   => ExitEngine::reason_label( $exit_reason ),
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
+     * Thống kê breakdown exit_reason cho một rule.
+     * Trả về: [ 'stop_loss' => N, 'max_loss' => N, 'take_profit' => N, 'max_hold' => N, 'unknown' => N ]
+     */
+    public function get_exit_reason_breakdown( int $rule_id ): array {
+        $known  = [ ExitEngine::REASON_STOP_LOSS, ExitEngine::REASON_MAX_LOSS, ExitEngine::REASON_TAKE_PROFIT, ExitEngine::REASON_MAX_HOLD ];
+        $result = array_fill_keys( $known, 0 );
+        $result['unknown'] = 0;
+
+        $has_exit_reason = (bool) $this->wpdb->get_var(
+            "SHOW COLUMNS FROM {$this->signal_table} LIKE 'exit_reason'"
+        );
+
+        if ( ! $has_exit_reason ) {
+            return $result;
+        }
+
+        $rows = $this->wpdb->get_results(
+            $this->wpdb->prepare(
+                "SELECT exit_reason, COUNT(*) AS cnt
+                 FROM {$this->signal_table}
+                 WHERE rule_id = %d AND status = 'closed'
+                 GROUP BY exit_reason",
+                $rule_id
+            ),
+            ARRAY_A
+        );
+
+        foreach ( (array) $rows as $row ) {
+            $reason = (string) ( $row['exit_reason'] ?? '' );
+            $cnt    = (int) ( $row['cnt'] ?? 0 );
+            if ( in_array( $reason, $known, true ) ) {
+                $result[ $reason ] += $cnt;
+            } else {
+                $result['unknown'] += $cnt;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Compute a composite 0–100 score for a rule's performance row.
+     * Weights: Expectancy 40 pts | Winrate 20 pts | Profit Factor 20 pts | Kelly 20 pts
+     */
+    public static function compute_score( array $perf ): float {
+        $expectancy    = (float) ( $perf['expectancy']    ?? 0 );
+        $winrate       = (float) ( $perf['winrate']       ?? 0 );
+        $profit_factor = (float) ( $perf['profit_factor'] ?? 0 );
+        $kelly_pct     = (float) ( $perf['kelly_pct']     ?? 0 );
+
+        $e_score  = min( 40.0, $expectancy * 15 );        // 2.67 R  → 40 pts
+        $w_score  = min( 20.0, $winrate    * 35 );        // 57 %    → 20 pts
+        $pf_score = ( $profit_factor > 1 )
+            ? min( 20.0, ( $profit_factor - 1 ) * 10 )   // PF 3    → 20 pts
+            : 0.0;
+        $k_score  = min( 20.0, $kelly_pct  * 60 );        // 33 %    → 20 pts
+
+        return max( 0.0, round( $e_score + $w_score + $pf_score + $k_score, 1 ) );
+    }
+
+    public static function score_badge( float $score ): string {
+        if ( $score >= 65 ) return 'good';
+        if ( $score >= 40 ) return 'neutral';
+        return 'weak';
     }
 
     public function list_performance($rule_id = 0) {

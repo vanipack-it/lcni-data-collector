@@ -52,29 +52,40 @@ class LCNI_Recommend_Signals_List_Table extends WP_List_Table {
 
     public function get_columns() {
         return [
-            'id' => 'ID',
-            'symbol' => 'Symbol',
-            'rule_name' => 'Rule',
-            'entry_date' => 'Entry Date',
-            'holding_days' => 'Số ngày nắm giữ',
-            'entry_price' => 'Entry',
+            'id'            => 'ID',
+            'symbol'        => 'Symbol',
+            'rule_name'     => 'Rule',
+            'entry_date'    => 'Entry Date',
+            'holding_days'  => 'Số ngày nắm giữ',
+            'entry_price'   => 'Entry',
             'current_price' => 'Current',
-            'r_multiple' => 'R',
-            'position_state' => 'State',
-            'status' => 'Status',
+            'r_multiple'    => 'R',
+            'position_state'=> 'State',
+            'status'        => 'Status',
+            'exit_reason'   => 'Lý do thoát',
         ];
     }
 
     public function prepare_items() {
-        $columns = $this->get_columns();
-        $hidden = [];
+        $columns  = $this->get_columns();
+        $hidden   = [];
         $sortable = [];
         $this->_column_headers = [$columns, $hidden, $sortable];
         $this->items = $this->items_data;
     }
 
     protected function column_default($item, $column_name) {
-        return esc_html((string) ($item[$column_name] ?? ''));
+        if ( $column_name === 'exit_reason' ) {
+            $reason = (string) ( $item['exit_reason'] ?? '' );
+            $map    = [
+                'stop_loss'   => '<span style="color:#dc2626;font-weight:600;">🛑 Cắt lỗ SL</span>',
+                'max_loss'    => '<span style="color:#dc2626;font-weight:600;">⚠️ Cắt lỗ tối đa</span>',
+                'take_profit' => '<span style="color:#16a34a;font-weight:600;">✅ Chốt lời</span>',
+                'max_hold'    => '<span style="color:#d97706;font-weight:600;">⏱ Hết thời gian</span>',
+            ];
+            return $map[$reason] ?? ( $reason !== '' ? esc_html( $reason ) : '—' );
+        }
+        return esc_html( (string) ( $item[$column_name] ?? '' ) );
     }
 }
 
@@ -88,15 +99,21 @@ class LCNI_Recommend_Performance_List_Table extends WP_List_Table {
 
     public function get_columns() {
         return [
-            'rule_name' => 'Rule',
-            'total_trades' => 'Total',
-            'win_trades' => 'Win',
-            'lose_trades' => 'Lose',
-            'winrate' => 'Winrate',
-            'avg_r' => 'Avg R',
-            'expectancy' => 'Expectancy',
-            'max_r' => 'Max R',
-            'min_r' => 'Min R',
+            'rule_name'     => 'Rule',
+            'total_trades'  => 'Total',
+            'win_trades'    => 'Win',
+            'lose_trades'   => 'Lose',
+            'winrate'       => 'Winrate',
+            'avg_r'         => 'Avg R',
+            'expectancy'    => 'Expectancy',
+            'avg_win_r'     => 'Avg Win R',
+            'avg_loss_r'    => 'Avg Loss R',
+            'profit_factor' => 'Profit Factor',
+            'kelly_pct'     => 'Kelly %',
+            'avg_hold_days' => 'Avg Hold',
+            'max_r'         => 'Max R',
+            'min_r'         => 'Min R',
+            'score'         => 'Score',
         ];
     }
 
@@ -109,7 +126,37 @@ class LCNI_Recommend_Performance_List_Table extends WP_List_Table {
     }
 
     protected function column_default($item, $column_name) {
-        return esc_html((string) ($item[$column_name] ?? ''));
+        switch ( $column_name ) {
+            case 'winrate':
+                return esc_html( number_format( (float) ( $item['winrate'] ?? 0 ) * 100, 2 ) ) . '%';
+            case 'avg_r':
+            case 'expectancy':
+            case 'avg_win_r':
+            case 'avg_loss_r':
+            case 'max_r':
+            case 'min_r':
+            case 'avg_hold_days':
+                return esc_html( number_format( (float) ( $item[$column_name] ?? 0 ), 4 ) );
+            case 'profit_factor':
+                $pf = (float) ( $item['profit_factor'] ?? 0 );
+                return esc_html( number_format( $pf, 4 ) );
+            case 'kelly_pct':
+                $k = (float) ( $item['kelly_pct'] ?? 0 );
+                $half = $k / 2;
+                return esc_html( number_format( $k * 100, 2 ) . '% (½K: ' . number_format( $half * 100, 2 ) . '%)' );
+            case 'score':
+                $score = PerformanceCalculator::compute_score( $item );
+                $badge = PerformanceCalculator::score_badge( $score );
+                $colors = [ 'good' => '#16a34a', 'neutral' => '#d97706', 'weak' => '#dc2626' ];
+                $labels = [ 'good' => 'Tốt', 'neutral' => 'Trung bình', 'weak' => 'Kém' ];
+                $color  = $colors[$badge] ?? '#6b7280';
+                $label  = $labels[$badge] ?? '';
+                return '<span style="font-weight:700;color:' . esc_attr( $color ) . '">' . esc_html( $score ) . '</span>'
+                    . ' <span style="font-size:11px;padding:2px 6px;border-radius:4px;background:' . esc_attr( $color ) . ';color:#fff;">' . esc_html( $label ) . '</span>'
+                    . ' <button type="button" class="button button-small lcni-equity-btn" data-rule-id="' . esc_attr( (string) ( $item['rule_id'] ?? 0 ) ) . '" data-rule-name="' . esc_attr( (string) ( $item['rule_name'] ?? '' ) ) . '">📈 Equity</button>';
+            default:
+                return esc_html( (string) ( $item[$column_name] ?? '' ) );
+        }
     }
 }
 
@@ -128,6 +175,7 @@ class LCNI_Recommend_Admin_Page {
         add_action('admin_menu', [$this, 'register_menu']);
         add_action('admin_init', [$this, 'handle_actions']);
         add_action('wp_ajax_lcni_recommend_distinct_values', [$this, 'ajax_distinct_values']);
+        add_action('wp_ajax_lcni_recommend_equity_curve', [$this, 'ajax_equity_curve']);
     }
 
     public function register_menu() {
@@ -230,6 +278,12 @@ class LCNI_Recommend_Admin_Page {
             wp_safe_redirect(admin_url('admin.php?page=lcni-recommend&tab=rule-list&scanned=1&scan_count=' . (int) $scan_count));
             exit;
         }
+
+        if ($_POST['lcni_recommend_action'] === 'refresh_performance') {
+            $this->performance_calculator->refresh_all();
+            wp_safe_redirect(admin_url('admin.php?page=lcni-recommend&tab=performance&refreshed=1'));
+            exit;
+        }
     }
 
     public function render_page() {
@@ -267,6 +321,11 @@ class LCNI_Recommend_Admin_Page {
             echo '<div class="notice notice-success is-dismissible"><p>Đã quét thủ công rule. Số mã thỏa điều kiện: <strong>' . esc_html((string) $scan_count) . '</strong>.</p></div>';
         } elseif ($scanned === '0') {
             echo '<div class="notice notice-error"><p>Quét thủ công thất bại. Vui lòng thử lại.</p></div>';
+        }
+
+        $refreshed = isset($_GET['refreshed']) ? sanitize_text_field((string) $_GET['refreshed']) : '';
+        if ($refreshed === '1') {
+            echo '<div class="notice notice-success is-dismissible"><p>✅ Đã tính lại toàn bộ Performance metrics thành công.</p></div>';
         }
 
         if ($tab === 'create-rule') {
@@ -797,8 +856,24 @@ class LCNI_Recommend_Admin_Page {
         $now_timestamp = current_time('timestamp');
 
         $signals = array_map(static function ($signal) use ($now_timestamp) {
-            $entry_time = (int) ($signal['entry_time'] ?? 0);
+            // list_signals trả về key dạng signal__xxx — map lại cho admin table
+            foreach ($signal as $k => $v) {
+                if (strpos($k, 'signal__') === 0) {
+                    $short = substr($k, strlen('signal__'));
+                    if (!isset($signal[$short])) {
+                        $signal[$short] = $v;
+                    }
+                } elseif (strpos($k, 'rule__') === 0) {
+                    $short = substr($k, strlen('rule__'));
+                    if (!isset($signal[$short])) {
+                        $signal[$short] = $v;
+                    }
+                }
+            }
+
+            $entry_time = (int) ($signal['entry_time'] ?? $signal['entry_time_raw'] ?? 0);
             $signal['entry_date'] = $entry_time > 0 ? wp_date('Y-m-d', $entry_time, wp_timezone()) : '';
+
             $holding_days = isset($signal['holding_days']) ? (int) $signal['holding_days'] : 0;
             if ($holding_days <= 0 && $entry_time > 0) {
                 $holding_days = max(0, (int) floor(($now_timestamp - $entry_time) / DAY_IN_SECONDS));
@@ -814,8 +889,209 @@ class LCNI_Recommend_Admin_Page {
     }
 
     private function render_performance_tab() {
-        $table = new LCNI_Recommend_Performance_List_Table($this->performance_calculator->list_performance());
+        $nonce = wp_create_nonce( 'lcni_equity_curve' );
+        $ajax_url = esc_url( admin_url( 'admin-ajax.php' ) );
+
+        // Nút tính lại toàn bộ metrics
+        echo '<form method="post" style="margin:12px 0 4px;">';
+        wp_nonce_field('lcni_recommend_admin_action');
+        echo '<input type="hidden" name="lcni_recommend_action" value="refresh_performance" />';
+        echo '<button type="submit" class="button button-primary">🔄 Tính lại Performance (refresh_all)</button>';
+        echo ' <span style="color:#6b7280;font-size:12px;margin-left:8px;">Bấm 1 lần sau khi cài bản cập nhật để điền đầy Avg Win R, Avg Loss R, Profit Factor, Kelly %</span>';
+        echo '</form>';
+
+        $table = new LCNI_Recommend_Performance_List_Table( $this->performance_calculator->list_performance() );
         $table->prepare_items();
+
+        echo '<style>
+            .lcni-equity-btn{cursor:pointer;margin-left:6px;}
+            #lcni-equity-panel{display:none;margin-top:20px;background:#fff;border:1px solid #dcdcde;border-radius:6px;padding:16px;}
+            #lcni-equity-panel h3{margin-top:0;}
+            #lcni-equity-chart{width:100%;height:340px;}
+            #lcni-equity-stats{display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;}
+            .lcni-equity-stat{background:#f6f7f7;border-radius:6px;padding:8px 14px;font-size:13px;}
+            .lcni-equity-stat strong{display:block;font-size:18px;}
+        </style>';
+
         $table->display();
+
+        echo '<div id="lcni-equity-panel">
+            <h3 id="lcni-equity-title">Equity Curve</h3>
+            <div id="lcni-equity-chart"></div>
+            <div id="lcni-equity-stats"></div>
+        </div>';
+
+        echo '<script>
+        (function(){
+            const ajaxUrl = ' . wp_json_encode( $ajax_url ) . ';
+            const nonce   = ' . wp_json_encode( $nonce ) . ';
+
+            function loadECharts(cb){
+                if(window.echarts && typeof window.echarts.init === "function"){ cb(); return; }
+                const s = document.createElement("script");
+                s.src = "https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js";
+                s.onload = cb;
+                document.head.appendChild(s);
+            }
+
+            document.addEventListener("click", function(e){
+                const btn = e.target.closest(".lcni-equity-btn");
+                if(!btn) return;
+                const ruleId   = btn.dataset.ruleId;
+                const ruleName = btn.dataset.ruleName;
+
+                document.getElementById("lcni-equity-title").textContent = "Equity Curve — " + ruleName;
+                document.getElementById("lcni-equity-stats").innerHTML = "<em>Đang tải…</em>";
+                document.getElementById("lcni-equity-panel").style.display = "block";
+                document.getElementById("lcni-equity-chart").innerHTML = "";
+                document.getElementById("lcni-equity-panel").scrollIntoView({behavior:"smooth",block:"start"});
+
+                fetch(ajaxUrl + "?action=lcni_recommend_equity_curve&rule_id=" + encodeURIComponent(ruleId) + "&nonce=" + encodeURIComponent(nonce))
+                    .then(function(r){ return r.json(); })
+                    .then(function(resp){
+                        if(!resp.success){ document.getElementById("lcni-equity-stats").textContent = "Chưa có dữ liệu đóng lệnh."; return; }
+                        const data = resp.data;
+                        loadECharts(function(){ renderChart(data, ruleName); });
+                    })
+                    .catch(function(){ document.getElementById("lcni-equity-stats").textContent = "Lỗi tải dữ liệu."; });
+            });
+
+            function renderChart(data, ruleName){
+                const panel = document.getElementById("lcni-equity-panel");
+                if(!data.points || !data.points.length){
+                    document.getElementById("lcni-equity-stats").textContent = "Chưa có lệnh đã đóng.";
+                    return;
+                }
+                const points   = data.points;
+                const dates    = points.map(function(p){ return p.date || ""; });
+                const xLabels  = points.map(function(p,i){ return i+1; });
+                const cumVals  = points.map(function(p){ return p.cumulative_r; });
+                const tradeRs  = points.map(function(p){ return p.trade_r; });
+                const dateFirst= dates[0]||"";
+                const dateLast = dates[dates.length-1]||"";
+
+                // Stats
+                const final = cumVals[cumVals.length-1];
+                let peak=0, maxDD=0;
+                for(let i=0;i<cumVals.length;i++){
+                    if(cumVals[i]>peak) peak=cumVals[i];
+                    const dd = peak - cumVals[i];
+                    if(dd>maxDD) maxDD=dd;
+                }
+                const wins  = tradeRs.filter(function(r){ return r>=0; }).length;
+                const total = tradeRs.length;
+
+                document.getElementById("lcni-equity-stats").innerHTML =
+                    stat("Tổng R", (final>=0?"+":"") + final.toFixed(2) + "R", final>=0?"#16a34a":"#dc2626") +
+                    stat("Số lệnh", total) +
+                    stat("Max Drawdown", "-" + maxDD.toFixed(2) + "R", "#dc2626") +
+                    stat("Winrate (closed)", (total>0?(wins/total*100).toFixed(1):0) + "%");
+
+                const chartDom = document.getElementById("lcni-equity-chart");
+                const myChart  = window.echarts.init(chartDom);
+
+                myChart.setOption({
+                    tooltip:{
+                        trigger:"axis",
+                        formatter:function(params){
+                            const i = params[0].dataIndex;
+                            const p = points[i];
+                            return "<strong>Lệnh #"+(i+1)+"</strong><br/>" +
+                                   "Mã: <b>" + p.symbol + "</b><br/>" +
+                                   "Mua: "+(p.entry_date||"—")+" · Bán: "+(p.date||"—")+"<br/>" +
+                                   "Nắm giữ: "+(p.holding_days||"—")+" ngày<br/>" +
+                                   "Lệnh: " + (p.trade_r>=0?"+":"") + p.trade_r.toFixed(2) + "R<br/>" +
+                                   "Cộng dồn: " + (p.cumulative_r>=0?"+":"") + p.cumulative_r.toFixed(2) + "R";
+                        }
+                    },
+                    grid:{left:"60px",right:"20px",bottom:"54px",top:"30px"},
+                    xAxis:{
+                        type:"category",
+                        data:xLabels,
+                        name: dateFirst&&dateLast ? dateFirst+" → "+dateLast : "",
+                        nameLocation:"middle",
+                        nameGap:36,
+                        nameTextStyle:{fontSize:11,color:"#6b7280"},
+                        axisLabel:{fontSize:11,formatter:function(v){
+                            const n=xLabels.length;
+                            const step=Math.max(1,Math.floor(n/6));
+                            return (v===1||v===n||v%step===0)?v:"";
+                        }}
+                    },
+                    yAxis:{
+                        type:"value",
+                        name:"R",
+                        axisLine:{show:true},
+                        splitLine:{lineStyle:{type:"dashed"}}
+                    },
+                    series:[
+                        {
+                            name:"Equity",
+                            type:"line",
+                            data:cumVals,
+                            symbol:"circle",
+                            symbolSize:4,
+                            lineStyle:{width:2, color:"#16a34a"},
+                            itemStyle:{
+                                color:function(params){
+                                    return params.data >= 0 ? "#16a34a" : "#dc2626";
+                                }
+                            },
+                            areaStyle:{
+                                color:{
+                                    type:"linear",
+                                    x:0, y:0, x2:0, y2:1,
+                                    colorStops:[
+                                        {offset:0, color:"rgba(22,163,74,0.25)"},
+                                        {offset:1, color:"rgba(22,163,74,0.02)"}
+                                    ]
+                                }
+                            },
+                            markLine:{
+                                silent:true,
+                                lineStyle:{color:"#9ca3af",type:"dashed"},
+                                data:[{yAxis:0}]
+                            }
+                        },
+                        {
+                            name:"Trade R",
+                            type:"bar",
+                            data:tradeRs,
+                            barMaxWidth:6,
+                            itemStyle:{
+                                color:function(params){
+                                    return params.data >= 0 ? "rgba(22,163,74,0.5)" : "rgba(220,38,38,0.5)";
+                                }
+                            },
+                            tooltip:{show:false}
+                        }
+                    ],
+                    dataZoom:[{type:"inside"},{type:"slider",height:20,bottom:4}]
+                });
+
+                window.addEventListener("resize", function(){ myChart.resize(); });
+            }
+
+            function stat(label, value, color){
+                return "<div class=\"lcni-equity-stat\"><strong style=\"color:"+(color||"#111827")+"\">" + value + "</strong>" + label + "</div>";
+            }
+        })();
+        </script>';
+    }
+
+    public function ajax_equity_curve() {
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( [ 'message' => 'Permission denied' ], 403 );
+        }
+
+        check_ajax_referer( 'lcni_equity_curve', 'nonce' );
+
+        $rule_id = (int) ( $_GET['rule_id'] ?? 0 );
+        if ( $rule_id <= 0 ) {
+            wp_send_json_error( [ 'message' => 'Invalid rule_id' ], 400 );
+        }
+
+        $points = $this->performance_calculator->get_equity_curve( $rule_id );
+        wp_send_json_success( [ 'points' => $points ] );
     }
 }

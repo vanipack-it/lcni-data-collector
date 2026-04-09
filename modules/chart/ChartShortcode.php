@@ -66,8 +66,10 @@ class LCNI_Chart_Shortcode {
                 'rs_1m_by_exchange' => !array_key_exists('default_rs_1m_by_exchange', $chart_settings) || !empty($chart_settings['default_rs_1m_by_exchange']),
                 'rs_3m_by_exchange' => !empty($chart_settings['default_rs_3m_by_exchange']),
             ],
-            'analyst' => $chart_analyst_settings,
-            'storage_key' => 'lcni_chart_settings',
+            'analyst'          => $chart_analyst_settings,
+            'storage_key'      => 'lcni_chart_settings',
+            'signals_api_base' => is_user_logged_in() ? rest_url('lcni/v1/chart/signals') : '',
+            'nonce'            => is_user_logged_in() ? wp_create_nonce('wp_rest') : '',
         ]);
 
         wp_register_style('lcni-chart-ui', LCNI_URL . 'modules/chart/assets/chart.css', [], $chart_style_version);
